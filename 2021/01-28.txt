@@ -1,0 +1,648 @@
+1611841956
+Gliptic
+anyone had problems with generated files in builds? I made a custom build step that writes to a .zig file, the .exe build has a dependOn on that step, but weirdly the zig compiler seems to skip one specific line of code in the generated file when it builds (???)
+
+1611841997
+Gliptic
+if I remove the generation from the build.zig and update the timestamp on the existing generated file, it's compiled correctly
+
+1611843087
+ifreund
+Gliptic: I do a lot of code generation in the build.zig with zig-wayland and haven't had any issues
+
+1611843104
+ifreund
+do you have your project online somewhere?
+
+1611843108
+Gliptic
+I'll look at how you do it, thanks
+
+1611843124
+Gliptic
+not yet, but I might scale it down to a testcase if I can't figure this out
+
+1611843154
+Gliptic
+it's always the same point in the file it's skipping, I had a variable declaration there before and then it was complaining about it missing
+
+1611843161
+Gliptic
+don't understand how it can be line-aligned
+
+1611843236
+ifreund
+it sounds like a caching issue tbh
+
+1611843300
+Gliptic
+yeah, if I don't do the "touch file", I get the same error even when not regenerating
+
+1611843348
+ifreund
+zig-wayland's code generation overwrites the generated files everytime the build.zig is run
+
+1611843586
+Gliptic
+yeah, that's what I'm doing too
+
+1611843704
+Gliptic
+hm, is wayland-scanner doing the generating
+
+1611843725
+Gliptic
+I write the file directly from Zig
+
+1611844718
+ifreund
+Gliptic: wayland-scanner generates some C code I link because of zig issue #131
+
+1611844767
+ifreund
+the zig code is generated in this function call:
+
+1611844810
+Gliptic
+ah, there was an @import inside the function I missed
+
+1611844844
+ifreund
+hmm, yeah idk why I put it there :D
+
+1611844883
+Gliptic
+this looks more or less what I'm doing
+
+1611844908
+Gliptic
+I tried to write it first ot an ArrayList and then .writeAll at the end, but same problem
+
+1611844909
+Gliptic
+weird
+
+1611844921
+ifreund
+how you write the files is likely irrelevant
+
+1611844948
+ifreund
+does the build step where you want to use these generated sources depend on the step where you generate them?
+
+1611844954
+Gliptic
+yeah, I wonder if I've accidentally added some weird character or something that is removed when I resave it..
+
+1611844959
+Gliptic
+yes
+
+1611844989
+Gliptic
+and before I just wrote it directly in the build function
+
+1611845002
+Gliptic
+pretty sure that would always happen before the .zig files were compiled, but same error then
+
+1611845052
+ifreund
+hmm not really sure what's happening then. I'm using zig 0.7.1 on linux fwiw
+
+1611845054
+Gliptic
+uh, wait a second, there's a comment above that line..
+
+1611845065
+Gliptic
+yeah, I'm on windows, so might be a newline issue
+
+1611845138
+Gliptic
+oh dammit, that was it..
+
+1611845193
+Gliptic
+using the multiline strings produces \n as newlines, but zig doesn't think that's a newline when compiling on windows apparently?
+
+1611845209
+Gliptic
+so the comment extended onto the next line
+
+1611845235
+Gliptic
+but on other lines I'm using .print() which I guess is converting the \n to \r\n
+
+1611845462
+ifreund
+Gliptic: you could pass it through zig fmt to fix that I suppose
+
+1611845506
+Gliptic
+yeah
+
+1611845521
+ifreund
+
+
+1611845524
+Gliptic
+just annoying, tried to figure this out since last night
+
+1611845535
+Gliptic
+zig should error on \n just like it does with \t
+
+1611845547
+Gliptic
+or accept \n
+
+1611845557
+ifreund
+I think you meain \r
+
+1611845574
+Gliptic
+no, \n
+
+1611845593
+Gliptic
+pretty sure there's no \r in there alone
+
+1611845597
+ifreund
+\r\n is windows, \n is unix
+
+1611845600
+Gliptic
+but I'll check exactly what happens
+
+1611845601
+Gliptic
+yes
+
+1611845637
+Gliptic
+actually, when I resave the file becomes all \n
+
+1611845653
+Gliptic
+I suppose it's because there's a mix of line endings
+
+1611845665
+Gliptic
+zig tries to guess which one to look for
+
+1611845776
+mikdusan
+from wikipiedia: lf, crlf, cr (apple II, classic macos, os9), rs (qnx), lfcr (let's be different Acorn and RISC OS), nl (IBM) and non-ascii newline for zx80
+
+1611851542
+ed_t
+error: expected type 'type', found 'i32'
+
+1611851542
+ed_t
+const w:i32 = std.math.sqrt(std.math.powi(cbx-c.p.x,2)+std.math.powi(cby-c.p.y,2))+1;
+
+1611851556
+ed_t
+why?
+
+1611851650
+g-w1
+read the signature of powi
+
+1611851697
+ed_t
+it raise any value to and integer power
+
+1611851714
+g-w1
+pub fn powi(comptime T: type, x: T, y: T) (error{
+
+1611851797
+ed_t
+then the examples in the docs are deceiving: powi(x, +-0) = 1 for any x
+
+1611851811
+ed_t
+if it needs a type the example should include it
+
+1611851827
+ed_t
+even if its a dummy type
+
+1611851851
+ed_t
+but in any case THANKS
+
+1611851871
+g-w1
+dont use the docs, just read the code. the docs are very bad and are not production ready yet
+
+1611851949
+ed_t
+:-/ not rftm rtfc
+
+1611852052
+g-w1
+lol
+
+1611852184
+dvaun
+This is what I see from ZLS:
+
+1611852423
+g-w1
+yep, the doc comments are wrong. I think they are just trying to illustrate a point, not provide correct code since +- isn't valid either
+
+1611852425
+ed_t
+g-wl and all the tests for powi use inline values, none use expressions,  When I use an expression it complains: error: invalid operands to binary expression: 'std.math.powi.error:27:44!i32'
+
+1611852442
+g-w1
+you must use try
+
+1611852534
+dutchie
+or catch unreachable if you are sure you can't over/underflow
+
+1611852562
+dvaun
+the pow file has some tests which illustrate the over/underflow occurring
+
+1611852575
+dvaun
+`lib/std/math/powi.zig`
+
+1611852646
+ed_t
+with a catch unreachable at the end of the expression (multiple powi and sqtr) I still get the errors
+
+1611852736
+dutchie
+you have to do it for each call
+
+1611852752
+ed_t
+that is a little insane
+
+1611852758
+ed_t
+imho
+
+1611852767
+dutchie
+the function returns an error union, not an integer, so you need to unwrap it every time
+
+1611852866
+ed_t
+its still insane.  I care that the expression works.  If any part fails with I just want to know the first error.
+
+1611852901
+ed_t
+doing any sort of math in zig is going to be a real pita
+
+1611852925
+dutchie
+that's what try is for
+
+1611852957
+ed_t
+try at the start of the express is not working - still get the same error
+
+1611853093
+dutchie
+`const w = std.math.sqrt(try std.math.powi(i32, cbx-c.p.x, 2) + try std.math.powi(cby - c.p.y, 2)) + 1;` should work
+
+1611853136
+ifreund
+missing the type arg for the second powi call
+
+1611853147
+dutchie
+ifreund: oops ty
+
+1611853153
+dutchie
+irc not a good code editor
+
+1611853160
+ed_t
+error: invalid operands to binary expression: 'std.math.powi.error:27:44!i32' and 'i32'
+
+1611853181
+ifreund
+you need try on both calls
+
+1611853193
+justin_smith
+ed_t: you need to unpack the error type (yeah try would help there)
+
+1611853193
+dutchie
+anyway just for squaring i'd write something like `const dx = cbx - c.p.x; const dy = cby - c.p.y; const w = std.math.sqrt(dx*dx + dy*dy) + 1`
+
+1611853220
+dutchie
+or use std.math.hypot
+
+1611853242
+dutchie
+(though that's only implemented for floats)
+
+1611853253
+ed_t
+yes and the second powi has the i32 now and i still get the error (try on both powi)
+
+1611853287
+ed_t
+I was tring to avoid temp constants
+
+1611853312
+g-w1
+your error should look like this error:linenum:col. use the col to see where you went wrong
+
+1611853430
+ed_t
+g-wl its pointing to the powi just after the first powi
+
+1611853637
+ed_t
+decomposing the second try causes the problem sqrt(try powi) works, sqrt(try powi + try powi) fails
+
+1611853709
+dutchie
+is this some dumb operator precedence thing
+
+1611853717
+g-w1
+yes probably
+
+1611853733
+dutchie
+try isn't in
+
+1611853775
+dutchie
+so it's probably parsing it as `try (powi + try powi)` not `(try powi) + (try powi)`
+
+1611853841
+ed_t
+brackets help
+
+1611853881
+ed_t
+thanks - this works: std.math.sqrt((try std.math.powi(i32,cbx-c.p.x,2))+(try std.math.powi(i32,cby-c.p.y,2)))+1;
+
+1611853972
+dutchie
+i'd definitely factor that out into some sub-expressions in local variables and trust the optimiser to sort it out for me
+
+1611854023
+justin_smith
+dutchie: optimizations is about having fewer lines of code, and the more calculation you do in one line the more optimizeder it is
+
+1611854043
+Gliptic
+no no, fewer characters
+
+1611854054
+Gliptic
+so you should shorten the variable names more
+
+1611854070
+justin_smith
+(in all seriousness I wouldn't expect turning a sub expression into a local to even have a cost in most cases)
+
+1611854094
+dutchie
+indeed, since it's going to have to store the result of that subexpression somewhere anyway
+
+1611854102
+justin_smith
+precisely
+
+1611854151
+Gliptic
+in a language like C++, it might limit the reordering of operations if the functions have side-effects (or if it can't prove they don't)
+
+1611854157
+fengb
+Pretty sure LLVM IR introduces intermediates if you don't explicitly define it
+
+1611854167
+fengb
+Since operations can only be 1 thing at a time
+
+1611854172
+justin_smith
+Gliptic: if your std.math.pow has side effects, you're already screwed :D
+
+1611854172
+Gliptic
+in (a+b), C++ is allowed to evaluate b then a
+
+1611854184
+Gliptic
+justin_smith: yeah, I'm pretty sure it doesn't matter for pow
+
+1611854206
+Gliptic
+but it at least requires some non-trivial check for a C++ compiler to know it can swap them if beneficial
+
+1611854226
+justin_smith
+Gliptic: but can't c++ also reorder the assignments if you break it out?
+
+1611854232
+Gliptic
+nope
+
+1611854236
+justin_smith
+got it
+
+1611854249
+dvaun
+From
+
+1611854249
+dvaun
+So unwrap with `catch <some-default>` or just use `try`
+
+1611854249
+dvaun
+> An error set type and a normal type can be combined with the ! operator to form an error union type. Values of these types may be an error value, or a value of the normal type.
+
+1611854250
+Gliptic
+the , or ; is a sequence point (well, they call it something else now I think)
+
+1611854276
+Gliptic
+I mean, if it can see that there aren't side-effects, it can reorder them of course
+
+1611854284
+Gliptic
+because that follows the "as if" rule
+
+1611854287
+justin_smith
+dvaun: or sometimes even if with a |binding|
+
+1611854338
+dvaun
+i guess that would be needed fto check for underflow or overflow right?
+
+1611854343
+justin_smith
+Gliptic: that "as if" and its effect on multi threaded memory access whas what I was remembering
+
+1611854414
+justin_smith
+where the memory storage is treated as not having side effects, but in terms of shared memory access acts like an unpredictable side effect
+
+1611854431
+Gliptic
+that's down to the memory model
+
+1611854436
+justin_smith
+(or that was my weird mental model of the whole thing at least)
+
+1611854437
+Gliptic
+what counts as "as if" or not
+
+1611854437
+justin_smith
+yeah
+
+1611856371
+pixelherodev
+I think PrimaryTypeExpr is a bad name in the grammar, given that every valid PrimaryTypeExpr is a valid Expr...
+
+1611856411
+pixelherodev
+Rather, since PrimaryTypeExprs don't have to represent types
+
+1611856695
+motiejus
+hi all. I am trying to add a correct `-print-prog-name=ld` to zig, so it returns the appropriate linker for autotools. I am now struggling to relate the incoming args in `main.zig` to the appropriate linker (ld.lld/ld64.lld/lld-link/wasm-ld). I presume it should be resolved from `-target` somehow; any pointers?
+
+1611856937
+motiejus
+related question -- looks like `zig ld.lld --target=x86_64-linux-musl" is not a thing; I assume ld.lld is not supposed to  be passed in target as its first param?
+
+1611858829
+motiejus
+I think I found the answer to the first question -- `getObjectFormat(Target)`, second question remains :)
+
+1611858887
+g-w1
+what are you trying to do for the second one?
+
+1611858901
+g-w1
+build-lib or build-exe will link stuff when passed obj files
+
+1611858919
+motiejus
+I am trying to compile xz with `zig cc` and autotools
+
+1611858937
+g-w1
+so use `zig build-lib` to link
+
+1611858940
+motiejus
+and it fails at linking step, but I didn't the root cause yet
+
+1611858965
+g-w1
+hmm, what is the error
+
+1611859044
+motiejus
+trying `LD="zig build-lib"` now
+
+1611859397
+motiejus
+didn't help. Nothing specific, fails even before libtool:
+
+1611859422
+motiejus
+see the `false cr <...>`? I am not experienced with libtool, but I think that's bad :)
+
+1611859459
+motiejus
+it's trivial to reproduce -- download xz archive, do `CC="zig cc" LD="zig build-lib" ./configure && make -j$(nproc)` on a somewhat fresh linux installation (debian:buster docker image works well)
+
+1611859480
+motiejus
+the only dependency then is make and zig itself (extracted from a nightly tarball)
+
+1611859692
+motiejus
+./configure output:
+
+1611859696
+motiejus
+for the curious
+
+1611859923
+dvaun
+maybe export CC to `zig cc`
+
+1611861116
+motiejus
+export vs non-export doesn't matter; configure picks it up
+
+1611861295
+motiejus
+look for zig in
+
+1611861822
+motiejus
+ok, found it: it was missing `AR`. Now with `AR="zig build-lib" LD="zig build-lib" CC="zig cc"` it is failing, because `zig build-lib cr <...>` is not a valid option, though it is for gnu ar
+
+1611861841
+motiejus
+i.e. `zig build-lib` does not understand `cr` command intended for ar
+
+1611867569
+ed_t
+how would you define a constant array of stings, eg a[0]="somestring" etc
+
+1611869603
+ugla
+const some_strings = [_][]const u8{"some string", "some other string"};
+
+1611870145
+ed_t
+thanks ugla
+
+1611870225
+ed_t
+can the type be for i?  for (xxx) |y, i|
+
+1611870236
+ugla
+I think so
+
+1611870345
+ed_t
+if so I cannot figure out how i32:i fails i:i32 fails
+
+1611870635
+justin_smith
+ed_t: are you asking why i can't be i32 in "for (xxx) |y, i|" ?
+
+1611870678
+justin_smith
+I think i is always usize(?) but when I need iN I use @intCast(iN, i)
+

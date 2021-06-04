@@ -1,0 +1,656 @@
+1610158854
+mikdusan
+is this the same thing? `mem.containsAtLeast(T, haystack, expected_count, needle)` vs `mem.count(T, haystack, needle) >= expected_count`
+
+1610158966
+mikdusan
+oh i see, it's an optimization. a short circuit.
+
+1610162493
+andrewrk
+yep
+
+1610187964
+mikdusan
+ping daurnimator
+
+1610187981
+daurnimator
+mikdusan: pong
+
+1610188016
+mikdusan
+"That took my development feedback cycle up to the scale of minutes" <-- this is on linux?
+
+1610188033
+mikdusan
+re: #7637
+
+1610188085
+daurnimator
+mikdusan: yes
+
+1610188122
+daurnimator
+mikdusan: trying to work on parts of the standard library ended up requiring a `make` invocation; which ended up recompiling+relinking all of stage 2; which takes minutes on my PC.
+
+1610188154
+mikdusan
+hmm... yes but technically it's not doing an install
+
+1610188219
+daurnimator
+`zig build` has no separation of build vs install.... but that wasn't the point: I wanted to be able to work on the standard library and build system without having to `make` along the way: introducing that flag again seemed to fix things.
+
+1610188261
+mikdusan
+what's happened is there are now 2 things combined into `make`: artifact stage1 and stage2. neither of which get installed.
+
+1610188271
+mikdusan
+i think what you want is a way to build just stage1 iteratively
+
+1610188281
+daurnimator
+no. I didn't want to build stage1
+
+1610188314
+daurnimator
+what I wanted is for stage2 to not use its "installed" (to the `build` folder) copy of the stdlib; but instead the one in my zig checkout
+
+1610188369
+mikdusan
+then something is wrong with stage2 if it doesn't do that
+
+1610188375
+daurnimator
+?
+
+1610188637
+mikdusan
+i dunno still confused. I'd have to see a minimal set of steps to understand exactly where it's forcing you to `make`.
+
+1610188719
+mikdusan
+is it as simple as tweaking lib/std/build.zig, and subsequent `zig build ...` doesn't see the changes?
+
+1610188915
+daurnimator
+mikdusan: apparently not. I just tried that now and it worked
+
+1610188934
+daurnimator
+oh wait
+
+1610188940
+daurnimator
+I have that SKIP thing applied locally :P
+
+1610188957
+daurnimator
+you might have to try yourself
+
+1610189339
+mikdusan
+on master one edit to lib/std/build.zig (a std.debug.warn() statement) and subsequent "zig build ..." recompiled and picked up change.
+
+1610189344
+mikdusan
+so that's not it.
+
+1610203990
+Nypsie[m]
+ifreund: Any change you're here? :)
+
+1610203996
+Nypsie[m]
+s/change/chance
+
+1610204822
+FireFox317
+hi Nypsie[m] :)
+
+1610204855
+Nypsie[m]
+Hey FireFox317
+
+1610204855
+Nypsie[m]
+:)
+
+1610206325
+FireFox317
+Can I depend another PR on a PR that has not been merged yet?
+
+1610206366
+Nypsie[m]
+Yeah, you can create a branch on top of the other branch, rather than master
+
+1610206653
+FireFox317
+yeah sure, but github doesnt like that
+
+1610206679
+FireFox317
+I cannot select that i want a PR that compares to my branch
+
+1610206727
+FireFox317
+well, andrewrk i have a commit ready that adds optional support to the LLVM backend :) it is currently blocked on #7725 and #7730
+
+1610207684
+mikdusan
+ugh. CMakeLists.txt ZIG_STAGE2_SOURCES is... not very robust. Problem is generating that list is subject to zig lazy system,
+
+1610207706
+mikdusan
+if I run it on mac, many linux files don't get included, that kind of thing.
+
+1610208771
+daurnimator
+mikdusan: we talked about this: the answer was to just include every .zig file
+
+1610208805
+daurnimator
+(non-test)
+
+1610208902
+mikdusan
+recursive src/*.zig and lib/*.zig I presume ?
+
+1610209001
+BaroqueLarouche
+Which commit chagne the behavior of std.fmt to require {s} for formatting strings ?
+
+1610209002
+daurnimator
+mikdusan: yeah. should probably try and follow this somehow:
+
+1610209035
+daurnimator
+BaroqueLarouche: 1ca2deca33e5ee489e12bd71a34ec3e4a2e1255f
+
+1610209039
+BaroqueLarouche
+Just broke all my tests in
+
+1610209093
+TheLemonMan
+
+
+1610209120
+daurnimator
+BaroqueLarouche:
+
+1610209153
+BaroqueLarouche
+Let just say that I totally disagree with this change :D
+
+1610209167
+BaroqueLarouche
+it should has been a specifier to print array
+
+1610209190
+daurnimator
+BaroqueLarouche: the problem is that that makes arrays-of-u8 special compared to arrays of other types
+
+1610209219
+daurnimator
+IMO what we need is a String type that essentially wraps `[]u8`
+
+1610209227
+BaroqueLarouche
+yes!
+
+1610209242
+BaroqueLarouche
+the typeinfo needs to have a String field
+
+1610209285
+daurnimator
+it would just be a struct
+
+1610209309
+BaroqueLarouche
+
+
+1610209329
+daurnimator
+though I guess you get type explosion because you'd want it to work for `[]u8`, `[]const u8`, `*[N]u8` etc :/
+
+1610209364
+TheLemonMan
+that's a reasonable request, an helper in `std.meta` would probably be helpful
+
+1610209377
+daurnimator
+I guess it could be `String([]u8)` ?
+
+1610209416
+daurnimator
+should it be `Utf8String`?
+
+1610209431
+BaroqueLarouche
+Utf8String should be an alias of String([]u8)
+
+1610209437
+mikdusan
+[]utf8
+
+1610209448
+daurnimator
+BaroqueLarouche: no Utf8String would still be a function
+
+1610209461
+daurnimator
+you need to have known-length and const variants
+
+1610209492
+daurnimator
+TheLemonMan: I think you want it to be a little more than std.meta: I think strings literals should be of the type.
+
+1610209598
+BaroqueLarouche
+you do want a String in the TypeInfo tagged union
+
+1610209612
+BaroqueLarouche
+it would simplify all the code that use reflection
+
+1610209966
+daurnimator
+
+
+1610210000
+BaroqueLarouche
+man event std.fmt.formatType has lots of `if (child_type == u8)`
+
+1610210028
+BaroqueLarouche
+what a mess
+
+1610210174
+tyrion-mx
+Hello, is there a plan to have a central repository for zig libraries? Something like pypi or npm?
+
+1610210200
+daurnimator
+tyrion-mx: unknown.
+
+1610210303
+TheLemonMan
+BaroqueLarouche, it's gonna get better/worse with #7676
+
+1610210426
+tyrion-mx
+daurnimator: Ok. Does it mean that it has not been considered yet since there are more important things to do? Or that there are some potential reasons not to do it?
+
+1610210772
+BaroqueLarouche
+
+
+1610210780
+BaroqueLarouche
+Look how they massacred my boy
+
+1610212476
+BaroqueLarouche
+added an issue:
+
+1610212494
+BaroqueLarouche
+pretty sure it would be get closed, but you never known
+
+1610217284
+marler8997
+ok I've waited 7 days, can I complain about us getting
+
+1610220089
+tyrion-mx
+Super noob quesiton: Why does Allocator.alloc return []u8 instead of [n]u8? What should I do to obtain an [16]u8 to pass to Md5.hash ?
+
+1610220180
+TheLemonMan
+take the return and slice it with `value[0..16]`
+
+1610220200
+TheLemonMan
+that gives you a *[16]u8
+
+1610220774
+tyrion-mx
+umh, thanks, it works
+
+1610223447
+olabaz
+Hi, I'm trying to read from stdin. I tried:     const stdin = std.io.getStdIn().reader();
+
+1610223450
+olabaz
+var buf: []u8 = undefined;
+
+1610223452
+olabaz
+const bytes_read: anyerror!usize = stdin.read(buf);
+
+1610223466
+olabaz
+but I don't think that's the way to do it
+
+1610223623
+Nypsie[m]
+You need to provide a size to the buffer you provide i.e: `var buf: [100]u8 = undefined`
+
+1610223678
+olabaz
+I tried that but it gives the error: ./src/main.zig:10:51: error: expected type '[]u8', found '[100]u8'
+
+1610223702
+olabaz
+Nypsie[m]: ^
+
+1610223721
+Nypsie[m]
+olabaz: stdin.read(&buf);
+
+1610223787
+Nypsie[m]
+And then for example you can print the message with `std.debug.print("message: {s}\n", .{buf[0..bytes_read]});`
+
+1610223796
+olabaz
+Nypsie[m]: ah thank you. Ok that makes sense
+
+1610223804
+olabaz
+does it null terminate my buffer?
+
+1610223861
+Nypsie[m]
+Don't believe so. Slices and arrays have a `.len` field to determine the length
+
+1610223916
+olabaz
+ok. []T is a slice?
+
+1610223996
+Nypsie[m]
+Yes
+
+1610224016
+olabaz
+why does &buf pass in a slice instead of a pointer
+
+1610224049
+Nypsie[m]
+It coerces to a slice
+
+1610224205
+mikdusan
+buf is an array. &array is slice of entire array. equivalent to array[0..] or array[0..array.len]
+
+1610224247
+mikdusan
+whups. &array is actually &[100]u8 which then coerces exactly like Nypsie[m] says
+
+1610224697
+andrewrk
+marler8997, what's the difference between removeDotDirsSanitized and std.fs.path.resolveWindows?
+
+1610224697
+olabaz
+so unlike in C where &array is pointer to first element, here &array is pointer to array which coerces into slice?
+
+1610224732
+fengb
+Yes, arrays are values not pointers
+
+1610224747
+olabaz
+interesting thanks
+
+1610224869
+andrewrk
+marler8997, also doesn't this implementation perform incorrectly with respect to symlinks?
+
+1610225467
+marler8997
+andrewrk, that function doesn't touch the filesystem, so symlinks aren't relevant
+
+1610225479
+marler8997
+all it does is remove "." and ".." from the string
+
+1610225685
+andrewrk
+consider std.fs.openFile("a/../b")
+
+1610225710
+andrewrk
+if you resolve the path without getting the file system involved, this is equivalent to openFile("b")
+
+1610225738
+andrewrk
+but a could be a symlink to somewhere else, in which case it would be attempting to access the "b" file inside a different directory
+
+1610225798
+marler8997
+to be honest I don't know much about how symlinks are supposed to work on windows, they are a pretty new thing
+
+1610225807
+marler8997
+I pulled the implementation from reactos
+
+1610225917
+marler8997
+I could be missing a step where I'm supposed to resolve symlinks before removing "." and ".."
+
+1610226148
+andrewrk
+I think it's worth solving symlinks here
+
+1610226156
+marler8997
+yeah definitely
+
+1610226167
+andrewrk
+if necessary we can have a "hot path" where you don't use any ".." or "." and not have to do it
+
+1610226171
+marler8997
+to be clear, the logic I added here is the same logic that ReactOS uses to normalize the final path
+
+1610226181
+marler8997
+however, for symlinks to work another step needs to be introduced
+
+1610226189
+andrewrk
+I wonder if reactos supports symlinks
+
+1610226197
+marler8997
+good question
+
+1610226246
+marler8997
+and the other question is what's supposed to happen first, symlink resolution or ".." resolution
+
+1610226356
+marler8997
+I see in linux they perform symlink resolution first
+
+1610226487
+marler8997
+looks like on windowse it's the opposite
+
+1610226502
+marler8997
+it performs ".." resolution before symlinks, so the behavior in my PR matches what windows does
+
+1610226518
+andrewrk
+oh interesting
+
+1610226570
+andrewrk
+in that case we're left with the question about whether the cross platform API (std.fs) should attempt to provide the same semantics across multiple OS's or whether it should do OS-specific behavior for this case
+
+1610226605
+andrewrk
+I think the precedent is to try to provide the same semantics where applicable
+
+1610226615
+andrewrk
+s/applicable/possible/
+
+1610226648
+marler8997
+which behavior do we want to choose, windows or linux behavior?
+
+1610226783
+andrewrk
+I think ".." in std.fs paths should support following symlinks
+
+1610226804
+marler8997
+why?
+
+1610226885
+andrewrk
+because symlinks are common in posix systems, and this is how they are expected to behave. on windows systems where they are more rarely used, having the posix semantics is not a big deal
+
+1610226906
+andrewrk
+but on posix systems, not respecting symlinks in file paths would be extremely problematic
+
+1610226909
+marler8997
+ok fair enough
+
+1610226956
+marler8997
+this might cause a fair amount of extra overhead on windows...hmmm
+
+1610226986
+andrewrk
+but only if you use ".." in a file path
+
+1610226986
+marler8997
+this means that for all filesystem calls, we're going to need to get the filesystem attributes for every directory in each path
+
+1610227006
+andrewrk
+and we only have to do 1 syscall per ".."
+
+1610227014
+andrewrk
+for the path directly preceeding it
+
+1610227016
+marler8997
+I suppose that's true
+
+1610227036
+marler8997
+and if the file doesn't exist, then we just default to removing it correct?
+
+1610227066
+andrewrk
+idk maybe the behavior should just be different on windows. I'm not completely sure we should try to handle this
+
+1610227078
+andrewrk
+what do you think?
+
+1610227099
+marler8997
+I think this is the sort of decision I would try to avoid having to make
+
+1610227104
+andrewrk
+ha fair enough
+
+1610227117
+marler8997
+by that I mean, is there a way Zig can avoid having to make the decision
+
+1610227139
+andrewrk
+no; we have to choose how to document the semantics of the std.fs functions
+
+1610227149
+andrewrk
+specifically with respect to how symlinks work
+
+1610227158
+andrewrk
+ok here's my proposal for right now:
+
+1610227192
+andrewrk
+1. document the functions to have the different symlink behavior on Windows (the fact that the "." and ".." are resolved with string manipulation)
+
+1610227216
+andrewrk
+2. we'll come back to this decision during the Great Standard Library Audit that is coming sometime in the future
+
+1610227235
+marler8997
+that sounds reasonable
+
+1610227236
+andrewrk
+in this case I think the only blocker on the PR is to investigate whether the logic is duplicated with std.fs.path.resolveWindows
+
+1610227267
+andrewrk
+oh, that one takes an Allocator tho, hmm
+
+1610227277
+andrewrk
+ok nvm I think the ball is in my court. thanks for the discussion
+
+1610227311
+andrewrk
+thanks btw, this issue has been a thorn in our side for some time now
+
+1610227312
+marler8997
+yeah thanks for looking into this, there are some subtleties here that are not very straightforward
+
+1610228046
+dkibi
+does thischannel accept learner questions?
+
+1610229108
+justin_smith
+dkibi: yes it does
+
+1610230365
+dkibi
+I just wondered why I can write var foo = .{3,4}; but not var bar = 3;
+
+1610231739
+marler8997
+var bar = 3; is nonsensical.  var foo = .{3,4}; probably works because it's s tuple which CAN hold runtime values even though it actually doesn't.  We could modify the lanaguge to make a tuple with no runtime values an error when assigned to a runtime variable.
+
+1610232467
+Bekwnn
+hey, just wanted to drop by and ask if anyone's had luck using stb_image with zig, I'm hitting what looks suspiciously like a translate-c error on a 7.0+xxxx build of zig
+
+1610232692
+Bekwnn
+just if anyone has a repo with it on github or anything like that I could use as reference
+
+1610235039
+CommunistWolf
+thanks for the aarch64 binaries :D
+
+1610236297
+Bekwnn
+ah well opened an issue. Looks like that header really trips up translate-c
+

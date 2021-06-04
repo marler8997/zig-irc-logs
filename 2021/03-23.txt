@@ -1,0 +1,2188 @@
+1616458295
+andrewrk
+ifreund, I went down a rabbit hole and messed with astgen for `and` and `or`:
+
+1616458296
+andrewrk
+pushing shortly
+
+1616458328
+andrewrk
+side note, it might be nice to have --verbose-ir print all the const @ values at the beginning
+
+1616458456
+ifreund
+andrewrk: nice, I noticed the inefficiency there and left a nonsensical TODO comment you probably saw but didn't try the step of making dedicated zir instructions for them
+
+1616458481
+andrewrk
+yeah you baited me with that comment haha
+
+1616458505
+ifreund
+:D
+
+1616459497
+andrewrk
+I wonder if my changes were enough to convince LLVM to inline the switchbr into each prong in analyzeBody
+
+1616460196
+ifreund
+andrewrk: why are bool_and and bool_or still around when we have bool_br_and/or?
+
+1616460409
+andrewrk
+they're unused and can be deleted
+
+1616460414
+andrewrk
+I think we use those ops in stage1 tho
+
+1616460473
+andrewrk
+which is to say, if you want to play the YAGNI card and delete them, I won't argue, but maybe it would be ok if they stay too
+
+1616460527
+ifreund
+yeah just realized that I didn't use them for the previous and/or astgen either
+
+1616460652
+ifreund
+My take is if we need non-shortcircuiting and/or semantics somewhere in zir, we've found a very odd edge case in the language that maybe shouldn't exist
+
+1616460814
+andrewrk
+feel free to delete them, always easy to resurrect
+
+1616460868
+ifreund
+I do love deleting code :)
+
+1616461037
+ifreund
+nicely done on GenZir.setBlockBody() by the way, that's so much cleaner than copyBodyNoEliding()
+
+1616461255
+andrewrk
+thanks
+
+1616465713
+powerofzero
+andrewrk: Re C dependencies: I am working on bundling a C library into a zig wrapper, and that C library has a number of dependencies that need to also be built, as I want to not have any system dependencies, and I was wondering if there was a convienient way to do this.
+
+1616465744
+andrewrk
+powerofzero, ah, yes, there isn't a good way to do this yet. it's one of the main motivating use cases of the (so far vaporware) package manager
+
+1616465767
+andrewrk
+you might have a chat with matt nite or meghan (both on the discord) and see if a community package manager can fill the gap for you for now
+
+1616465995
+powerofzero
+That might be a good idea. I haven't looked at either very well. Doing it manually as I have benn will be annoying for all the recursive dependencies. Do you happen to know off the top of your head if either of them supports logic that can inject config macros into the C projects?
+
+1616466043
+andrewrk
+I vaguely recall that meghan's can do that (zigmod)
+
+1616466079
+powerofzero
+Ok, I'll look at that first. Thanks!
+
+1616466367
+andrewrk
+posted an early benchmark  from the zir-memory-layout branch:
+
+1616466381
+andrewrk
+I'm up to 1.8 million lines per second on my laptop
+
+1616466440
+g-w1
+im going to check the binary size of the compiler
+
+1616467362
+andrewrk
+oh good call I didn't put that in the benchmark results
+
+1616467499
+g-w1
+❯ du ./zig-cache/bin/zig
+
+1616467499
+g-w1
+22M     ./zig-cache/bin/zig
+
+1616467503
+g-w1
+is this right?
+
+1616467513
+g-w1
+for ./zig build -Drelease
+
+1616467530
+andrewrk
+I would measure with `./zig build -Drelease -Dstrip` and also run strip afterwards because stage1 does not strip all the way
+
+1616467560
+andrewrk
+generally one does not include debug symbols with binary size measurements
+
+1616467619
+g-w1
+wow lower binary size too!
+
+1616467681
+g-w1
+no results to fetch
+
+1616467727
+g-w1
+oops: here is the right thing
+
+1616467743
+andrewrk
+yep that's the same results I see :D
+
+1616467765
+andrewrk
+ah it's too early to report that - that's probably due to how much code we have commented out
+
+1616467771
+g-w1
+ohh
+
+1616476252
+noam
+lol, nice :P
+
+1616491107
+ifreund
+that's quite the impressive improvement :)
+
+1616491178
+ifreund
+can't wait until we have the rest of the language implemented for some proper benchmarks
+
+1616495009
+FireFox317
+ifreund,
+
+1616496063
+ifreund
+FireFox317: merged :)
+
+1616496178
+FireFox317
+ifreund, Thanks! :D
+
+1616496265
+FireFox317
+ifreund, i'm a bit confused by the different functions in GenZir, like addBoolBr and addUnNode etc. Some return a Inst.Ref, however other return Inst.Index. Do you know why there is a difference?
+
+1616496303
+ifreund
+FireFox317: for addBoolBr you need to set the body later using the returned index
+
+1616496331
+ifreund
+see: setBoolBrBody()
+
+1616496382
+ifreund
+same with addBlock()/setBlockBody()
+
+1616496615
+FireFox317
+ifreund, okay. But for example addCall() returns a Inst.Index and addFnType() returns a Inst.Ref, however the code in the functions seems to be doing the same thing (casting it to an Index etc)
+
+1616496732
+ifreund
+FireFox317: oh the return type of addCall() should be a ref I'm pretty sure. I'll audit the rest and push fixes
+
+1616496742
+ifreund
+andrewrk: we really need distinct types...
+
+1616496971
+FireFox317
+ah okay, yeah that clears up my confusion thanks! They are all just u32 and the compiler doesn't know that we use them as different types
+
+1616496973
+FireFox317
+i see
+
+1616497543
+ifreund
+I'm going to give the non-exaustive enum trick a try, it can probably be better than the status quo
+
+1616498588
+FireFox317
+ifreund, just for your knowledge, i implemented typeof (#8343)
+
+1616498595
+g-w1
+where is that proposal for non-distinct-types?
+
+1616498683
+daurnimator
+non-exhaustive enums make sense as long as you never need to do math or bitwise operations on the values
+
+1616498827
+ifreund
+we don't need to do much math, so it might be acceptable
+
+1616498858
+ifreund
+it requires adding a bunch of explict casting, but I think it might be worth it
+
+1616498921
+g-w1
+oh definently
+
+1616498999
+daurnimator
+ifreund: distinct types would also require explicit casting
+
+1616499203
+ifreund
+of course
+
+1616499884
+ifreund
+daurnimator: if distinct types only enforced explict coercion in one direction (from u32 to distinct type) that would give pretty much all the safety we want with much less casting
+
+1616499938
+ifreund
+i.e. they could still be used to index arrays
+
+1616499969
+daurnimator
+huh?
+
+1616499974
+ifreund
+but passing a u32 or zir.Inst.Ref where a zir.Inst.Index is required would be a compile error
+
+1616499974
+daurnimator
+indexing arrays would be the opposite
+
+1616500078
+ifreund
+indexing arrays is coercion from disinct type to usize
+
+1616500085
+daurnimator
+right
+
+1616500095
+daurnimator
+but you suggested "from u32 to distinct type" above
+
+1616500103
+ifreund
+that's the other direction
+
+1616502274
+ifreund
+that was a dumb idea though, as it wouldn't catch indexing with an Inst.Ref which is a footgun we need to prevent
+
+1616503596
+g-w1
+why is minuspercent a prefixop?
+
+1616503633
+g-w1
+hmm, this parses pub fn main() void { -%1; }
+
+1616503635
+dutchie
+wrapping negation?
+
+1616503657
+dutchie
+-%@as(u8, 0) => 255
+
+1616503662
+g-w1
+hmm, never heard of that, ok
+
+1616503665
+dutchie
+or something like that
+
+1616503678
+dutchie
+i guess the same as `0 -% n`
+
+1616503686
+g-w1
+yeah
+
+1616503724
+ikskuh
+g-w1: this is actually used often in the computation of checksums
+
+1616503735
+ikskuh
+for(data) |c| { checksum +%= c; }
+
+1616503742
+ikskuh
+write(-%checksum)
+
+1616503748
+g-w1
+interesting, cool
+
+1616503756
+ikskuh
+although i despise this pattern, especially in C
+
+1616503766
+ikskuh
+it feels scary
+
+1616503769
+ikskuh
+i prefer
+
+1616503777
+ikskuh
+for(data) |c| { checksum -%= c; }
+
+1616503777
+ikskuh
+now
+
+1616503796
+ikskuh
+especially because "-unsigned" makes no sense at all
+
+1616504058
+txdv
+when my app is experiencing a load of cache misses, the cpu usage is still shown to be 100% ?
+
+1616504141
+ikskuh
+yes
+
+1616504150
+ikskuh
+a cache miss doesn't mean the CPU is halting
+
+1616504170
+ikskuh
+or another thread could do work in that time (possible in theory, but no idea if actually possible)
+
+1616504276
+txdv
+afaik the cpu tries to execute other instructions which are not waiting for data
+
+1616504412
+ikskuh
+yes, true
+
+1616504435
+ikskuh
+but how do you measure CPU usage
+
+1616504464
+txdv
+cpu perf counters work in mysterious ways and change even between architectures
+
+1616504514
+ikskuh
+yep
+
+1616504523
+ikskuh
+or between CPUs
+
+1616505113
+ed_t
+The std  thread primitives are in a sorry state.  Are there plans in the works to fix this?
+
+1616505171
+g-w1
+protty on discord is working on all the sync stuff i think
+
+1616505258
+ikskuh
+ed_t: what are you missing?
+
+1616505278
+ikskuh
+std.Thread itself cannot be much more beautiful
+
+1616505288
+ed_t
+in my books zig async and Threads are two different domains.  And its really had to use threads without the basic tools.  Async is another story, while the two domains intersect, they are different each with their own strengths.
+
+1616505289
+ifreund
+ed_t:
+
+1616505337
+ifreund
+there is definitely work being done to improve the situation
+
+1616505344
+ifreund
+that stuff isn't exactly easy though
+
+1616505546
+ed_t
+I would like to be able to use Rwlocks, which require Conditions to work (they don't as it stands now, for instance in fn wait(cond: *AtomicCondition, mutex: *Mutex) mutex.unlock lock are used instead of release and acquire)
+
+1616505661
+ed_t
+and yes that stuff is NOT easy.  Though it much easier to working with Threads when the lib functions work...  (this is just a observation - I know and understand zig is still in a state of flux and far from complete)
+
+1616505707
+ikskuh
+i hopy king will just write the whole std.Thread and std.event thingy
+
+1616505741
+ed_t
+king?
+
+1616505750
+ikskuh
+protty
+
+1616505765
+ifreund
+ed_t: there is an rwlock implementation on that branch I linked by the way
+
+1616505779
+ifreund
+though it looks like the branch has grown some conflicts
+
+1616505784
+ed_t
+yes
+
+1616505807
+ed_t
+linked as in added the import to Threads.zig to export it?
+
+1616505867
+ifreund
+?
+
+1616506073
+ed_t
+Sunday's build of zig-git (arch) does not have RwLock exported. if I understand the code Thread.zig should have a pub const RwLock = @import("Thread/RwLock.zig"); in it if RwLocks are available.
+
+1616506102
+g-w1
+is it just const instead of pub const?
+
+1616506138
+ifreund
+ed_t: that pull request is not yet merged
+
+1616506161
+ed_t
+ifreund yes, I realized that
+
+1616506209
+ed_t
+g-wl comments from protty yesterday was not RwLocks as they exist now in std are not buggy
+
+1616506328
+ed_t
+ifreund what process does a pull request follow to get integrated into zig.  I looks like protty has done a lot of work that is pending.
+
+1616506343
+ifreund
+ed_t: ah yeah I see now, RwLock was added in a9667b5a but not exposed in std.thread
+
+1616506403
+ifreund
+ed_t: it needs to be reviewed and tested by someone with commit access to the ziglang repo and who feels up to the task
+
+1616506443
+ifreund
+smaller PRs are
+
+1616506586
+ed_t
+in my case I am just trying to optimize some code.  It usings thousands of threads per second, is pretty well lockless but does not gain me much and it should.  From experience with other langs, creating threads costs.  I could use a threadpool but its overkill for this program, so I tried the primitives, which would make things simple.
+
+1616506851
+ifreund
+andrewrk: so while working on using non-exhaustive enums for zir.Inst.Ref/Index I have found many minor screwups and a pretty major one that I'm not 100% sure what to do about
+
+1616506878
+g-w1
+ifreund: what is the major one, I thought i kind of saw one in varDecl, but wasn't sure
+
+1616506880
+ifreund
+GenZir.instructions currently claims to be a list of Refs but we only insert indexes indo it
+
+1616506922
+g-w1
+ok
+
+1616506946
+ifreund
+when reading from it we usually treat it as indexes, even if something say we are treating it as refs, except in the case of function arguments where we really do treat it as refs
+
+1616507118
+ifreund
+actually wait, function arguments aren't using GenZir.instruction directly, there's not problem except that we are using the wrong type for the list
+
+1616507148
+ifreund
+I need to take a break from this and come back, my head is swimming with indexes but things are looking quite promising
+
+1616508338
+daurnimator
+ikskuh:
+
+1616508555
+FireFox317
+g-w1, yeah there is an issue with vardecl indeed. only happends when it is a `const` and calling a function: `const x = foo();`
+
+1616508586
+g-w1
+what happens otherwise?
+
+1616508595
+FireFox317
+hits the assert on line astgen.zig:1335
+
+1616508606
+FireFox317
+var x = foo(); works fine
+
+1616508619
+g-w1
+with inferred const it asserts?
+
+1616508625
+RadekCh
+Hi guys, I'm new to zig and there is at least one thing which confuses me with returning errors. Please look at an example:
+
+1616508625
+RadekCh
+fn failingFunction(a : i32) error{Oops}!i32 {
+
+1616508626
+RadekCh
+if (a == 0) {
+
+1616508626
+RadekCh
+return error.Oops;
+
+1616508627
+RadekCh
+}
+
+1616508627
+RadekCh
+return 1;
+
+1616508628
+RadekCh
+}
+
+1616508629
+RadekCh
+test "returning an error" {
+
+1616508629
+RadekCh
+var compiles = failingFunction(1);
+
+1616508630
+RadekCh
+var doesnt_compile = failingFunction(1) catch |err| {
+
+1616508630
+RadekCh
+std.debug.print("Error caught", .{});
+
+1616508631
+RadekCh
+};
+
+1616508631
+RadekCh
+}
+
+1616508638
+dutchie
+RadekCh: please use a pastebin
+
+1616508645
+FireFox317
+zigbin.io :)
+
+1616508671
+dutchie
+as well as being annoying for other channel users, you are at risk of being kicked off the network by freenode's antispam measures
+
+1616508695
+FireFox317
+g-w1, nope even const x: i32 = foo(); fails
+
+1616508710
+g-w1
+hmm, it worked for me lemme check it out
+
+1616508711
+RadekCh
+
+
+1616508791
+dutchie
+your catch block has to return an i32 or bail out in some other way as well
+
+1616508808
+dutchie
+what does the doesntcompile variable get set to otherwise?
+
+1616508848
+dutchie
+errors aren't exceptions or anything, they are just values that don't interact with control flow
+
+1616508951
+RadekCh
+hmm, ok. but this doesn't work as well:
+
+1616508952
+RadekCh
+.\main.zig:44:16: error: expected type 'void', found 'comptime_int'
+
+1616508953
+RadekCh
+return 1;
+
+1616508953
+RadekCh
+^
+
+1616508992
+RadekCh
+I've added a return 1 in catch body as suggested
+
+1616509018
+dutchie
+maybe i should have been more precise: `return` will return from the function, you need to label the block and use break :blk value instead
+
+1616509020
+dutchie
+
+
+1616509024
+FireFox317
+g-w1, changing astgen.zig:1326 to subtract 1 instead of 2, fixes the issue
+
+1616509047
+g-w1
+hmm, that must have been an off by one error in my copying :P
+
+1616509078
+FireFox317
+g-w1, i have a feeling that we're just using one less instruction
+
+1616509086
+FireFox317
+or it was a error in your copying indeed
+
+1616509108
+g-w1
+makes sense
+
+1616509128
+RadekCh
+ahh, ok. Now it works. thanks!
+
+1616509143
+RadekCh
+Have to say though this is not very intuitive
+
+1616509172
+RadekCh
+so the problem was that the catch block did not "return" any value
+
+1616509190
+FireFox317
+RadekCh, yep, the catch block did not "break" a value
+
+1616509202
+FireFox317
+in Zig functions return values and blocks break values
+
+1616509215
+RadekCh
+ok, good to know, thanks!
+
+1616509427
+txdv
+guys use
+
+1616509440
+txdv
+o someone already suggested it
+
+1616509470
+FireFox317
+g-w1, still something is wrong tho (with result location stuff). `const x: i32 = foo();` still emits an alloc instruction whereas that shouldn't be needed
+
+1616509507
+g-w1
+why shouldn't an alloc be needed?
+
+1616509604
+FireFox317
+because its const and the type is a i32, thus there is no stack space needed
+
+1616509620
+g-w1
+an i32 takes up space
+
+1616509664
+FireFox317
+you remember `nodeMayNeedMemoryLocation`?
+
+1616509670
+g-w1
+yes
+
+1616509695
+g-w1
+on call, it returns true
+
+1616509731
+FireFox317
+yes, but the alloc should be removed afterwards, because after we generated the call and everything, we know that we dont need a memory location, and thus the alloc can be removed
+
+1616509742
+FireFox317
+andrewrk, implemented that and it worked before this rework
+
+1616509767
+g-w1
+you are talking after sema?
+
+1616509880
+g-w1
+also, i still dont see how i32 doesn't need a memory location
+
+1616510229
+FireFox317
+g-w1, look at the TZIR for `fn foo() i32 { return 1; } export fn main() c_int { const x: i32 = foo(); return x }`. You can see in the TZIR that there is a intcast and in the intcast it only uses %2, %1 (the alloc) is never used, so it should be removed
+
+1616510300
+FireFox317
+or i'm confused by blocks vs function. Because blocks actually remove the allocs, but i thought that was also the case for functions.
+
+1616510616
+g-w1
+FireFox317: im getting some other assertions related to src locs when I try that, can you pastebin the ir that you get?
+
+1616511032
+FireFox317
+g-w1,
+
+1616511059
+g-w1
+thanks
+
+1616511097
+g-w1
+ahh hmm i see
+
+1616513300
+FireFox317
+g-w1, okay i think i found the bug
+
+1616513312
+FireFox317
+ifreund, again Inst.Ref vs inst.Index
+
+1616513494
+ifreund
+Oh I'm already convinced that we
+
+1616513530
+g-w1
+is it worth touching stage1 for?
+
+1616513536
+ifreund
+zir.Const and Ref are a very good optimization though, so they definitenly shouldn't go anywhere
+
+1616513549
+ifreund
+g-w1: I've got a WIP fix using non-exhaustive enums
+
+1616513557
+g-w1
+ok
+
+1616513573
+ifreund
+just need to get my other work done so I can get back to it and hopefully finish up tonight
+
+1616516467
+cepheus
+mainly asking because macOS's special-snowflake framework system
+
+1616516629
+ifreund
+cepheus: I think the matrix bridge you are using may have dropped the first half your question
+
+1616516656
+cepheus
+yeah looks like it flaked out for a bit there
+
+1616516667
+cepheus
+idle q, is it planned that when zld matures, zig will shed support for using system linkers entirely?
+
+1616516811
+noam
+
+
+1616516917
+g-w1
+cepheus: probably, it already uses in-binary lld for things too
+
+1616516952
+noam
+That's actually a realllly nice source file
+
+1616517023
+cepheus
+my understanding is upstream's opinion on macOS frameworks is "use system ld" and as such lld's framework support is seemingly non-functional on recent versions of macOS
+
+1616517152
+mikdusan
+right now zig prefers to use lld which has elf,macho,coff flavours; the lld macho flavour is lacking greatly,
+
+1616517168
+mikdusan
+so as a temp workaround we have an env var to use apple system linker
+
+1616517212
+mikdusan
+and the short-med term solve for that is zig is rolling it's own macho flavoured linker mostly implemented by 1 person so far and the pace of development is strikingly fast.
+
+1616517345
+danyspin97
+does std.Thread.spawn only accept functions with one argument?
+
+1616517411
+g-w1
+put the arguments in the context
+
+1616517429
+cepheus
+i do like zig's niche of "multi-purpose cross-compiler toolkit that comes with a free programming language"
+
+1616517430
+danyspin97
+g-w1: like..?
+
+1616517483
+g-w1
+spawn(fnwithonearg, .{ arg })
+
+1616517494
+cepheus
+anyway i did see that zld is getting mach-o support, but i got the feeling that framework support is something of reasonably high complexity and would be a lower priority/longer term feature (or potentially not supported)
+
+1616517555
+danyspin97
+g-w1:   @compileError("expected function with single argument
+
+1616517639
+mikdusan
+cepheus: the difficulty is not with frameworks but that many/most SDK frameworks (and dylibs) do not ship with binaries. they ship .tbd files intsead
+
+1616517706
+mikdusan
+so like it or not, moving forward, one needs to use SDK to build stuff. and therefore
+
+1616517758
+mikdusan
+right now apple system linker is the only thing that does it for
+
+1616517796
+mikdusan
+iirc, llvm's lld does it
+
+1616517810
+mikdusan
+and I think zld as of now does not yet parse .tbd files
+
+1616517883
+dutchie
+danyspin97: you can simulate multiple args by passing a struct
+
+1616517997
+danyspin97
+dutchie: can I get the return value from a function?
+
+1616518043
+dutchie
+not from one you've spawned in a thread, no. you'll have to use a global (protected by a mutex) or channels or something
+
+1616518091
+danyspin97
+can I contribute to zig for this? :)
+
+1616518101
+danyspin97
+they are all suboptimal and I'd rather contribute
+
+1616518125
+g-w1
+what is subopimal?
+
+1616518134
+dutchie
+i'm not sure there even is a portable way to return a value from a separate thread
+
+1616518150
+dutchie
+and multiple args to a thread function would require varargs which got removed anyway
+
+1616518173
+g-w1
+? isn't context a tuple with all the args
+
+1616518174
+danyspin97
+g-w1: using a global rather than passing 2 values from a thread
+
+1616518174
+cepheus
+yeah, i didn't expect it would be easy or simple to reimplement framework support, and i'm not demanding people go support it or anything, i was just curious about the evolution of this
+
+1616518176
+mikdusan
+can the context have an out field set by thread?
+
+1616518185
+danyspin97
+g-w1: doesn't work
+
+1616518188
+g-w1
+hm
+
+1616518206
+danyspin97
+I mean, that's the basics of threading
+
+1616518243
+cepheus
+i'm not really disparaging lld for this either, apple is not really interested in shipping this into lld and lld are not really interested in maintaining parallel support for feature-equivalency for mach-o
+
+1616518318
+mikdusan
+cepheus: there was some hint of promise for lld macho getting new development, but whatever work has been done, it hasn't been enough to keep up with Big Sur development needs
+
+1616518355
+cepheus
+which is understandable given that the macos linker has source releases and the only big use case commercially for its support would be building iOS apps without a Mac, which is difficult given the non-existence of an SDK with supportive licensing terms
+
+1616518403
+mikdusan
+the interesting thing tho, is because of .tbd files, all you need is headers+tbd and cross compile can work with a functional macho linker
+
+1616518436
+cepheus
+i assume the issue is that TBD is undocumented and subject to change between OS releases
+
+1616518450
+cepheus
+well, at least it's got a befitting name
+
+1616518455
+mikdusan
+it's yaml that describes symbols and versions found in .dylibs
+
+1616518496
+mikdusan
+and no public spec, BUT apple has released tapitools (I have not have the right tarball basename there) that has sources for reading and manipulating those files
+
+1616518512
+mikdusan
+so while it's not public spec I think it's managable to implement our own parser
+
+1616518522
+cepheus
+so sort of like a more featureful version of .def files from MSVC, in essence
+
+1616518655
+mikdusan
+so here's an example. this is the webkit framework that is shipped with SDK. no binaries. just headers/tbd files:
+
+1616518657
+mikdusan
+
+
+1616518743
+mikdusan
+so the linker would take `install-name` and
+
+1616518775
+rom16384
+I build an Hello World with zig build-exe -O ReleaseSmall, and it's in fact small, but the executable contains the full path from where it was build including my username?
+
+1616518802
+mikdusan
+rom16384: if you add `--strip` does it help?
+
+1616518843
+rom16384
+It does. —strip fixes that
+
+1616518856
+rom16384
+I used the strip command, but that didn't work
+
+1616518896
+g-w1
+ah
+
+1616518975
+dutchie
+that's odd, strip should do the same thing. what platform are you on?
+
+1616518982
+mikdusan
+should it?
+
+1616518997
+dutchie
+should it not?
+
+1616519024
+dutchie
+it does when i test. build -O ReleaseSmall, run strings and out pops my homedir. strip and it's gone
+
+1616519094
+mikdusan
+I assume a strip command only strips things it explicitly knows about. ie: if it supports up to version dwarf2 it won't strip dwarf4.
+
+1616519142
+dutchie
+yeah, that's why i asked about the platform. i probably really meant "strip version"
+
+1616519380
+rom16384
+mac os 10.15 Catalina
+
+1616519462
+rom16384
+strip from XCode Command Line Utilities
+
+1616519631
+mikdusan
+using a recent zig master?
+
+1616519679
+mikdusan
+i've seen glitches when the new zld is used (which is default) now. and strip doesn't work on a zld-artifact executable
+
+1616519698
+rom16384
+zig version -> 0.7.1 (From homebrew)
+
+1616519712
+rom16384
+the —strip works well
+
+1616519966
+cepheus
+yeah i've seen similar issues w/ 0.7.1, any combination of flags with xcode strip gives "error: symbols referenced by indirect symbol table entries that can't be stripped"
+
+1616520015
+constatinus
+hello, im getting an error: "use of undeclared identifier 'ret'"; im trying to make a generic struct, and i cant get it to iymport iself; here is my code:
+
+1616520065
+constatinus
+the code isnt that complete but it still would give the same error
+
+1616520085
+constatinus
+alright im being so dyslexic now
+
+1616520089
+mikdusan
+cepheus: catalina
+
+1616520090
+cepheus
+constatinus:  you should be able to use @Self() instead of ret on line 12 of your example
+
+1616520132
+g-w1
+s/Self/This
+
+1616520144
+cepheus
+whoops sorry
+
+1616520165
+mikdusan
+the problem is people figured workarounds and options to force CommandLineTools to install /usr/include, and even now homebrew does a CommandLinesTool install in a fashion on Big Sur that poisoned by pristine big sur system
+
+1616520173
+mikdusan
+s/by/my/
+
+1616520208
+constatinus
+alright is works now, thanks, thanks. wondering why it isnt standard practice when self: retvalue is so broken
+
+1616520313
+cepheus
+well system dylibs (including frameworks, I think) are entirely eliminated from the filesystem as of big sur now that they all live in the sealed linker cache
+
+1616520343
+mikdusan
+right but you're on catalina, for my reminder, can you verify is /usr/lib populated?
+
+1616520475
+cepheus
+you may be thinking of rom16384 , i was just butting in to echo that strip doesn't work correctly for executables output by zig 0.7.1
+
+1616520494
+mikdusan
+oh oops
+
+1616520677
+cepheus
+no worries, i am causing a bit of confusion
+
+1616524343
+andrewrk
+ifreund, GenZir.instructions is supposed to b be a list of Indexes
+
+1616524483
+andrewrk
+ifreund, btw if we make Ref an enum, we may as well merge it with the zir.Const enum, right?
+
+1616524499
+g-w1
+ooh thats nice
+
+1616524538
+ifreund
+andrewrk: I acually already did that on my branch :D I think it's pretty clean
+
+1616524552
+ifreund
+thanks for the confirmation on GenZir.instructions
+
+1616524630
+noam
+
+
+1616524632
+noam
+:)
+
+1616524645
+ifreund
+makes checking for "null" Refs nicer too, we can do `if (foo != .none)`
+
+1616524646
+noam
+Fixed some scoping bugs, that works now :)
+
+1616524725
+andrewrk
+nice progress
+
+1616524732
+noam
+Thanks :)
+
+1616524844
+andrewrk
+ifreund, should we wait for your distinct type improvements before merging FireFox317_'s PRs?
+
+1616524887
+ifreund
+andrewrk: no, go ahead and keep the work rolling, I can rebase. Probably wont have distinct types done tonight
+
+1616524935
+ifreund
+there are hardly any logic changes so it should be comparativly easy to rebase
+
+1616524958
+andrewrk
+nice
+
+1616524996
+noam
+Enum literals don't allow spaces, right? `. foo` is invalid?
+
+1616525030
+g-w1
+it is invalid, but .@" foo" is valid
+
+1616525054
+noam
+I lost a bit to not realizing there was an accidental dot at the beginning of a line :P
+
+1616525155
+ifreund
+noam: the parser will parse `. foo` and `.foo` the same
+
+1616525161
+FireFox317_
+andrewrk, i wasnt sure if i solved #8346 the right way, but it did work :)
+
+1616525164
+ifreund
+the grammar agrees with this
+
+1616525167
+noam
+ifreund: yours might, mine won't ;)
+
+1616525168
+g-w1
+it will? :O
+
+1616525183
+ifreund
+g-w1: see PrimaryTypeExpr
+
+1616525199
+noam
+ifreund: this is one of those "it won't affect users so I'm willing to disagree" things
+
+1616525281
+ifreund
+if your tokenizer/parser doesn't handle this according to the grammar, I wouldn't be surprised to learn about other discrepencies
+
+1616525319
+noam
+it's invalid syntactically; therefore, the specified grammar is wrong.
+
+1616525387
+ifreund
+noam: no, it's not invalid syntactically
+
+1616525392
+ifreund
+try it
+
+1616525396
+noam
+there is no case where it is valid syntax
+
+1616525402
+g-w1
+yeah this compiles just fine for me: pub fn main() void {    const a = . x; }
+
+1616525413
+noam
+...wait, hold on
+
+1616525417
+noam
+> it is invalid
+
+1616525421
+noam
+You're saying that's not correct?
+
+1616525433
+noam
+I was under the impression you were saying the parser accepts it but a different stage rejects it
+
+1616525439
+ifreund
+nope
+
+1616525442
+ifreund
+it's vaild zig
+
+1616525443
+noam
+okay, gotcha
+
+1616525444
+ifreund
+@import("std").debug.print("{}\n", .{. BTN_LEFT});
+
+1616525448
+noam
+
+
+1616525496
+ifreund
+and when I said that the parser will parse the two things the same, this means that no later steps will see any difference between the two
+
+1616525525
+ifreund
+infact it's the tokenizer that is handling this
+
+1616525543
+ifreund
+the parser just sees a dot token followed by an identifier
+
+1616525544
+andrewrk
+noam, fyi the grammar in
+
+1616525574
+g-w1
+zyg is actually using that (with some modifications for 1717 as the basis for the parser)
+
+1616525574
+andrewrk
+in other words we actually do have a spec for the grammar
+
+1616525578
+noam
+andrewrk: I have a copy of the grammar :)
+
+1616525583
+andrewrk
+cool
+
+1616525584
+noam
+zyg/design/grammar
+
+1616525600
+noam
+It's tweaked with 1717 and a modified asm syntax :P
+
+1616525616
+noam
+I've been looking at the grammar constantly
+
+1616525659
+dimenus
+noam: the syntax in #5241?
+
+1616525659
+ifreund
+noam: your grammar's out of date by the way, I've made a few minor changes since the AST memory rework branch
+
+1616525703
+ifreund
+and your grammar also says that `.   foo` is the same as `.foo` :P
+
+1616525725
+FireFox317_
+andrewrk, thanks for clearing up the difference between Ref and Index :) I actually figure this out myself too, after i typed the message in the PR :)
+
+1616525726
+noam
+dimenus: no, though I'm considering adding that
+
+1616525728
+noam
+ifreund: I noticed
+
+1616525738
+noam
+e.g. callconv
+
+1616525740
+andrewrk
+FireFox317_, thanks for the patches!
+
+1616525744
+noam
+I use callconv(.Inline) but haven't updated the grammar
+
+1616525766
+noam
+...here's a fun bug. Removing a comment causes a compilation failure.
+
+1616525773
+FireFox317_
+pretty fun too!
+
+1616525923
+noam
+...and they give the same parse tree? Wat.
+
+1616526002
+noam
+Is there a reason that enum literals allow spacing?
+
+1616526010
+noam
+Seems way too easy to subtly introduce bugs with them
+
+1616526047
+ifreund
+write up a proposal if you feel like it, it wouldn't be terribly hard to implement
+
+1616526072
+ifreund
+or maybe it would...
+
+1616526324
+ifreund
+guess if you make `.foo` a single token you have to disallow e.g. `Foo. bar()` and other cases of that token as well
+
+1616526349
+ifreund
+which might not be a bad thing if we can provide good error messages
+
+1616526405
+ifreund
+zig fmt usage makes this a non-issue of course
+
+1616527134
+noam
+...that was a dumb bug. Gave the index of an identifier node instead of the string to the scope tracker so scopes didn't resolve correctly :P
+
+1616527207
+andrewrk
+looks like noam needs distinct types too
+
+1616527215
+g-w1
+yep :)
+
+1616527224
+noam
+andrewrk: lol :P
+
+1616527242
+noam
+andrewrk: I'm actually fully intending to rewrite parts of this in zig once it can
+
+1616527249
+andrewrk
+I do think it's interesting that I personally didn't run into this class of bugs until I started applying Data Oriented Design principles
+
+1616527252
+noam
+Distinct types only make that more worthwhile
+
+1616527286
+noam
+(not to replace the C, but to copy Zig's stage0/stage1, except with equal functionality for both)
+
+1616527303
+andrewrk
+ah so you plan to make zyg a hybrid, just like zig stage1 is a hybrid?
+
+1616527306
+noam
+Yeah
+
+1616527310
+andrewrk
+neat
+
+1616527322
+noam
+A self-hosted hybrid that can be bootstraped from
+
+1616527329
+noam
+I intend a C frontend inZig, too ;p
+
+1616527357
+andrewrk
+yeah the key observation there is that you have to use a C toolchain to bootstrap, which means you have a linker available, so your stage0 only has to output an object file. further observation: actually it only has to output the same language that it is written in (C)
+
+1616527377
+andrewrk
+noam, did you see
+
+1616527387
+noam
+plumbing...
+
+1616527405
+andrewrk
+looks like he's stuck on codegen, not sure if he wants to try to plug into zig stage2 backend or do something else
+
+1616527407
+noam
+just preprocessing and parsing? Not bad
+
+1616527425
+noam
+I'd hook into my existing analysis and codegen
+
+1616527426
+g-w1
+i dont think it has typification or sema
+
+1616527431
+andrewrk
+ah
+
+1616527458
+andrewrk
+I told him if he wanted to do an experimental upstreaming I'd support it
+
+1616527477
+g-w1
+ooh thats cool
+
+1616527508
+noam
+Working on getting the UART working now :)
+
+1616527619
+noam
+This should push it a bit further, since it's MMIO with offsets
+
+1616528719
+noam
+> Unrecognized builtin: @Self
+
+1616528721
+noam
+Time to make this
+
+1616528752
+g-w1
+s/Self/This
+
+1616528757
+noam
+...changed?
+
+1616528766
+noam
+Or am I just dumb?
+
+1616528824
+g-w1
+its been around since 0.3.0 at least
+
+1616528829
+noam
+so the latter
+
+1616528831
+noam
+:P
+
+1616528976
+ugla
+but it's often `const Self = @This()` from what I've seen :)
+
+1616529048
+noam
+ahhhh, that would do it
+
+1616529899
+andrewrk
+oh I just realized: WipZirCode => AstGen, astgen.zig => AstGen.zig
+
+1616529912
+andrewrk
+naming is hard
+
+1616530058
+dimenus
+should intCast in codegen be a no-op if the signed-ness is the same and the dest type is >= in size?
+
+1616530399
+andrewrk
+dimenus, yes in this case it does the same thing as coercion with @as
+
+1616530422
+andrewrk
+also if the operand is comptime known, @intCast lets you do it based on the value, not based on the type
+
+1616530508
+andrewrk
+dimenus, which backend are you looking at?
+
+1616531144
+ifreund
+andrewrk: wow, naming stuff like that is so obvious in retrospect :D
+
+1616531243
+andrewrk
+I'll wait for your refactoring to land first :)
+
+1616531264
+ifreund
+appreciated :)
+
+1616531282
+ifreund
+I'm currently sitting down to get back into it
+
+1616531305
+andrewrk
+starting to cruise through these test cases
+
+1616531309
+andrewrk
+I think we're kinda close actually
+
+1616531370
+ifreund
+yeah, it's not nearly as much as zig fmt
+
+1616531378
+ifreund
++ astgen and the parser
+
+1616531420
+andrewrk
+the big question: what about this one now?
+
+1616531422
+andrewrk
+
+
+1616531500
+g-w1
+this one is breaking for me rn
+
+1616531533
+andrewrk
+it works :D the wrong source loc on update is fixed now
+
+1616531548
+andrewrk
+all that LazySrcLoc stuff paid off
+
+1616531556
+g-w1
+is it faster?
+
+1616531583
+andrewrk
+haven't checked, but it's no longer pointing at an incorrect line,column
+
+1616531603
+g-w1
+ooh nice
+
+1616531678
+FireFox317_
+yeah i think we are quite close too
+
+1616531698
+FireFox317_
+i can look at optionals maybe, if nobody else is doing that already
+
+1616531712
+andrewrk
+I'm about to break for lunch, got nothing WIP
+
+1616531746
+g-w1
+i have some exams for the next few days, so i probably wont start working on it again till thursday, maybe friday
+
+1616531800
+dimenus
+andrewrk: i'm in codegen.zig:genIntCast
+
+1616532089
+noam
+andrewrk: "naming is hard" that's definitely not
+
+1616532208
+noam
+It feels so good actually getting work done after talking about it for months :D
+
+1616532981
+vent
+Is there an equivalent of sscanf in Zig's std?
+
+1616534259
+andrewrk
+vent, nope, but a lot of people want it!
+
+1616534393
+noam
+I need those distinct types
+
+1616534397
+noam
+I need them so much
+
+1616534422
+noam
+Ended up having to deliberately trigger a crash so I could get a backtrace which led me to realize that yes, I'm still using the wrong indexes in some places ew
+
+1616535569
+powerofzero
+Hi, if I have a small propsal for the standard library (just a couple of lines to change in one function, should I submit an issue for disscussion, or just submit a PR and have the disscussion on that?
+
+1616536092
+ifreund
+powerofzero: just submit a PR
+
+1616536149
+powerofzero
+Ok. Thanks. (also I realized that I wasn't clear that it does involve a breaking api change, does your answer stand?_
+
+1616536194
+g-w1
+you can just ask here if it is too breaking
+
+1616536243
+ifreund
+If it's something as simple as a few lines, yes a PR is better as it is much more clear exactly what change is proposed
+
+1616536265
+powerofzero
+ok. Thanks
+
+1616536266
+ifreund
+and yeah asking here if it is a good idea also doesn't hurt
+
+1616536479
+vent
+andrewrk: Ah fair enough. I imagine things like that may ease the transition from C for some people. There may be a better way than copying C's std though! Thanks for the answer :)
+
+1616536517
+powerofzero
+ifreund, g-w1: I want to change LibExeObjStep.defineCMacro to take separate macro name and value slice arguments. This makes cases where you have a known key but the value is not comptime (of the build.zig) known much easier to write, as the build.zig doesn't need to do allocations to concatanate the macro and value together.
+
+1616536614
+powerofzero
+Thee alternatives are to (a) not do it at all (b) do it in a new function (defineCMacroKeyValue?) or (c) do it, but also keep the old behavior in a different function (defineCMacroFlag?)
+
+1616536653
+andrewrk
+powerofzero, the reason to open an issue first would be to save yourself the effort of implementing it, in case we wanted to go a different direction with the use case
+
+1616536759
+powerofzero
+andrewrk: I get that, though in this case the implementation is rather small, and often small things have a different proccess.
+
+1616536772
+g-w1
+a pr is probably fine here then
+
+1616537201
+noam
+...
+
+1616537206
+noam
+andrewrk: I actually have a printed copy of the grammar
+
+1616537213
+noam
+from when I was doing the initial pen-and-paper design :P
+
+1616537242
+andrewrk
+ha, fun
+
+1616537249
+andrewrk
+powerofzero, yep, makes sense!
+
+1616537287
+noam
+I should just hang it up in the street lol
+
+1616537292
+noam
+Would be amusing :P
+
+1616537439
+FireFox317_
+andrewrk, now i found an issue where it is not eliding the .store_to_block_ptr
+
+1616537497
+andrewrk
+darn
+
+1616537515
+noam
+Found wha tI'm pretty sureis the last scoping issue
+
+1616537519
+noam
+But I've said that three times, at least
+
+1616537542
+noam
+with e.g. `RK.foo();` in start, it's analyzing RK as a child of start instead of as a child of the root scope. Oops.
+
+1616537603
+FireFox317_
+actually there is not even a .store_to_block_ptr in the instruction list, only an as_node, alloc, and then a block
+
+1616537646
+andrewrk
+FireFox317_, want me to have a look? which test case is that?
+
+1616537673
+FireFox317_
+i was working on orelse when i ran into it, but i can repro it with a simple if test:
+
+1616537708
+FireFox317_
+andrewrk: `var z: i32 = 2; const x: i32 = if(z == 1) @as(i32, 1) else @as(i32, 2); return x;`
+
+1616537812
+andrewrk
+FireFox317_, you're hitting this? assert(parent_zir.items.len == expected_len)
+
+1616537818
+FireFox317_
+correct andrewrk
+
+1616537838
+FireFox317_
+so the init_scope.instructions only contain 3 instructions: as_node, alloc and a block
+
+1616537861
+FireFox317_
+so i think the problem is that the instructions that are in the block are not added to the parent block
+
+1616537869
+andrewrk
+zir_datas[src_inst].bin.lhs is a Ref, init_scope.rl_ptr is an Index
+
+1616537899
+FireFox317_
+thats not the issue tho
+
+1616537901
+andrewrk
+oh?
+
+1616537914
+FireFox317_
+its not even getting into that if
+
+1616537926
+FireFox317_
+because there are only 3 instructions: as_node, alloc and a block
+
+1616537995
+FireFox317_
+the instructions that are in the block are not in the parent block (which is init_scope in this case) thats the issue i think
+
+1616538066
+andrewrk
+FireFox317_, ok so we expected the rvalue() of the expr() call on line 1295 to add a store_to_block_ptr instruction
+
+1616538091
+FireFox317_
+andrewrk, correct
+
+1616538151
+FireFox317_
+so again, that expr() has 3 instructions: as_node, alloc and a block. But the instructions in the block are not added to the list, thus we will not find the store_to_block_ptr instruction
+
+1616538154
+FireFox317_
+if that makes sense
+
+1616538172
+andrewrk
+oh I see, did ifExpr not copy the instructions to the parent block?
+
+1616538211
+FireFox317_
+ahh
+
+1616538215
+FireFox317_
+yeah something like that
+
+1616538240
+andrewrk
+oh in master branch, finishThenElseBlock passes the parent scope to rvalue. I changed that here, my mistake
+
+1616538272
+andrewrk
+let me make this change because I remember what I did
+
+1616538279
+andrewrk
+don't forget the other Ref/Index issue tho
+
+1616538290
+FireFox317_
+andrewrk, yeah great! :)
+
+1616538312
+andrewrk
+the store_to_block_ptr was incorrectly in the inner block
+
+1616538417
+FireFox317_
+the other Ref/Index issue is not really an issue now, because when we create the .store_to_block_ptr instruction (Bin instruction thus it expects Refs), we always pass in block_scope.rl_ptr (which is an Index)
+
+1616538462
+FireFox317_
+which is astgen.zig:3845
+
+1616538487
+FireFox317_
+there we pass an Index into addBin (which expects a Ref)
+
+1616538710
+andrewrk
+we need to respect Ref/Index even though the type system doesn't catch it yet, to make it easier for ifreund to fix conflicts (and also to help us make sense of what's going on)
+
+1616538756
+FireFox317_
+andrewrk, you are absolutely right :)
+
+1616538765
+andrewrk
+pushed the store_to_block_ptr fix
+
+1616538777
+FireFox317_
+thanks, lets see if that fixes my orelse wip branch :)
+
+1616538781
+g-w1
+hmm, is the only difference between ref and index that ref can point to a Const?
+
+1616538797
+andrewrk
+yes, also a ref can point to a function arg
+
+1616538811
+ifreund
+andrewrk: by the way, I've decided to only make Inst.Ref an enum and leave Inst.Index a plain alias for u32
+
+1616538818
+andrewrk
+makes sense
+
+1616538822
+andrewrk
+that will go a long way
+
+1616538846
+ifreund
+yeah, and I haven't seen any screw ups that making Inst.Index an enum as well would have prevented yet
+
+1616538878
+ifreund
+note as well that this wasn't a problem on the ast-memory-layout branch, only now
+
+1616538940
+andrewrk
+the one g-w1 ran into was passing a byte offset (u32) where a node offset (u32) was expected, also he ran into passing a token offset (u32) where a node offset was expected
+
+1616538968
+andrewrk
+I agree though, the most critical one is zir.Inst.{Index,Ref}
+
+1616538981
+ifreund
+ok, s/wasn't a problem/wasn't as much of a problem/
+
+1616539158
+andrewrk
+I'm doing the @TypeOf stage2 test case
+
+1616539215
+ifreund
+andrewrk: yeah, giving the offsets distinct types would be sweet, but using non-exhaustive enums for that would be kinda miserable due to the fact that you need to do math with them
+
+1616539229
+andrewrk
+yeah
+
+1616539236
+FireFox317_
+andrewrk, @TypeOf should be implemented :)
+
+1616539244
+FireFox317_
+but i didnt test the whole testcase xd
+
+1616539253
+andrewrk
+FireFox317_, test case is hitting an assert
+
+1616539260
+FireFox317_
+i see :P
+
+1616539263
+andrewrk
+I'm just going in order in test/stage2/test.zig :D
+
+1616539277
+FireFox317_
+ah okay, i'm doing orelsecatchexpr currently
+
+1616540273
+FireFox317_
+andrewrk, i created #8348. optional unwrapping seems to be working, however orelse results in a segfault in a Sema.zig in analyzeIsNull (looks like a type is not resolved or smth)
+
+1616540287
+FireFox317_
+its getting to late here to work on it, so i thought i just push the work i did
+
+1616540333
+FireFox317_
+you can continue my work, or otherwise i will try to solve it tomorrow :)
+
+1616540348
+andrewrk
+nice, thanks!
+
+1616541177
+FireFox317_
+andrewrk, i might have found the problem :)
+
+1616541189
+andrewrk
+do tell
+
+1616541199
+andrewrk
+I see you fell into that classic trap of trying to stop working for the evening
+
+1616541280
+FireFox317_
+I removed the makeOptionalTypeResultLoc function (because it was only used in one place) and then did a bad refactor
+
+1616541287
+FireFox317_
+andrewrk, i did indeed haha
+
+1616541295
+FireFox317_
+did not fix it unfortunately
+
+1616541900
+ifreund
+andrewrk: if you have a minute, should GenZir.rl_ptr be a Ref or should the ResultLoc tagged union be modified?
+
+1616541918
+ifreund
+I haven't taken the time to understand the new result location code yet
+
+1616541989
+andrewrk
+ifreund, I believe rl_ptr should be an Index
+
+1616542003
+andrewrk
+uh sorry wait let me double check that
+
+1616542078
+andrewrk
+ifreund, other way. I think rl_ptr should be a Ref, to match ResultLoc.ptr
+
+1616542102
+ifreund
+cool, thanks for taking a look
+
+1616542252
+andrewrk
+here's a concrete reason why: ResultLoc.ptr could be set to be the argument of a function, which is representable as a Ref but not an Index
+
+1616542639
+ifreund
+makes sense
+
+1616542640
+FireFox317_
+andrewrk, quick question: in my PR #8348. How do i make sure that the `const cond = try parent_gz.addUnTok(cond_op, operand, op_token)` ends up in the block? currently it is added to the parent
+
+1616542666
+ifreund
+FireFox317_: use something other than parent_gz
+
+1616542768
+FireFox317_
+ifreund, yeah make sense lol, its late xd
+
+1616542815
+ifreund
+I know the feeling, I can feel my self slowing down as well as the clock approaches 1am :D
+
+1616542836
+andrewrk
+ifreund, nice, with your clarifications about rl_ptr I can get rid of the AsIndex variants
+
+1616542879
+andrewrk
+that was a well-timed question heh
+
+1616542880
+FireFox317_
+nice, fixed the issue :))
+
+1616542938
+ifreund
+andrewrk: All I did was report this nice new compile error I got :D  Glad it was helpful :)
+
+1616542969
+andrewrk
+who would have thought, type safety would be helpful
+
+1616543158
+noam
+hmm, practically, @This() just returns the innermost container, right?
+
+1616543173
+noam
+(finally fixed all the stupid scoping bugs... that I'm aware of)
+
+1616543236
+andrewrk
+noam, correct, it returns the innermost struct, enum, union, or opaque
+
+1616543273
+noam
+Neat - can just rise through the scopes, map to decl, check if container...
+
+1616543334
+andrewrk
+FireFox317_, are you looking for a review? or still have something to push?
+
+1616543337
+noam
+I'm not quite supporting duck typing just yet, but `define = fn(base: u32) @This() { return @This() { .base = base,};};` ... `UART0 = UART.define(0xFF110000);` is still nice :D
+
+1616543346
+FireFox317_
+andrewrk, one moment, still something to push
+
+1616543468
+andrewrk
+we are passing quite a few tests at this point
+
+1616543492
+andrewrk
+ah here we go. I'm on while loops now
+
+1616543657
+g-w1
+we still dont have those at compitme right?
+
+1616543884
+andrewrk
+let me try it and see
+

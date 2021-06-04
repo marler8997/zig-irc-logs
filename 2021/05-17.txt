@@ -1,0 +1,680 @@
+1621215318
+recalloc
+Hi, is there a really quick way to determine if the object I have is a string, i.e. it errors on .format() unless I specify explicitly {s} vs {*} instead of {}?
+
+1621215377
+recalloc
+It looks like the only option I have is following through fmt.format() and following each type to see if it gives the "must use {s} or {*}" error.
+
+1621217410
+daurnimator
+recalloc: what
+
+1621217450
+recalloc
+all right, fair enough
+
+1621217909
+recalloc
+Preventing XY problem, I'm writing an SVG constructor that makes statements like `outStream.emitRect(10, 20, 30, 40, .{ .stroke = "salmon" })` roughly equal to `underlyingWriteStream.print("<rect x={} y={} w={} h={} stroke="{}"/>", .{10, 20, 30, 40, "salmon"})`. I'm expecting all field types from the given ad-hoc struct to be either a number (decimal or floating point), or a "string", whatever a "string" is.
+
+1621218097
+recalloc
+I currently have it so that anything array-"ish" with a u8 child type is assumed to be a printable string, and so is formatted with `{s}`. I don't think this is perfectly sane, though, since it goes through each way a type could be array-"ish".
+
+1621218171
+daurnimator
+recalloc: zig used to do something similar itself: if the slice/array was of u8, then assume string; otherwise print as an array. but we ended up taking that away as it was too much of a special case
+
+1621218277
+recalloc
+haha, figured not having a {} default was there for a reason
+
+1621218750
+_aaron_
+hi folks, i'm using the public 0.8.0-dev.2274 release, I just want to check re: "warning(compilation): -femit-h is not available in the stage1 backend; no .h file will be produced" that this is something forthcoming or could i be possibly doing something wrong? (just enabled emit_h flag on lib build)
+
+1621219119
+daurnimator
+_aaron_: it broke after the 0.6.0 release; instead of fixing it we removed it for now and will rewrite in future
+
+1621219182
+_aaron_
+ok, thanks for the update i thought i saw something about that in issues 👍
+
+1621246191
+ptrchak
+hello! zig newb here with a quick question: why is the .wasm output of `zig build-lib example.zig -target wasm32-freestanding -O ReleaseSmall` so large (50KiB and it seems that it exports a bunch of math functions) when example.zig contains just one function that adds two i32s together? is it possible to shrink it somehow?
+
+1621246579
+ifreund
+ptrchak: this is a known issue, but nobodies done the work to fix it yet:
+
+1621247351
+ptrchak
+ifreund: thanks for the reply! thankfully filesize doesn't matter much for my use case, but it's still nice to know i'm not messing something up.
+
+1621267457
+mikdusan
+andrewrk: ping
+
+1621267559
+mikdusan
+andrewrk: just fyi, bumping qemu on ci. PR is all green. it's for the msghdr zero-init patch applied to qemu-static
+
+1621272115
+Nypsie
+andrewrk: I managed to implement structs in the wasm backend. However, when testing incremental compilation I noticed that for structs `freeDecl` is called, but not `allocateDeclIndexes` and `updateDecl`. Was wondering if you were aware of this. Now we're trying to free a decl that was never initialized in the backend :)
+
+1621272175
+ifreund
+Nypsie: are you working off the full file astgen branch? if not that code has almost certainly changed significantly there
+
+1621272237
+Nypsie
+ifreund: No, master. Hence my question if he's aware of it not. Don't want to make an issue if it's known and fixed in the astgen branch.
+
+1621272452
+mikdusan
+oh archlinux has taken the gcc11 plunge
+
+1621272788
+ifreund
+I wonder what joy that will bring :D
+
+1621272840
+mikdusan
+OOM frequent flyer miles?
+
+1621274495
+andrewrk
+hi mikdusan
+
+1621274676
+ifreund
+andrewrk: hey, not sure if you've seen this issue yet, but I'd be happy to try and fix it if you agree with my conclusions:
+
+1621274949
+andrewrk
+ifreund, yep sounds right
+
+1621274994
+ifreund
+cool, I'll give it a go
+
+1621275087
+andrewrk
+Nypsie, the lifetime of structs and decls is significantly reworked in #8554
+
+1621275157
+Nypsie
+Gotcha, just making sure :) Thanks
+
+1621275159
+andrewrk
+can you share your example code? I'll make sure with another backend that the allocate/update/free calls match up
+
+1621275166
+Nypsie
+Sure 1 sec
+
+1621275237
+ikskuh
+i should do that soon :(
+
+1621275291
+Nypsie
+
+
+1621275340
+Nypsie
+I'll just finish the implementation, get wasi working and then rebase it on top of #8554 when that hits master
+
+1621275940
+andrewrk
+Nypsie, looks like the same problem exists in 8554:
+
+1621275948
+andrewrk
+thanks for pointing this out
+
+1621276023
+Nypsie
+You're welcome. Glad we found it, I may have lost some hair in the proces when wondering what was going on in my code hehe
+
+1621276478
+fengb
+What hair
+
+1621276497
+andrewrk
+wow, low blow
+
+1621276580
+andrewrk
+so I think the expected behavior would be to get allocateDeclIndexes (side note: this should probably be renamed to allocateDecl) in the first update, and then updateDecl in the second update
+
+1621276612
+andrewrk
+or, also valid: allocateDecl and updateDecl in the first update, freeDecl and then another set of allocateDecl and updateDecl in the second one
+
+1621276642
+andrewrk
+I think in this case the frontend is going to want to destroy the old struct and make a new one
+
+1621276685
+Nypsie
+Will it be called on the top level declaration? Right now, freeDecl seems to be called on an anonymous one (the struct created on the stack I presume)
+
+1621276766
+Nypsie
+Oh it does also call it on the top level declaration when it has no more references
+
+1621277124
+andrewrk
+err wait a minute, I think none of these functions are supposed to be called, because hasCodeGenBits() is false for types
+
+1621277162
+andrewrk
+I think I kinda need to try implementing it in a backend in order to figure out how it should work in the frontend for this situation
+
+1621277176
+andrewrk
+can you share some insight on what makes sense from the perspective of the wasm backend?
+
+1621277576
+mikdusan
+should a good citizen be using hash_map.count() or hash_map.size ?
+
+1621277967
+andrewrk
+if your codebase makes use of both kinds of hash maps, or makes use of managed/unmanaged variants, probably count() will be less churn. otherwise size is nice because it is not a function call
+
+1621279695
+ifreund
+damn, I gave the llvm build too many cores and soft locked my computer for 10 minutes untill the OOM killer did its job
+
+1621279768
+ifreund
+I wonder how many cores is safe with 16 gigs of ram
+
+1621279961
+Nypsie
+andrewrk: Sorry had to make a call. I'm not sure either tbh. Right now, structs are kind of treated as a local variable for each struct field (for wasm). It doesn't require allocDecl/updateDecl to work. However, that may change once default values for struct fields are implemented, as I expect those values need to be codegen'd too (for example an array).
+
+1621280060
+andrewrk
+ifreund, I recommend -GNinja -DLLVM_PARALLEL_LINK_JOBS=1
+
+1621280073
+Nypsie
+(or perhaps the default value just generates a .store and .struct_field_ptr instructions)
+
+1621280156
+andrewrk
+Nypsie, default values for struct fields is actually implemented already in my branch, and the good news is there are no code chances needed in the backend codegen code :)
+
+1621280173
+ifreund
+andrewrk: do we have a nice way to make zig-bootstrap use those? I didn't see one
+
+1621280182
+Nypsie
+Oh wow haha, that's wonderful
+
+1621280185
+andrewrk
+ifreund, ah I see
+
+1621280206
+andrewrk
+no, I wanted to keep the system dependencies to a minimum, and -GNinja seemed like more of one than make
+
+1621280213
+Nypsie
+But that makes me wonder if it was just never supposed to call `freeDecl` at all
+
+1621280230
+andrewrk
+yeah maybe that's actually the issue
+
+1621280244
+andrewrk
+it's probably missing a check to hasCodeGenBits()
+
+1621280257
+Nypsie
+Ah, that makes sense
+
+1621280285
+andrewrk
+yep it is, found it
+
+1621280300
+Nypsie
+Great! Beat that yak, you don't need to be shaved
+
+1621280331
+andrewrk
+haha
+
+1621281214
+ikskuh
+andrewrk: quick idea: replace LibExeObjStep.libc_file with an optional structure instead?
+
+1621281232
+ikskuh
+.libc = std.build.LibC { .include_dir = "/usr/include" };
+
+1621281379
+kiedtl
+will terser syntax for 'catch unreachable' be added in the future? (or is there already in master? I didn't see any in 0.7.1)
+
+1621281414
+ikskuh
+no, as it is generally considered bad practise and should also have a doc comment why the error can never be reached
+
+1621281416
+g-w1
+i think it is like that for a reason: to discourage you from doing it ;)
+
+1621281451
+g-w1
+like this: `const b = a catch unreachable; // the flag must be set`
+
+1621281484
+kiedtl
+I get why that'd be a good thing in libraries, but for other things where you don't care about cases where appending to an array could generate a OOM error it gets tedious quickly
+
+1621281503
+ikskuh
+even then, "catch @panic("oom")" is the right thing
+
+1621281511
+g-w1
+yea, you don't want ub
+
+1621281519
+ikskuh
+"catch unreachable" will happily continue to execute code after the error in non-safe build modes
+
+1621281529
+andrewrk
+the syntax for catch unreachable is `.!` but zig purposefully doesn't have it :)
+
+1621281538
+kiedtl
+lol
+
+1621281548
+kiedtl
+ikskuh: huh, I didn't realize that, thanks for pointing it out
+
+1621281594
+ikskuh
+kiedtl: unreachable is literally a "this code cannot be reached, optimize for it!"
+
+1621281615
+ikskuh
+"catch unreachable" will pretty much remove any error-related branches in your code
+
+1621281621
+kiedtl
+I knew that, but didn't realize it could just continue onwards :v
+
+1621281686
+Raito_Bezarius
+I'm reading
+
+1621281712
+g-w1
+zen stuff got removed from std, ill try to look for the commit
+
+1621281726
+Raito_Bezarius
+I quickly looked on the ziglang/zig repo but without any luck
+
+1621281729
+g-w1
+dcbd5ad1553c5994353de47babc0e07e02153bd8
+
+1621281740
+g-w1
+git log | less; /zen
+
+1621281763
+Raito_Bezarius
+nice, I need to increase the git-fu level
+
+1621281791
+g-w1
+hmm, that doesn't remove os/zen.zig tho
+
+1621281817
+Raito_Bezarius
+I'm on 4d747d452fba0987332244c777dfd3a29d5a20bd
+
+1621281835
+g-w1
+found it
+
+1621281856
+ikskuh
+wow that code is 3 years old :O
+
+1621281909
+andrewrk
+yeah generally I'm happy to have non-mainstream stuff upstreamed as long as it is active
+
+1621282396
+Raito_Bezarius
+am I right to think I can implement something like std.os.zen in my own code without having to modify Zig, andrewrk ?
+
+1621282479
+andrewrk
+yes; the thing that got deleted was std lib support for a hobby OS
+
+1621282510
+g-w1
+pub const os = thing iirc
+
+1621282518
+Raito_Bezarius
+alright
+
+1621282532
+andrewrk
+we have this concept of Bring Your Own Operating System to allow third party projects to enable std lib support for any OS. however it needs some attention to be useful
+
+1621282533
+Raito_Bezarius
+and how does Zig std finds out the real implementation of POSIX syscall it might need for some stuff?
+
+1621282555
+g-w1
+wdym?
+
+1621282576
+andrewrk
+Raito_Bezarius, it has explicit logic that checks the target and decides what to do
+
+1621282589
+Raito_Bezarius
+as in, my operating system uses SYSENTER/SYSRET to do syscalls, I have a file which explains how to perform those syscalls
+
+1621282596
+Raito_Bezarius
+I want to explain to Zig std that those are the syscalls it needs to use
+
+1621282652
+Raito_Bezarius
+so by writing something like lib/myos.zig like zen.zig and using it everywhere in my userspace code, it should just work™ also in build.zig I need to use lib.os.myos as target I assume
+
+1621282662
+g-w1
+see, os.zig os/linux.zig for example, and os/bits.zig
+
+1621282669
+Raito_Bezarius
+thanks!
+
+1621282678
+g-w1
+then for example std.fs uses std.os which abstracts the target
+
+1621282683
+g-w1
+but its all a little posixy
+
+1621282703
+Raito_Bezarius
+I'm okay with being POSIXy
+
+1621282711
+Raito_Bezarius
+I want to be POSIX in fact
+
+1621282727
+g-w1
+see
+
+1621282756
+Raito_Bezarius
+:D
+
+1621283063
+ikskuh
+i killed the stdlib
+
+1621283073
+ikskuh
+<xq> __SIZEOF_PTHREAD_MUTEX_T is ded when compiling with .android abi :D
+
+1621283073
+ikskuh
+<xq> oh wait
+
+1621283073
+ikskuh
+<xq> hm. why does zig link pthread, rt and util?
+
+1621283073
+ikskuh
+<xq> nope, looks like it's not my fault
+
+1621283073
+ikskuh
+<xq> libutil and librt come from glibc, but i'm not using the system libc (explicit libc file)
+
+1621283277
+ikskuh
+hm, this linking error didn't happen at FOSDEM time
+
+1621283364
+ikskuh
+what did change since then regarding libc linking?
+
+1621283413
+g-w1
+i dont know anything about your usecase, but recently zig started using system libc files by default (i think); see discussion from yesterday
+
+1621283452
+ifreund
+only if targeting the native os/abi, which is not the case if targeting the android abi
+
+1621283496
+ikskuh
+yeah, it breaks with .gnu abi for "aarch64-linux-gnu"
+
+1621283497
+ikskuh
+as well
+
+1621283544
+ikskuh
+(using an explicit CrossTarget)
+
+1621283558
+ifreund
+ikskuh: ah, you are passing --libc though?
+
+1621283563
+ikskuh
+yeah
+
+1621283573
+ikskuh
+i have to :D
+
+1621283593
+ifreund
+zig will still try to link all libc libc it knows about, since our builtin.link_libc is just a bool
+
+1621283602
+ifreund
+see the switch here
+
+1621283633
+ifreund
+which then gets passed to the linker here:
+
+1621283647
+ifreund
+*all the libc libs
+
+1621283697
+ikskuh
+erm
+
+1621283699
+ikskuh
+that is wrong :D
+
+1621283708
+ikskuh
+there is no pthread on android
+
+1621283715
+ikskuh
+no rt and no util
+
+1621283739
+ifreund
+ikskuh: sounds like the fix is as simple as adding android to that switch then :)
+
+1621283749
+ikskuh
+and building llvm12 myself :(
+
+1621283756
+ifreund
+nah, just use nix
+
+1621283764
+ifreund
+or grab from the arch staging repo
+
+1621283766
+g-w1
+it wasn't that bad when nixpkgs built it for me /shrug
+
+1621283802
+ifreund
+or I can send you a static zig tomorrow with that change and you can test that
+
+1621283812
+ikskuh
+hm
+
+1621283841
+ikskuh
+or i can hack a workaround
+
+1621283857
+ikskuh
+addDynamicLibrary("pthread", "empty.zig", .unversioned)
+
+1621283871
+ifreund
+please lets get this fixed even if you have a workaround for now
+
+1621283930
+ikskuh
+yeah, i agree!
+
+1621283946
+ikskuh
+but i want to figure out everyting before starting a patch series of 50 single-line PRs
+
+1621284036
+ifreund
+50 single line PRs fixing simple problems are way easier to review than one massive one
+
+1621284074
+ifreund
+if you want to get a llvm12 binary from nix, I have a shell.nix here you can use:
+
+1621284536
+Raito_Bezarius
+I guess IntrusiveLinkedList were removed from zig?
+
+1621284546
+Raito_Bezarius
+git log | less trick shows only when they were added to the index.zig :>
+
+1621284599
+ifreund
+indeed
+
+1621284927
+ikskuh
+nix is installing
+
+1621285172
+g-w1
+❯ ./zig build test-stage2 -Denable-qemu
+
+1621285172
+g-w1
+All 41 tests passed.
+
+1621285174
+g-w1
+\o/
+
+1621286315
+mikdusan
+score. archlinux w/ gcc 11.1 and rebuilt llvm12, and zig master. passes `zig build test`
+
+1621286346
+mikdusan
+(llvm12 non-distro build that is)
+
+1621290036
+ikskuh
+ifreund: i didn't do any weird hacks, i hope i find some time tomorrow for getting a proper LLVM12 build of zig
+
+1621293063
+Raito_Bezarius
+Unreachable at /build/source/src/stage1/target.cpp:288 in get_llvm_os_type. This is a bug in the Zig compiler.thread 2210718 panic:
+
+1621293075
+Raito_Bezarius
+I tried to use .os_tag = .other in my build.zig
+
+1621293083
+Raito_Bezarius
+and something with a .abi = .musl
+
+1621293090
+Raito_Bezarius
+maybe I misunderstood how to use this feature
+
+1621293115
+Raito_Bezarius
+My objective is to generate an ELF with a "standard" POSIX ABI
+
+1621293489
+g-w1
+wdym standard?
+
+1621293658
+Raito_Bezarius
+standard is definitely not the right term
+
+1621293668
+Raito_Bezarius
+I just want minimalist assumptions on the target wrt to POSIX ABI
+
+1621293677
+Raito_Bezarius
+for example, I do not want TLS stuff to appear, etc.
+
+1621294291
+Raito_Bezarius
+okay, I think I got it
+
+1621294297
+Raito_Bezarius
+I need to override os.system at the root of my file
+

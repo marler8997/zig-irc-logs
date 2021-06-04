@@ -1,0 +1,1520 @@
+1614643948
+mikdusan
+hmmm... is this test a bit tight on margin? 10ms +/- 5ms. I got failure in linux VM: archlinux latest:
+
+1614643949
+mikdusan
+
+
+1614646006
+alfa07
+hi all! I wonder how memory is managed for comptime objects, why this works?: fn f() []type { comptime tx: [32]type = undefined; tx[0] = u32; return tx[0..1]; }
+
+1614647699
+g-w1
+its supporesd to be garbage collected! (its not, it just leaks rn :()
+
+1614647889
+alfa07
+g-w1: so it is safe to assume that comptime objects (like arrays) are alife for the duration of compilation?
+
+1614648018
+g-w1
+i believe so
+
+1614648920
+daurnimator
+tiehuis: you disowned zig-git?
+
+1614670690
+semarie
+how to force building with libc for x86_64-linux ? (I am crossbuilding). I would like to test code path I am changing
+
+1614670904
+semarie
+ok, passing -lc swith enough
+
+1614672077
+TheLemonMan
+mikdusan, yeah the pushl is fine, we're pushing a 32bit argument
+
+1614672851
+mikdusan
+ok andrew filed an upstrem
+
+1614672852
+mikdusan
+upstream
+
+1614672912
+TheLemonMan
+why? there's no bug
+
+1614672991
+mikdusan
+something to do with... we can get reduction.ll, then `llc reduction.ll` works fine
+
+1614673012
+mikdusan
+
+
+1614673062
+TheLemonMan
+it's possibly a difference in how the pipelines are setup
+
+1614673521
+mikdusan
+re #6408, I'm not certain, have we determined if this has to do with the way zig generates debug metadata, or it's upstream ?
+
+1614673666
+TheLemonMan
+that's on zig's side, the variables declared in a inline for confuse the dwarf emitter
+
+1614673722
+mikdusan
+ok thanks
+
+1614673842
+TheLemonMan
+damn it, I see a miscompilation in the early i386 code
+
+1614676125
+TheLemonMan
+oh it was just a blunder in the updated LLVM flag set
+
+1614677047
+ikskuh
+llvm12 seems to have broken half of zig
+
+1614677286
+TheLemonMan
+nah
+
+1614677804
+ikskuh
+TheLemonMan: your last comment on github: does it mean we can actually emit proper 16 bit code?
+
+1614677814
+ikskuh
+if we set the CPU right?
+
+1614677842
+mikdusan
+hey so is #8124 possibly related to #8123 ?
+
+1614677882
+TheLemonMan
+ikskuh, yeah, LLVM's triple looks like i386-unknown-unknown-code16
+
+1614677889
+TheLemonMan
+it
+
+1614677994
+TheLemonMan
+mikdusan, give it a try, remove all the mentions of {16,32}bit-mode from x86.zig and re-compile zig
+
+1614678058
+TheLemonMan
+anyway, please push the s/push/pushl/ change whenever you have a minute, that's a nice improvement nonetheless
+
+1614678237
+ikskuh
+TheLemonMan: Sweet! Zig BIOS when?! :D
+
+1614678270
+TheLemonMan
+we already have Zig EFI heh
+
+1614678315
+mikdusan
+(I'd like andrew to chime in before pushing a pr). but noob question: there's 2 asm push and only one was needed to quiet LLVM error. so make lines [85..86] s/push/pushl/ ?
+
+1614678383
+TheLemonMan
+push <reg> -> the assembler knows the register width
+
+1614678396
+TheLemonMan
+push <mem> -> the assembler has no idea how many bytes you want to push
+
+1614678411
+mikdusan
+k. only memory form then.
+
+1614678415
+TheLemonMan
+yeah
+
+1614678449
+TheLemonMan
+sometimes the assembler aliases a "naked" push as a native-sized push
+
+1614678973
+mikdusan
+ohyeah as per #8124... this can't be good: zig build-obj hello.zig --verbose-llvm-cpu-features -target i386-linux-none
+
+1614678979
+mikdusan
+and look at the first features:
+
+1614678989
+mikdusan
+-16bit-mode,-32bit-mode,
+
+1614678990
+mikdusan
+ouch
+
+1614679070
+mikdusan
+oh never mind. those just mean modes. duh.
+
+1614679921
+mikdusan
+well maybe not never mind. the reproduction for "push" ambiguity:
+
+1614679931
+mikdusan
+zig build-obj --verbose-llvm-cpu-features reduction.zig -target i386-linux-none
+
+1614679952
+mikdusan
+and by adding this:
+
+1614679958
+mikdusan
+-mcpu=generic+32bit_mode
+
+1614679962
+mikdusan
+LLVM no longer errors.
+
+1614680694
+mikdusan
+andrewrk: hmm... maybe the "asm push" (and now also "asm call") LLVM error is a zig bug with lib.std.target.x86; please see
+
+1614684497
+LewisGaul
+Hey, I'm trying to fix a zig fmt regression and just wondering if there's a faster way to iterate that running 'make install' every time I change lib/std/zig/render.zig?
+
+1614684578
+TheLemonMan
+you can run the test cases using `zig test`
+
+1614684654
+LewisGaul
+as opposed to `./zig test ../lib/std/zig/parser_test.zig`, as in no need to rerun `make install` and use the newly compiled `zig` for running the test?
+
+1614684764
+TheLemonMan
+yeah, you're working on the stdlib after all
+
+1614684781
+LewisGaul
+I guess what I'm asking, to clarify, is: does `zig test ../lib/std/zig/parser_test.zig` cause `../lib/std/zig/render.zig` to be recompiled?
+
+1614684817
+TheLemonMan
+yeah
+
+1614684823
+LewisGaul
+cool, thanks :)
+
+1614684846
+TheLemonMan
+np
+
+1614688296
+tnorth
+Ping! I'm trying to create a structure which as member has a pointer to itself or to an u64, depending on a comptime parameter. The compiler complains that it is " error: unable to evaluate constant expression" a minimal example here: any pointers?
+
+1614688373
+ikskuh
+heya
+
+1614688387
+ikskuh
+you need to store types in a "comptime var" or a const
+
+1614688399
+ikskuh
+right now, you'Re storing the type "type" in ptr_type (a runtime var)
+
+1614688404
+tnorth
+ikskuh: ah yep, I tried that as well, doesn't fix it
+
+1614688412
+tnorth
+(comptime var ptr_type)
+
+1614688419
+ikskuh
+gimme a sec
+
+1614688470
+tnorth
+ikskuh: yep, thanks already for looking into it :)
+
+1614688493
+ikskuh
+basic problem is:
+
+1614688505
+ikskuh
+you're trying to store a set of []type into your struct
+
+1614688507
+ikskuh
+not a ptr to self
+
+1614688549
+tnorth
+`type` should be the type of the return, ie the struct, is that right?
+
+1614688584
+tnorth
+[]ptr_type should then become a pointer to a runtime known number of this struct ?
+
+1614688605
+ikskuh
+no, "type" is just a type (so something like u64, f32, []const u8 or type)
+
+1614688612
+ikskuh
+[]ptr_type would then become "[]type"
+
+1614688618
+ikskuh
+which is a slice of types
+
+1614688639
+ikskuh
+you cannot manipulate "type" at runtime, that's why you get that error
+
+1614688645
+ikskuh
+what you want is: you want  to store @This()
+
+1614688649
+tnorth
+ah... I thought that type was inferred at compile time
+
+1614688651
+ikskuh
+which is the type of the surrounding context
+
+1614688670
+ikskuh
+no, that would be "anytype" for parameters, but it's not valid in other places
+
+1614688676
+ikskuh
+
+
+1614688677
+ikskuh
+look at this :)
+
+1614688685
+ikskuh
+i think this is what you wanted to do
+
+1614688711
+tnorth
+looks like it yes!!
+
+1614688738
+tnorth
+const ptr_type = if (R) u64 else @This(); <= this works for an if block doesn't right ?
+
+1614688738
+ikskuh
+you're welcome
+
+1614688757
+ikskuh
+tnorth: "if(c) a else b" is an expression
+
+1614688771
+ikskuh
+a if-block cannot do this, you'd need an if-exrepssion for this
+
+1614688774
+ikskuh
+if you want it more complex:
+
+1614688794
+ikskuh
+if(c) blk: { ...; break :blk true_value; } else  blk: { ...; break :blk false_value };
+
+1614688800
+ikskuh
+note the additional semicolon at the end!
+
+1614688844
+ikskuh
+tnorth: another problem in your code:
+
+1614688846
+tnorth
+ah that's very useful. What would be a good reference for this kind of patterns? The Zig sources?
+
+1614688846
+ikskuh
+try std.heap.c_allocator.alloc(ptr_type, @sizeOf(ptr_type))
+
+1614688854
+ikskuh
+this is allocating @sizeOf(ptr_type) elements
+
+1614688866
+ikskuh
+so it returns a slice to @sizeOf(ptr_type) elements of type ptr_type
+
+1614688881
+ikskuh
+tnorth: language reference as well as the stdlib :)
+
+1614688915
+tnorth
+ah right, yep I haven't checked that in detail yet, I need to read the fine manual first :)
+
+1614688966
+ikskuh
+your nick feels familiar
+
+1614688975
+ikskuh
+are you known elsewhere?
+
+1614688984
+tnorth
+probably not
+
+1614689003
+tnorth
+I come around sometimes here
+
+1614689027
+ikskuh
+ahj
+
+1614689029
+ikskuh
+also
+
+1614689030
+tnorth
+used to be active in the Fedora community, otherwise not
+
+1614689105
+tnorth
+but I kind of enjoy the little I know from Zig and would like to be able to use it more regularly
+
+1614689127
+ikskuh
+that's good. spread the word!
+
+1614689150
+tnorth
+I do, and already annoy my friends :P
+
+1614689446
+ikskuh
+very good
+
+1614690204
+ikskuh
+okay, one hard question of one crazy programmer
+
+1614690221
+ikskuh
+do we have a way to link a function against a different location that it will be stored in the later executable?
+
+1614690231
+ikskuh
+or do i have to do some super-hacky linker magic for this?
+
+1614691023
+TheLemonMan
+a function pointer?
+
+1614691177
+ikskuh
+nah
+
+1614691179
+ikskuh
+use case:
+
+1614691193
+ikskuh
+i have a embedded device with a lot of flash and a little bit of RAM
+
+1614691199
+ikskuh
+but executing code from flash is super-slow
+
+1614691205
+ikskuh
+so what i want to do is:c
+
+1614691220
+ikskuh
+copy a function from flash to RAM to a (known) position
+
+1614691224
+ikskuh
+and run it
+
+1614691249
+ikskuh
+but i have to know the location where the function is stored in the output section as well
+
+1614691305
+ikskuh
+so the offsets used in the function for linking are different than the ones "on disk" or in the final executable
+
+1614691489
+tnorth
+ikskuh: sorry, why can't I access my_cell.children ? I thought I can use it as a normal array now. "error: type '@typeInfo(@typeInfo(@TypeOf(Foo(false).init)).Fn.return_type.?).ErrorUnion.error_set!Foo(false)' does not support field access"
+
+1614691535
+ikskuh
+that means that you're missing error handling
+
+1614691549
+ikskuh
+the function you're calling might fail (which is what this cryptic error message tells you)
+
+1614691554
+ikskuh
+but you're not handling the error
+
+1614691565
+ikskuh
+try inserting a "try" between your "=" and the value :)
+
+1614691595
+tnorth
+ikskuh: still get the same msg :/
+
+1614691651
+tnorth
+I suspected that but somehow it is not enough
+
+1614691706
+ikskuh
+can you share a godbolt link?
+
+1614691826
+tnorth
+ikskuh:
+
+1614691868
+tnorth
+I get that child0 may not be reachable, that line can't work. But for child, shouldn't it?
+
+1614691924
+TheLemonMan
+ikskuh, if you known the location you can just memcpy the code and call it like @intToPtr(fn () void, <addr>)()
+
+1614692048
+LewisGaul
+Is there a way to break on a `test` block in gdb?
+
+1614692048
+ikskuh
+yeah, i know
+
+1614692053
+ikskuh
+but: you need to link functions properly
+
+1614692063
+ikskuh
+afaik both arm and x86_64 use relative adressing nowadays by default
+
+1614692068
+ikskuh
+so relative addresses are broken
+
+1614692111
+g-w1
+LewisGaul: you can probably just use the line number
+
+1614692119
+dutchie
+tnorth: my advice for stuff like this is to add explicit type annotations to your variables so you can see exactly where your intuition and the compiler disagree
+
+1614692182
+LewisGaul
+g-w1 oh duh should've thought of that :p
+
+1614692219
+TheLemonMan
+ikskuh, you have to save&apply the relocations by hand (if any)
+
+1614692246
+tnorth
+dutchie: type annotation? do you mean print them out with @typeName etc. or is there any feature I ignore to do it?
+
+1614692265
+TheLemonMan
+I did something similar to what you want in
+
+1614692268
+ikskuh
+TheLemonMan: okay, so i'll make a proposal to allow such features
+
+1614692282
+ikskuh
+it's not uncommon to create code like this (kernel devs also need this)
+
+1614692310
+ikskuh
+the relocations aren't necessary because the link address is fixed anyways
+
+1614692397
+dutchie
+tnorth: i mean write `var my_cell: Foo(false) = ...`, `const child: ?[]u64 = ...` and so on
+
+1614692479
+dutchie
+also, you'll have to change your main function's return type to !void if you want to use try
+
+1614692618
+TheLemonMan
+well if the address is known before link-time you can simply compile each function as its own binary, using a linker script to fix its address
+
+1614693423
+tnorth
+dutchie:
+
+1614693580
+dutchie
+catch is for errors, you want orelse for optionals
+
+1614693602
+dutchie
+similarly try doesn't work with optionals
+
+1614693642
+dutchie
+the equivalent of `catch unreachable` is .?
+
+1614693658
+ikskuh
+TheLemonMan: yeah, i have to conduct some experiments
+
+1614693669
+ikskuh
+i want to create a new demo for an embedded platform and i need that sadly
+
+1614693678
+dutchie
+so if you change the last line to `const child_r0: u64 = child_r.?[0]` it should work
+
+1614693726
+tnorth
+dutchie: thanks for the explaination.
+
+1614693811
+tnorth
+dutchie: that make a lot of sense now :)
+
+1614693839
+dutchie
+no problem, glad to help :)
+
+1614695598
+ed_t
+Assertion failed at /tmp/makepkg/zig-git/src/zig/src/stage1/analyze.cpp:527 in get_pointer_to_type_extra2. This is a bug in the Zig compiler.thread 181282 panic:
+
+1614695598
+ed_t
+Unable to dump stack trace: debug info stripped
+
+1614695598
+ed_t
+Aborted (core dumped)
+
+1614695604
+ed_t
+this ring any bells
+
+1614696306
+TheLemonMan
+not without some code
+
+1614696484
+ed_t
+Had this happen twice today.  Have not figured out a pattern (yet).
+
+1614696573
+TheLemonMan
+get a compiler with debug symbols and run it under gdb
+
+1614696657
+ed_t
+would you know how to change the pkgbuild in arch for zig-git to keep the symbols?
+
+1614696753
+TheLemonMan
+sure, change
+
+1614696770
+TheLemonMan
+add -DCMAKE_BUILD_TYPE=Debug
+
+1614696833
+ed_t
+rebuilding now.  If I get it again I will be back.  Thanks
+
+1614697516
+ed_t
+when do makepkg with the option add to the cmake the build fails with:
+
+1614697519
+ed_t
+tmp/makepkg/zig-git/src/zig/src/zig_clang_cc1as_main.cpp:521:23: error: ‘Value’ may be used uninitialized in this function [-Werror=maybe-uninitialized]
+
+1614697519
+ed_t
+|     ~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+1614697519
+ed_t
+521 |     Ctx.setSymbolValue(Parser->getStreamer(), Sym, Value);
+
+1614697599
+ed_t
+c and cpp and make are, as you probably gathered, not my strong points
+
+1614711660
+TheLemonMan
+ifreund, the new `zig fmt: {on,off}` thing works very well, I think it should trim the leading space after the two slashes
+
+1614711758
+LewisGaul
+Are you saying it should be `\\zig fmt: off` rather than `\\ zig fmt: off`? I'd disagree with that personally
+
+1614711788
+LewisGaul
+excuse the formatting, should've been `\\ zig fmt: off`
+
+1614711789
+TheLemonMan
+no?
+
+1614711817
+LewisGaul
+ok ignore me then :)
+
+1614711938
+ifreund
+TheLemonMan: glad you like it, the previous limitations were bugging me for quite while :D
+
+1614712013
+ifreund
+I think allowing the `zig fmt: off` to appear anywhere in the comment would be a good change yeah, though we shouldn't allow anything else aside frome whitespace
+
+1614712081
+TheLemonMan
+yeah, today I spent quite some time trying to figure out why it was not working ... and I had an extra whitespace before the `zig fmt` part
+
+1614714353
+andrewrk
+nice find mikdusan
+
+1614714423
+andrewrk
+ah I see what happened here
+
+1614714440
+TheLemonMan
+not LLVM's fault this time :^)
+
+1614714520
+andrewrk
+we gained the 16bit_mode and 32bit_mode cpu feature flags, which I think was the right decision, but the way it works when we pass to LLVM is explicitly set everything we are aware of. so being aware of these modes made us start passing -32bit_mode to llvm
+
+1614714593
+andrewrk
+previously we were leaving those flags on whatever was default for llvm, which was assuming 32bit_mode based on the arch
+
+1614714633
+TheLemonMan
+yep, using this logic
+
+1614714670
+andrewrk
+ahh I did not realize there was an abi way to affect this
+
+1614714728
+andrewrk
+TheLemonMan, did you see the new cpu features upgrade script? I think it will be much less painful for llvm 13 at least
+
+1614714771
+andrewrk
+you might also have some opinions about my overrides in there
+
+1614714947
+TheLemonMan
+the only question I had was about i386 generic being a 64bit target now
+
+1614714970
+andrewrk
+uhh that sounds like an accident. let me take a look
+
+1614715001
+LewisGaul
+Hey andrewrk I've been working on a fix for
+
+1614715083
+andrewrk
+TheLemonMan, you're talking about line 1813? I think perhaps we should omit that entirely. The generic i386 cpu is _i386 and the generic x86_64 cpu is x86_64
+
+1614715092
+andrewrk
+I mean we should perhaps omit that generic cpu entirely
+
+1614715156
+andrewrk
+nice work LewisGaul - give me a few minutes to solve this other issue and then I'll send a code review your way :)
+
+1614715171
+LewisGaul
+no problem, no rush at all!
+
+1614715179
+TheLemonMan
+yeah, it doesn't really make sense to have a generic for x86 since it doubles as x64 too
+
+1614715209
+TheLemonMan
+I wonder what's the default for clang
+
+1614715255
+ifreund
+LewisGaul: why special case if statements when you could make it consitent across if/for/while?
+
+1614715357
+TheLemonMan
+andrewrk,
+
+1614715360
+LewisGaul
+ifreund for the case I was fixing, where if behaves differently to for/while I haven't managed to find a way to merge it into a consistent logic (open to suggestions)
+
+1614715387
+TheLemonMan
+where did that feature set for generic come from ?
+
+1614715436
+andrewrk
+from llvm-tblgen
+
+1614715476
+andrewrk
+I could put some debug log statements in so we could see why the 64bit flag comes in
+
+1614715789
+ifreund
+LewisGaul: where does if behave differently than for/while? I see you added a special case for it but don't see why
+
+1614715843
+LewisGaul
+hmm let me have a think/play
+
+1614715855
+tnorth_
+s/meta.Int/meta.IntType/ I guess
+
+1614715855
+ifreund
+why isn't the newline_before_then_token check enough?
+
+1614715865
+tnorth_
+oh copy/paste error sorry
+
+1614716008
+LewisGaul
+ifreund the following should be reformatted onto 3 lines?
+
+1614716009
+LewisGaul
+if (a) |x| if (x)
+
+1614716009
+LewisGaul
+f(x);
+
+1614716024
+andrewrk
+TheLemonMan, you weren't looking at the release/12.x branch
+
+1614716026
+andrewrk
+
+
+1614716045
+andrewrk
+there is a new comment too
+
+1614716055
+ifreund
+LewisGaul: IMO whatever line breaks are in the source should be respected
+
+1614716087
+LewisGaul
+I'm mainly going off zig 0.7.1 behaviour, which does break the above into 3 lines. I kind of prefer that too tbh
+
+1614716090
+TheLemonMan
+oh, that explains everything
+
+1614716129
+LewisGaul
+eh maybe I take that back, makes sense to give flexibility to the user
+
+1614716150
+LewisGaul
+I'm definitely open to removing the `base_node_is_if` stuff
+
+1614716342
+ifreund
+I think respecting the line breaks in the source or lack thereof is the right thing to do with single-statement if/while/for. Having inconsistent behavior between them as is the status quo or always forcing line breaks/no line breaks is objectively worse IMO
+
+1614716430
+LewisGaul
+FWIW single-*line* statements are respected, e.g. `if (a) |x| if (x) f(x);`. But yes I'm inclined to agree, partly on the basis of homogenising and justifying using `renderWhile()` for 'if' :p
+
+1614716497
+ifreund
+It's often argued that consistency is the most important part of coding style
+
+1614716533
+andrewrk
+I'm tempted to make the triple for i386/x86_64 only be "x86" and have the baseline be a modern x86_64, and if you want 32 bit, you'd have to use -mcpu=i386+foo+bar or -mcpu=i486+baz+quux etc
+
+1614716554
+ifreund
+I mean look at GNU's way of writing C. It's totally foreign to most people but once you spend a few days reading it it's fine because they are consistent with it
+
+1614716581
+LewisGaul
+ifreund I've added a comment to the PR summarising our discussion and will see what Andrew says at review - thanks for taking a look
+
+1614716612
+andrewrk
+LewisGaul, if ifreund has the energy for it, he's quite capable of reviewing and merging zig fmt PRs :)
+
+1614716612
+ifreund
+(talking just about how they format code, not the actual code itself to be clear. Not a fan of glib)
+
+1614716630
+TheLemonMan
+andrewrk, do we punt the mcpu parameter to clang? because departing from LLVM's conventions may be a problem for zig cc
+
+1614716651
+LewisGaul
+oh sure well I can just make that change in that case aha, sorry, new here
+
+1614716660
+andrewrk
+I think we already have a layer of indirection there, constructing an  llvm triple out of zig's target information
+
+1614716784
+TheLemonMan
+as long as people don't expect it to be a 1:1 drop-in replacement it's fine then
+
+1614716801
+TheLemonMan
+but I'd avoid turning x86 into x64
+
+1614716823
+andrewrk
+oh? you think it should be 32 bits by default without an -mcpu parameter?
+
+1614716834
+andrewrk
+I think that would be Footgun City
+
+1614716881
+andrewrk
+we could host the World Footgun Olympics there
+
+1614716907
+TheLemonMan
+I was suggesting to keep x86_64 and the various iNNN variants
+
+1614716932
+andrewrk
+I see, so status quo, but actually support
+
+1614716963
+TheLemonMan
+yeah, extend it to {x86_64,i386,i586,i686}
+
+1614716970
+andrewrk
+interesting
+
+1614716984
+TheLemonMan
+I think this is also the naming scheme Rust uses
+
+1614717020
+andrewrk
+we also have these new x86_64_v2, x86_64_v3 and x86_64_v4 cpus that llvm introduced
+
+1614717081
+TheLemonMan
+that's a task for mcpu, those would be specified as -triple x86_64-whatever -mcpu=x86_64_vN
+
+1614717098
+andrewrk
+couldn't the same argument be made for i386, i586, i686?
+
+1614717126
+andrewrk
+I think the status quo plan (
+
+1614717160
+earnestly
+Isn't x64 itanium?
+
+1614717178
+earnestly
+Ah, that's ia64
+
+1614717358
+TheLemonMan
+sure, I'm fine with the status quo
+
+1614717380
+TheLemonMan
+but afair we wanted to clarify the split between the 32bit targets
+
+1614717398
+TheLemonMan
+because right now the default for i386 is ... a i686 target
+
+1614717421
+andrewrk
+the solution in the linked issue is to rename it to x86 and leave the baseline as status quo
+
+1614717437
+andrewrk
+we already have i386, i486, etc cpus that can be selected with -mcpu
+
+1614717541
+earnestly
+TheLemonMan: (Is -mcpu like -march?  Because those _vN's are -vN)
+
+1614717562
+earnestly
+(And well, x86-64, so idk)
+
+1614717591
+tnorth_
+oh copy/paste error sorry
+
+1614717679
+andrewrk
+for better or worse zig has a different naming convention of cpu models and conventions
+
+1614717696
+andrewrk
+so that the same names can be used in identifiers and the CLI
+
+1614717711
+andrewrk
+s/models and conventions/models and features/
+
+1614717804
+earnestly
+If zig can refine that, make it more consistent, as a side-effect; that'd be nice
+
+1614718180
+LewisGaul
+what's the deal with including a mascot image from ziglang.org in a personal blog post, is that allowed or is there some licensing to worry about?
+
+1614718230
+ifreund
+they are CC-by-SA currently
+
+1614718247
+ifreund
+(as per the license here:
+
+1614718261
+andrewrk
+LewisGaul, nothing to worry about
+
+1614718266
+ifreund
+I think I saw talk about changing them to be just CC-by though
+
+1614718269
+andrewrk
+they are intended for this purpose
+
+1614718274
+LewisGaul
+thanks
+
+1614718354
+ifreund
+we should really make them just CC-BY if that's the intent
+
+1614718367
+ifreund
+I can open a PR if you like
+
+1614718851
+andrewrk
+let me just double check with Loris and I'll do it
+
+1614718884
+ifreund
+cool :)
+
+1614719161
+g-w1
+marler8997:
+
+1614719186
+g-w1
+i mean the bug is in the openssl code and not part of it being static
+
+1614719199
+marler8997
+good test
+
+1614719234
+marler8997
+this reminds me of the iguana error, like there are extra characters around the data
+
+1614719251
+g-w1
+yeah, does it trigger for you? or is my machine weird?
+
+1614719264
+marler8997
+not for me no, it did with iguana
+
+1614719277
+g-w1
+hmm, ill try it with iguana :)
+
+1614719322
+g-w1
+now I get an out of memory in the build.zig :)
+
+1614719351
+g-w1
+
+
+1614719555
+g-w1
+thats very weird
+
+1614719562
+g-w1
+maybe my comp is just cursed
+
+1614720745
+zags
+hey, what's a good way to deal with errors when an iterator's next may return an error in addition to the optional value?
+
+1614720769
+zags
+so while (failing_iterator.next()) |val| ... can I catch here?
+
+1614720853
+zags
+or is there where I use else on the while? oh I think it is
+
+1614721145
+zags
+hm, no, next() return !?u8 confuses the |capture|, body now thinks it's an optional again
+
+1614721152
+andrewrk
+while (true) {
+
+1614721189
+zags
+that's unfortunate
+
+1614721199
+andrewrk
+why is that?
+
+1614721212
+zags
+because I like while (it.next()) |tok|
+
+1614721234
+andrewrk
+why?
+
+1614721247
+zags
+seems like that's the idiomatic zig way?
+
+1614721263
+LewisGaul
+it seems like the neat way to me too, it's a syntax feature for a reason right? :)
+
+1614721269
+andrewrk
+idiomatic zig way is to write the code correctly so that it works and when assumptions change, you get easily debuggable problems
+
+1614721298
+andrewrk
+while (true) is not a barrier to this
+
+1614721324
+zags
+I was hoping for while (it.next()) |tok| {} else |err| {} rather than adding extra lines with a break
+
+1614721327
+zags
+i'll adapt
+
+1614721365
+andrewrk
+that syntax works if your iterator is an error union
+
+1614721384
+earnestly
+There's such a thing as `while else'?
+
+1614721412
+andrewrk
+while and if are the same thing except a while's body loops
+
+1614721430
+earnestly
+Interesting
+
+1614721474
+LewisGaul
+that's a pretty neat, clear statement to be able to make, I like it
+
+1614721593
+zags
+pub fn next(self: *MyIterator) IteratorErrors!?[]const u8 {
+
+1614721603
+zags
+andrewrk: so with that next(), it should work right?
+
+1614721636
+andrewrk
+yes but then you will still need to unwrap the optional
+
+1614721645
+zags
+argh, ok ok :)
+
+1614721659
+zags
+when ||doubleunwrap||
+
+1614721666
+andrewrk
+which is a one liner: const tok = optional_tok orelse break;
+
+1614721674
+andrewrk
+no need to invent edge case syntax
+
+1614721675
+zags
+aye, will do
+
+1614721710
+zags
+yeah, my iterators possibly failing might be an edge case
+
+1614721819
+ifreund
+zags: while (it.next() catch |err| {...}) |tok|
+
+1614722031
+zags
+ifreund: thanks man
+
+1614724770
+andrewrk
+TheLemonMan, ah I'm sorry I didn't see your issue until you closed it just now
+
+1614724819
+TheLemonMan
+np, all that matters is that the problem is no more
+
+1614725149
+andrewrk
+I'm seeing a behavior test failure on aarch64
+
+1614725154
+andrewrk
+cpu feature set we pass to llvm looks ok
+
+1614725175
+mikdusan
+this one? `LLVM ERROR: Cannot select: intrinsic %llvm.aarch64.neon.fminnmv`
+
+1614725634
+andrewrk
+yes
+
+1614725685
+TheLemonMan
+bleh, the horizontal reduction intrinsics
+
+1614725731
+mikdusan
+for convenience, cpu flags diff between master and llvm for that error:
+
+1614725732
+andrewrk
+llvm.org says 12.0.0 final is due today but it does not seem likely given how many release blockers there are
+
+1614725735
+mikdusan
+
+
+1614725753
+andrewrk
+yeah I inspected this and it looks good
+
+1614725786
+TheLemonMan
+have you tried passing the same set of flags?
+
+1614725818
+g-w1
+if 12.0.0 will release soon, does that == 0.8.0?
+
+1614725820
+andrewrk
+I have not
+
+1614725823
+mikdusan
+this guy... and his solid bug skills. wth :)
+
+1614725859
+andrewrk
+llvm12 has added and removed cpu feature flags however, so it's a bit squishy what that tells us
+
+1614725912
+daurnimator
+andrewrk: they also added x86_64-v2 and v3
+
+1614725921
+andrewrk
+it's an identical set of + flags. the only changes are - flags which look like they are off regardless
+
+1614725950
+TheLemonMan
+ok, the error is caused by the horizontal min/max on f16 vectors
+
+1614725966
+andrewrk
+oh I thought we already had f16 test cases disabled due to this bug
+
+1614725975
+TheLemonMan
+fuck f16 and f128
+
+1614725981
+andrewrk
+why?
+
+1614725993
+TheLemonMan
+because they are a constant source of bugs
+
+1614726004
+TheLemonMan
+and nobody needs 128 bits of precision
+
+1614726097
+TheLemonMan
+and nearly no general-purpose hw implements f16 in silicon, everything is implemented in full precision and then scaled down
+
+1614726133
+fengb
+Even f32 has "weird" bugs because people aren't used to single precision
+
+1614726185
+mikdusan
+the LLVM error is about fmi, and to point out the obvious, for llvm11 we do -fmi and not sure for llvm12
+
+1614726211
+TheLemonMan
+people aren't used to floating point in general
+
+1614726254
+andrewrk
+mikdusan, fmi is no longer a cpu feature of llvm12
+
+1614726271
+andrewrk
+or rather it has been renamed to flagm
+
+1614726288
+mikdusan
+ah that's what i was trying to verify. thanks
+
+1614726294
+TheLemonMan
+add +fullfp16 and the error goes away
+
+1614726316
+andrewrk
+do we perhaps want to choose a different cpu for our aarch64 tests?
+
+1614726342
+andrewrk
+hmm right now we use baseline
+
+1614726346
+andrewrk
+that seems right
+
+1614726391
+andrewrk
+baseline for aarch64 is currently the same as generic
+
+1614726435
+TheLemonMan
+the fp16 should be gated by checking fullfp16 being active
+
+1614726547
+mikdusan
++fp16fml also fixes error
+
+1614726573
+mikdusan
+ah of course it includes it
+
+1614726726
+mikdusan
+strange thing is on master/llvm11 we do -fullfp16 and no error
+
+1614726783
+andrewrk
+hmmmm did I just put an override on master for this?
+
+1614726800
+andrewrk
+oh nvm I misread what you said
+
+1614726846
+andrewrk
+TheLemonMan, that's not the zig way- we have compiler-rt for filling in the gaps of what hardware is capable of, and core stuff like f16 is supposed to work on all targets
+
+1614726874
+andrewrk
+however, I could see zig lowering this to LLVM without f16
+
+1614726903
+TheLemonMan
+I wouldn't call f16 "core"
+
+1614726959
+ifreund
+it's part of the language currently, and I assume will make it into the spec
+
+1614726988
+andrewrk
+I'm fine with labeling f16 as experimental for now and not trying to support it until stage2 is further along, and we have a mechanism for lowering it without machine code backend support
+
+1614727009
+andrewrk
+then as far as LLVM is concerned it would only see f16 when +fullfp16 is available
+
+1614727046
+ifreund
+that sounds very reasonable :)
+
+1614727099
+TheLemonMan
+how many times have you used f16?
+
+1614727126
+g-w1
+will stage2 use softfloat? or will it be in zig?
+
+1614727171
+TheLemonMan
+in COBOL obviously
+
+1614727250
+g-w1
+ofc
+
+1614727335
+mipri
+there's some APL code that I was annoyed I couldn't duplicate in a language without support for f128, but it's also amusing that there's no f80. D really made a bad bet on using that.
+
+1614727342
+andrewrk
+TheLemonMan, not once, in an any code other than zig compiler code
+
+1614727370
+andrewrk
+g-w1, end-game is that stage2 will use f16, backed by compiler-rt where necessary
+
+1614727398
+andrewrk
+TheLemonMan, I see your point, I really do, but I don't think it's a decision to be made on a whim
+
+1614727443
+rom1504
+f16 is really important for some use cases (ML is one)
+
+1614727461
+TheLemonMan
+I understand, just keep that in mind when writing the specification
+
+1614727475
+TheLemonMan
+you can easily add more types if needed, removing them is a bit harder
+
+1614727477
+rom1504
+(that said I don't know if these use cases intersect with zig planned use cases)
+
+1614727484
+andrewrk
+fair points
+
+1614727569
+TheLemonMan
+rom1504, that's why I said
+
+1614727607
+TheLemonMan
+some GPUs do, iirc there's even yet another 16bit floating point format
+
+1614727624
+TheLemonMan
+ah, bfloat16
+
+1614728673
+mipri
+
+

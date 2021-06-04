@@ -1,0 +1,684 @@
+1616980514
+g-w1
+andrewrk: for your most recent comment, stage1 cannot even do that (@errorToInt(errorunion)), and I cannot see a use case either?
+
+1616980536
+andrewrk
+ah interesting
+
+1616980540
+g-w1
+
+
+1616980556
+g-w1
+we also need to do a catch handle ub if the error union is not an error
+
+1616980568
+g-w1
+what was your use case in mind?
+
+1616980576
+andrewrk
+alright let's match stage1 then and I'll make a note to re-examine the lang ref
+
+1616980596
+g-w1
+ok
+
+1616980925
+andrewrk
+nice work g-w1 :)
+
+1616980961
+g-w1
+thanks :). hopefully once you get error sets working i can add tests for errorToInt
+
+1616981105
+g-w1
+are you also doing inferred error sets now? or just making the regular ones lazy in antipication for that?
+
+1616982454
+andrewrk
+I'm only fixing the existing test cases, still not implementing inferred error sets yet, also not making the regular ones lazy yet
+
+1616982463
+andrewrk
+but undoing a little bit of work that shoehorned us into a non-lazy design
+
+1616982480
+andrewrk
+almost done
+
+1616982482
+g-w1
+hmm, ill see how it works ig :)
+
+1616986001
+andrewrk
+alright I'm taking on switch next
+
+1616986011
+g-w1
+andrewrk: the error set changes look good. do you see a max on the confugarable error set size? i think u64 is good
+
+1616986393
+andrewrk
+by configurable error set size are you referring to
+
+1616986481
+g-w1
+yes
+
+1616987587
+g-w1
+is the number 4294944680 (radian 10) signifigant?
+
+1616987608
+g-w1
+i feel like it is, but not sure how. im getting segfaults because i am indexing stuff with it and it is out of bounds
+
+1616987732
+g-w1
+could it be 0xaaaaaaaa bitcasted somehow?
+
+1616987805
+g-w1
+hmm, my program only segfaults on debug mode
+
+1616988480
+mikdusan
+radix? that num is 0xffffa7a8 and the upper 16 bits look unlikely for an index
+
+1616988547
+g-w1
+radix 10
+
+1616988591
+g-w1
+im getting this straight out of std.zig.ast.full.ContainerDecl.ast.members
+
+1616988615
+g-w1
+i think it might be a miscompilation
+
+1616988622
+g-w1
+imma try changin stuff around
+
+1616988816
+g-w1
+its either a miscompilation or a bug in std.zig.ast
+
+1616988839
+g-w1
+(or a bug in my code, but i dont think it is)
+
+1616988888
+g-w1
+ill try to make a repro
+
+1616989523
+g-w1
+tfw it doesn't repro 😢
+
+1616990751
+g-w1
+ok im certain this is a miscompilation
+
+1616991050
+g-w1
+making a bug report rn
+
+1616992221
+g-w1
+i would be grateful if someone could look at this
+
+1616992453
+g-w1
+i really hope this is a bug in llvm and not something in zig stdlib or something i did wrong
+
+1616992905
+andrewrk
+g-w1, this could be a good example to try out
+
+1616992944
+g-w1
+ok ill try that :)
+
+1616993229
+g-w1
+its getting late and i dont feel like messing around with the opam stuff. if noone comments in a few days ill check that out
+
+1616998391
+andrewrk
+I'm done for the evening in zir-memory-layout, and have a lot of non-code chores to do tomorrow
+
+1616999246
+andrewrk
+ifreund, if you are inspired by 623d5f442c832 to try your hand at switch expressions, go for it, otherwise I'll pick it back up on Tuesday
+
+1617002618
+ifreund
+andrewrk: probably won't have a chance to take a look at it today, maybe tuesday morning though
+
+1617029963
+cepheus
+There's no way to pass arbitrary (zig) compiler flags through zig build, is there?
+
+1617033257
+g-w1
+will the zig compiler ever insert a ud2 (illegal instruction) opcode in pure zig code?
+
+1617033730
+mikdusan
+we have stack guard stuff but it just does a @panic when smashed
+
+1617033761
+g-w1
+does panic invoke ud2?
+
+1617033797
+g-w1
+in reference to this issue
+
+1617033817
+g-w1
+im not seeing any ud2 in the llvm ir, so maybe llvm is inserting it for some reason?
+
+1617033819
+mikdusan
+I don't think so. I put in a panic in OReleaseSafe with your code and didn't get illegal instruction
+
+1617033891
+g-w1
+searching up llvm insert ud2 brings up some results for when there is ub it inserts it
+
+1617033919
+cepheus
+doesn't UD2 get generated for unreachable branched by LLVM?
+
+1617033926
+cepheus
+* doesn't UD2 get generated for unreachable branches by LLVM?
+
+1617033940
+g-w1
+yes, thats what i thuoght, but this seems to be in allocator.dupe
+
+1617033983
+mikdusan
+g-w1: while tracking down the first bug, I noticed some really odd behavior stepping through code in getContainer()
+
+1617033999
+mikdusan
+it stepped, then the correct if body got stepped,
+
+1617034016
+mikdusan
+then it went backwards and repeated something
+
+1617034029
+mikdusan
+
+
+1617034040
+g-w1
+hmm and it does not fail in releasefast mode
+
+1617034054
+g-w1
+only in it
+
+1617034321
+g-w1
+removing that call to dupe fixes it. it was trying to dupe bad memory since it was undefined
+
+1617034327
+g-w1
+i think the bug is in std.mem.copy
+
+1617034351
+g-w1
+pub fn copy(comptime T: type, dest: []T, source: []const T) void {// TODO instead of manually doing this check for the whole array // and turning off runtime safety, the compiler should detect loops like // this and automatically omit safety checks for loops @setRuntimeSafety(false); assert(dest.len >= source.len); for (source) |s, i| dest[i] = s;} <- i think the assert should be before the setRuntimeSafety, not after it
+
+1617034549
+g-w1
+hmm moving the assert up does not fix it.
+
+1617034577
+g-w1
+i figured out my immediate bug, so thanks, but this should be looked into ig. do you want me to close the issue, or keep it open and explain what i think is going wrong?
+
+1617034611
+g-w1
+oh nice, you made a repro :)
+
+1617034624
+mikdusan
+heh I tried the 1 liner and it reduced :)
+
+1617034647
+mikdusan
+oh you'll need libc 'cause I'm lazy
+
+1617034662
+g-w1
+yep, it repros for me too
+
+1617035083
+cepheus
+hmm, looks like i found a different variant of
+
+1617035093
+cepheus
+this can apparently also happen if you do the same thing with optionals and orelse
+
+1617035462
+mikdusan
+g-w1: so that was a nice one. two distinct (and I think) independent bugs
+
+1617035518
+g-w1
+yep, thanks so much.
+
+1617035544
+g-w1
+i did not know that llvm could insert illegal instruction
+
+1617035641
+mikdusan
+tbh I am getting more and more surprised at these things that llvm (and clang) are doing with "ub license"
+
+1617035778
+mikdusan
+if I grok, we are opting into this sanitizer. but illegal instruction? don't we have the technology to emit text error messages ? :)
+
+1617035808
+g-w1
+on the bright side, my doc generator backend is basically done, now i just gotta do some webdev and hopefully replace the auto-generated docs :) heres a prototype:
+
+1617035849
+mikdusan
+ah that's what you're up to
+
+1617035866
+g-w1
+yep, thats why i had all that ast code
+
+1617040069
+FireFox317
+I think the zir-memory-layout branch is almost ready to be merged right? I looked into memory leaking of the of the LLVM backend and we are not leaking anything :D
+
+1617040106
+andrewrk
+FireFox317, yep it is very close, the last big remaining item is switch expressions
+
+1617040112
+andrewrk
+then it's just cleanup
+
+1617040137
+Nypsie
+Great work guys!
+
+1617040148
+FireFox317
+ah great!
+
+1617040165
+g-w1
+awesome!
+
+1617040256
+andrewrk
+oh also as a bonus, this branch comes with a nice PoC of inline while, at least the control flow aspect of it (we still need to solve comptime locals)
+
+1617040292
+FireFox317
+another bonus, this branch comes with a rework of the LLVM backend :D
+
+1617040303
+FireFox317
+yourse is cooler tho andrewrk
+
+1617040343
+andrewrk
+the llvm rework is nice 😁
+
+1617040426
+g-w1
+do you know if there are any zig wasm search stuffs like
+
+1617040455
+Nypsie
+Nah, haven't seen anything like that
+
+1617040468
+g-w1
+ok, time to learn about search techniques :)
+
+1617040783
+andrewrk
+g-w1, are you a student? it's fun watching you get excited and learn about all this different stuff
+
+1617040833
+g-w1
+i am a student, but not for computer science, i have learned computer science by myself
+
+1617040974
+FireFox317
+g-w1, what do you study?
+
+1617040983
+g-w1
+i haven't decided yet :P
+
+1617041017
+FireFox317
+ah interesting :P
+
+1617048824
+cepheus
+aww, enumerating decls is a really useful way to force doc building for an entire module, but naturally it doesn't work in modules where @compileError is used to denote deprected functions
+
+1617049275
+cepheus
+hmm, it did also pick up a bit of bitrot in the standard library too by the looks
+
+1617054010
+LewisGaul
+Hey, I'm having some problems adding a package dependency, I haven't managed to get `exe.addPackagePath()` working. Would anyone be able to take a look to see if there's anything obvious I'm doing wrong?
+
+1617054033
+LewisGaul
+
+
+1617055148
+LewisGaul
+Never mind, the problem seems to be with the run command depending on both the exe and the lib install, where only the exe depends on the package... not sure if this might be considered a subtle bug so will raise an issue in case
+
+1617055300
+spacelove
+Found some interesting behavior when trying to make a copy of an array:
+
+1617055308
+spacelove
+Seems like this shouldn't work, but it does
+
+1617055608
+spacelove
+This is how I would think you have to do it:
+
+1617055621
+spacelove
+Any idea why they both work? Or seem to? Or is the first one just lucky?
+
+1617055668
+LewisGaul
+Is it that the `.items` field is a pointer that gets reallocated to a different bit of memory when the arraylist grows?
+
+1617055766
+LewisGaul
+
+
+1617055812
+LewisGaul
+If my theory is correct then the first one would just be lucky I think
+
+1617056448
+spacelove
+Hmmm
+
+1617056450
+spacelove
+Intriguing
+
+1617056993
+andrewrk
+yay, finished all my chores today and now I get to do some coding
+
+1617057144
+LewisGaul
+coding > chores :)
+
+1617057455
+cepheus
+
+
+1617057610
+andrewrk
+cepheus, neat, do you have a fork where you improved the doc gen stuff?
+
+1617057702
+cepheus
+this is all acutally just using the limited markdown support that exists in the current zig compiler, aha
+
+1617057797
+cepheus
+I'm sure it would be possible to do stuff like auto cross-linking as a feature of doc gen though
+
+1617057823
+andrewrk
+yeah I think there is even an issue open for that already
+
+1617057895
+andrewrk
+I'm thinking about having auto generated documentation operate mainly based on the AST, but then potentially being augmented by types and values from semantic analysis
+
+1617057910
+andrewrk
+right now it's only the output from semantic analysis, which leaves out anything that did not get referenced
+
+1617058009
+cepheus
+as i alluded to earlier i worked around that somewhat by doing a very nasty hack of generating the docs through a fake test harness which just iterates over the module's struct decls
+
+1617058139
+cepheus
+that actually showed some promise in detecting a couple of compile issues with untested bits of std which i might investigate at some point
+
+1617058474
+krux02
+hello people, just new to zig and try out how it works.
+
+1617058516
+LewisGaul
+hello welcome :)
+
+1617058545
+krux02
+can you tell my why the size here is 17:
+
+1617058616
+krux02
+after all the language says that a bool uses exactly one bit
+
+1617058733
+LewisGaul
+good question, I'm not familiar with packed structs in zig, maybe someone else can help
+
+1617058889
+krux02
+it looks to me like a bug.
+
+1617058907
+krux02
+until 8 bool values, the struct has 9 bytes.
+
+1617058950
+krux02
+With the 9th bool field, the struct suddenly increases to size 9+8=17
+
+1617058975
+mikdusan
+packed structs will improve with self-hosted compiler which is under heavy development right now. The current stage1 compiler support for packed structs has bugs and many issues are open against it
+
+1617059252
+krux02
+ok, good to know.
+
+1617059271
+andrewrk
+I get a security certificate failure when I try to look at the code
+
+1617059293
+krux02
+why security certificate failure?
+
+1617059319
+andrewrk
+with http my ISP performs a man-in-the-middle attack on me
+
+1617059326
+krux02
+you have problems with ix.io, or is your ide telling you something about my code?
+
+1617059326
+andrewrk
+so I tried  https but it has an invalid certificate
+
+1617059347
+krux02
+yea there is no https
+
+1617059350
+krux02
+it is just http
+
+1617059363
+krux02
+non encrypted raw text
+
+1617059382
+krux02
+you can get it with curl
+
+1617059426
+andrewrk
+krux02, there is a compiler bug with packed structs whose bits do not add up to a byte boundary
+
+1617059487
+krux02
+I also looked at normal structs.
+
+1617059499
+krux02
+As the specification says, it might reorder the fields.
+
+1617059534
+krux02
+Then I created a struct where a simple reorder would significantly reduce the size and it didn't happen.
+
+1617059546
+andrewrk
+not implemented
+
+1617059546
+krux02
+The struct was still as if it would be a C struct?
+
+1617059572
+krux02
+Is this just a placeholder for the future to reorder fields one day in the future?
+
+1617059591
+andrewrk
+yes, it's important to make sure to reserve the right to do this early, otherwise people might write code that relies on something that will change
+
+1617059610
+andrewrk
+
+
+1617059700
+krux02
+ok, that todo is now 5 years old.
+
+1617059703
+krux02
+almost
+
+1617059777
+g-w1
+hopefully it will get fixed in the next year :)
+
+1617059788
+krux02
+apart from my concern that these "optimizations" are even a good idea, letting issues open for 5 years open for core features of the language like struct is a bit unsettling.
+
+1617059811
+andrewrk
+well why didn't you fix it yet then?
+
+1617059829
+krux02
+I've used the language for about 10 minutes and already hit a compiler bug.
+
+1617059831
+mikdusan
+what I like is these features have been thought about already, are recorded, tracked, and factored as development progresses
+
+1617059877
+andrewrk
+come back after 1.0 if you want to not hit bugs
+
+1617059893
+krux02
+andrewrk, yea probably will do that.
+
+1617059918
+krux02
+Don't take it personal, I got recently burned by a language that had too many bugs. Can't afford to do it again.
+
+1617059949
+krux02
+Thanks for the help.
+
+1617059998
+mikdusan
+I'm having one of those zero-attention span days. Can't focus on anything :(
+
+1617060025
+andrewrk
+sometimes I have those days. my strategy is to close all applications except editor, and put my phone in another room
+
+1617060047
+mikdusan
+ah yeah I heard you mention doing that just recently
+
+1617060181
+g-w1
+is there an equavalent of mkdir -p in zig stdlib?
+
+1617060209
+mikdusan
+makePath ?
+
+1617060221
+andrewrk
+see also makeOpenPath
+
+1617060244
+g-w1
+thanks
+
+1617060246
+andrewrk
+surprisingly windows wins the syscall contest on this one, you can do makeOpenPath in 1 syscall on windows
+
+1617060298
+g-w1
+it seems like the impl doesn't do that though? it just loops through all the sub-paths
+
+1617060353
+andrewrk
+all os's have to do that, but nt lets you create a dir and open it at the same time
+
+1617060368
+g-w1
+ohh i see
+
+1617060608
+mikdusan
+I remember being absolutely blown away by subdirs. Apple DOS never had them then came ProDos which added subdirs. and in the meantime cp/m had them (iirc)
+

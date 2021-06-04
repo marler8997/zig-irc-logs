@@ -1,0 +1,1188 @@
+1614471834
+g-w1
+is an error union ever not a valid var type?
+
+1614472202
+andrewrk
+just arm left todo now in the llvm12 branch
+
+1614472698
+andrewrk
+after this, the "Upgrading to new LLVM" process will get a much simpler, at least as far as cpu features goes :)
+
+1614473953
+g-w1
+andrewrk: if implimenting runtime error comparisons for the cbe, should I make a new tzir inst for error comparison? or is there already something that I can use?
+
+1614474416
+g-w1
+should I just use cmp_eq?
+
+1614474497
+g-w1
+for the cbe, cmp_eq will work I think, but idk about the other backends since they use intInfo so I would have to add some error specific code in there
+
+1614480350
+andrewrk
+g-w1, which type are we talking about here? error set or error union?
+
+1614480366
+g-w1
+error.Val
+
+1614480394
+g-w1
+see zir_sema.zig:2221
+
+1614480589
+mikdusan
+andrewrk: does zig change debug info generation based on build-type? ie: an arg is a slice VS an arg is a ptr + len ?
+
+1614480666
+mikdusan
+if my question doesn't make sense just say so :)
+
+1614480683
+andrewrk
+g-w1, that's a value with type of error set. in codegen, every TZIR instruction will have a corresponding machine code value. this machine code value will be a simple integer and can be compared directly
+
+1614480709
+andrewrk
+TZIR tag of cmp_eq is ok to pass to codegen for error set values
+
+1614480776
+g-w1
+ok, so in genCmp in codegen.zig I will have to check if it is an error set and then do different stuff right? since it has no intinfo
+
+1614480796
+andrewrk
+mikdusan, the answer to the first question is "no", but I don't understand how the second clause relates
+
+1614480905
+mikdusan
+i added a comment to #6408 and am perplexed why in RELEASE the two slice args end up as (ptr,len) and in DEBUG the two slice args end up as (<unavailable>),(ptr,len)
+
+1614480966
+mikdusan
+ie: RELEASE loses the first arg "path" ? wtf.
+
+1614481095
+mikdusan
+if nothing comes to mind I'll continue digging
+
+1614481211
+andrewrk
+mikdusan, flattening a struct into args is a nice optimization
+
+1614481232
+andrewrk
+optimizations have to try to produce debug info that describes the original source
+
+1614481308
+andrewrk
+it's very common for a release build to have <unavailable> or <optimized out> things
+
+1614481326
+mikdusan
+we have debug info for same function  (path: []const u8, expect: []const u8) vs (expect: (ptr, len)) <-- in the 2nd arglist, there is no "path"
+
+1614481340
+andrewrk
+bad debug info would not cause a test failure; you can strip debug info and it still runs the same
+
+1614481818
+andrewrk
+mikdusan, I'm guessing that test failure is unrelated to #6408
+
+1614481865
+mikdusan
+yeah I have a few other angles I think may reduce #6408 proper
+
+1614485491
+andrewrk
+mikdusan, done! invoking that update_cpu_features.zig tool now produces an empty git diff in the llvm12 branch
+
+1614485812
+mikdusan
+very nice!
+
+1614485852
+mikdusan
+have you ever tried building llvm with LLVM_ENABLE_EXPENSIVE_CHECKS=ON ?
+
+1614485860
+andrewrk
+not that I recall
+
+1614485886
+mikdusan
+ok I'll try it out while building a few variants of llvm
+
+1614485944
+andrewrk
+I kicked off the first test suite run of llvm12, now that the cpu features are repaired. let's see how it fares
+
+1614487586
+g-w1
+hmm, I am trying to work off of one of vexu's prs. it is not rebased with master, but I need it to be to add my features (error testing stuff in his cbe error pr) what is the best way to do this with the least breakage/headache?
+
+1614487602
+g-w1
+make a branch off his pr then rebase with master? merge with master? ask him to do it?
+
+1614488029
+mikdusan
+rebase his pr. rebase your branch. merge his pr to your branch.
+
+1614488031
+g-w1
+i tried merging with master but it showed all the commits in my pr so I thought that was not the right way to do it
+
+1614488042
+g-w1
+ok, wdym by rebase his pr?
+
+1614488153
+g-w1
+i need my branch to go off his pr
+
+1614488164
+g-w1
+but also his pr to be rebased with master first
+
+1614488214
+mikdusan
+ok so if you create a tmp branch to equal his pr,
+
+1614488232
+mikdusan
+then you can rebase it to master
+
+1614488350
+g-w1
+ok, ill try
+
+1614488362
+mikdusan
+which PR of his?
+
+1614488399
+g-w1
+
+
+1614488748
+mikdusan
+something like this:
+
+1614488757
+mikdusan
+git remote add
+
+1614488765
+mikdusan
+err wrong
+
+1614488772
+mikdusan
+git remote add vexu
+
+1614488774
+andrewrk
+next llvm12 problem, building glibc has regressed
+
+1614488784
+g-w1
+i got that with `gh pr checkout 7934` :)
+
+1614488797
+mikdusan
+git fetch vexu
+
+1614488801
+mikdusan
+git co -b pr7934 vexu/stage2-cbe
+
+1614488825
+mikdusan
+and now your local branch pr7934 will equal
+
+1614488838
+mikdusan
+and then `git rebase master` and you'll get codegen conflict
+
+1614488845
+mikdusan
+fix and rebase --continue
+
+1614488888
+g-w1
+ok, i think it worked!
+
+1614489264
+andrewrk
+hmm, libc.so.6 has no symbols
+
+1614489340
+mikdusan
+can you see what .ll target is just to verify the abi name at end?
+
+1614489554
+andrewrk
+libc.so & friends are produced by assembling generated .s files
+
+1614490066
+g-w1
+mikdusan: now I get this? should I still make a pr?
+
+1614490113
+g-w1
+oof
+
+1614490179
+g-w1
+the easiest solution is probably just to ask him to rebase
+
+1614491449
+mikdusan
+andrewrk: looks like all the syms in `c.o` which libc.so.6 links against are HIDDEN . vs 50% hidden 50% not when built from master
+
+1614491914
+andrewrk
+mikdusan, it fixed it to take away hidden, but looking at the symbols I wonder if some of them should be hidden
+
+1614492056
+andrewrk
+yeah in master branch the ones with version numbers are LOCAL HIDDEN and the bare names are GLOBAL DEFAULT
+
+1614492094
+andrewrk
+damn I bet TheLemonMan would know how to fix this
+
+1614492116
+andrewrk
+we need a batman search light but instead of the bat logo it is the shape of a lemon
+
+1614492259
+mikdusan
+hmm i might have a hint
+
+1614492345
+mikdusan
+adding a -v to `zig clang` for c.s -> c.o here is what shows for llvm-11:
+
+1614492370
+mikdusan
+(putting in a gist)
+
+1614492460
+mikdusan
+well it's one diff in `-cc1as` command line; llvm-12
+
+1614492461
+mikdusan
+--mrelax-relocations
+
+1614492508
+andrewrk
+that sounds unrelated
+
+1614492512
+mikdusan
+ok
+
+1614492605
+andrewrk
+dalias from #musl said it sounds like a regression in clang
+
+1614492741
+mikdusan
+used clang from my toolchain and... clang11 c.s -> c.o is good. clang12 all same args, and generates 100% hidden symbols .
+
+1614492746
+mikdusan
+so sounds like a regre
+
+1614496730
+andrewrk
+mikdusan, I just had a chat with the person who made the relevant change to clang. apparently it was a bugfix. and now there is no way to get the previous behavior
+
+1614496911
+mikdusan
+what's the birds-eye here... I didn't see in logs how `c.s` actually got created. do you run a bunch of internal `clang -S` on glibc sources?
+
+1614496922
+mikdusan
+s/internal/embedded
+
+1614496976
+andrewrk
+glibc.zig line 806
+
+1614497026
+andrewrk
+tools/update_glibc.zig creates lib/libc/glibc/{abi,fns,vers}.txt
+
+1614497042
+mikdusan
+ha i didn't know you did this. just populating syms?
+
+1614497082
+andrewrk
+glibc.zig uses those txt files to produce c.s
+
+1614497186
+andrewrk
+the txt files contain data for multiple ABI versions of glibc and the .s file is generated based on the target glibc version
+
+1614497268
+daurnimator
+did we ever fix that issue where libc wasn't recompiled when cpu features were changed?
+
+1614497422
+andrewrk
+daurnimator, I'm looking at the line of code that adds cpu features to the cache hash
+
+1614499809
+daurnimator
+andrewrk: okay cool :)
+
+1614503245
+mikdusan
+andrewrk: can we just generate stub.c file, clang -c stub.c, ld.lld -shared -o libc.so.6 stub.o ?
+
+1614503259
+mikdusan
+each fn would have something like:
+
+1614503265
+mikdusan
+__asm__(".symver one, one@@GLIBC_2.2.5");
+
+1614503270
+mikdusan
+void one() {}
+
+1614504565
+andrewrk
+mikdusan, how is that an improvement on the .s file we generate?
+
+1614504843
+mikdusan
+the .so with above `one()` has:
+
+1614504857
+mikdusan
+DYNAMIC SYMBOL TABLE:
+
+1614504859
+mikdusan
+00000000000012d0 g    DF .text 0000000000000006  GLIBC_2.2.5 oney
+
+1614504867
+mikdusan
+and same so via readelf:
+
+1614504883
+mikdusan
+Symbol table '.dynsym' contains 2 entries:
+
+1614504884
+mikdusan
+Num:    Value          Size Type    Bind   Vis      Ndx Name
+
+1614504886
+mikdusan
+0: 0000000000000000     0 NOTYPE  LOCAL  DEFAULT  UND
+
+1614504888
+mikdusan
+1: 00000000000012d0     6 FUNC    GLOBAL DEFAULT    8 one@@GLIBC_2.2.5
+
+1614504892
+andrewrk
+the problem is when there are multiple versions for the same symbol name
+
+1614504946
+Thale
+Hello
+
+1614505022
+Thale
+I'm just trying to comile my program on linux, coming from windows. So I downloaded the latest linux binaries. But when I compile it, I get the following error:
+
+1614505023
+andrewrk
+hello
+
+1614505023
+Thale
+Semantic Analysis... ./src/data_structures.zig:89:13: error: expected function or variable declaration after pub
+
+1614505023
+Thale
+pub inline fn get(self: *DynamicArray(T), index: usize) *T {
+
+1614505024
+Thale
+Is this because something has changed in the language or am I doing sth wrong?
+
+1614505068
+andrewrk
+Thale, run `zig fmt` on your code. it will auto-update the `inline` to the new syntax
+
+1614505089
+Thale
+Ahh cool, thanks!
+
+1614505335
+mikdusan
+andrewrk: you're right same deal. I tried using __attribute__((visibility ("hidden")) from .c source and still marked its counterpart as hidden
+
+1614505635
+mikdusan
+hmm grep'ing glibc sources this pattern comes up. I have no idea what 'set' does or if it is ia640-only
+
+1614505658
+mikdusan
+./sysdeps/ia64/fpu/e_exp2.S:.symver exp2,exp2@@GLIBC_2.29
+
+1614505660
+mikdusan
+./sysdeps/ia64/fpu/e_exp2.S-.weak __exp2_compat
+
+1614505662
+mikdusan
+./sysdeps/ia64/fpu/e_exp2.S-.set __exp2_compat,__exp2
+
+1614505664
+mikdusan
+./sysdeps/ia64/fpu/e_exp2.S:.symver __exp2_compat,exp2@GLIBC_2.2
+
+1614505767
+mikdusan
+anyhow I got to get some sleep. back tomorrow. night
+
+1614505771
+andrewrk
+good night
+
+1614505777
+andrewrk
+one thing we can try is adjusting the version script
+
+1614506031
+mikdusan
+i tried before but with just one vers. now with 2 and `local` seems to override:
+
+1614506038
+mikdusan
+Symbol table '.dynsym' contains 3 entries:
+
+1614506040
+mikdusan
+Num:    Value          Size Type    Bind   Vis      Ndx Name
+
+1614506042
+mikdusan
+0: 0000000000000000     0 NOTYPE  LOCAL  DEFAULT  UND
+
+1614506044
+mikdusan
+1: 0000000000001340     6 FUNC    GLOBAL DEFAULT    8 one@@GLIBC_2.2.5
+
+1614506046
+mikdusan
+2: 0000000000001350     6 FUNC    GLOBAL DEFAULT    8 one@GLIBC_2.31
+
+1614506052
+mikdusan
+this is from version.script:
+
+1614506065
+mikdusan
+GLIBC_2.2.5 {
+
+1614506066
+mikdusan
+};
+
+1614506068
+mikdusan
+GLIBC_2.31 {
+
+1614506070
+mikdusan
+local: one_b;
+
+1614506072
+mikdusan
+};
+
+1614506074
+mikdusan
+and main.c is:
+
+1614506119
+mikdusan
+__asm__(".symver one, one@@GLIBC_2.2.5");
+
+1614506121
+mikdusan
+void one() {}
+
+1614506123
+mikdusan
+__asm__(".symver one_b, one@GLIBC_2.31");
+
+1614506125
+mikdusan
+void one_b() {}
+
+1614506391
+ifreund
+
+
+1614509933
+ifreund
+> @: start a builtin expression and/or access a builtin object, escape with $@
+
+1614509948
+ifreund
+marler8997: is this a typo? it seems to me that escaping with @@ would be more intuitive...
+
+1614510065
+ifreund
+oh but you seem to be using @@ for delimited strings now. hmm
+
+1614510646
+ifreund
+I'd probably use something else, say @%"foo" for delimited strings and use @@ to escape @. Using @$ to escape $ instead of $$ is the right call I think
+
+1614511571
+marler8997
+Yeah I wasn't sure what would be a good character for delimited string literals
+
+1614511791
+ifreund
+kakoune uses % in a somewhat similar way which is what made me think of it
+
+1614511794
+marler8997
+@@"..." looks farily clean, @$"..." looks a bit uglier to me, and @@"..." is easy to type
+
+1614511797
+ifreund
+kakoune's approach:
+
+1614511879
+marler8997
+that's pretty cool
+
+1614511899
+marler8997
+If I were to use the same, I'd be adding 3 special characters, ', " and %
+
+1614511945
+ifreund
+Yeah I'm not sure if it's a perfect fit for stitch, but certainly food for thought :)
+
+1614511970
+ifreund
+I've found it quite plesant to use in practice
+
+1614511982
+marler8997
+found kakoune pleasent to use?
+
+1614511992
+ifreund
+kakoune and this syntax in particuar
+
+1614512001
+marler8997
+yeah I like it actually
+
+1614512051
+marler8997
+oh, and if the closing delimiter is double it's considered apart of the string
+
+1614512081
+marler8997
+interesting idea, but it kinda defeats the purpose of the delimited string, that its a WYSIWYG string
+
+1614512126
+ifreund
+well, it's either that or completely disallow the delimiter in the string
+
+1614512142
+marler8997
+right
+
+1614512164
+marler8997
+I'm thinking if have to esacpe your delimiter, just use a different delimiter
+
+1614512187
+ifreund
+indeed, though with that approach there are strings you can't encode
+
+1614512200
+ifreund
+e.g. a string containing every character
+
+1614512243
+marler8997
+you could still do %"hello "@"Joe@"
+
+1614512261
+marler8997
+by that I mean, end the delimited string and tak on more
+
+1614512272
+ifreund
+another approach I've seen is something like @``string here`still in the string``
+
+1614512296
+ifreund
+where you can use an arbitrarily high number of ` at the start, and the string continues untill that same number is found consecutively
+
+1614512414
+ifreund
+I think that can't handle empty strings though
+
+1614512417
+marler8997
+If we didn't add any special characters, what about @' to start a delimited raw string?
+
+1614512430
+marler8997
+@''hello'
+
+1614512448
+marler8997
+single-quote could be the default conventional delimiter
+
+1614512495
+marler8997
+I think I'll switch to that for now, and make a note about kakoune's syntax to consider
+
+1614512507
+ifreund
+hmm, aesthetically @''hello' feels unbalanced to me
+
+1614512606
+ifreund
+I think I'd go with @"hello" as the standard string with no way to escape "s between the quotes, and also have the @```foo``` syntax to allow arbitrary string contents
+
+1614512637
+ifreund
+then you don't need arbitrary delimiters as you can always add more `s
+
+1614512656
+ifreund
+and you have @"" for the empty string edge case
+
+1614512679
+marler8997
+not bad
+
+1614512694
+marler8997
+I'm very tempted to just allow "..."
+
+1614512726
+marler8997
+one big reason is that " almost always a special character, and people will expect it to be
+
+1614512759
+ifreund
+true, you could also go with what I just proposed but drop the @s
+
+1614512760
+marler8997
+so it would be "this is a string" or @`this is a "string" that can use double quotes`
+
+1614512781
+marler8997
+I could do the same with just double quotes right?
+
+1614512784
+marler8997
+"""this is a string"""
+
+1614512806
+ifreund
+yeah, but then you can't handle the empty string
+
+1614512853
+marler8997
+@emptystring :)
+
+1614512860
+ifreund
+fair enough :P
+
+1614512884
+marler8997
+or (@echo)
+
+1614512946
+ifreund
+that works, but it would be kinda suprising to find out that was the only way to write an empty string as a newcommer I think
+
+1614512966
+marler8997
+yeah, we might be able to do better
+
+1614512997
+marler8997
+So maybe "..."   and @""""....""""
+
+1614513086
+marler8997
+or the other way?  @"..."  """"....""""
+
+1614513119
+ifreund
+in that case people would likely only use @"" for the empty string
+
+1614513136
+ifreund
+it would be in practice """...""" and @""
+
+1614513157
+ifreund
+which might be fine tbh
+
+1614513167
+marler8997
+yeah that seems odd
+
+1614513214
+marler8997
+If we suppsed "...", then using something like @%X...X seems more tractable than without "..."
+
+1614513241
+marler8997
+because @%X...X would be alot more rare
+
+1614513279
+ifreund
+if we used a delimiter that is a matching pair, the """...""" syntax can represent the empty string
+
+1614513283
+ifreund
+<<....>>
+
+1614513285
+ifreund
+<>
+
+1614513311
+ifreund
+could also go the other way and do >...<    >>>...<<<   ><
+
+1614513324
+marler8997
+interesting
+
+1614513333
+marler8997
+so may ways!!
+
+1614513337
+ifreund
+i kinda like >hello< tbh
+
+1614513363
+marler8997
+yeah it has a certain look to it that's appealing
+
+1614513393
+marler8997
+I think supporting double quote "..." is probably the right way to go, so I think we can simplify and assume that one
+
+1614513411
+marler8997
+with no way to escape the double-quote
+
+1614513439
+marler8997
+>hello ! this is a "string" with all sorts of character<
+
+1614513450
+ifreund
+if we were to break with most programming languages and go with >foo< for strings, we wouldn't need "..."
+
+1614513473
+marler8997
+>hello<
+
+1614513524
+marler8997
+>>my <xml> tag<<
+
+1614513538
+marler8997
+>>my stitch string >hello<<<
+
+1614513550
+marler8997
+oh that wouldn't work
+
+1614513579
+ifreund
+ah yeah, you can't end the string with the delimiter :/
+
+1614513587
+marler8997
+yeah, can't end strings with <
+
+1614513659
+ifreund
+actually I don't think that's ambiguous
+
+1614513699
+ifreund
+just keep looking for the next < until you find another character, then subtract the number of >s at the start
+
+1614513745
+marler8997
+huh?
+
+1614513866
+ifreund
+I think since < is a special character too, >>foo<< could be "foo" and >>foo<<< could be "foo<"
+
+1614513904
+marler8997
+oh I see, you keep going while you see <
+
+1614513923
+ifreund
+during parsing don't stop after finding N closing delimiters, instead count how many consecutive <s are found and subtract N where N is the number of >s
+
+1614513935
+marler8997
+I see now
+
+1614513950
+marler8997
+ok, so the current idea is "..."  and >>>...<<<
+
+1614513985
+marler8997
+we have 2 methods, increasing delimiter count, or custom delimiters
+
+1614513992
+ifreund
+I'm not sure we need "..." tbh, only reason to have it is if >foo< is too jarring for people used to "foo" strings
+
+1614514014
+marler8997
+oh right
+
+1614514015
+ifreund
+>>>...<<< solves all use cases IMO
+
+1614514020
+marler8997
+so we only need ><
+
+1614514047
+marler8997
+say we did that, what would you think about multiline?
+
+1614514101
+ifreund
+I don't think line breaks in the source cause any issues there, we could allow them
+
+1614514123
+marler8997
+so we could solve all the issues with ><
+
+1614514148
+marler8997
+but compare that to "..." and @"""..."""
+
+1614514186
+ifreund
+one issue with that is you need a way to escape "
+
+1614514189
+ifreund
+and @" doesn't work
+
+1614514218
+ifreund
+>< would require @> and @< but they wouldn't cause issues
+
+1614514221
+marler8997
+we could go back to "..." and @"X...X
+
+1614514260
+ifreund
+or "..." and @```...```
+
+1614514284
+marler8997
+how is @```...``` different from @"""..."""?
+
+1614514297
+ifreund
+you can use @" to escape "
+
+1614514309
+marler8997
+oh right
+
+1614514314
+marler8997
+@>>><<<
+
+1614514330
+marler8997
+there's that one too
+
+1614514350
+marler8997
+"..." and @>>>...<<<
+
+1614514361
+ifreund
+Is there a downside to just >foo< >>>...<<< other than the strangeness factor?
+
+1614514378
+marler8997
+@>>hello this is a coo! string with <xml> tags and stitch @>strings< as well<<
+
+1614514391
+marler8997
+more reserved characters
+
+1614514407
+ifreund
+I guess if you want to use @< and @> for comparison operators there's a conflict there too
+
+1614514419
+marler8997
+true
+
+1614514468
+marler8997
+those are not planned right now though
+
+1614514478
+marler8997
+$eq $lt $gt are the plan at the moment
+
+1614514483
+marler8997
+I mean @eq...
+
+1614514528
+ifreund
+sounds fine to me, @lt and @gt feel better than @< @> to me because of the prefix
+
+1614514547
+marler8997
+How often do we think someone will use >...<?
+
+1614514628
+ifreund
+I think strings will mostly be used to pass arguments to programs
+
+1614514651
+ifreund
+or to output formatted text
+
+1614514693
+ifreund
+really I think we'd need to translated some of the example code and see how it looks
+
+1614514717
+marler8997
+ok, I think at this point we need to write down the options and come back to this
+
+1614514763
+marler8997
+I'm going to create an issue in the repo and enumerate them
+
+1614514811
+ifreund
+cool, I'll take a look and comment with anything I think is missing
+
+1614514831
+ifreund
+(I wonder if we should have a #stitch channel, this is a lot for #zig...)
+
+1614514885
+marler8997
+this is the second time we've taken over the Zig channel, it might be time for that as at some point too much discussion is probably rude
+
+1614514978
+ifreund
+#stitch is free
+
+1614514988
+marler8997
+let's do it
+
+1614527158
+emptee
+Where does testing for zig fmt happens?
+
+1614527584
+ifreund
+emptee: lib/std/zig/parser_test.zig
+
+1614528307
+emptee
+thanks!
+
+1614534700
+LostKobrakai
+Hi, I'm new to zig and working with a C library expecting a const char *iban. How would I be creating that in zig?
+
+1614534735
+ifreund
+"foo" would be one way
+
+1614534743
+ifreund
+what data are you trying to pass?
+
+1614534785
+ifreund
+assuming the C code expects a 0 terminated pointer, the equivalent zig type would be [*:0]const u8
+
+1614534796
+LostKobrakai
+When I try a literal string I get this error: error: expected type '[*c]const u8', found '[]const u8'
+
+1614534860
+ifreund
+the type of "foo" is *const [3:0]u8, so I'm assuming you are doing something to coerce it to []const u8 before passing it to C
+
+1614534891
+LostKobrakai
+yeah, I'm passing it into a function and that's the type I assumed it would be
+
+1614534906
+LostKobrakai
+can I use a different type in the functions parameter?
+
+1614534970
+ifreund
+indeed, you could use [*:0]const u8
+
+1614535006
+ifreund
+which is a 0 terminated constant pointer to u8
+
+1614535073
+LostKobrakai
+with this I get errors of ld.lld about my C libraries functions being undefined symbols
+
+1614535087
+g-w1
+how do you link it?
+
+1614535088
+ifreund
+how are you building?
+
+1614535161
+LostKobrakai
+I don't have the source, but a lib.a and lib.h file, which I copied into a folder and include that in zig
+
+1614535169
+g-w1
+you need to link lib.a
+
+1614536098
+LostKobrakai
+Thanks. Seems to work now, but also interesting that I didn't seem to have hit this before at all
+
+1614536147
+Gliptic
+presumbly you weren't actually calling anything in the library until now
+
+1614536168
+Gliptic
+*presumably
+
+1614538646
+v0idify
+line 768 at std/event/loop.zig says: @compileError("TODO: integrate timers with epoll/kevent/iocp for single-threaded"); how would this (timers through epoll) be implemented?
+
+1614542102
+mikdusan
+regarding the llvm12 `sret` issue, now that we have the lemon-fix in place, are
+
+1614542116
+mikdusan
+andrewrk: ^^
+
+1614542147
+mikdusan
+because I just ran into the same gen llvm-ir, run it through llc and it complains about expecting '('
+
+1614542192
+mikdusan
+my ir is actually a mix. some `sret(...)` and some not
+
+1614547725
+qbit
+hio!
+
+1614548626
+mikdusan
+so hunting 1 bug I find another. and boom, lemon engages and they've found an upstream bug: #6408
+
+1614553496
+LewisGaul
+Hey all, I'm trying to build zig master branch for the first time (WSL1 Ubuntu) and cmake is failing with:
+
+1614553497
+LewisGaul
+-- Could NOT find clang (missing: CLANG_LIBRARIES CLANG_INCLUDE_DIRS)
+
+1614553497
+LewisGaul
+-- Could NOT find lld (missing: LLD_LIBRARIES LLD_INCLUDE_DIRS)
+
+1614553498
+LewisGaul
+and then failing to find libpthread. Are the above errors the first thing to fix? I have installed clang/llvm/lld 11. Any ideas?
+
+1614553895
+mikdusan
+LewisGaul: I have no exp with WSL1 but have you have installed "llvm-11", what about "llvm-11-dev" ?
+
+1614554018
+LewisGaul
+I have indeed - I'm hoping WSL1 won't be a factor but annoyingly it is sometimes... May end up switching to try native windows I guess
+
+1614554032
+mikdusan
+and maybe libclang-11-dev, liblld-11-dev
+
+1614554155
+LewisGaul
+Didn't have them, trying installing them
+
+1614554184
+LewisGaul
+I'm suspicious that I have /usr/lib/llvm-11/lib/libclang-cpp.so.11 but Findclang.cmake doesn't seem to look at that path?
+
+1614554223
+mikdusan
+needs header files (include/) too
+
+1614554223
+LewisGaul
+nvm installing the suggested packages seems to get cmake to succeed, thanks :)
+

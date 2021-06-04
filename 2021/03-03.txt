@@ -1,0 +1,516 @@
+1614729670
+andrewrk
+mikdusan, your help has been really valuable in the llvm12 branch. really appreciate it. if you're looking for another one, we're seeing some trouble executing the wasm32-wasi behavior tests with wasmtime
+
+1614729702
+andrewrk
+aaaand damn, just hit a mips regression
+
+1614729717
+mikdusan
+I'll take a peek. first I have a reduction I'll add for #8130
+
+1614729812
+mikdusan
+oh interesting. I created the reduction on master as baseline for no error. llc reduction.ll yields no error, then,
+
+1614729824
+mikdusan
+same thing on llvm12 and we get error, but in an interesting twist,
+
+1614729845
+mikdusan
+llvm12's llc against master's reduction.ll (the one that doesn't error)... and it still errors.
+
+1614729855
+mikdusan
+so look very much like upstream right now
+
+1614730395
+v0idifyy
+wouldn't it be good to have extensions for zig for some very specific features that should be avoided in the main spec?
+
+1614733067
+mikdusan
+not cool: rustup and the 2nd warning it gives me: "Warning: Detected OS X platform older than 10.13"
+
+1614733068
+mikdusan
+lies
+
+1614735119
+andrewrk
+v0idifyy, that's the plan for the C integration features
+
+1614735415
+mikdusan
+andrewrk: re: wasm32-wasi is there an issue open? and did we have success on master with wasmtime and behavior tests
+
+1614735427
+mikdusan
+ie: assuming this is an llvm12 thing
+
+1614735634
+andrewrk
+I didn't open an issue yet. the repro is `./zig test ../test/stage1/behavior.zig -target wasm32-wasi --test-cmd wasmtime --test-cmd-bin -I ../test`
+
+1614735662
+andrewrk
+yes it's an llvm12 thing. the above command passes all tests on master, and on llvm12 branch `Error: failed to run main module...` followed by some more stderr
+
+1614735675
+mikdusan
+--test-cmd run
+
+1614735687
+andrewrk
+hm?
+
+1614735720
+mikdusan
+wasmtime has a sub-command. don't you need `--test-cmd wasmtime --test-cmd run --test-cmd-bin`
+
+1614735747
+mikdusan
+anyways I'll look into it. just adding a worktree :)
+
+1614735852
+andrewrk
+can you paste the full alternate command you are suggesting?
+
+1614735883
+mikdusan
+just getting into it; this is what I have:
+
+1614735885
+mikdusan
+`zig test test/stage1/behavior.zig  -target wasm32-wasi --test-cmd wasmtime --test-cmd run --test-cmd-bin`
+
+1614735899
+andrewrk
+why do we need the run parameter?
+
+1614735921
+mikdusan
+SUBCOMMANDS:
+
+1614735922
+mikdusan
+config      Controls Wasmtime configuration settings
+
+1614735924
+mikdusan
+help        Prints this message or the help of the given subcommand(s)
+
+1614735926
+mikdusan
+run         Runs a WebAssembly module
+
+1614735928
+mikdusan
+wasm2obj    Translates a WebAssembly module to native object file
+
+1614735930
+mikdusan
+wast        Runs a WebAssembly test script file
+
+1614735932
+mikdusan
+wasmtime
+
+1614735938
+andrewrk
+it also says > If a subcommand is not provided, the `run` subcommand will be used
+
+1614735944
+mikdusan
+slap.
+
+1614735958
+mikdusan
+ok I have enough to go on. thx
+
+1614736097
+andrewrk
+thank you!
+
+1614738955
+mikdusan
+heh #8131 is somehow related to @reduce too
+
+1614738993
+andrewrk
+huh. I did not expect that
+
+1614739153
+mikdusan
+just a guess, but llvm12 is having difficulty deciding how to gen machine code for @llvm reduce builtins
+
+1614739241
+andrewrk
+we could try commenting out the behavior test cases that have @reduce in it
+
+1614739336
+mikdusan
+for us seemingly manifesting only with floats. (reduction uses f16 but f32 yields same result)
+
+1614739371
+mikdusan
+and @llvm reduce dropped the "experimental" and was mentioned "ready" in their 12.0 release notes
+
+1614739386
+andrewrk
+oh the irony
+
+1614739408
+andrewrk
+ok so another release blocker to file then
+
+1614739432
+mikdusan
+* The ``llvm.experimental.vector.reduce`` family of intrinsics have been renamed
+
+1614739433
+mikdusan
+to drop the "experimental" from the name, reflecting their now fully supported
+
+1614739435
+mikdusan
+status in the IR.
+
+1614739586
+mikdusan
+I guess you could file. It's easier for them to narrow down -- two different backends using instructions or functions it shouldn't be
+
+1614740425
+mikdusan
+I think soon when stage2 is ready, we'll be able to add some performant tests that don't re-spawn zig. tests against -femit-llvm-ir and validate target triple (and data layout), and the like. -femit-ir or -femit-zir . command-line arg tests (without exec). cpu-features tests. should be exciting :)
+
+1614740578
+mikdusan
+1 million tests/s is the goal :P
+
+1614740599
+mikdusan
+on a single core
+
+1614740609
+mikdusan
+(too much? sorry)
+
+1614740696
+mikdusan
+btw for the last 3 days I've prettty much just been using zig built against llvm+release+assertions for everything on llvm12 and it performs quite nicely
+
+1614740720
+mikdusan
+and have llvm+debug on standby if needed
+
+1614741032
+daurnimator
+mikdusan: eh... if we added an test for every instruction.... 5 clock cycles per test seems possible ;)
+
+1614741631
+andrewrk
+mikdusan, yeah we can invest in the test harness, and have the same test suite for stage1/2, with test marked as "passing in stage1 only", "passing in stage2 only", and "passing in both stage1 and stage2". then the test harness can efficiently perform the respective invocations
+
+1614742046
+mikdusan
+andrewrk: re: commenting out @reduce for tests. basically usage is contained in test/stage1/behavior/vector.zig, one big test,
+
+1614742104
+mikdusan
+and we have a callsite in crypto/utils and multi_array uses it. but those do NOT use .Min or .Max which so far (and needs to be float) is where the issue(s) manifest
+
+1614744070
+andrewrk
+mikdusan,
+
+1614744102
+mikdusan
+nice. it's needed.
+
+1614744769
+mikdusan
+andrewrk: #8132
+
+1614744865
+andrewrk
+thanks! I'll report the wasm bug tomorrow and meanwhile I will run the rest of the test suite
+
+1614744928
+mikdusan
+it's a race. let's see how far zig build test gets
+
+1614744956
+andrewrk
+you're running release with asserts?
+
+1614744975
+mikdusan
+no i can't for this because of that debug metainfo issue
+
+1614745018
+andrewrk
+yours will certainly win the race because I'm passing -Denable-qemu -Denable-foreign-glibc=/home/andy/Downloads/glibc/multi-2.32/install/glibcs
+
+1614745029
+mikdusan
+oh heh for sure
+
+1614745088
+mikdusan
+what's your take on #6408 - lemon says it has to do with way zig generates debug info. his comment was in irc inside of last 24 hours
+
+1614745200
+andrewrk
+I need to catch up on that one
+
+1614745225
+mikdusan
+search for "6408" -->
+
+1614745300
+andrewrk
+ok so sounds like the next step is figuring out exactly what zig is doing wrong as far as debug info
+
+1614745327
+andrewrk
+oh yeah next regression is mips
+
+1614745331
+mikdusan
+yup got the mips failure
+
+1614745402
+mikdusan
+going to try for a #6408 reduction by creating some code that uses inline for, and these 2 optimization passes: `opt -inline -sroa`
+
+1614745449
+mikdusan
+- Scalar Replacement Of Aggregates
+
+1614745791
+andrewrk
+got a regression on riscv64 too
+
+1614745887
+mikdusan
+big surprise: zig test test/stage1/behavior/vector.zig -target mips-linux-none
+
+1614745892
+mikdusan
+ld.lld: error: undefined symbol: fminf
+
+1614745899
+mikdusan
+bet riscv64 too
+
+1614745980
+mikdusan
+btw mips has fminf,fmin,fmaxf,fmax so appears not just limited to float on that arch
+
+1614745988
+mikdusan
+s/has/has undefined/
+
+1614746015
+andrewrk
+oh! are we just missing this function from c.zig?
+
+1614746052
+mikdusan
+wait wut!
+
+1614746096
+andrewrk
+there are some functions that LLVM assumes are available when doing codegen, such as memcpy, memset, and a bunch of math functions
+
+1614746144
+mikdusan
+that makes sense. llvm is like i can do this for you, and because your cpu doesn't support it, punt to C
+
+1614746155
+andrewrk
+yeah
+
+1614746162
+andrewrk
+ahh I see that's what's going on with wasm
+
+1614746168
+andrewrk
+that is easy to solve
+
+1614746178
+andrewrk
+I'm getting a different failure for riscv64 and mips tho
+
+1614746260
+mikdusan
+here's my mips failure:
+
+1614747502
+andrewrk
+I'm getting a different linker error
+
+1614747521
+andrewrk
+the missing math functions is easy, we just need to copy paste some stuff into c.zig
+
+1614759904
+tnorth
+Hi. Is there a way to see an intermediate representation of the Zig code when the compile time stuff has been interpreted?
+
+1614760602
+ikskuh
+yes, you can do that
+
+1614760633
+ikskuh
+--verbose-ir
+
+1614761478
+tnorth
+ikskuh: thanks, I get a bunch of stuff and then "TODO more ast renderingthread 107625 panic:Unable to dump stack trace: debug info stripped ".
+
+1614761494
+ikskuh
+huh
+
+1614761501
+ikskuh
+that's a thing i've never seen before
+
+1614761506
+ikskuh
+can you share the code?
+
+1614761533
+andrewrk
+tnorth, are you interested in this for the c++ implementation or the work-in-progress self-hosted compiler?
+
+1614761561
+andrewrk
+there are some tricks you can do to get less output. at this point it's more of a debug tool than anything
+
+1614761565
+TheLemonMan
+yo, got a patch ready for the AArch64 issue
+
+1614761705
+tnorth
+ikskuh: Just a doc example:
+
+1614761763
+tnorth
+andrewrk: I'm currently using the C++ implementation, but since the self-hosted compiler will eventually come, I'll be interested to try it as well
+
+1614763509
+ikskuh
+tnorth: ah, so it's a bug in the emit-ir?
+
+1614764124
+mikdusan
+yeah stage1 has had a `--verbose-ir` bug where it eventually hits a render bug or not-yet-implemented thing, and crash
+
+1614764169
+mikdusan
+the usual workaround is to reduce the code surface. like don't use test, don't use main, just use an export fn, and redefine global panic function.
+
+1614764320
+mikdusan
+boilerplate
+
+1614766491
+tnorth
+ikskuh: or an incomplete feature. Thanks for the suggestion, mikdusan
+
+1614781436
+tnorth
+I want to compare slices, is there a more compact way to do it (cast?) than this:
+
+1614781531
+ikskuh
+structural equal or reference equal?
+
+1614781567
+ikskuh
+expect(std.mem.eql(u5, &foo(), &foo()));
+
+1614781577
+ikskuh
+when you want to test things:
+
+1614781582
+ikskuh
+std.testing.expectEqualSlices
+
+1614781897
+tnorth
+ikskuh: Didn't know that one, thanks! (I'm looking for the content to compare)
+
+1614781937
+ikskuh
+use std.mem.eql for runtime, std.testing.expectEqualSlices for testing
+
+1614782871
+dutchie
+also, that error isn't really constness, it's because you are passing an array to a function that expects a slice
+
+1614784138
+tnorth
+right
+
+1614799602
+andrewrk
+TheLemonMan, brilliant
+
+1614802694
+braket
+everyone focusing on io_mode when talking about Zig async is always so frustrating to see lol
+
+1614802764
+g-w1
+andrewrk: some of my recent pulls had implicit conflicts that just manifested; this should fix
+
+1614802785
+andrewrk
+g-w1, ah we did almost the same thing at hte same time. can you pull/rebase and check my work?
+
+1614802796
+g-w1
+ok
+
+1614802846
+andrewrk
+I think leaving entry.value is harmless, if a bit silly
+
+1614802853
+g-w1
+hmm, the diff is one line short. i think you are missing one more heres mine:
+
+1614802876
+g-w1
+ah ok
+
+1614803224
+andrewrk
+I'm beginning work on source location reform in stage2
+
+1614803242
+andrewrk
+this is a prereq to reworking zir memory layout
+
+1614803353
+g-w1
+ah, I have a reminder to my self to say that we only need a u32 for a src loc since max file size is 2 gb :)
+
+1614804665
+andrewrk
+my plan is to (1) introduce type safety for source locations (2) make source locations inside a Decl relative to the decl's location, so we don't have to re-generate ZIR when a decl is unchanged but moves down in a file due to previous decls and (3) remove source locations from every ZIR instructions in favor of special-case instructions to set source loc
+
+1614804708
+mikdusan
+(3) is interesting
+

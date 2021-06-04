@@ -1,0 +1,884 @@
+1614297681
+marler8997
+PR for dynamic build deps part 1 here:
+
+1614297777
+g-w1
+so the user has to manually provide pkg-begin and pkg-end? or will the build_runner re-exec itself like you showed in the original issue
+
+1614297792
+g-w1
+s/build_runner/build.zig
+
+1614297797
+marler8997
+the package manager would provide --pkg-being to build.zig
+
+1614297823
+g-w1
+how does it know what packages?
+
+1614297828
+marler8997
+of course the user could provide it as well
+
+1614297835
+marler8997
+that's part 2
+
+1614297840
+g-w1
+ah :)
+
+1614297929
+marler8997
+part 2 is pretty small, just adding a needed_package field to Builder, and a bit of logic in build_runner to print them and error if they are missing
+
+1614298138
+marler8997
+actually I think it could be done completely independently now that I think about it
+
+1614298152
+g-w1
+well it needs the eventual pm tho?
+
+1614298203
+marler8997
+actually it can be implemented today
+
+1614298214
+marler8997
+it's just a simple list of packages and an interface to query them
+
+1614298230
+g-w1
+yeah, but eventually it will need to integrate with the pm
+
+1614301037
+andrewrk
+g-w1, where was astgen.zig doing `error.Foo` syntax before the big branch merge?
+
+1614301047
+andrewrk
+I'm trying to find the old code for reference
+
+1614301213
+g-w1
+it was in zig_sema.zig
+
+1614301224
+g-w1
+it was just analyzeInstFieldPtr on anyerror type
+
+1614301235
+g-w1
+I actually have a proposal related to this that I will write up soon
+
+1614301239
+andrewrk
+ah I see
+
+1614301277
+g-w1
+now its namedFieldPtr
+
+1614301294
+g-w1
+zir_sema.zig:4038
+
+1614301471
+andrewrk
+hmm I don't see where the global error value is incremented
+
+1614301491
+g-w1
+thats in module
+
+1614301517
+andrewrk
+I see, it's part of getErrorValue
+
+1614301539
+andrewrk
+thanks!
+
+1614301553
+g-w1
+yep, are you taking on inferred error sets? I think I have given up on them because im not that comfortable with graph algs
+
+1614301565
+g-w1
+or for now until i get more comfortable with graphs
+
+1614301605
+andrewrk
+no I'm just fixing the master branch test failures due to (implicit) merge conflicts after merging your catch at comptime PR + the big ast mem layout one
+
+1614301638
+g-w1
+oh, ok
+
+1614301646
+andrewrk
+such big sweeping changes are bound to be messy; this is just the natural aftermath :)
+
+1614301687
+andrewrk
+I think we're in danger of putting too much logic inside Type/Value
+
+1614301687
+g-w1
+also zir_sema.zig should be formatted (after my merge) since the else formatting got updated :)
+
+1614301716
+g-w1
+(not putting a newline after an else without a block)
+
+1614301802
+ed_t
+is the showtime discord closed?
+
+1614301814
+g-w1
+no, did the invite run out?
+
+1614301841
+ed_t
+where is the invite?
+
+1614301849
+g-w1
+zig.show
+
+1614301907
+ed_t
+zig.show ?
+
+1614301912
+g-w1
+
+
+1614301932
+ed_t
+somedays I am thick.  Thanks
+
+1614301956
+andrewrk
+in your defense it is a surprisingly slick URL :)
+
+1614302080
+andrewrk
+the Value for error sets should not encode the error number, for a couple reasons
+
+1614302098
+andrewrk
+(1) it can be stored in a separate table, saving memory for each instance of the Value
+
+1614302124
+andrewrk
+(2) this way threads do not need to obtain a lock on the lookup table of name->value if they do not need to evaluate @errToInt or @intToErr which are both rare
+
+1614302132
+g-w1
+what would it store? a string?
+
+1614302148
+g-w1
+it should not need both
+
+1614302156
+andrewrk
+just the name
+
+1614302172
+g-w1
+ah, makes sense
+
+1614302174
+andrewrk
+so analysis can go straight from `error.Foo` syntax to Value, without any locks
+
+1614302223
+g-w1
+yeah, also I think we can use a hashset instead of a hashmap for error sets too since module has the definitive list
+
+1614302396
+g-w1
+I think it would be HashSet([]const u8); to see if something exists in the error set just do a lookup. not sure why the values were needed when they can be gotten from module on demand
+
+1614302529
+andrewrk
+yeah
+
+1614302567
+andrewrk
+memoizing the errors to integers would probably be faster if we were doing the work of compilation fresh every time (i.e. stage1) but for incremental compilation it works much better to be based on names
+
+1614302586
+andrewrk
+also threads
+
+1614302654
+andrewrk
+in about 1 hour I'll be streaming working on the llvm12 branch of zig:
+
+1614302683
+g-w1
+so 3 things to do are (1) make value only store a string, (2) make a error set hashset(string), (3) move errorset to type.zig from value
+
+1614302716
+g-w1
+ill start working on this; telling you to avoid duplicated work
+
+1614303281
+daurnimator
+marler8997: I don't think --pkg-begin would work......... command line arguments can only be so long
+
+1614303312
+daurnimator
+wouldn't it not be unheard of to have e.g. 100 packages?
+
+1614303894
+andrewrk
+g-w1, cool thanks
+
+1614304685
+marler8997
+daurnimator, could be a problem for specifying pkgs on the project itself
+
+1614304706
+marler8997
+much less of a change of it becoming an issue for build.zig's direct dependencies
+
+1614304712
+marler8997
+*chance
+
+1614304756
+marler8997
+Zig could also support a response file if they get too long
+
+1614304768
+marler8997
+that's a common solution
+
+1614304866
+marler8997
+anyone on here familair with how zigmod works, I wanted to discuss what it would take to get it to support dynamic build dependencies with the newly proposed feature
+
+1614304896
+marler8997
+if we can get it to support them, I'll probably add support for it in some of my projects, including ziget/zigup
+
+1614304925
+g-w1
+i think meghan hangs out on thi discord server mostly
+
+1614304926
+marler8997
+it's good to get these features tested in some real world scenarios
+
+1614304934
+marler8997
+I'll check there
+
+1614305967
+mikdusan1
+andrewrk: #8073 for llvm2 if you haven't done it already
+
+1614305980
+mikdusan1
+s/llvm2/llvm12
+
+1614306029
+marler8997
+when's the llvm12 transition going to happen?
+
+1614306057
+mikdusan1
+yesterday :P
+
+1614306070
+g-w1
+today
+
+1614306728
+noam
+g-w1: haha, true :P
+
+1614306744
+noam
+Not sure I"d want to, though
+
+1614306749
+noam
+I think it's good as is :)
+
+1614306758
+g-w1
+ok, just checking
+
+1614340648
+kubkon
+exit
+
+1614340651
+ifreund
+o7
+
+1614344191
+marler8997
+maybe someone has an idea here, with our new build "hasPkg" design, hasPkg returns a bool so it's not automatically computed at comptime
+
+1614344212
+marler8997
+@tryImport didn't have this problem because it returned ?type so it HAD to be compiled at runtime
+
+1614344232
+marler8997
+and I can't add a tryImport wrapper to hasPkg because Zig is planning on removing the ability to use a comptime string to call @import
+
+1614344279
+marler8997
+does anyone have a clever idea that would force hasPkg to be done at comptime, so the user doesn't accidently miss it and then their build.zig file won't work with a particular configuration
+
+1614344308
+marler8997
+like, if comptime_bool existed that would be one solution
+
+1614344335
+marler8997
+I know there was a proposal about this as well
+
+1614344355
+g-w1
+make it a global var? do those have to be const evalable?
+
+1614344362
+g-w1
+like top-level not in func
+
+1614344392
+marler8997
+buildpkgs only exposes the list of packages given by the user
+
+1614344412
+g-w1
+ah
+
+1614344434
+g-w1
+make it inline?
+
+1614344444
+marler8997
+oooo, would that work?
+
+1614344450
+marler8997
+I will try
+
+1614344456
+g-w1
+maybe if its inline surrounded by comptime block?
+
+1614344496
+Flaminator
+Have there been any discussions/proposals about a split between what could be considered core zig items and the std items?
+
+1614344578
+ifreund
+Flaminator: what is the difference between "core" and "std"?
+
+1614344582
+marler8997
+g-w1, callconv(.Inline) not enough, maybe the comptime block could do it
+
+1614344612
+g-w1
+im thinking comptime block over the callsite: comptime { hasPkg(); }
+
+1614344625
+marler8997
+g-w1, yeah that works
+
+1614344632
+marler8997
+but that's the problem I'm trying to avoid
+
+1614344639
+marler8997
+because if the caller forgets to specify comptime
+
+1614344654
+marler8997
+then their build will work in some cases, and fail in others, which is what I'm trying to avoid
+
+1614344668
+g-w1
+you can detect if its running at runtime and throw a panic telling them to use comptime
+
+1614344683
+marler8997
+ooo, how to do?
+
+1614344717
+g-w1
+there was some hack with type coerceion
+
+1614344816
+marler8997
+here's the issue where it looks like the plan is to use inline to enable this:
+
+1614344888
+Interplanetary
+Hi everyone! I am currently working on porting the
+
+1614344987
+g-w1
+
+
+1614344987
+g-w1
+marler8997: exploit peer type resolution ftwpub fn isComptime() bool {var t: bool = true; const x = if (t) @as(u7, 0) else @as(u8, 0); return @TypeOf(x) == u7;}
+
+1614344989
+Flaminator
+ifreund, I see core as things that are part of the language itself and are used by builtins. I see std as an "offical" library written on top of the language using language features.
+
+1614345014
+g-w1
+Flaminator: see builtin.zig, start.zig, debug.zig
+
+1614345059
+ifreund
+start.zig and debug.zig aren't part of the language itself
+
+1614345064
+ifreund
+builtin.zig is
+
+1614345072
+g-w1
+ah
+
+1614345091
+Flaminator
+I knew about builtin.zig yes, start.zig and debug.zig look like they contain platform dependent stuff.
+
+1614345103
+ifreund
+this distinction isn't really that important for zig though since everything is lazy
+
+1614345146
+ifreund
+builtin used to be accessible with @import("builtin") instead of @import("std").builtin, you may want to look for the discussion that caused that to be changed
+
+1614345160
+g-w1
+marler8997: i think the inline thing with comptime behavior is implimented in stage2 (not 100% sure tho)
+
+1614345272
+ifreund
+Interplanetary: pretty sure Apache-2 is no problem, it's compatible with MIT. did you see this issue?
+
+1614345298
+marler8997
+g-w1, it's not a pretty solution, but at least now the function will always fail when comptime is not specified
+
+1614345309
+g-w1
+yeah
+
+1614345372
+ifreund
+Interplanetary: and this which is linked in that thread if you missed it:
+
+1614345405
+ifreund
+wait you're not tiehuis are you?
+
+1614345510
+marler8997
+
+
+1614345535
+marler8997
+there's the commit that now forces the user to specify "comptime" when the call has
+
+1614345563
+g-w1
+cool
+
+1614345589
+g-w1
+wait wat
+
+1614345600
+g-w1
+if (!isComptime()) @compileError();????
+
+1614345610
+g-w1
+this will just compile error every time right?
+
+1614345613
+g-w1
+did you test it?
+
+1614345618
+g-w1
+i think it should panic
+
+1614345634
+marler8997
+seems to work
+
+1614345648
+marler8997
+why would it have a compile error every time?
+
+1614345673
+g-w1
+oh, i guess the compileError only gets evaluated when it is runtime
+
+1614345681
+marler8997
+right
+
+1614345685
+g-w1
+it still seemed weird to me
+
+1614345698
+marler8997
+maybe I should be marking the call to isComptime as comptime
+
+1614345726
+marler8997
+actually that might make it always return true?
+
+1614345744
+marler8997
+I should write a test that ensures this causes has without comptime to fail
+
+1614345747
+g-w1
+idk, the semantics are very blurry i think
+
+1614346532
+Interplanetary
+ifreund: No, I'm
+
+1614348905
+jaafarrc
+Why are tabs not allowed in Zig?
+
+1614348957
+Flaminator
+jaafarrc
+
+1614349132
+jaafarrc
+oh ok
+
+1614349154
+marler8997
+g-w1, look at this beauty...even tests that not using has with comptime will create a compile error:
+
+1614349160
+Swahili
+I have a Node struct that have some fields that are common in TypeA and TypeZ struct; And I have a function that does some computation and might return TypeA or TypeZ, ideally has Node, as this have the common fields! How can I solve this in Zig? `Union` is to be used with primitive types only, am I wrong?
+
+1614349162
+Swahili
+
+
+1614349218
+g-w1
+you can do union
+
+1614349228
+g-w1
+probably union(enum) since you want a tag
+
+1614349340
+Swahili
+g-w1: I tried but thought it doesn't work with struct
+
+1614349363
+Swahili
+const Node = union { typeA: TypeA, typeB: TypeB }, something like that?
+
+1614349380
+marler8997
+union(enum)
+
+1614349443
+g-w1
+Swahili: please read the docs on tagged unions
+
+1614349530
+Swahili
+Yes! Currently reading. I'm quite confused at the moment though. I'll try something and share if you people don't mind have a look.
+
+1614349608
+Swahili
+Thank you!
+
+1614349841
+g-w1
+lemonboy to the rescue!
+
+1614350306
+Flaminator
+ifreund I tried searching for an issue/pr that discusses the move from @import("builtin") to std.builtin but I can't find it on the github repo because there are many issues and prs which contain import and builtin.
+
+1614350917
+ifreund
+Flaminator:
+
+1614351952
+g-w1
+andrewrk: here is part 1 of what we talked abt yesterday
+
+1614352323
+Swahili
+@g-w1 tagged unions, this is great! Very basic but nice to learn, thank you!
+
+1614352400
+dutchie
+sum types \o/
+
+1614352462
+g-w1
+Swahili: read about how to capture from a switch and union(enum) too! its pretty cool
+
+1614352674
+Swahili
+yeh I think I did that,  very basic, is that what you mean with capture switch and union?
+
+1614352737
+g-w1
+no, read the part about tagged unions here
+
+1614352746
+dutchie
+switch (c) { .img => |content| { do stuff with content }, ... }
+
+1614352827
+Swahili
+Oh! Thank you :D
+
+1614354439
+Flaminator
+I have no idea how I read over the last bit of the comment, that was the first pull request I found myself. I still think that having a core(@import("zig") for example) besides the std
+
+1614357437
+marler8997
+g-w1, I had an idea to put the packages in builtin.zig instead, I was able to leverage more existing code, I've updated the PR if you want to have a look
+
+1614357494
+g-w1
+ok
+
+1614358902
+marler8997
+daurnimator, I think I found a way around your idea to add a whitelist for running external commands in build.zig that I'm not sure how you could plug
+
+1614358925
+marler8997
+take a look at this test I added:
+
+1614358965
+marler8997
+there's a "run.zig" file which pretty much just takes a command to run, so build.zig builds run.zig as an exe and passes the command for it to run, then calls it
+
+1614364640
+marler8997
+I've got multi-level build.zig dependencies worked out now, with a test in the PR!
+
+1614371509
+andrewrk
+marler8997, that was fast
+
+1614371527
+marler8997
+yeah, still working on a bug though
+
+1614371555
+marler8997
+I'm going to have to go back to the @import("buildpkgs") instead of using std.builtin because we're only compiling one version of builtin.zig per compilation (not one per package)
+
+1614371561
+marler8997
+and each package has it's own sub-package set
+
+1614371603
+andrewrk
+mikdusan, pushed a commit to llvm12; it builds now
+
+1614371670
+marler8997
+so, is there one Compilation object for the full package set?
+
+1614371749
+andrewrk
+yes but there are sub-Compilations for compiler-rt, libc, etc
+
+1614371759
+marler8997
+got it
+
+1614371765
+andrewrk
+there is also only one Module for the full package set
+
+1614371776
+marler8997
+oh...
+
+1614371778
+andrewrk
+Module represents all the zig code only
+
+1614371785
+marler8997
+hmmm
+
+1614371889
+andrewrk
+Compilation includes C objects, other dependencies such as compiler-rt, and linking
+
+1614371906
+andrewrk
+Module is concerned only with .zig code => machine code
+
+1614371920
+marler8997
+right, trying to figure out how to generate buildpkgs.zig
+
+1614371926
+marler8997
+I was thinking each package would get it's own
+
+1614371965
+marler8997
+actually, I could generate buildpkgs-PKGNAME.zig
+
+1614372302
+mikdusan
+andrewrk: yup can confirm llvm12 now builds zig on macos. is that lemonboy's patch?
+
+1614372364
+andrewrk
+oh, oops, I didn't see his PR
+
+1614372400
+andrewrk
+damn, would have saved me some time just now
+
+1614372423
+mikdusan
+it's close to identical . uhm, he has ArgNo + 1
+
+1614372821
+andrewrk
+mikdusan, can you do a git blame on that deleted v0_gcc_personality file and make sure that's not something intentionally added?
+
+1614372851
+mikdusan
+will dig...
+
+1614372926
+andrewrk
+`git log -p -- lib/libunwind/src/gcc_personality_v0.c` reveals that it's intentional
+
+1614372931
+andrewrk
+unfortunately I did not explain why, damn it
+
+1614373002
+andrewrk
+anyway let's leave that file untouched
+
+1614373045
+mikdusan
+ok I'll put it back in and force-push my PR
+
+1614374063
+mikdusan
+done. src/libcxx.zig and libunwind.zig both do not require change. and gcc_personality is untouched
+
+1614375839
+andrewrk
+thanks!
+
+1614375933
+mikdusan
+on macos my current state is: zig artifact is produced. cannot use `zig build` or `zig test` . some inline assembly error comes up. very simplistic zig build-obj seems to work if I override @panic(), otherwise a usize vs. u64 error pops up
+
+1614376081
+andrewrk
+the next thing that needs to happen is an audit of x86 cpu target features
+
+1614376231
+andrewrk
+mikdusan, check the commit message on 8f1408578cb255fbbdc555d746b25cefb331105e
+
+1614376322
+mikdusan
+ok so you did that against llvm12 branch head at that time. hopefully we have less delta
+
+1614376411
+andrewrk
+that delta is big because it was against what jakub did, not understanding how the process worked
+
+1614376449
+andrewrk
+right now I'm looking into redoing the
+
+1614376490
+andrewrk
+also it's in python! wtf!
+
+1614376604
+mikdusan
+I left python a long time ago for ruby
+
+1614376645
+andrewrk
+the point is it's not in zig :)
+
+1614378051
+andrewrk
+doing another llvm12 update stream
+
+1614378076
+andrewrk
+in about 10 min
+
+1614378101
+g-w1
+does the next stage2 build now? I saw that you said on the issue that you would run the test suite, does this mean the test suite compiled?
+
+1614378116
+mikdusan
+still not there.
+
+1614378149
+g-w1
+hmm, so you will try to do the same thing without that petty parsing bug that you were doing yesterday?
+
+1614378296
+mikdusan
+boy does llvm ever love their tables
+
+1614378668
+andrewrk
+will be working on re-doing cpu features
+
+1614378808
+mikdusan
+it's funny how lemonboy was mentioned last night during twitch.tv and sure enough he made a fly-by and parachute dropped a PR against `sret` issue
+

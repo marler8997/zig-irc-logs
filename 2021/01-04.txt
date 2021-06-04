@@ -1,0 +1,688 @@
+1609719148
+daurnimator
+^
+
+1609719157
+daurnimator
+I think `zig-cache` is a good name for it
+
+1609719205
+FireFox317
+andrewrk, to repro the memory leak: change `want_debug_deadlock` in Cache.zig to true, run `zig build test-stage -Denable-llvm`. It will then show the memory leak of `all_cache_digest_set`.
+
+1609719215
+FireFox317
+Thanks for merging my PR that fast btw :)
+
+1609719294
+FireFox317
+I tried to solve that leak by making `all_cache_digest_set` pub and calling `deinit` on it, but that caused the segfault
+
+1609725919
+andrewrk
+g-w1, re: branch quota - why do we need to the Shared struct stuff?
+
+1609725925
+andrewrk
+*why do we need to change
+
+1609725932
+andrewrk
+I think it was already set up correctly
+
+1609725984
+andrewrk
+FireFox317, ok let me poke at it
+
+1609726175
+g-w1
+because the inlining shared only works in comptime function calls
+
+1609726264
+g-w1
+we want @setBranchEvalQuota to work outside of comptime function calls. there was a discussion on discord about this in #zig-help recently.
+
+1609726490
+g-w1
+they were correctly in
+
+1609726875
+g-w1
+right now it makes no difference, because the only way to have branch_count overflow go over branch_quota is through inline calls, but in the future, a comptime while could to it too, and that could be outside of a comptime/inline function
+
+1609726932
+andrewrk
+I see, thanks!
+
+1609727743
+andrewrk
+g-w1, sent you a review
+
+1609727831
+g-w1
+thanks
+
+1609728226
+andrewrk
+welp, windows CI is no longer able to build zig1.obj without running out of OOM. rip
+
+1609729074
+fengb
+Did andrewrk just OOM?
+
+1609729160
+g-w1
+andrewrk: in your review you say "
+
+1609729162
+g-w1
+This is indeed where branch_count should be initialized to 0.
+
+1609729183
+g-w1
+what if this is in the middle of a comptime while that has backwards branches?
+
+1609729197
+g-w1
+sorry for the extra lines, my clipboard put them in when copying
+
+1609729291
+andrewrk
+g-w1, look at the comment directly above that
+
+1609729311
+andrewrk
+.shared = if (b.inlining) |inlining| inlining.shared else &shared_inlining,
+
+1609729399
+g-w1
+I see, consider this example (at comptime ofc) `b=false;while (true) { if (b) comptime foo(); b = random_bool(); }` in the while there could already be a brancheval before it is called
+
+1609729467
+g-w1
+and for the 1001 test, should we just set it? or also make something overflow to it?
+
+1609729631
+andrewrk
+I think my comment
+
+1609729665
+andrewrk
+for the 1001 test, here's some inspiration via an already passing stage1 behavior test:
+
+1609729772
+g-w1
+hmm, still if we put the branch_count in the Inlining.Shared, then it can't be used outside an inline function? or am I missing something :)
+
+1609729897
+andrewrk
+FireFox317, did the Cache deadlock detection code detect the deadlock when you ran into it?
+
+1609729903
+andrewrk
+or did you actually hit a deadlock and have to figure it out
+
+1609729919
+andrewrk
+oh I bet you hit it because it was 2 different processes
+
+1609729934
+andrewrk
+god damn it I'm just going to delete the detection code since it can't even help in these cases
+
+1609730078
+andrewrk
+g-w1, inline function calls and comptime function calls are the same thing. however I think you're right that this will need to be adjusted to support inline while
+
+1609730100
+andrewrk
+I think we should only make the change once we can actually add a test case to exercise the necessity of the change
+
+1609730114
+andrewrk
+because afaik we don't have inline while working yet
+
+1609730292
+g-w1
+How can the change be not nesessary? it would make the implimentation of analyzeInstSetEvalBranchQuota more complicated because we have to check if inlining != null and then do something temporary if inlining == null when trying to set branch eval quota. I am trying to get away from a local maximum.
+
+1609730412
+andrewrk
+I'm saying that branch_quota should not be inside Shared but branch_count should
+
+1609730430
+andrewrk
+since there are 2 shared things, let's name them better
+
+1609730452
+andrewrk
+let me just show you the Module diff
+
+1609730458
+g-w1
+ok
+
+1609730588
+andrewrk
+
+
+1609730674
+andrewrk
+FireFox317, this fixes the memory leak for me, no segfault:
+
+1609730710
+g-w1
+that looks good, but imo branch_count should not be in Block.Inlining.Shared, but in Block.Shared, or just a *u32, and since there are 2 of them, I just put them together.
+
+1609730888
+andrewrk
+we only want to start counting branches when you do inline while, inline for, inline call, or comptime call
+
+1609730982
+g-w1
+exactly. but an inline while/for wont trigger a Block.Inlining to be created, therefore how can you count branches if the it is in the Block.Inlining?
+
+1609731050
+andrewrk
+idk, I don't think we have to figure that out in order to add the first version of @setEvalBranchQuota
+
+1609731074
+andrewrk
+I don't think it will be difficult to adjust the structs if we need to
+
+1609731273
+g-w1
+what should happen if you use it out of an inline function? that is why I added those things, to help our future selves and remove thinking about what it should do
+
+1609731351
+andrewrk
+it wouldn't help our future selves because we only use it in an inline function currently, and our future selves will happily move the field into the outer struct, knowing it was only ever read (until now) for inline functions
+
+1609731359
+g-w1
+ah, I see
+
+1609731360
+andrewrk
+
+
+1609731375
+g-w1
+thanks for going through this with me :)
+
+1609731392
+andrewrk
+np, thanks for the patch, and also this is partly subjective so thanks for listening to my input
+
+1609731430
+andrewrk
+if we have the field outside the branch, our future selves will have to inspect the code more carefully to understand how the field is used
+
+1609731443
+andrewrk
+oops, I meant outside the Inlining.Shared struct
+
+1609733052
+g-w1
+running into this when trying to make that minimal test case :9:12: error: TODO implement set stack variable with large stack offset
+
+1609733081
+g-w1
+anything more minimal than this?
+
+1609733113
+andrewrk
+you could add it as a c backend test to side step the x86 codegen deficiency
+
+1609733146
+andrewrk
+we got our work cut out for us to improve comptime perf:
+
+1609733186
+g-w1
+yep, just tested that even with release and it was super slow
+
+1609733189
+fengb
+You ran a benchmark for 3 hours?
+
+1609733211
+fengb
+That’s dedication
+
+1609733226
+g-w1
+what is the var case thing for c?
+
+1609733250
+g-w1
+oh, its in stage2/cbe.zig
+
+1609733262
+andrewrk
+3 min
+
+1609733302
+fengb
+Ohh haha I misread. it’s nowhere near as bad :P
+
+1609733359
+andrewrk
+well it did get OOM killed
+
+1609733364
+andrewrk
+kind of hard to do worse than that
+
+1609733389
+fengb
+Oh that explains the termination
+
+1609733483
+g-w1
+what is it with stage1?
+
+1609733552
+andrewrk
+compile error, inline doesn't work according to zig spec in stage1
+
+1609733641
+g-w1
+this is fast. idk if correct though
+
+1609733671
+g-w1
+no, it is
+
+1609733677
+andrewrk
+wait why is that different
+
+1609733683
+g-w1
+because no inline
+
+1609733691
+andrewrk
+comptime and inline calls are the same thing
+
+1609733700
+andrewrk
+also you only need 1 comptime keyword for that
+
+1609733715
+g-w1
+I thought it was doing at runtime because so fast, so I comptimed it out :P
+
+1609733726
+g-w1
+why is it so fast?
+
+1609733833
+andrewrk
+here's a tracy with fibonacci(10) (fits in 1000 quota)
+
+1609733915
+g-w1
+can you zoom in on one of those towers to show all the functions called?
+
+1609733952
+andrewrk
+yep
+
+1609733967
+andrewrk
+did you get tracy working for you?
+
+1609734013
+g-w1
+I had some trouble with one of the libs, but what ill do is just use the source from the version with the same binary on nixos
+
+1609734017
+g-w1
+ill try it soon
+
+1609734118
+g-w1
+oh we also need to know what to do when you do zig run with -ofmt=c
+
+1609734155
+g-w1
+maybe just sub-call zig run on the c file?
+
+1609734738
+andrewrk
+g-w1, I think your test case will fail
+
+1609734811
+g-w1
+why?
+
+1609734875
+andrewrk
+I think y == 1
+
+1609734899
+g-w1
+thats what I thought, but it passes on my machine?
+
+1609734947
+andrewrk
+when you say it passes you mean you are running `zig build test-stage2 -Denable-llvm` ?
+
+1609734966
+andrewrk
+-Denable-llvm is required for `zig run` to support .c files
+
+1609734985
+g-w1
+yes, it also passes with y - 1
+
+1609734992
+g-w1
+so probably a bug in the cbe
+
+1609735141
+g-w1
+it actually deadlocks with -Denable-llvm?
+
+1609735190
+g-w1
+but just doing `-Denable-qemu` runs the cbe test
+
+1609735308
+g-w1
+ill update it to y - 1 just so that in the future it will work
+
+1609735791
+andrewrk
+g-w1, in your "this is fast" code example it uses a comptime parameter which is not supported by stage2 yet so that's just a runtime call and it looks like the detection of a runtime call in a comptime block didn't trigger an error
+
+1609735809
+g-w1
+the @compileLog worked
+
+1609735818
+andrewrk
+wait, never mind, because it's in a comptime scope, so the parameter doesn't matter
+
+1609735846
+andrewrk
+with stage1?
+
+1609735855
+g-w1
+does it not work for you?
+
+1609735864
+andrewrk
+error: no entry point found
+
+1609735872
+g-w1
+with stage1 yeah
+
+1609735880
+g-w1
+stage1 is faster than stage2
+
+1609735923
+g-w1
+*in this example
+
+1609736014
+andrewrk
+that's the correct answer too
+
+1609736046
+andrewrk
+I wonder what's taking up all the memory
+
+1609736053
+g-w1
+we may just need some hot paths. i gtg now, but later in the week ill do some profiling if I can get tracy to work
+
+1609736080
+g-w1
+the hot paths to shorten those "towers"
+
+1609736128
+andrewrk
+stage1 faster than python3 for this example too...
+
+1609736138
+andrewrk
+wtf
+
+1609736195
+g-w1
+zig comptime would be a very nice interpreted language if we added io to it
+
+1609736552
+g-w1
+ooooooooohhhhhhhhhhhhhh
+
+1609736559
+g-w1
+its the memoized fn calls!!!!!!!
+
+1609736598
+g-w1
+i was thinking abt how u usually speed up fib and then figured out by dynamic programming :P
+
+1609736733
+g-w1
+lol zig does dynamic programming for you
+
+1609737435
+andrewrk
+omg lol that's totally it
+
+1609737449
+andrewrk
+
+
+1609739109
+kbd
+Unsure what I'm doing wrong here:
+
+1609739191
+kbd
+Also I'm not sure what I'm supposed to make the return type of `buildFuncMap`.
+
+1609743066
+mikdusan
+kbd: change return type from `type` to `std.StringArrayHashMap(*const @TypeOf(hello))` ; using the former forces fn to be comptime. you don't want that here.
+
+1609743112
+kbd
+that all makes so much sense, ty. I didn't understand the error message.
+
+1609743407
+kbd
+Specifying types is the hardest part of Zig for me so far. Hence just making a function and taking its type instead of figuring out how to specify the function type inline.
+
+1609743426
+mikdusan
+a neat lang enhancement would be to allow function (the parameters) and return type to INSERT the function body for global name resolution. so in body it would be nice to `fn (...) T { const T = ....; var T ....; };` but that would have shadowing issues. maybe a builtin to anchor that scope: `fn buildFuncMap() #body.T { const T = std.StringArrayHashMap(...); };` and nope this still wouldn't solve shadowing
+
+1609743428
+mikdusan
+issues.
+
+1609743649
+mikdusan
+related, return type inference is not a feature of the language (which is what I think your code was originally trying to do).
+
+1609743865
+kbd
+Here's how I got there actually... Originally I had `std.StringArrayHashMap` as the return type, not realizing that the full type is `std.StringArrayHashMap(*const @TypeOf(hello))`. Then I followed error messages and maybe something in the stdlib to get there. And I didn't understand how comptime works, now I get that the `std.StringArrayHashMap(*const @TypeOf(hello))` is comptime and the `.init(A)` is runtime, after reading the source of
+
+1609743865
+kbd
+StringArrayHashMap.
+
+1609743992
+kbd
+I didn't expect type inference and was sure "type" was wrong, but it compiled if `var funcmap = buildFuncMap();` was commented out, so it was legal... but again I didn't understand comptime. Makes sense now, thanks again :)
+
+1609744193
+mikdusan
+>but it compiled if ... was commened out <-- just to be clear, that's because zig is lazy and won't resolve / compile buildFuncMap until something needs it
+
+1609744232
+kbd
+I was just typing out that that was behavior I still didn't understand :)
+
+1609744337
+kbd
+I didn't understand why the compiler didn't figure out until it was "called"... at compile time... that passing the allocator was a runtime thing.
+
+1609744470
+mikdusan
+heh this is valid zig source... as long as you don't use `whatever` --> `const whatever = @import("import me. I dare you");`
+
+1609744801
+kbd
+so that I don't have to `@TypeOf(hello)`, what's the right way to specify hello's type inline?
+
+1609745217
+daurnimator
+kbd: for a function with an inferred error set there isn't a better way
+
+1609745228
+kbd
+oh, that explains the error I'm getting lol
+
+1609745286
+mikdusan
+if it was not inferred... then `HashMap(*const fn() void)` would let you avoid builtin @typeOf()
+
+1609745310
+kbd
+cause `fn hof(myfunc: *const fn () !void) !void { try @call(.{}, myfunc, .{}); }` gives "inferring error set of return type valid only for function definitions" and I didn't understand that at all.
+
+1609745371
+kbd
+ty daurnimator
+
+1609745386
+kbd
+and mikdusan
+
+1609749979
+FireFox317
+andrewrk, yep indeed the detection code did not detect it. I've been pretty good at figuring out why it deadlocks now :P
+
+1609749991
+FireFox317
+I see you just removed the code
+
+1609750326
+FireFox317
+g-w1, the deadlock is probably caused by your current zig compiler not being master (you also have to recompile that with make/ninja)
+
+1609759400
+Sarwaz
+Hello!
+
+1609759500
+Sarwaz
+I am used to C preprocessor where I usually have a DEBUG define that I use to wrap code that I only want to be compiled in debug mode, for example if I want to perform certain assertions or output logs. What would be the equivalent way of achieving these things in Zig?
+
+1609759530
+ikskuh
+you can just make a bool const for that
+
+1609759543
+ikskuh
+or switch on std.builtin.mode
+
+1609759552
+ikskuh
+if(std.builtin.mode == .Debug) { … }
+
+1609759564
+ikskuh
+the … is only compiled in when you do a Debug build
+
+1609759583
+dutchie
+yeah, ifs whose condition is known at comptime are guaranteed to not have the "other" branch compiled
+
+1609759759
+Sarwaz
+ok, and is Zig compiler smart enough to remove a function call if my function does not do anything in debug mode?
+
+1609759775
+Sarwaz
+I mean, imagine a function that starts with if(std.builtin.mode == .Debug) and do nothing otherwise
+
+1609759888
+Sarwaz
+will there be any overhead for calling the function and evaluating the if statement or will it be completely removed in non-debug builds?
+
+1609760000
+dutchie
+
+
+1609760033
+lemmi
+Sarwaz: oh boy are you in for a treat once you figure out what you can do with comptime stuff :>
+
+1609760139
+FireFox317
+dutchie, it is smart enough to do that
+
+1609760192
+FireFox317
+
+
+1609760237
+dutchie
+indeed; my "seems not" was "seems to be no overhead"
+
+1609760249
+dutchie
+though that export trick is a good idea to ditch all the other junk
+
+1609760306
+Sarwaz
+that is really nice :)
+
+1609760381
+Sarwaz
+I am half ways in a new redis module and I need a lot of debug using redis debug functions
+
+1609760425
+Sarwaz
+and of course I did not want to have any overhead in production since efficiency is of uttermost importance here :)
+
+1609762244
+FireFox317
+Sarwaz, zig in production? :D Nice!
+
+1609763002
+hch
+hmm, in `zig cc -target x86_64-windows-gnu` i miss windres as part of the toolchain
+
+1609763046
+ikskuh
+hch: ah, yeah. windows resources :D
+
+1609763116
+hch
+:( i hate to have to build for windows but this is not an ideal world
+
+1609763141
+hch
+trying to build
+
+1609763328
+ikskuh
+i think you can patch in resources into the exe after the build i think
+
+1609765528
+g-w1
+with -Dtracy=path, does the self-hosted compiler link libc and not use the gpa?
+

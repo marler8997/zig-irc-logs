@@ -1,0 +1,640 @@
+1610413094
+ugla
+Otherwise I will try to make one.
+
+1610413165
+ugla
+Wayland coordinates are in 24.8 fixed-point format, so I have some functions to deal with that specific format, but would be nice to have a lib for any Qm.f format
+
+1610413797
+pixelherodev
+Fixed(x,y) might be a useful generic
+
+1610430135
+daurnimator
+
+
+1610445221
+mikdusan
+do we have any allocators that work in both comptime and runtime?
+
+1610445441
+dutchie
+mikdusan:
+
+1610445610
+mikdusan
+#868 would help me too. :(
+
+1610446413
+daurnimator
+When is a pointer taken at comptime valid until?
+
+1610446420
+mikdusan
+forever?
+
+1610446453
+daurnimator
+which is to ask: is returning a pointer to a stack array at comptime safe?
+
+1610446461
+mikdusan
+yup
+
+1610446512
+daurnimator
+okay...
+
+1610446553
+mikdusan
+i did it that way for an unsigned integer to string func. used log to figure the digits, then have `var buf: [N]u8 = undefined; .... return &buf;`
+
+1610446572
+daurnimator
+and what if your callee doesn't call you with `comptime foo()`?
+
+1610446574
+mikdusan
+but in order to make the same fn work at runtime... i need to branch
+
+1610446582
+mikdusan
+then it fails
+
+1610446596
+mikdusan
+with zig error 'N' is not const evaluable or whatever
+
+1610446601
+daurnimator
+I think for the code I was writing, it would that mean they hit undefined behaviour if they don't use `comptime`
+
+1610446697
+daurnimator
+
+
+1610446778
+mikdusan
+ah yes... calcLimbLen is probably able to give a comptime result?
+
+1610446791
+mikdusan
+in my case the array size flipped to be runtime dependent and error'd nicely
+
+1610446838
+daurnimator
+`calcLimbLen` works at both comptime and runtime
+
+1610446851
+daurnimator
+and its only dependant on the type of the argument; not the value
+
+1610446900
+mikdusan
+yup so [N]Limb is comptime known in both comptime and runtime initSet
+
+1610447334
+mikdusan
+oh wow... from #868 this works:
+
+1610448058
+daurnimator
+mikdusan: heh.... but I assume we don't
+
+1610448074
+daurnimator
+and how do we make cases like my above paste
+
+1610448113
+mikdusan
+daurnimator: I like the idea of fn being able to work at both comptime/runtime. but differences like returning stack working in comptime... yuck
+
+1610448200
+daurnimator
+mikdusan: the other side of the problem is: without a comptime allocator, returning a pointer to stack is the
+
+1610448211
+mikdusan
+aye aye
+
+1610448265
+mikdusan
+so this is also weird to me. I can do (4 + 4) and compiler with comptime solve it.
+
+1610448331
+mikdusan
+but I have a fn that now works both comp/runtime and print( my_dual_personality_function() ) doesn't get run at comptime unless I prefix it with comptime keyword
+
+1610448363
+mikdusan
+i wonder if there's a way to mark a fn as comptime-savvy
+
+1610448387
+mikdusan
+and this rings a bell. I bet andrew already has an issue for exactly that
+
+1610453773
+tnorth_
+hi there. Is there any facility provided by Zig to measure the execution time of a function / piece of code? Or should one just use std.time ?
+
+1610453875
+mikdusan
+not that I recall. maybe look at lib/std/hash/benchmark.zig/benchmarkHash as a quick example
+
+1610453962
+tnorth_
+mikdusan: Ok thanks, I see it uses std.Timer(). I guess using std.time.milliTimestamp() should also work?
+
+1610454033
+ifreund
+indeed, though std.Timer() is likely a lot nicer to use
+
+1610454081
+ifreund
+also it gives nanosecond precision not millisecond iirc
+
+1610454120
+mikdusan
+i think Timer can beat milliseconds and is monotonic; that is it won't be effected by your system's micro-time adjustments that happen... throughout the day
+
+1610454151
+ifreund
+right, yeah you definetly don't want the Timestamp() functions as they arent monotonic
+
+1610454329
+tnorth_
+ok, thanks. Timer() works perfectly
+
+1610454574
+Nypsie[m]
+ifreund: Thanks for the review ;)
+
+1610455846
+ifreund
+Nypsie[m]: no problem! it's code review day for me as I've got a large and very cool river PR nearing completion as well :)
+
+1610456221
+Nypsie[m]
+Ooooh nice! Cool to see more and more people contributing to other Zig projects as well :)
+
+1610456315
+Nypsie[m]
+I got a nice proposal/refactor worked out in a seperate branch that I can't wait to show to you all in the next meeting
+
+1610457234
+ifreund
+Nypsie[m]: Nice! i think there's some missing logic in the locals PR though, you don't ensure that the local indexes assigned to alloc instructions are of the correct type
+
+1610457830
+ifreund
+and don't forget that you can just generate suboptimal code if it's easier to get working
+
+1610457851
+ifreund
+i.e. don't take advantage of the compression the spec allows in the binary format for the locals vec
+
+1610458228
+Nypsie[m]
+ifreund: Ah you're right! I made the assumption that once we reached the codegen stage. We can already assume its of the correct type due to the semantic analysis phase ensuring that.
+
+1610458243
+Nypsie[m]
+s/.We/, we
+
+1610458294
+Nypsie[m]
+But I suppose we have to ensure that the value types match that of the local index
+
+1610458409
+ifreund
+exactly
+
+1610459393
+Nypsie[m]
+ifreund:  Aren't we supposed to do this check at genLoad, rather than genAlloc? At genLoad we retrieve the index and must ensure that the type of load equals that of the index. Because at genAlloc we only have the type of the variable itself, and nothing else to compare it with.
+
+1610461649
+Nypsie[m]
+Aaaah wait nvm I see what you mean now. I'll fix this later tonight after work.
+
+1610466726
+tnorth_
+what is the reason for never implicitly casting (C-like), for instance int to float?
+
+1610466773
+ifreund
+tnorth_: because that leads to subtle bugs and hard to read code
+
+1610466778
+daurnimator
+tnorth_: I imagine because in C its far too easy to do it accidentally
+
+1610466800
+daurnimator
+tnorth_: in zig any loss of precision or range must be accompanied with a cast that you intended it to happen
+
+1610467025
+waddlesplash
+daurnimator: hello, I replied to your question on GitHub; and feel free to ping me there or here now or in the future with Haiku questions :)
+
+1610467032
+waddlesplash
+and the same goes for anyone else interested in Haiku, of course
+
+1610467060
+waddlesplash
+interest in Haiku outside of the community itself is not very common, so whatever I can do to grease wheels is always a pleasure
+
+1610467098
+daurnimator
+waddlesplash: re: libbe. as its a layer higher than libc, I think we'd hope to avoid it in the zig standard library.
+
+1610467144
+waddlesplash
+Haiku's definition of "libc" is pretty hazy in the first place
+
+1610467157
+waddlesplash
+"libroot.so" has all the libc bits in it, but it has a bunch of Haiku-specific APIs, too
+
+1610467166
+daurnimator
+that we understand
+
+1610467180
+daurnimator
+most (all?) oses are sort of the same with that pattern
+
+1610467194
+waddlesplash
+hmm, actually, are you sure find_directory is in libbe?
+
+1610467197
+waddlesplash
+I don't think it is
+
+1610467204
+waddlesplash
+that documentation may be wrong
+
+1610467213
+daurnimator
+the breadcrumb of your linked docs indicated libbe; that's all I have to go on
+
+1610467314
+waddlesplash
+yeah, it is actually part of libroot.so
+
+1610467321
+daurnimator
+waddlesplash: and thanks for joining in :) welcome to our community!
+
+1610467393
+waddlesplash
+:)
+
+1610467418
+daurnimator
+waddlesplash: zig considers cross-compilation a first class use-case. my first thought of how zig can help haiku is by allowing people to compile not only zig, but C for haiku from anywhere.
+
+1610467435
+waddlesplash
+you are going to find that tricky for 2 reasons:
+
+1610467450
+waddlesplash
+1. most Haiku applications are C++, which is somewhat more complicated to cross-compile (but not a lot)
+
+1610467460
+daurnimator
+waddlesplash:
+
+1610467475
+waddlesplash
+2. Haiku applications rely heavily on extended attributes, which many OSes do not support, or support badly at the filesystem level
+
+1610467507
+waddlesplash
+obviously we support cross-compiling Haiku itself from Linux, etc., but we have some evil tricks in the build system to get around a lack of xattr support
+
+1610467546
+daurnimator
+waddlesplash: once the current basic support is done; and a few more... one item to get an early start on might be to help us get libc/libroot headers under a permissive enough license that we can distribute them with zig itself.
+
+1610467558
+waddlesplash
+Haiku is already MIT-licensed
+
+1610467564
+waddlesplash
+so you are covered :D
+
+1610467688
+waddlesplash
+filed ticket about erroneous documentation:
+
+1610467833
+waddlesplash
+daurnimator:
+
+1610467902
+waddlesplash
+I don't know of any other OS/filesystem that supports xattr types; and besides that, most have extremely restrictive size limits for individual or total attributes
+
+1610467925
+waddlesplash
+or just disable them entirely and require you to edit fstab to enable them in the first place
+
+1610467971
+waddlesplash
+under Linux, if you want to use fully native xattrs during a Haiku cross build, you have to use XFS or maybe BTRFS
+
+1610467992
+waddlesplash
+ext4 tops out at 32-64k of xattrs or something like that
+
+1610469542
+oats
+how can I, in the default executable build.zig, set the default target to "native-native-gnu"?
+
+1610469571
+oats
+I've tried combing through std.build but I still don't get it :P
+
+1610469735
+ifreund
+oats: see the standardTargetOptions() function
+
+1610469753
+ifreund
+you can set a default target with the "args" parameter
+
+1610469813
+ifreund
+and don't forget to call setTarget() on your LibExeObjSteps of course
+
+1610469821
+dutchie
+
+
+1610469934
+oats
+would this work? StandardTargetOptionsArgs{.defaut_target = .{.abi = .gnu}}
+
+1610470264
+ifreund
+oats: yes, I believe so
+
+1610470610
+oats
+hey that seems to work
+
+1610470612
+oats
+thanks y'all
+
+1610470708
+dutchie
+i tend to have more success reading the std library code than the docs at the moment
+
+1610472234
+marler8997
+waddlesplash out of curiosity, what sorts of things does Haiku do with the extra xattrs it supports?
+
+1610472242
+waddlesplash
+lots
+
+1610472254
+waddlesplash
+as that documentation page shows, contacts are stored on Haiku in empty files with xattrs
+
+1610472285
+waddlesplash
+similarly, email is stored as one-file-per-message, with to/from/subject/... in xattrs, and then you can search for email using the standard filesystem search dialog
+
+1610472295
+waddlesplash
+you can give any file a custom icon by setting the "icon" attribute
+
+1610472359
+waddlesplash
+file mimetypes are stored in an attribute (i.e. instead of having to sniff every time)
+
+1610472387
+marler8997
+interesting, which filesystem type supports xattrs like that?
+
+1610472408
+marler8997
+or does haiku use it's own filesystem format?
+
+1610472415
+waddlesplash
+some filesystems also expose various on-the-fly metadata that way, e.g. our packagefs exposes a "SYS:PACKAGE" attribute which tells you what package a file comes from
+
+1610472427
+waddlesplash
+marler8997: the Be File System, which comes from BeOS, yes
+
+1610472438
+marler8997
+ah
+
+1610472442
+waddlesplash
+Linux et al. can at least read befs
+
+1610472471
+waddlesplash
+but I think Haiku's driver is the only one with write support
+
+1610472496
+marler8997
+I'd be interested in seeing what Haiku has to offer, I see there's videos on the website, any you would recommend I look at?
+
+1610472520
+waddlesplash
+marler8997: there are then also attribute "indexes", so you can run "query" to search for e.g. "media/* files with MEDIA:duration >= ..."
+
+1610472537
+waddlesplash
+(i.e. at the filesystem level)
+
+1610472553
+marler8997
+ah...now there's a reason for why they are xattrs
+
+1610472559
+marler8997
+instead of just somewhere inside the file
+
+1610472566
+waddlesplash
+well you can add the attributes to any file
+
+1610472572
+waddlesplash
+no need to worry about formats
+
+1610472654
+waddlesplash
+if you want a video, this is a pretty quick introduction:
+
+1610472668
+waddlesplash
+the FAQ and then User Guide are better overviews and then documentation of the "why" and the "what"
+
+1610472682
+marler8997
+yeah, I was wondering why you would put email fields in xattrs instead of just inside the email file itself...with the filesystem query feature, now I see why you would put them in xattrs
+
+1610472955
+hidayat
+Hi, just started coding in zig, could not find any information on how to compare struct with each other.
+
+1610472956
+hidayat
+Is it to use memcmp from C, if it is, are all Structs padded with zeros?
+
+1610472989
+ifreund
+hidayat: using memcmp on non packed/extern struct would be a bug
+
+1610473000
+ifreund
+std.meta.eql() will do a comparison field by field
+
+1610473129
+hidayat
+cool, thanks
+
+1610473413
+hidayat
+Is there some way of padding a struct with zeros without using memset. Thinking of the use case where you
+
+1610473413
+hidayat
+wanna create a hash from the bytes in a struct. For example to hash all states in a Vulkan pipeline?
+
+1610473414
+hidayat
+Or do you need to pack the struct to be able to do that?
+
+1610473450
+ifreund
+hidayat: you can use a struct with a well-defined memory layout like a packed/extern struct
+
+1610473463
+ifreund
+or you can hash all of the fields individually
+
+1610473492
+ifreund
+zig makes no guarentees about the padding/layout of "plain" structs
+
+1610473686
+hidayat
+thanks:)
+
+1610473768
+ifreund
+no problem, have fun!
+
+1610473833
+hidayat
+thanks, it's been really fun so far:)
+
+1610474533
+hidayat
+just tested std.meta.eql, its soo good, this something that has been missing in C and C++ for a long time
+
+1610474839
+mikdusan
+and look at the source code for it. I don't know if it's possible in c++20 but imagine doing the same thing with templates
+
+1610475535
+hidayat
+:)
+
+1610478145
+Nypsie[m]
+ifreund: Finally managed to ensure the index's valtype and the local match. Unfortunately I had to dumb it down a little (requires allocation and no compression). But it was the best I could come up with, with the current structure that is.
+
+1610486330
+rowbee
+how does gdb syntax highlight zig code?
+
+1610486346
+rowbee
+it not only highlights C keywords but also stuff like @ptrToInt
+
+1610486351
+rowbee
+which isn't valid C
+
+1610486375
+rowbee
+and stuff like pub fn which obviously isn't C
+
+1610486602
+andrewrk
+I didn't know it did that, that's neat
+
+1610486629
+andrewrk
+maybe it uses an open source syntax highlighting library such as pygments
+
+1610487051
+rowbee
+wait it's not intentional
+
+1610487054
+rowbee
+that's so weird
+
+1610487168
+rowbee
+
+
+1610488241
+andrewrk
+I briefly checked the source, it does not mention zig explicitly
+
+1610489642
+rowbee
+really odd
+
+1610489651
+rowbee
+time to gdb gdb
+
+1610489776
+rowbee
+looks like rust.lang contains almost all the keywords i see (pub, fn, usize, etc.)
+
+1610489790
+rowbee
+so it's possible src-highlite detect zig as rust
+
+1610489803
+fengb
+Same hack we do on Discord :P
+
+1610489836
+rowbee
+lol
+
+1610490905
+greeb
+/quit/win 2
+
+1610490916
+greeb
+oops!
+
+1610490964
+greeb
+long annoying day, sorry -_-
+

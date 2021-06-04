@@ -1,0 +1,1272 @@
+1611189700
+fengb
+andrewrk: how is Thread.Condition intended to work?
+
+1611189722
+andrewrk
+fengb, same semantics as pthread_cond
+
+1611189726
+fengb
+It doesn't right now, and I want to update it to be "okay"
+
+1611189739
+fengb
+I mean the interface. It references things that doesn't exist
+
+1611189760
+andrewrk
+oh oops
+
+1611189775
+fengb
+Needs things like `.cond = .{ .impl = .{} }`
+
+1611189815
+fengb
+And PThreadCondition.wait uses &mutex.mutex, which I think should be &mutex.impl.pthread_mutex
+
+1611189832
+andrewrk
+I think it's just missing `= .{},` on the impl field
+
+1611189860
+andrewrk
+be aware of this too
+
+1611189878
+fengb
+And theres no methods on the top level so it;s through cond.impl
+
+1611189969
+fengb
+Oh boy that's a big change. Maybe I'll wait for now >_>
+
+1611192400
+daurnimator
+Is there a proposal around already for an `else at comptime` block for `asm`?
+
+1611192418
+daurnimator
+i.e. a block of code that would run instead of the asm, if the code was reached at comptime?
+
+1611197955
+Snektron
+asm statements are constexpr in C++20 for this reason
+
+1611199213
+daurnimator
+Snektron: huh?
+
+1611199259
+daurnimator
+Snektron: I'm trying to think of a reasonable alternative to an `@isComptime()` builtin so that we can have optimized assembly without making a funciton unavailable at comptime
+
+1611204733
+Snektron
+In C++ it works like this afaik: asm statements are allowed in constexpr functions but arent allowed to execute. This allows `if constexpr (std::is_constant_evaluated()) comptime_implementation()`.
+
+1611204747
+Snektron
+So thats basically the isComptime approach
+
+1611204803
+Snektron
+Anyway, my understanding was that this is what builtins should be used for? like @sqrt and stuff. I also understand that this falls short, though
+
+1611206108
+daurnimator
+Snektron: in e.g. the gimli implementation, we have a general algorithm in pure-zig, and an optimized version for x86_64.
+
+1611206121
+daurnimator
+Snektron: the trouble is, that means that it doesn't work at comptime when targeting x86_64
+
+1611206406
+Snektron
+What about specialized syntax that allows one to run asm or normal code at comptime
+
+1611206417
+Snektron
+So basically a restricted version of isComptime
+
+1611206436
+Snektron
+Although that would allow custom implementation of isComptime fairly easily
+
+1611210400
+daurnimator
+Snektron: yeah. that's what I was proposing: essentially an `else` block on `asm` blocks....
+
+1611217212
+kameliya[m]
+hm. I feel like `comptime { std.testing.refAllDecls(@import("exports.zig")); }` is not the way to force my exports to get reffed. what am I missing?
+
+1611219819
+ifreund
+kameliya[m]: refAllDecls() will only run if bulit in test mode
+
+1611219836
+ifreund
+comptime { _ = @import("exports.zig"); } should do it
+
+1611219856
+kameliya[m]
+ahh, thank you!
+
+1611219886
+kameliya[m]
+that did the trick!
+
+1611236282
+zags
+Is there a way to test comptime functions? I want to make sure compileError is hit in certain cases.
+
+1611236324
+ifreund
+we don't have a way to test for compile error currently, though there's an open issue for that iirc
+
+1611236789
+zags
+ok cool
+
+1611239468
+zags
+Is there logic to @TypeOf and @typeInfo having different case on first letter?
+
+1611239622
+dutchie
+yes. @TypeOf(...) is a type, and @typeInfo(...) is a value
+
+1611239632
+dutchie
+(obviously types being values blurs the lines a little, but)
+
+1611239660
+g-w1
+functions that return types (usually generics) are capical because Types are capital
+
+1611239661
+dutchie
+you can write `fn foo(x: anytype) @TypeOf(x)` but not `fn foo(x: anytype) @typeInfo(x)`
+
+1611255242
+mjsir911
+On the build from source instructions it mentions that if you want to use pre-built zig the libraries need to be built with zig. How do zig built archives/libs differ from them built with other compilers? I would've assumed the same symbols get exported either way, do calling conventions differ?
+
+1611255334
+ifreund
+that's a issue that plagues all C++ linkingn
+
+1611255371
+ifreund
+the C++ ABI is implementation dependant so you need to use the same compiler for any two objects you want to link
+
+1611255375
+mjsir911
+ah, is it the name mangling?
+
+1611255394
+mjsir911
+But I see, thank you ifreund
+
+1611255438
+ifreund
+I'm not sure on the details, and I'm not sure I want to know more :D
+
+1611255441
+ifreund
+no problem!
+
+1611257523
+pixelherodev
+andrewrk: you commented of 5521 that usingnamespace is discouraged outside organization of a public API, right?
+
+1611257529
+pixelherodev
+s/of/on//
+
+1611257546
+andrewrk
+right
+
+1611257662
+pixelherodev
+Hmm, need to pop open stdlib real quick to let the thought develop a bit more, might open a related proposal soon
+
+1611257689
+ikskuh
+andrewrk: how is your stance on 6709?
+
+1611257732
+pixelherodev
+...I should take a minute to write a bot for this channel for %%6709 :O
+
+1611257738
+pixelherodev
+s/O/P/
+
+1611258124
+ifreund
+comments welcome:
+
+1611258463
+andrewrk
+ikskuh, still ambivalent
+
+1611258479
+andrewrk
+ifreund, are you aware of std.meta.eql?
+
+1611258485
+ikskuh
+i'd like to convince you of "let's do it"
+
+1611258504
+andrewrk
+ifreund, oops never mind I should have read your whole description
+
+1611258514
+ifreund
+andrewrk: am I stupid and std.meta.eql follows pointers?
+
+1611258518
+ifreund
+oh ok :)
+
+1611258565
+ifreund
+I guess std.meta.deepEql() would be an alternative place to put this
+
+1611259730
+pixelherodev
+ikskuh: one note on your example (which can be positive or negative depending on perspective): it moves more logic into stdlib and away from the language and, especially, conventions
+
+1611259760
+pixelherodev
+If a library defines an interface, that library now either depends on stdlib or breaks conventions
+
+1611260003
+pixelherodev
+If our stance is, "You shouldn't be using a custom stdlib, but should use e.g. BYOS if needed instead," then this perfectly fine - though freestanding code without stdlib can definitely make sense, breaking conventions is probably okay there, but it means that the right way to use interfaces now depends on the use case for your code
+
+1611260051
+pixelherodev
+ikskuh: I think the focus needs to be less on the use cases and more on the impacts. The use cases are clearly improved by the proposal, the question is whether it has any harmful or undesirable side effects
+
+1611260256
+ifreund
+pixelherodev: Isn't one of the major selling points of zig that the std is totally suitable for freestanding?
+
+1611260345
+ikskuh
+pixelherodev: even then, removing a burden from the language and shifting it to stdlib also means we can make that stuff "external library only"
+
+1611262861
+mikdusan
+lordy. someone got macos 10.15 (x86_64) running on ipad pro (arm64) using I'm guessing rosetta 2 x86_64 translator
+
+1611263684
+pixelherodev
+ifreund: yes
+
+1611263703
+pixelherodev
+ifreund: but it doesn't need to be used, and not using it reduces potential attack surface, for instance
+
+1611263715
+pixelherodev
+(yes, lazy eval; that just means you don't know what parts of std you need to evaluate!)
+
+1611264344
+zags
+I'd like to pass a function to a function (like a C callback really, but no C involved here), but I struggle finding the syntax. Anyone got an example?
+
+1611264454
+Gliptic
+the type is just: fn(parameters...) returntype
+
+1611264468
+Gliptic
+and you just pass the function by name, no special syntax there
+
+1611264580
+Gliptic
+the parameters... would be the list of types
+
+1611264602
+zags
+Ok, so easy it tripped me up :D
+
+1611264604
+zags
+Thanks
+
+1611264658
+zags
+Oh, and also... can I declare a parameter as taking any struct containing a function with a given signature?
+
+1611264679
+ifreund
+zags: the way to do that is to use anytype
+
+1611264720
+ifreund
+if the struct doesn't have a function with the required signature you'll get a compile error when you try to use that signature
+
+1611264730
+zags
+Interesting
+
+1611264732
+ifreund
+this is how std.io.Reader/Writer work for example
+
+1611264745
+zags
+Powerful!
+
+1611264768
+ifreund
+comptime duck-typing yeah :D
+
+1611264788
+Gliptic
+some say too powerful (*cough* C++ templates)
+
+1611264810
+zags
+heh
+
+1611265548
+terinjokes
+is there an example of using anytype with std.io.Reader? i've been doing `comptime ReaderType: type`
+
+1611265726
+zags
+A downside with anytype is that it makes for bad API documentation
+
+1611265741
+ifreund
+zags: agreed
+
+1611265763
+zags
+Yeah, in this case, I unfortunately will need to expose it, so it would be nice to document the signature
+
+1611265767
+ifreund
+there have been some proposals to improve that but nothing that's managed to solve it in a satisfactory way yet
+
+1611265776
+zags
+I see
+
+1611265882
+zags
+I intuitively tried things like this :)   pub fn compute(callback: .{callable: fn lambda([]const u8) u32}) void {
+
+1611265898
+zags
+I intuitively tried things like this :)   pub fn compute(callback: .{callable: fn([]const u8) u32}) void {
+
+1611266016
+ifreund
+note that you can type check the argument in whatever way you like within your function using @typeInfo()
+
+1611266062
+zags
+yeah, noticed that, very nice - my concern is mostly with providing a clean interface. Zig will get there!
+
+1611266158
+ifreund
+zags: plenty of discussion on this (rejected) proposal if you're curious:
+
+1611266167
+zags
+Thanks
+
+1611266271
+zags
+I think the rejection misses the point. It's going to be hard for library users to discover how such generic interfaces are supposed to be used
+
+1611266726
+ifreund
+I don't thik that specific proposal pulls its weight
+
+1611266751
+ifreund
+users of your API would need to read your type-checking function instead of your doc comment is all
+
+1611266829
+zags
+not a fan
+
+1611266986
+ifreund
+terinjokes: Using anytype the the only way to take any possible reader as an argument currently
+
+1611266989
+ifreund
+e.g.
+
+1611267024
+ifreund
+zags: I'm not happy with the current situation either, I just haven't been able to think of anything better
+
+1611267062
+zags
+A tough one. btw, that json example on the home page confused me for a long time, I read the backslashes as comments because of the green :D Damnit, that took me too long.
+
+1611267065
+terinjokes
+i forget where I pulled my current code from (i think std?), but taking `comptime T: type` and returning a struct with a function member that takes T as a parameter
+
+1611267196
+ifreund
+zags: yeah, maybe that could use a // comment saying it's a multiline string, zig's syntax for them is a bit atypical
+
+1611267208
+ifreund
+I kinda love it though for its simplicity
+
+1611267239
+zags
+yeah it's nice, i guess it was mostly the "this is a comment" coloring that threw me off, maybe because I use green comments haha
+
+1611267274
+ifreund
+it's red for me:
+
+1611267278
+zags
+the vscode rendering of the same code is much easier
+
+1611267294
+ifreund
+which matches the color of the "std" string just above
+
+1611267297
+zags
+ifreund: on the webpage?
+
+1611267301
+ifreund
+yeah
+
+1611267311
+ifreund
+are you in dark mode or something?
+
+1611267329
+zags
+weird, I'm in darkmode on macos yeah, does it pick that up?
+
+1611267334
+ifreund
+yeah
+
+1611267343
+zags
+oh well :D
+
+1611267363
+zags
+the darkmode vscode color scheme makes much more sense
+
+1611267460
+ifreund
+I'm not really sure where the website highlighting comes from, but you could open an issue here if you feel strongly about it:
+
+1611267486
+zags
+nah, it's not important in the grand scheme of things
+
+1611267861
+zags
+pub doesn't mean what I think it did. I'm able to call a non-pub function inside a struct from the outside. So it's more about linker visibility?
+
+1611267895
+ifreund
+pub is file-based
+
+1611267948
+zags
+hm so what does it mean to put pub on a struct function?
+
+1611267984
+ifreund
+it means that function will be visible when using that struct in a different file
+
+1611268006
+zags
+alright
+
+1611268036
+zags
+docs appear to be mute on the topic, unless I'm missing something, so thanks :)
+
+1611268059
+ifreund
+I wonder what ziglearn.org has to say
+
+1611268074
+zags
+Is that official?
+
+1611268086
+zags
+It says "The built-in function @import takes in a file, and gives you a struct type based on that file. All declarations labelled as pub (for public) will end up in this struct type, ready for use"
+
+1611268090
+zags
+which is good enough
+
+1611268163
+ifreund
+ziglearn was started by a community member so not really "official" no
+
+1611268170
+ifreund
+quite a good resource though
+
+1611268183
+kameliya[m]
+officially there's no such thing as official per se
+
+1611268196
+terinjokes
+but it's much easier to read through the first time, before getting into the main docs (and it is linked to from ziglang.org)
+
+1611268200
+kameliya[m]
+(from ziglang.org: "Anyone is free to start and maintain their own space for the community to gather. There is no concept of “official” or “unofficial”, however, each gathering place has its own moderators and rules.")
+
+1611268224
+zags
+Good to know
+
+1611268249
+zags
+I'm more interested in "kept up to date" than official :)
+
+1611268259
+zags
+and correct
+
+1611268314
+ifreund
+ziglearn should be at least as up to date and correct as the "official" language reference :D
+
+1611268343
+zags
+I see :)
+
+1611268386
+Gliptic
+is there a debug print function that only prints when you run in Debug compilation mode?
+
+1611268413
+g-w1
+std.log.info
+
+1611268437
+ifreund
+std.log.debug would be more suitable
+
+1611268449
+ifreund
+info is intended for status messages
+
+1611268465
+Gliptic
+aha, I didn't make that connection
+
+1611268483
+zags
+so @hasDecl can tell me about the presence of a function, is there also a way to check parameter and return types?
+
+1611268524
+ifreund
+zags: @typeInfo()
+
+1611268558
+zags
+Looked at it, docs scarse. But that puts me on the right track, thanks
+
+1611268572
+ifreund
+you'll probably also want to check out the definition of TypeInfo in std/builtin.zig
+
+1611268604
+kameliya[m]
+^ there's an abundance of information to use, just not well-documented at the moment. you can go very far with comptime reflection.
+
+1611268652
+zags
+cool, a utility for checking signatures that lowers to @typeInfo would be awesome, but will figure it out
+
+1611268660
+ifreund
+zags: std.meta.trait
+
+1611268692
+ifreund
+though actually I don't know if that checks signatures or not
+
+1611268712
+ifreund
+also I've never felt the need to use it
+
+1611268725
+kameliya[m]
+i have dipped into it from time to time, with fun results :3
+
+1611268772
+zags
+ifreund: i kinda wanna check it out to give nicer compile errors given the anytype discussion above
+
+1611268865
+zags
+like, i want if (!@hasDecl(s, fn lambda([]const u8) u32)) @compileError("nice explanation")
+
+1611268872
+zags
+:)
+
+1611269073
+ifreund
+I guess I've managed to avoid using anytype well enough so far that I haven't felt the need
+
+1611269103
+zags
+yeah this isn't common for sure
+
+1611269105
+ifreund
+the main thing I use it for is passing around std.io.Writer/Readers
+
+1611269152
+ifreund
+and I find the paramter names clear enough for that as they are well-known types
+
+1611269547
+ifreund
+I kinda feel like zig just needs to make structural typing explict instead of implict through the "try it and see if it errors" approach of anytype
+
+1611269643
+zags
+agreed
+
+1611269656
+zags
+const type = @typeInfo(@TypeOf(...))
+
+1611269667
+zags
+is there a utility to dump the type structure?
+
+1611269695
+ifreund
+std.debug.print("{}\n", .{foo}); can print structs
+
+1611269741
+zags
+cool
+
+1611269748
+zags
+but, TypeInfo{ .Type = void } wasn't informative :d
+
+1611269769
+zags
+The input is actually a struct with a few fields
+
+1611269790
+ifreund
+you don't need the @TypeOf() then
+
+1611269799
+ifreund
+@TypeOf(struct{}) is type
+
+1611269815
+zags
+yeah, tried that, got some compile error
+
+1611269818
+ifreund
+you want @typeInfo(sturct{}) though
+
+1611269849
+zags
+note that the input here is from an anytype
+
+1611269857
+zags
+passed as a param
+
+1611269865
+kameliya[m]
+what was the compile error?
+
+1611269871
+ifreund
+you do need the @TypeOf() then
+
+1611269883
+ifreund
+how are you calling your function?
+
+1611269889
+zags
+kameliya[m]: expected type 'i32', found '*const comptime_int'
+
+1611269892
+zags
+when I try to print it
+
+1611269910
+zags
+@typeInfo(x), where x is an anytype parameter
+
+1611269912
+ifreund
+I'm guessing that you are passing a type as your anytype param instead of a value
+
+1611269914
+zags
+then I try to print that
+
+1611269928
+ifreund
+s/value/struct value/
+
+1611269936
+ifreund
+(types are values at comptime)
+
+1611269967
+zags
+ifreund: well, I pass a struct value, I know that because the function works, it accesses a field
+
+1611270012
+ifreund
+not sure what you're doing wrong then, would probably need to see the code to be of much more use
+
+1611270025
+zags
+i'm trying to print the typeinfo struct to get a clue of what it contains
+
+1611270041
+zags
+that's compile time so doesn't seem like print should work
+
+1611270063
+zags
+tried compileLog without luck
+
+1611270083
+ifreund
+@typeInfo() returns a normal struct
+
+1611270090
+ifreund
+no reason you can't print that at runtime
+
+1611270090
+kameliya[m]
+yep, this is the compile error I get if I try to print a typeInfo of a struct:
+
+1611270095
+kameliya[m]
+/Users/kameliya/Code/zig/build-native/lib/zig/std/fmt.zig:540:17: error: values of type 'std.builtin.StructField' must be comptime known, but index value is runtime known
+
+1611270105
+ifreund
+hmm
+
+1611270115
+zags
+right, i'm doing compile time reflection here
+
+1611270122
+kameliya[m]
+looks like there might be a small bug, not sure
+
+1611270164
+ifreund
+works for me
+
+1611270166
+ifreund
+TypeInfo{ .Struct = Struct{ .layout = ContainerLayout.Auto, .fields = StructField@0, .decls = Declaration@0, .is_tuple = false } }
+
+1611270187
+ifreund
+maybe because I just printed a struct{} though...
+
+1611270195
+zags
+and that's based on an anytype argument?
+
+1611270196
+zags
+ah
+
+1611270199
+kameliya[m]
+hm, works for me on an empty struct too
+
+1611270204
+kameliya[m]
+using anytype, for me.
+
+1611270217
+kameliya[m]
+will update to latest master.
+
+1611270244
+zags
+ye i'm on master btw
+
+1611270244
+ifreund
+
+
+1611270276
+zags
+does it work if you pass the struct through an anytime paramater?
+
+1611270283
+kameliya[m]
+yep, same error
+
+1611270294
+kameliya[m]
+ifreund: that fails for you, right?
+
+1611270312
+ifreund
+nope
+
+1611270318
+kameliya[m]
+oh, it does here
+
+1611270325
+kameliya[m]
+what version are you running? might be a regression.
+
+1611270373
+zags
+pub fn takeLambda(callback: anytype) void { const closure = @typeInfo(callback); std.debug.print("{}\n", .{closure});
+
+1611270380
+ifreund
+I was using 0.7.1, let me try master
+
+1611270423
+kameliya[m]
+ifreund:
+
+1611270436
+ifreund
+yeah master doesn't work
+
+1611270473
+kameliya[m]
+i'll open an issue unless one of you is very keen
+
+1611270481
+zags
+are test cases added when such regressions are found?
+
+1611270495
+g-w1
+yes
+
+1611270498
+kameliya[m]
+often! if i fix it, i'll be sure to :)
+
+1611270503
+zags
+noice
+
+1611270520
+zags
+my error is very different though
+
+1611270593
+kameliya[m]
+would you share a full repro?
+
+1611270647
+zags
+i'll make a minimal test case, this file is full of shit
+
+1611270729
+ifreund
+here's a minimal reproducer for the TypeInfo printing failure:
+
+1611270763
+ifreund
+I bet I know what PR caused it too
+
+1611270841
+mikdusan
+i find with that error... `inline while` wins
+
+1611271052
+ifreund
+It seems to not be that straightforward in this case
+
+1611271441
+zags
+
+
+1611271528
+zags
+well, no, I actually want to print the type info so I can see what's there, so remove TypeOf
+
+1611271531
+zags
+but that gives compile error
+
+1611271552
+zags
+no, no, no, not thinking right
+
+1611271553
+kameliya[m]
+worth noting: `closure` in main is a type, not a value
+
+1611271568
+kameliya[m]
+`struct { ... }` gives a type. you've supplied some default values but it's still a type, not a value yet.
+
+1611271580
+zags
+true, i'm confused
+
+1611271592
+zags
+but printing still doesn't work
+
+1611271611
+zags
+if I try const closure = @typeInfo(c);
+
+1611271618
+kameliya[m]
+`const my_capture: i32 = &some_local;`
+
+1611271641
+kameliya[m]
+this tries to assign a pointer (`*i32`) to a value (`i32`) and fails.
+
+1611271651
+kameliya[m]
+but it only fails when you try to instantiate the type.
+
+1611271661
+zags
+yes, removing that and I get
+
+1611271663
+zags
+values of type 'std.builtin.Declaration' must be comptime known, but index value is runtime known
+
+1611271664
+kameliya[m]
+that's why you're sometimes seeing the `*const comptime_int` error
+
+1611271668
+kameliya[m]
+yep
+
+1611271672
+zags
+same as you
+
+1611271672
+kameliya[m]
+that's where we got to above, it's a bug
+
+1611271674
+zags
+alright
+
+1611271708
+kameliya[m]
+worth noting closures won't generally Just Work unless you're somehow doing work to save the frame that the closed-over stuff points to.
+
+1611271745
+zags
+yeah, this wasn't supposed to survive the calling call-frame
+
+1611271751
+zags
+just playing around
+
+1611271753
+kameliya[m]
+ya.
+
+1611271795
+zags
+but in that example, what's the most succinct way to instantiate the struct directly to the closure variable?
+
+1611271807
+kameliya[m]
+`throw another {}` in
+
+1611271808
+kameliya[m]
+err
+
+1611271810
+kameliya[m]
+throw another `{}` in
+
+1611271819
+kameliya[m]
+`const closure = struct{ ... }{}`
+
+1611271837
+zags
+i'm amazed my original code worked then, didn't have it
+
+1611271860
+kameliya[m]
+`anytype`!
+
+1611271932
+zags
+so where does the instance actually materialize?
+
+1611271939
+kameliya[m]
+zags: fwiw, here's reworking it into something that kinda works:
+
+1611271940
+zags
+seems like footgun stuff
+
+1611271981
+kameliya[m]
+the type itself remains anonymous, but you can get it back, e.g. with `@typeOf(closure)`
+
+1611272000
+kameliya[m]
+(and it'll be the exact same type, i.e.)
+
+1611272005
+zags
+should I get a big fat warning from "const my_capture: i32 = &outsidevalue;" ?
+
+1611272026
+zags
+in the original code
+
+1611272032
+kameliya[m]
+yes, but only if you try to instantiate it.
+
+1611272037
+kameliya[m]
+if you don't, it doesn't get semantically analysed.
+
+1611272055
+zags
+but, but, but... it worked (because of anytype?) :D
+
+1611272059
+kameliya[m]
+you can write all sorts of nonsense and as long as it doesn't get analysed, the compiler won't care. this is how you can do comptime stuff.
+
+1611272068
+kameliya[m]
+nah, it just didn't get seen.
+
+1611272078
+zags
+it actually gave the correct runtime value
+
+1611272085
+zags
+let me show you
+
+1611272088
+kameliya[m]
+sure!
+
+1611272113
+kameliya[m]
+in general if you've written `const x: i32 = &abc` and it still compiles, then i guarantee you the line just didn't get seen. you can't set `i32` to a pointer of anything.
+
+1611272139
+kameliya[m]
+it's worth nothing `const x: i32 = 123;` doesn't make a struct field, too.
+
+1611272156
+zags
+
+
+1611272183
+zags
+so that prints a seemingly correct value, despite no struct instance
+
+1611272188
+kameliya[m]
+the `const my_capture` line is never run.
+
+1611272198
+kameliya[m]
+delete it, same result
+
+1611272204
+zags
+oh true, my bad
+
+1611272235
+zags
+changed to return my_capture + my_stuff;
+
+1611272254
+kameliya[m]
+now you get problems
+
+1611272257
+zags
+nope
+
+1611272262
+zags
+still works
+
+1611272264
+kameliya[m]
+?
+
+1611272268
+kameliya[m]
+nope, check your working
+
+1611272268
+zags
+nope, running wrong file
+
+1611272271
+kameliya[m]
+ya
+
+1611272271
+zags
+fuck me, I'm useless
+
+1611272275
+kameliya[m]
+no!
+
+1611272278
+kameliya[m]
+it's fine lol
+
+1611272280
+kameliya[m]
+learning
+
+1611272287
+zags
+had a repro file, ran original :D
+
+1611272317
+zags
+and const my_capture: i32 = &outsidevalue; is back
+
+1611272322
+zags
+good good
+
+1611272358
+kameliya[m]
+:3 so to make it work you'll need to change `my_capture` to `*i32`, and then change `outsidevalue` to `var outsidevalue: i32 = 205;`
+
+1611272367
+kameliya[m]
+then you'll get "cannot store runtime value in compile time variable"
+
+1611272390
+kameliya[m]
+which is why
+
+1611272413
+kameliya[m]
+(pointers to stack variables only exist at runtime, don't know where the stack is beforehand)
+
+1611272592
+mikdusan
+daurnimator: did you see
+
+1611272671
+zags
+kameliya[m]: my original delimited fields with semicolon, you used comma, what's the eli5 here? :D
+
+1611272700
+kameliya[m]
+`const a: b = c;` is a regular statement; it doesn't belong to the struct per se. `struct { a: u32, b: i32, }` -- these are struct fields.
+
+1611272739
+zags
+hm
+
+1611272879
+kameliya[m]
+in `struct { ... }`, the `{}` are opening a new scope. you can say `const x = 1 + 2;` in that scope and refer to `x` later, and it'll work. you can't refer to `x` outside the scope. but the same would be true of just regular `{}` without struct.
+
+1611272906
+kameliya[m]
+
+
+1611272915
+kameliya[m]
+./test5.zig:6:47: error: no member named 'x' in struct 'S'
+
+1611272927
+kameliya[m]
+change x to y on the print line and it works
+
+1611272938
+zags
+so those statements are executed on instantiation?
+
+1611272948
+zags
+before field initialization?
+
+1611272956
+mikdusan
+kameliya[m]: change to S.x ?
+
+1611272959
+kameliya[m]
+(oh, but you can say `S.x`)
+
+1611272987
+kameliya[m]
+they're decls in the scope of the struct, rather than fields of the struct. does that make any more sense?
+
+1611273041
+zags
+order of initialization is important. Order of appearance, decl then field, or?
+
+1611273143
+kameliya[m]
+fields are initialised when you actually instantiate an instance of the struct. decls are probably initialised when the struct itself is analysed? (i.e. comptime) i'm not too sure on the details.
+
+1611273170
+zags
+alright, thanks
+

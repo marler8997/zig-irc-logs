@@ -1,0 +1,896 @@
+1614557210
+kbd
+Help, I think I'm stuck in a loop between "error: comptime control flow inside runtime block" (on 'continue') and "error: unable to evaluate constant expression" on the 'for'.
+
+1614557238
+kbd
+will post gist
+
+1614557449
+kbd
+
+
+1614557505
+kbd
+this is the thing from the other day where I had to change tuples to structs because the former was comptime. So I'd expect the for loop to not be 'inline'
+
+1614557539
+g-w1
+use inline for
+
+1614557564
+g-w1
+i think it should work
+
+1614557595
+kbd
+inline for gives the first of the errors on the 'continue'
+
+1614557603
+kbd
+"comptime control flow inside runtime block"
+
+1614557607
+g-w1
+ah you want const format
+
+1614557698
+g-w1
+but continues inside inline for doesn't work hmm
+
+1614557698
+kbd
+ah. Hmm, changed "var format" to "const format", "for" to "inline for", and I'm still getting " error: comptime control flow inside runtime block" on the (second) continue
+
+1614557747
+g-w1
+is there some way you can not use continue?
+
+1614557831
+kbd
+yeah, apply more structured programming. Will try.
+
+1614557919
+g-w1
+this is definently a bug in stage1, idk how easy to fix
+
+1614557920
+kbd
+yep that gets passed it using flags.
+
+1614557932
+g-w1
+flags?
+
+1614557939
+kbd
+I'll post the updated code one sec
+
+1614557951
+g-w1
+k
+
+1614558124
+kbd
+oh it's still buggy anyway, lemme get the code to actually work. My point about flags was that any 'continue' can be turned into a flag (like "skip"), where the rest of the block is guarded by an "if skip".
+
+1614558154
+g-w1
+ah yep, makes sense
+
+1614558185
+kbd
+maybe that's not true in general, not sure. But in my case where the continue is at the tail of each branch I think it holds.
+
+1614558240
+kbd
+sorry, "if ( ! skip)"
+
+1614558393
+kbd
+what's the easiest way to format an integer into a string? The function I was looking at has five parameters.
+
+1614558431
+kbd
+like should I bufPrint it into a string that I know is long enough?
+
+1614558543
+g-w1
+std.fmt.formatInt
+
+1614558548
+g-w1
+or just bufPrint
+
+1614558615
+kbd
+ok I didn't understand what to use for the 'writer' on formatInt, lemme look at the stdlib again.
+
+1614558644
+g-w1
+just use bufPrint if you know the length
+
+1614558814
+kbd
+32 bit number is max 10 digits if I counted correctly. But ok, no simpler version of formatInt that I missed, thanks. Cause I look at the writer in the stdlib to try to figure out what it is and it's "anytype" 🤦‍♂️
+
+1614558953
+g-w1
+it is something that impliments std.io.writer
+
+1614558985
+g-w1
+generics in zig are kind of hard to reason about because anytype
+
+1614559115
+g-w1
+*not generics per-se but traits
+
+1614559159
+mipri
+it's static but it's still duck typing, yeah? documentation will help, and maybe some tooling to show you what the anytype looks like according to callers.
+
+1614559222
+g-w1
+i think it can be accomplished with some language features to make traits like this
+
+1614559250
+g-w1
+imo its best to implement something in the language, you shouldn't need docs to tell you something as basic as what to pass to a function
+
+1614559342
+mipri
+this is already a hard requirement for something like a format string.
+
+1614559390
+g-w1
+yeah, but i feel like there is a way to do some sort of trait thing at comptime that can better tell you the type in the signature of the function
+
+1614559407
+mipri
+although I was thinking of the var arguments that go with it, first.
+
+1614559418
+daurnimator
+kbd: indeed `continue` is broken inside of comptime loops
+
+1614559429
+daurnimator
+we've had to work around that in the standard library in a few places
+
+1614559473
+daurnimator
+also watch out for using `break` or `switch` inside of comptime loops
+
+1614559508
+daurnimator
+or even `return` inside of a comptime loop... which includes `try`
+
+1614559521
+kbd
+So the loop should automatically turn into a runtime loop if it uses runtime features, but it doesn't?
+
+1614559529
+g-w1
+is this a language flaw, or a impl flaw?
+
+1614559540
+daurnimator
+g-w1: impl.
+
+1614559544
+daurnimator
+
+
+1614559548
+g-w1
+ok
+
+1614559793
+kbd
+This worked, no continues:
+
+1614561628
+kbd
+
+
+1614561743
+kbd
+dang that was the main thing I was looking forward to (the async/await) in my Zig implementation.
+
+1614562243
+daurnimator
+kbd: I'm not sure what code you're trying with?
+
+1614562279
+kbd
+sure lemme produce a test case
+
+1614562341
+kbd
+figured maybe y'all would respond with the github issue I ran into
+
+1614562876
+kbd
+
+
+1614562914
+kbd
+I quickly stripped down my main code into that, but that reproduces.
+
+1614563048
+kbd
+that complies and runs without the 'pub const io_mode = .evented'
+
+1614563171
+kbd
+bbiab
+
+1614563294
+daurnimator
+kbd: trying to compile that I get "child_process.zig:474:17: error: missing std lib enhancement: ChildProcess implementation has no way to collect the environment variables to forward to the child process"
+
+1614563491
+g-w1
+i get the broken llvm module on latest zig
+
+1614565954
+mikdusan
+heh I was looking at which procs use compressed memory and a bunch of `llvm-tblgen` came up. From yesterday when I
+
+1614565967
+mikdusan
+that it left a dozen zombie processes
+
+1614571153
+andrewrk
+mikdusan, huh I wonder what caused those processes to become zombies
+
+1614571167
+andrewrk
+in theory if the parent is killed the children should be killed too right?
+
+1614571207
+andrewrk
+hmm I searched for "abort child processes" and did not get the results I expected
+
+1614571300
+andrewrk
+mikdusan, the script works on master branch if you comment out csky and handle the fact that some TuneFeatures are empty (handle the optional instead of .?)
+
+1614572820
+daurnimator
+andrewrk: no, if parent are killed then children get reparented to PID 1
+
+1614572851
+andrewrk
+that is not a desirable default
+
+1614572866
+daurnimator
+tell the designers back in the 80s
+
+1614572869
+daurnimator
+uh, 70s
+
+1614572877
+andrewrk
+I'd rather just set a flag to change things, is there one?
+
+1614572893
+daurnimator
+its platform dependant
+
+1614572927
+daurnimator
+but hey, it's one of those times I actually changed posix :)
+
+1614573070
+daurnimator
+andrewrk: oh, and it also depends on all the programs you
+
+1614573084
+daurnimator
+which are even more platform dependant that process groups
+
+1614573089
+daurnimator
+s/that/than/
+
+1614573122
+andrewrk
+I don't really care about posix, we can always put comptime logic to switch on the target
+
+1614573151
+andrewrk
+the behavior was observed on linux
+
+1614573181
+daurnimator
+e.g. back in 2017 I asked netbsd and they said they wouldn't implement the options unless posix mandated it.
+
+1614573274
+kbd
+is there any trick for using iterators to pass them to things like std.mem.join or sort? Trying to join the values of BufSet. Get the iterator, add them to an ArrayList, and take the .items?
+
+1614573287
+kbd
+(to pass to .join)
+
+1614581222
+mikdusan
+andrewrk: trivial PR for llvm12: #8105
+
+1614582003
+mikdusan
+thanks for "update to LLVM 12 sret callsite requirements" commit!
+
+1614582453
+andrewrk
+np
+
+1614582458
+andrewrk
+thx for the usage fix
+
+1614584035
+semarie
+andrewrk: how often is updated zig-bootstrap ?
+
+1614584121
+andrewrk
+hi semarie! it's updated when llvm releases and when zig releases
+
+1614584139
+andrewrk
+I'd be happy to do an update right now for llvm12rc2 and zig llvm12 branch
+
+1614584157
+andrewrk
+for 0.7.1 you can check out the git tag of the repo
+
+1614586062
+andrewrk
+semarie, done. master branch of zig-bootstrap is updated to latest zig llvm12 branch, and llvm 12 rc2
+
+1614586079
+andrewrk
+there are a number of issues with llvm 12 that are not resolved yet
+
+1614586760
+mikdusan
+andrewrk: you mentioned a thing you do with every zig llvm update, 24 hours, what does that process entail?
+
+1614586860
+mikdusan
+is it `zig build test` w/ llvm debug binaries or something more?
+
+1614586868
+andrewrk
+yes it's that
+
+1614586874
+andrewrk
+takes a long time to complete
+
+1614586894
+mikdusan
+just checking, are you aware that release can be built with same asserts enabled?
+
+1614586929
+TheLemonMan
+yo
+
+1614586940
+mikdusan
+hi lemon
+
+1614586974
+TheLemonMan
+re: the debug info problem, did you manage to reproduce it with LLVM12?
+
+1614586986
+mikdusan
+getting close. I've got it down to 10 megabyte .ll
+
+1614587020
+mikdusan
+and now am setting up an llvm `opt` that uses -O1 passes and will add 1 by 1 each -O2 pass difference until it poops
+
+1614587025
+TheLemonMan
+you can use llvm-reduce to perform the reduction for you
+
+1614587118
+TheLemonMan
+I usually perform a binary search, run opt with every pass and then remove half of them
+
+1614587143
+mikdusan
+ok so I have a 10 meg .ll which has been optimized and can reproduce every time these 2 things:
+
+1614587169
+mikdusan
+llc against .ll crashes. and opt --strip other.ll,  llc never crashes.
+
+1614587181
+mikdusan
+I'll give reduce a shot right now
+
+1614587698
+mikdusan
+ugh not getting how to use this thing
+
+1614587823
+TheLemonMan
+yeah, there are little to no docs, check out this video
+
+1614587832
+mikdusan
+thanks
+
+1614587832
+TheLemonMan
+2:02 shows how it works
+
+1614588446
+mikdusan
+go go gadget
+
+1614588859
+mikdusan
+down to 1.2M reduced.ll so looks like progress
+
+1614589330
+TheLemonMan
+now that's what I call weight loss
+
+1614589443
+mikdusan
+github doesn't like .xz for shame.
+
+1614589776
+mikdusan
+TheLemonMan: updated #6408
+
+1614590125
+TheLemonMan
+submitted a patch for the miscompilation
+
+1614590133
+mikdusan
+llvm-reduce managed to get it down to 200 KB . pretty impressive
+
+1614590200
+mikdusan
+90% of that is debug meta
+
+1614590612
+TheLemonMan
+we should split #6480 into two tickets, the miscompilation is unrelated to the debug assertion problem
+
+1614590618
+mikdusan
+I agree
+
+1614590637
+mikdusan
+I'll do that
+
+1614590881
+mikdusan
+this title ok? `llvm12: -OReleaseFast miscompilation of lib.std.fs.path.extension()`
+
+1614590917
+TheLemonMan
+yeah
+
+1614591028
+TheLemonMan
+the debug problem is linked to the tokens_copy being defined twice
+
+1614591055
+TheLemonMan
+same file, same line, different scope
+
+1614591106
+TheLemonMan
+as expected it's because of the `inline for`
+
+1614591257
+TheLemonMan
+fs.path.extension should use lastIndexOfScalar instead of lastIndexOf, that'd make it slightly faster than it already is
+
+1614591959
+mikdusan
+heh crossed my wires on those two issues. fixed now.
+
+1614592150
+mikdusan
+so debug issue is basically comment #8 here:
+
+1614592189
+mikdusan
+well maybe not alloca-related. i haven't checked details enough.
+
+1614592244
+mikdusan
+more recent one:
+
+1614592328
+TheLemonMan
+check out the unoptimized .ll file, do you see the same declaration for `tokens_copy` (from json.zig) ?
+
+1614592484
+mikdusan
+grep tokens_copy a2.ll  | grep dec
+
+1614592486
+mikdusan
+call void @llvm.dbg.declare(metadata %TokenStream* %tokens_copy, metadata !9959, metadata !DIExpression()), !dbg !9973
+
+1614592488
+mikdusan
+call void @llvm.dbg.declare(metadata %TokenStream* %tokens_copy22, metadata !9959, metadata !DIExpression()), !dbg !9973
+
+1614592490
+mikdusan
+call void @llvm.dbg.declare(metadata %TokenStream* %tokens_copy25, metadata !9959, metadata !DIExpression()), !dbg !9973
+
+1614592611
+TheLemonMan
+can you upload the reduced unoptimized .ll file too? I'll check if some optimization pass is mishandling the debug infos
+
+1614592615
+mikdusan
+yup
+
+1614592754
+mikdusan
+added to comment
+
+1614592823
+mikdusan
+it manifested somewhere between opt --O1 and --O2
+
+1614592931
+TheLemonMan
+you can try to pinpoint the offending passes with llvm's bugpoint
+
+1614597048
+ikskuh
+TheLemonMan: answering here to prevent spam:
+
+1614597055
+ikskuh
+even then LLVM is not doing what i'm asking for:
+
+1614597063
+ikskuh
+it's not setting rbx, but bl
+
+1614597070
+ikskuh
+which has very different semantics
+
+1614597528
+TheLemonMan
+the type itself decides what part of the register is updated, this behaviour is the same in C asm expressions (IIRC)
+
+1614597738
+ikskuh
+hm
+
+1614597752
+ikskuh
+then i consider this a footgun and should yield an error instead of silently emitting broken code
+
+1614597829
+TheLemonMan
+I guess this is only a problem on architectures with "register views" (x86 and aarch64)
+
+1614597847
+ikskuh
+yeah, but it's still a problem
+
+1614597870
+ikskuh
+asm volatile("":: [_] "{rbx}" (@as(u1, 1)):);
+
+1614597888
+ikskuh
+this is looking like it's setting rbx, but it's actually not setting rbx
+
+1614597891
+ikskuh
+thus: footgun/bug imho
+
+1614598380
+TheLemonMan
+yeah, that's definitely something the compiler should catch
+
+1614599404
+mikdusan
+am I using `llc` wrong? if I can do this:
+
+1614599439
+mikdusan
+`opt -O3 -S unoptimized.ll > optimized.ll; llc optimized.ll [SEGFAULT]`
+
+1614599446
+mikdusan
+but this:
+
+1614599457
+mikdusan
+`llc -O3 unoptimized.ll` does not segfault
+
+1614599491
+TheLemonMan
+try adding -filetype asm
+
+1614599520
+mikdusan
+no diff
+
+1614599669
+TheLemonMan
+hmm, check if the optimization pipelines are the same (pass -debug-pass=Arguments to check them)
+
+1614599711
+mikdusan
+ah. they're quite different
+
+1614602845
+mikdusan
+trigger for the debug-info assert:
+
+1614602847
+mikdusan
+opt -inline -sroa -S _unoptimized.ll > _custom.ll
+
+1614602849
+mikdusan
+llc _custom.ll
+
+1614625741
+andrewrk
+howdy TheLemonMan, thanks for the help recently troubleshooting our llvm 12 woes
+
+1614625764
+TheLemonMan
+hiya, gotta get everything lined up and ready for the release
+
+1614625910
+TheLemonMan
+if you have some spare cycles for #8007 I'll rebase it
+
+1614626123
+g-w1
+its not in the parser, its in fmt
+
+1614626159
+ifreund
+you sure? gdb lead me to believe otherwise
+
+1614626197
+g-w1
+it just throws a parse error for me
+
+1614626236
+andrewrk
+TheLemonMan, even C printf gets x/X. how come we don't get it in zig?
+
+1614626277
+andrewrk
+oh I see, you made it not ambiguous, so it only works for integers
+
+1614626300
+andrewrk
+ok, I'm game to merge it
+
+1614626409
+TheLemonMan
+x/X on slices of u8 prints the usual { 0x.., 0x.., ... }, you can get the "condensed" hex format with the supplied formatters
+
+1614626419
+TheLemonMan
+cool, I'll rebase it asap
+
+1614626456
+TheLemonMan
+g-w1, the error is in the stage2 parser used by zig fmt
+
+1614626491
+g-w1
+yep, I realized that :/
+
+1614626520
+ifreund
+found it :)
+
+1614626576
+TheLemonMan
+the tok_i -= 1 part is fishy
+
+1614626593
+TheLemonMan
+and there are many occurrences of that
+
+1614626622
+andrewrk
+TheLemonMan, it's part of the new strategy, the parser does less work and later you have to poke around the token_tags array to find information about the AST
+
+1614626657
+TheLemonMan
+yeah, but the loop is now doing nextToken() -> tok_i -= 1
+
+1614626668
+TheLemonMan
+it gets stuck in the loop for the time being
+
+1614626702
+ifreund
+yeah I think it's wrong in this case, removing it doesn't cause any tests to fail
+
+1614626725
+ifreund
+I'll try and add a test case for the desired recoverability in this situation
+
+1614626757
+TheLemonMan
+look out for some other nextToken/tok_i-=1 pairs, I noticed at least two or three of them
+
+1614628300
+marler8997
+g-w1, hey have you tried looking at that opensslstatic issue?  I don't want to deploy binaries until we figure out why it isn't working on your machine
+
+1614628405
+g-w1
+not yet, zigup works, just not google
+
+1614628415
+g-w1
+ill debug more later
+
+1614628939
+g-w1
+is anyone familiar with how the cbe allocates memory?
+
+1614629023
+g-w1
+try bw.writeAll("typedef struct { "); try dg.renderType(bw, child_type); try bw.writeAll(" payload; uint16_t error; } "); this is weird, im only getting a leak on the third write
+
+1614629112
+ifreund
+did you try valgrind yet?
+
+1614629123
+g-w1
+no, i thought the gpa was enough; is it not?
+
+1614629185
+ifreund
+I don't know, personally I'd give valgrind a try. It has saved me countless hours of debugging
+
+1614629236
+g-w1
+also when I run it on the cli its doesn't leak, only in the test harness. something is fishy
+
+1614629333
+andrewrk
+valgrind has a lot to offer zig programs because it will catch branch on undefined value, and zig has valgrind integration to mark `undefined` stuff
+
+1614629363
+g-w1
+it did catch something :)
+
+1614629369
+andrewrk
+gpa provides leak checking and a certain kind of memory safety but it will not catch branch on undefined
+
+1614629442
+g-w1
+
+
+1614629450
+g-w1
+i used valgrind -s, never used b4
+
+1614629456
+g-w1
+this is w/o -s
+
+1614629516
+g-w1
+seems like something is undefined
+
+1614629547
+andrewrk
+g-w1, that's not catching anything, you'd be better to run without valgrind in this case to get the stack trace that zig is failing to print there
+
+1614629617
+g-w1
+
+
+1614629654
+g-w1
+ig ill try to figure out how the writer allocates
+
+1614629721
+g-w1
+it seems like its just the gpa
+
+1614629762
+ifreund1
+g-w1: did you push your code yet?
+
+1614629899
+g-w1
+these 2 commits:
+
+1614629921
+g-w1
+its probably something stupid :)
+
+1614630890
+ifreund
+g-w1: I think the issue is your `     typedefs.clearRetainingCapacity();` call
+
+1614630902
+ifreund
+you don't free the owned rendered slices stored in the map
+
+1614630939
+ifreund
+(this is in updateDecl()
+
+1614630978
+g-w1
+ah, thanks
+
+1614631154
+g-w1
+ah, it was probably the case since the test harness uses the same module? its always fun debugging code you didn't write but suspecting you wrote the bug
+
+1614631312
+ifreund
+gotta get more paranoid :P
+
+1614632106
+ifreund
+TheLemonMan: did a quick pass over std/zig/parse.zig but didn't find any other `p.tok_i -= 1; p.nextToken();` loops :)
+
+1614632348
+TheLemonMan
+yay, no more infinite loops
+
+1614633349
+andrewrk
+brilliant
+
+1614633372
+andrewrk
+and thanks to FireFox317 we got zig-bootstrap up to speed with llvm12 branch
+
+1614636643
+ed_t
+think I have a compiler bug, which occurs in both 0.71 and 0.80git (from friday).
+
+1614636697
+ed_t
+I've posted info in zig-help on the 'zig programming language' discord
+
+1614636874
+ed_t
+
+
+1614636928
+ed_t
+the while loop at line 65 exits even though the previous print shows c.in as false, which should mean it suspends
+
+1614639081
+ed_t
+opened: issue #8119
+

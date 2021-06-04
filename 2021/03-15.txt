@@ -1,0 +1,1168 @@
+1615766425
+aconbere
+hmmmmm
+
+1615766446
+g-w1
+it runs the tests a LOT of times with multiple configurations
+
+1615766500
+g-w1
+the ci will even if your machine doesn't (it requires some flags like -Denable-wasmtime qemu etc). but you can do `zig test file.zig -lc` and it will just run the tests without going through the build system
+
+1615766616
+aconbere
+Okay! so... maybe backing up, my presumption is I'm doing it wrong :-D
+
+1615766622
+aconbere
+Advice on doing it ... right?
+
+1615766635
+g-w1
+saw ur pr, checking it out rn
+
+1615766641
+aconbere
+thanks :)
+
+1615766702
+g-w1
+you don't need a test.zig, just put the test right next to the function
+
+1615766718
+g-w1
+and you need `if (!std.builtin.link_libc) return error.SkipZigTest;` in the test
+
+1615766740
+g-w1
+(a test.zig will work, but i prefer right next to the function)
+
+1615766741
+aconbere
+g-w1: cool, there are no other tests in the file and I wasn't sure what the convention was in this case
+
+1615766744
+aconbere
+yep
+
+1615766755
+aconbere
+easy to change :)
+
+1615766852
+marijnfs
+ugla: indeed, good find!
+
+1615766939
+marijnfs
+i guess stranger things then happen with the generated code? the inline for loop didn't like it it seems, maybe it jumps to previous code somehow
+
+1615767206
+g-w1
+aconbere: oh look, you got feedback already! nice
+
+1615767331
+aconbere
+Magical :)
+
+1615771757
+daurnimator
+aconbere: oh sorry, you should only free if the call succeeded (i.e. I guess move the `freeaddrinfo` below the testing.expectEqual?
+
+1615772350
+aconbere
+daurnimator: makes sense, I was biasing slightly to the defer only because I feel like it's slightly more future proof
+
+1615772372
+aconbere
+if we wanted to add some check to the result value or something, or some crap ends up being added in between it ends up being correct
+
+1615772385
+aconbere
+but I'm happy to do what ya'll think is best :)
+
+1615773238
+aconbere
+hmmmm
+
+1615773240
+aconbere
+
+
+1615773263
+aconbere
+Is there any magic that zig might use to check errno or convert status codes into errors? (I don't think so but checking my assumptions)
+
+1615773278
+aconbere
+otherwise it looks like this code in net doesn't check for failure to open the socket file handle?
+
+1615773299
+aconbere
+(This would happen if you exhausted the filehandles but I'm not sure if intuitively I can think of other reasons)
+
+1615773317
+aconbere
+oh, the man page lists them :)
+
+1615773401
+aconbere
+but yeah, I don't /see/ the error handling here but maybe I'm missing it?
+
+1615773863
+aconbere
+oh look! std.os defines socket as returning SocketError
+
+1615773874
+aconbere
+I wasn't looking at the right spot
+
+1615773875
+aconbere
+amazing
+
+1615773983
+aconbere
+it's interesting that there are kind of two classes of these os abstraction functions
+
+1615773999
+aconbere
+the ones that have been wrapped and lifted into std.os that have nice error handling
+
+1615774013
+aconbere
+and then something like getaddrinfo where you check the return status code stuff
+
+1615774039
+g-w1
+exit
+
+1615774046
+g-w1
+sorry :/
+
+1615774765
+aconbere
+:)
+
+1615786706
+aconbere
+huh! My build failed... but in a baffling (to me) way
+
+1615786710
+aconbere
+
+
+1615788310
+mikdusan
+maybe we need to re-think zig cc and c++ drivers; you have time to bounce a few ideas?
+
+1615788315
+mikdusan
+andrewrk: ^
+
+1615788491
+mikdusan
+my thoughts are cc/c++ is very different; goals for best compatibility:
+
+1615788556
+mikdusan
+- fundamental: keep all args in the same position and pass to embedded clang
+
+1615788578
+mikdusan
+- our own arg processors get opportunity to examine the command line
+
+1615788624
+mikdusan
+- opportunity to
+
+1615788646
+mikdusan
+- but the replacement maintains its position
+
+1615788783
+mikdusan
+- we of course can insert the appropriate sysroot/syslibroot stuff if they're not defined
+
+1615788883
+mikdusan
+- but what I'd like to avoid is (eg) have the linker command line driven solely by our own options structure
+
+1615788906
+mikdusan
+so here's a motivating case:
+
+1615788931
+mikdusan
+`-Wl,-undefined,suppress` or equiv `-Wl,-undefined -Wl,suppress`
+
+1615788984
+mikdusan
+and we currently don't handle it. but if we currently did, it needs to be captured by options
+
+1615789022
+mikdusan
+and there are a lot of linker options that we don't capture
+
+1615789046
+mikdusan
+and our position right now is "if we don't support it the option is removed"
+
+1615789081
+mikdusan
+where as I think it would be better to "we ignore unknown options and pass them thru"
+
+1615789139
+mikdusan
+this is only wrt {cc,c++} and not {build-obj,build-exe,build-lib}
+
+1615789191
+cadelw
+Hi everyone! I'm new to Zig and wondering if there's a way to reference packages in tests using `zig test`.
+
+1615789191
+cadelw
+In my `build.zig` I'm adding a package like:
+
+1615789192
+cadelw
+```
+
+1615789192
+cadelw
+exe.addPackage(.{
+
+1615789193
+cadelw
+.name = "mecha",
+
+1615789193
+cadelw
+.path = "libs/mecha/mecha.zig",
+
+1615789194
+cadelw
+});
+
+1615789194
+cadelw
+```
+
+1615789195
+cadelw
+So I can access the package like `usingnamespace @import("mecha");`. But when I run `zig test` I get this error:
+
+1615789195
+cadelw
+```
+
+1615789196
+cadelw
+error: unable to find 'mecha'
+
+1615789196
+cadelw
+usingnamespace @import("mecha");
+
+1615789197
+cadelw
+```
+
+1615789197
+cadelw
+Do I need to do something special with the test command to include the package maybe?
+
+1615792872
+kevinsjoberg
+I have the following code,
+
+1615792982
+kevinsjoberg
+My code stops and the first AccessDenied error, instead of just skipping it. Not really sure how I should go about it.
+
+1615793333
+kevinsjoberg
+Is it even possible? The docs seem to say that whenever an error is present in the error union, the while loop will exit.
+
+1615793610
+daurnimator
+zigbin.io ?
+
+1615793686
+kevinsjoberg
+
+
+1615793707
+kevinsjoberg
+daurnimator: Or are you asking what it is?
+
+1615793728
+kevinsjoberg
+It was showcased in the Discord by a fellow Zig member a few days ago. :)
+
+1615794599
+daurnimator
+kevinsjoberg: I mean I didn't know about the site
+
+1615794621
+kevinsjoberg
+daurnimator: I see. It's really neat. :)
+
+1615794637
+kevinsjoberg
+Solved the issue by the way. Had to wrap everything in while(true)
+
+1615794867
+andrewrk
+cadelw, you can create a test artifact with build.zig and use addPackage same as with exe, and then run `zig build test`
+
+1615804989
+tnorth_
+Hey there. I'm confused by "error: expected error union type, found ..." in
+
+1615805183
+ikskuh
+if(err_union) |result| {} else |err| {}
+
+1615805190
+ikskuh
+is the syntax for "if with error unions"
+
+1615805195
+ikskuh
+you have an optional though
+
+1615805206
+ikskuh
+if(optional) |set_value| { } else { }
+
+1615805216
+ikskuh
+but you have else |_| {"
+
+1615805226
+ikskuh
+this means that if expects an error union, but gets an optional
+
+1615805500
+tnorth_
+ikskuh: thanks. There is more it seems...
+
+1615806360
+dutchie
+tnorth_: it's inferring void because it falls off the end of the function without returning. if you add `return null;` at line 29 it should work
+
+1615806388
+dutchie
+also, `if (found) |goal| { return goal; } else { return null; }` is a very long-winded way to write `return found;`
+
+1615806551
+tnorth_
+dutchie: ah thanks, indeed I wasn't returning anything. Regarding the meaning, you're right that makes no sense, I was just trying to build a minimal example
+
+1615806563
+dutchie
+you can even turn it into a one-liner if you want to go all-out: `return bar((self.children orelse return null)[0]);`
+
+1615806570
+dutchie
+ah i see
+
+1615806755
+tnorth_
+dutchie: in the real code the conditions where different but I also had some existing path not returning that I missed. Thanks!
+
+1615809940
+yyp
+Is there something special you need to add to build.zig in a package except .addStaticLibrary and .addPackage in the parent?
+
+1615809982
+ifreund
+you don't need any build.zig for a package
+
+1615809985
+g-w1
+you don't need addStaticLibrary since a zig package is the source code
+
+1615810014
+yyp
+ok, but having it shouldn't cause any build errors, right?
+
+1615810046
+g-w1
+no
+
+1615810053
+yyp
+error: unable to build stage1 zig object: IsDir
+
+1615810071
+yyp
+I have no idea why it happens and there's no surrounding hints
+
+1615810078
+ifreund
+addPackage() takes a path to the root source, not to a directory
+
+1615810103
+yyp
+lol
+
+1615810113
+yyp
+Thanks! Now it works
+
+1615810124
+yyp
+It's not documented anywhere though
+
+1615810255
+Nypsie
+There's some of it on the community made site:
+
+1615810260
+ifreund
+I mean, all the zig build-exe/lib/obj commands take a path to the root soruce file
+
+1615810271
+ifreund
+a path to a directory wouldn't make any sense
+
+1615810293
+ifreund
+you're right though that the zig build system is largely undocmumented
+
+1615810625
+yyp
+Nypsie: I've read through that but didn't notice that Pkg.path takes a file, not a directory
+
+1615810671
+yyp
+ifreund: I thought that it picks up and recursively runs all build.zig files, which truned out to be not the case
+
+1615810718
+Nypsie
+yyp, fair enough.
+
+1615810749
+ifreund
+nothing done with any build.zig file except the one in your current directory unless you explicitly import it
+
+1615810920
+yyp
+That clears it up, thanks!
+
+1615811043
+yyp
+Before that I was using C quite often and the standard way of building a submodule-library in a makefile was just to cd into it and $(MAKE) it, and thought this was similar in Zig too...
+
+1615811201
+yyp
+Another small thing is that there are not that many Zig packages out there and it's hard to find a standard way of doing something
+
+1615811238
+ifreund
+not that this is all likely to change and become more clear/user friendly when the official package manager is developed
+
+1615811248
+ifreund
+s/not/note/
+
+1615811289
+yyp
+I really wouldn't like a package manager for Zig
+
+1615811316
+g-w1
+why?
+
+1615811449
+yyp
+Right now you need to add a submodule and then manually .addPackage. A PM abstracts the dependencies away and that's what happened to Rust and Node.js - you can have only 1-2 deps and then pull down a gigabyte of stuff
+
+1615811487
+yyp
+That was one of the reasons why I tried Zig
+
+1615811559
+g-w1
+thats an implementation detail. it could download a gigabyte of stuff, or not
+
+1615811571
+g-w1
+i doubt it will as it will try to learn from past package managers
+
+1615811580
+ifreund
+note that the zig package manager probably won't be as easy to do that with as there will be no official centralized repository
+
+1615811639
+ifreund
+also that's more of a cultural problem in the end, zig promotes different ideals than rust
+
+1615811658
+ifreund
+specifically, abstraction isn't seen as the greatest thing since sliced bread
+
+1615811921
+yyp
+Not having centralized repositories wouldn't stop huge dependency graphs if that is all done behind the developer's back
+
+1615813421
+qbit
+is zig-bootstrap hanging for anyone else on aarch64 darwin?
+
+1615814581
+tnorth_
+What is the proper way to implement some kind of generator in Zig? Can/should this be implemented with custom iterators?
+
+1615814641
+ifreund
+tnorth_: probably a struct that stores some state with a next() function returning an optional
+
+1615814658
+ifreund
+which is incidentally how "iterators" are usually implemented
+
+1615814728
+tnorth_
+ifreund: ok, there is no particular feature for that (ie equivalent to python yield) available/planned in Zig?
+
+1615814844
+ifreund
+well you can also implement this using async, though it wont play well if you're using an async event loop
+
+1615814864
+tnorth_
+ifreund: I'm fine writing iterators, just wanted to know :)
+
+1615814869
+ifreund
+see:
+
+1615814888
+ifreund
+I think a simple iterator will be good enough for almost all use-cases
+
+1615814922
+tnorth_
+interesting link, thanks. I'll go for the iterators then
+
+1615816697
+MrMobius
+can zig update a a binary without recompiling the whole thing? I remember reading something about that but dont know what its called to google it
+
+1615816748
+ifreund
+MrMobius: the WIP self-hosted compiler can do this, stage 1 cannot
+
+1615816771
+ifreund
+MrMobius:
+
+1615816794
+MrMobius
+ifreund, thats it. ty
+
+1615816841
+LewisGaul
+ifreund just saw your push to the zig fmt PR - I was actually just starting to look into unifying the logic myself. I'll take a look at your changes and provide a review if that's helpful?
+
+1615816863
+LewisGaul
+oh you already merged
+
+1615817144
+ifreund
+Indeed, though don't let that stop you from giving the new code a read and sending a PR if you find anything amiss :)
+
+1615817348
+LewisGaul
+I actually found another potential improvement, although you seem to have fixed it with your changes, good job! Previously the continue was reformatted onto a newline:
+
+1615817349
+LewisGaul
+while (i < 10) : ({
+
+1615817349
+LewisGaul
+i += 1;
+
+1615817350
+LewisGaul
+j += 1;
+
+1615817350
+LewisGaul
+}) continue;
+
+1615817401
+LewisGaul
+I feel like I wasn't massively helpful in the end on that issue, but I'll just have a go with something a bit different sometime :)
+
+1615817600
+ifreund
+Don't feel discouraged that you didn't rewrite the whole function like I did, I've had a lot of experience working on zig fmt in the past month or two
+
+1615817605
+ifreund
+that code definitely isn't trivial
+
+1615817641
+ifreund
+if you want to PR a test case for that improvement that would be most welcome, then it won't regress :)
+
+1615817716
+ifreund
+and the only way to get familiar with the code is to keep banging your head against it, which is pretty much what I did while sending patches at andrew for
+
+1615817808
+LewisGaul
+Sure I can create a PR to add that (sounds like something I can do with minimal head banging ;) )
+
+1615817857
+LewisGaul
+But yes you're right, it's all about gradually getting familiarity (and getting to know people like yourself in the community who all seem to be very friendly)
+
+1615817907
+LewisGaul
+Not sure if you saw my blog post about this zig contribution?
+
+1615817907
+LewisGaul
+and the list of posts I put together at
+
+1615818096
+ifreund
+no I didn't yet!
+
+1615818124
+ifreund
+the parser tests are in lib/std/zig just like other standard libary unit tests
+
+1615818150
+LewisGaul
+yep, found them eventually last time!
+
+1615818151
+ifreund
+the root test directory is for compiler tests
+
+1615818162
+LewisGaul
+got it
+
+1615818209
+ifreund
+if you want another issue to tackle, I think
+
+1615818314
+LewisGaul
+will take a look, and here's the PR for the testcase you requested:
+
+1615818386
+ifreund
+nice, I'm just going to be lazy and let the CI do it's job before pressing the merge button :)
+
+1615824753
+cepheus
+only just found out that serialization is gone from zig master which is a little disappointing though understandable
+
+1615824767
+cepheus
+especially since it got dumped into std-lib-orphanage in a non-working state
+
+1615825270
+ikskuh
+cepheus: feel free to make a working, maintained package out of it :)
+
+1615825437
+cepheus
+it's something i'd consider if i was a more active user of zig, but also conversely such changes make me apprehensive to build things with zig if i am going to use standard library constructs that are discontinued and require manual fixup. but regardless i know things are not set in stone and i can't rely on them to be
+
+1615825480
+cepheus
+i'm not kicking up a fuss or anything, just posting my thoughts
+
+1615825514
+ifreund
+sounds like you might want to wait until 1.0
+
+1615825530
+ifreund
+the language isn't stable yet, let alone the standard library
+
+1615825678
+ifreund
+everything is trending towards stability though, and cutting things from the std which don't belong is part of that process
+
+1615825972
+cepheus
+i can be slightly annoyed and deal with it, i am not exactly writing anything mission critical, just hobbyist things
+
+1615826028
+cepheus
+the side effect being that since side projects are something i drift in and out of, i have catching up to do every so often
+
+1615834126
+LewisGaul
+I'm having problems with the output from failing tests in `parser_test.zig` - seems possibly related to non-ascii characters not being supported in my (WSL) terminal? It's showing me the expected output but not the actual output and diff as it should, see
+
+1615834204
+ifreund
+yeah, I'm pretty sure it's due to the non-ascii character it's using for EOF
+
+1615834227
+ifreund
+not very helpful I know, but it works fine for me on linux
+
+1615834285
+ifreund
+This character: ␃
+
+1615834309
+ifreund
+except that's ascii...
+
+1615834318
+aconbere
+
+
+1615834322
+aconbere
+`
+
+1615834345
+aconbere
+is that something someone can boop for me (I don't seem to have bits to rerun)
+
+1615834365
+ifreund
+I think you can close and re open to make it rerun?
+
+1615834384
+ifreund
+looks like a supurious failure though
+
+1615834389
+aconbere
+agreed
+
+1615834428
+aconbere
+close and reopen did boop the built job
+
+1615834434
+aconbere
+so fingers crossed
+
+1615834523
+LewisGaul
+ifreund I tried removing that character and I think that fixed the problem for me before, but this time it doesn't seem to be helping (I'm wondering if I need to do something to trigger zig to rebuild that change, although even rerunning `make install` hasn't helped)
+
+1615834587
+ifreund
+LewisGaul: what zig binary are you using to run `zig test /path/to/parser_test.zig`?
+
+1615834606
+ifreund
+e.g. I do ./build/zig test lib/std/zig/parser_test.zig
+
+1615834649
+LewisGaul
+The one created by `make install` - I'm in the `build/` dir running `./zig test ../lib/std/zig/parser_test.zig` as you can see in the pastebin
+
+1615835113
+ifreund
+zig test should rebuild that change just fine
+
+1615835179
+ifreund
+you've deleted the character in std.testing.printWithVisibleNewlines()?
+
+1615835892
+marijnfs
+what is an up to date 'write/log to file in zig' example?
+
+1615835897
+marijnfs
+this is hard to look for I can tell you
+
+1615835972
+Nypsie
+
+
+1615836031
+Nypsie
+Here's an example for that:
+
+1615836277
+Nypsie
+This just made me realize how ugly that main file actually is D:
+
+1615837197
+andrewrk
+mikdusan, sounds like a nice topic for the next stage2 meeting :)
+
+1615837258
+LewisGaul
+ifreund sorry for the noise, just realised ZLS opened a different version of the file (the copy for my 0.7.1 zig binary)
+
+1615837402
+LewisGaul
+however, `./zig test` still doesn't seem to be rebuild the change (`make install` does)
+
+1615837552
+cepheus
+as an aside, with some minor tweaks i have actually gotten the serialization code working under current zig master (at least as far as the test suite goes), but i can't really commit to keeping it maintained, so i've just pushed it out in a fork of the orphanage
+
+1615837606
+ifreund
+LewisGaul: zig test should run the tests in that file with your modified version of the std
+
+1615837617
+ifreund
+it won't rebuild thi zig executable with your changes
+
+1615837631
+ifreund
+but you don't need to do that if all you want to do is run the tests
+
+1615837642
+LewisGaul
+yeah it just doesn't seem to be picking up the change I made in std.testing
+
+1615837845
+andrewrk
+pair programming stream with loris in 10 min:
+
+1615837907
+txdv
+live right now?
+
+1615838001
+Nypsie
+In 10 mins :)
+
+1615838068
+txdv
+
+
+1615838073
+marijnfs
+Nypsie: thanks, exactly what I needed
+
+1615838094
+marijnfs
+hell yeah pair programming
+
+1615838097
+Nypsie
+marijnfs: You're welcome
+
+1615838111
+marijnfs
+omg twitch is so hard to navigate
+
+1615838510
+txdv
+andrew you need to give me the name of the song in that last youtube link
+
+1615838545
+txdv
+is there a special channel for stream?
+
+1615838587
+Nypsie
+Loris manages the Showtime channel, I'll ask him on Discord for its name
+
+1615839875
+aconbere
+huh... here's an interesting one
+
+1615839920
+aconbere
+when I call getaddrinfo to fill in my address struct, it returns values in the wrong type to pass to socket
+
+1615839933
+aconbere
+socket is ... nicely wrapped up at a higher level than the direct libc access
+
+1615839946
+aconbere
+so I assume it's signature is more fitting to accepting stuff like zig enums
+
+1615839958
+aconbere
+`./src/main.zig:33:40: error: expected type 'c_uint', found 'i32'`
+
+1615839975
+aconbere
+maybe I can do a quick cast into the enum
+
+1615840265
+aconbere
+huh
+
+1615840269
+aconbere
+okay so... that's weird
+
+1615840418
+aconbere
+
+
+1615840430
+aconbere
+linux.socket expects "domain" to be u32
+
+1615840451
+aconbere
+linux.addrinfo.family is i32
+
+1615840474
+aconbere
+use of those in libc is expected to flow from addrinfo.family into socket
+
+1615840479
+aconbere
+but the types don't line up
+
+1615840485
+aconbere
+I wonder if its that way in libc
+
+1615840529
+aconbere
+libc man page says family should be an int on addrinfo not i32
+
+1615840537
+aconbere
+but not sure what's actually encoded in source
+
+1615840847
+aconbere
+my libc says `extern int socket (int __domain, int __type, int __protocol) __THROW;`
+
+1615840868
+aconbere
+u32 just seems like it's the wrong type for linux.socket to expose?
+
+1615840894
+aconbere
+(I might have that backwards lol)
+
+1615841171
+ifreund
+aconbere: linux.socket() is a direct syscall not going through libc, it only has to adhere to the kernels interface not the design decisions of libc
+
+1615841193
+ifreund
+std.c.socket should have the signature you see in your man page
+
+1615841277
+aconbere
+`pub extern "c" fn socket(domain: c_uint, sock_type: c_uint, protocol: c_uint) c_int;`
+
+1615841281
+aconbere
+yeah that looks to be correct
+
+1615841283
+aconbere
+interesting
+
+1615841301
+aconbere
+and presumably this all works nicely in C because c doesn't give two craps about casting hahaha
+
+1615842079
+aconbere
+ifreund: okay but THIS seems weird then:
+
+1615842113
+aconbere
+
+
+1615842122
+aconbere
+^ paste of what my netdb.h defines addrinfo as
+
+1615842145
+aconbere
+unless int <-> i32?
+
+1615842166
+tdeo
+these snippets seem to be exactly the same
+
+1615842197
+aconbere
+tdeo: does i32 map to int?
+
+1615842206
+aconbere
+c's int that is
+
+1615842212
+tdeo
+i think the gist was meant to be c, but it's the zig code
+
+1615842225
+aconbere
+doh!
+
+1615842251
+ifreund
+i32 might be the same as C's int depending on the target
+
+1615842254
+tdeo
+as far as i know, on linux, c_int is always the same as i32
+
+1615842261
+ifreund
+to match C's int in zig use c_int
+
+1615842281
+aconbere
+(I fixed my gist)
+
+1615842392
+aconbere
+well crap
+
+1615842837
+LewisGaul
+Is there a reasonable way to go from `Node.Index` to `TokenIndex` so that I can use `tree.tokensOnSameLine()` ? Specifically I want to check whether `SwitchCase.Ast.target_expr` is on the same line as the token that comes just before it (either arrow token or payload)
+
+1615842902
+ifreund
+LewisGaul: you probably want either tree.firstToken() or tree.lastToken()
+
+1615842912
+ifreund
+an ast node is usually more than one token
+
+1615843005
+LewisGaul
+yeah, I guess the problem is I don't know what type of node the `target_expr` is, can I rely on `tree.firstToken()` giving the first token in the source?
+
+1615843038
+ifreund
+tree.firstToken() takes a Node.Index and gives you the first token of that ast node
+
+1615843063
+LewisGaul
+yeah, ok probably does what I need
+
+1615845009
+aconbere
+ha
+
+1615845010
+aconbere
+`reached unreachable code
+
+1615845230
+aconbere
+woo hoo!
+
+1615845232
+aconbere
+success
+
+1615845750
+marijnfs
+amazing, redis cross compile to m1
+
+1615846184
+ifreund
+yeah, pretty crazy stuff
+
+1615846265
+aconbere
+well it took me a while
+
+1615846271
+aconbere
+but I have a working tcp echo
+
+1615846272
+aconbere
+haha
+
+1615846275
+aconbere
+thanks for the help ya'll
+
+1615846456
+ifreund
+nice :)
+
+1615846461
+aconbere
+so much to show for it haha
+
+1615846464
+aconbere
+
+
+1615846937
+LewisGaul
+ifreund another question on this zig fmt fix... `Node.Tag.string_literal` appears to be used for `"foo"` and `\\foo` string literals, but I think we only want the latter to be on a new line - any suggestions how to do this?
+
+1615847073
+ifreund
+LewisGaul: multiline string literals have their own tag: multiline_string_literal
+
+1615847128
+LewisGaul
+oh I did see that, sorry just my debugging skills letting me down and confusing me
+
+1615847171
+ifreund
+no worries!
+
+1615847266
+LewisGaul
+I'm pretty convinced that just running `./zig test` isn't enough to pick up the std changes I'm making - I'm currently having to run `make install` each time which is kind of slow. Maybe this is just a problem with WSL and therefore not really worth looking into?
+
+1615847403
+ifreund
+it could be that WSL breaks the caching sytem somehow
+
+1615847424
+ifreund
+I don't know what effect it has on the linux filesystem
+
+1615847485
+LewisGaul
+maybe I should try Windows (I'd rather not though!) or WSL2 at some point
+
+1615847541
+ifreund
+or just install linux alongside windows if you have space on the drive
+
+1615847549
+ifreund
+or wipe it and have only linux :P
+
+1615847571
+LewisGaul
+work laptop, slightly limited in what I can do :p  possibly should set up a VM
+
+1615847747
+ifreund
+LewisGaul: from a very superficial duckduckgo, WSL2 might fix your issues
+
+1615847781
+LewisGaul
+thanks, I've tried to migrate before and it gave me other issues, but will give it another go at some point and see if that helps
+
+1615847886
+ifreund
+specifically, WSL 1 doesn't seemt to use a real linux kernel or file system while WSL2 has ext4
+

@@ -1,0 +1,832 @@
+1616890890
+g-w1
+andrewrk: turns out the bug was that Module.zig was starting at 0 for errors and my "fix" in C.zig was just a stopgap solution for that :)
+
+1616890900
+g-w1
+off-by-one errors are the worst
+
+1616892287
+g-w1
+doing a fix now with a bunch of other stuff too
+
+1616894916
+g-w1
+andrewrk: ok i just found a bug, but im not sure how to solve it, so basically when we do an incremental update and add an error with `error.A` then remove that error, and do an update, the error still stays in the Module. this is a problem because @errorToInt wont fail because the error exists in the Module even though it is not ever declared. what do you think is the best path of action here?
+
+1616894947
+g-w1
+should we track what errors belong to a decl and delete those when the decl is deleted?
+
+1616895025
+g-w1
+this is an unfortunate error :) (took me a very long time to debug as it was not triggering in the test harness, but was triggering on the cli). I will make my pr as it is done, but mention this in the pr
+
+1616895829
+g-w1
+
+
+1616899613
+andrewrk
+s-ol, lol, glad you figured it out
+
+1616900507
+andrewrk
+mikdusan, yes, for `zig cc` with `-`, we'll need to either disable the cache system entirely, or write it to a temp file, perhaps named after the hash of the contents
+
+1616900520
+andrewrk
+would have to examine the existing code to figure out which path is more straightforward
+
+1616900619
+andrewrk
+note that we do have a tmp directory within zig-cache/ already which can be utilized
+
+1616900830
+andrewrk
+ifreund, what are you using for the common parameters in (former) astgen.zig? was thinking we might want to avoid the unnecessary virtual call scope.getGenZir()
+
+1616900860
+andrewrk
+but we still do need to pass scopes too, for variable lookup, continue, and break
+
+1616900972
+andrewrk
+maybe GenZir would have a *Astgen field, Astgen would have a *Module field, and the functions would all start with: `gz: *Scope.GenZir, scope: *Scope` ?
+
+1616905336
+g-w1
+andrewrk: what was wrong with the node_offset_builtin_call_arg0? I think it is accurate
+
+1616905397
+andrewrk
+g-w1, looks like it's doing exactly the same thing as the node_offset tag, right?
+
+1616905424
+g-w1
++ 1 :P
+
+1616905433
+g-w1
+return token_starts[tok_index + 1];
+
+1616905501
+andrewrk
+won't that point to the ( ?
+
+1616905507
+g-w1
+no
+
+1616905514
+g-w1
+i thought it would, but it doesn't
+
+1616905522
+g-w1
+(unless my editor is messed up)
+
+1616905539
+andrewrk
+I think it should navigate via the AST to the node that is the first arg of the builtin call
+
+1616905543
+andrewrk
+rather than via tokens
+
+1616905569
+g-w1
+hmm, why? is there any case where it would be different?
+
+1616905578
+g-w1
+or just for consistency which I totally get
+
+1616905585
+andrewrk
+well you're going to need to do that for arg1 anyway, so it would be easier to maintain those side by side
+
+1616905593
+andrewrk
+it's also easier to reason about
+
+1616905600
+g-w1
+ok cool ill do that
+
+1616905619
+andrewrk
+also main_tokens is not the same as firstToken
+
+1616905655
+andrewrk
+if it was @foo(a + b); main_tokens will make it point at the + (or maybe when we improve things further it would underline the whole binary expr) but tok + 1 would make it point at the `a`
+
+1616905683
+g-w1
+ahh i see
+
+1616905724
+andrewrk
+I didn't even realize that at first, it's just one of those things that doing it the "right way" avoids hidden footguns :)
+
+1616905868
+g-w1
+oh nice the ci is passing again
+
+1616906091
+andrewrk
+g-w1, regarding the O(N) @intToError, you can add an ArrayListUnmanaged to Module that tracks index->name
+
+1616906118
+andrewrk
+it and global_error_set can share the string memory
+
+1616906146
+g-w1
+you think this one case is enough to warrant that?
+
+1616906161
+g-w1
+@errorToInt at comptime
+
+1616906269
+andrewrk
+yeah because O(N) is a potentially high cost, and there is only 1 Module, so those extra bytes of that index are real cheap
+
+1616906279
+g-w1
+ok, makes sense
+
+1616906473
+andrewrk
+on the other hand, if we had to implement @intToError without changing the language, it would mean adding a hash set to every Decl (set of referenced error names) and a reference count to every error value
+
+1616906486
+andrewrk
+this would be a high cost because there are many Decl and many error values
+
+1616906512
+g-w1
+yeah, that would be bad
+
+1616907243
+g-w1
+hmm im confused about the way I should impl node_offset_builtin_call_arg0. this works const node = decl.relativeToNodeIndex(node_off) - 1;, but this doesn't const node = decl.relativeToNodeIndex(node_off) + 1;
+
+1616907252
+g-w1
+how can the - 1 work? is there some inverse logic?
+
+1616907632
+andrewrk
+look at node_offset_for_cond for example
+
+1616907658
+andrewrk
+the node is already correct - it is the node index of the builtin call. you need to use the AST tree data to navigate to parameter 0
+
+1616907671
+andrewrk
+so you probably need to grab that logic from the switch in render.zig
+
+1616907681
+g-w1
+hm ok
+
+1616907692
+andrewrk
+this is the "lazy" part being resolved
+
+1616907717
+andrewrk
+the key thing here is that this thing where we poke around in the nodes/tokens arrays didn't have to happen in semantic analysis for stuff that didn't have any compile errors
+
+1616907899
+g-w1
+oic, changing the node was just blindly fumbling
+
+1616907936
+g-w1
+the one downside of this dod change is that it reduces understandabality
+
+1616907974
+andrewrk
+yes, some things became more complex
+
+1616907993
+andrewrk
+although I think this particular change is less related to dod and more related to making source locations survive incremental updates
+
+1616908002
+andrewrk
+remember that we had some incorrect test cases before
+
+1616908012
+g-w1
+yes, this makes it much more accurate which is good
+
+1616908250
+g-w1
+hmm, i didn't need a switch, const first_arg = node_datas[node].lhs; worked, am I doing something wrong?
+
+1616909501
+andrewrk
+the interpretation of lhs and rhs are defined by the node tag
+
+1616909524
+andrewrk
+check out lines 610-622 of render.zig
+
+1616911398
+g-w1
+ok andrewrk i think I did it correct this time :)
+
+1616911401
+g-w1
+sorry for the hastle
+
+1616911412
+andrewrk
+np, thanks for the patch!
+
+1616912467
+spacelove
+I wrote a zig program:
+
+1616912551
+spacelove
+Is there such thing as ComptimeStringHashMap? I see a reference to it but despite using zig v 8.0 doesn't seem to be in the stdlib.
+
+1616914156
+spacelove
+Erm, v 0.8.0. Also, reference for ComptimeStringMap:
+
+1616914378
+spacelove
+I'll check back in the morning, but the question I'm trying to resolve is: is there a way to build the graph (datastructure) in that program during compilation, instead of each time the program is run? It takes several minutes to build the graph, but only moments to run the search (that searches on the graph)
+
+1616914391
+spacelove
+Maybe there's a more idiomatic way to do this, I'm not sure.
+
+1616921643
+ifreund
+andrewrk: yeah I saw your note regarding that in the BRANCH_TODO :)
+
+1616921696
+ifreund
+spacelove:
+
+1616926223
+dok
+Hi there, I've ran into a situation unexpected coming from a C background:
+
+1616926277
+dok
+Is this normal to not have a compile time error when a function tries to call another function that hasn't been declared?
+
+1616926385
+ifreund
+dok: this is indeed expected because zig's semantic analysis is lazy
+
+1616926408
+dok
+arf :/
+
+1616926410
+ifreund
+if you were to call bar() in main() you'd get your compile error
+
+1616926438
+dok
+yeah, but even if the function is made public why the compiler doesn't complains ?
+
+1616926467
+ifreund
+if you `export` it the compiler would semantically analyze it and complain
+
+1616926483
+ifreund
+pub doesn't mean the function needs to appear in the binary
+
+1616926488
+dok
+uh ok
+
+1616926502
+dok
+and Is there a way to warn about unused functions ?
+
+1616926547
+ifreund
+not currently, see
+
+1616926724
+dok
+hummm... why make the semantic analysis lazy ?
+
+1616926737
+dok
+and you're answere is:
+
+1616926795
+ifreund
+yeah, there are good reasons for the current state of things, I agree that not having compile errors for ununsed things sucks though
+
+1616926849
+ifreund
+the hard part is determining what is truely unused and what is used, just not for the current target/build options combination
+
+1616926868
+ifreund
+the C preprocessor has this same problem tbh
+
+1616928026
+dok
+I understand that lazy analysis can be usefull for supporting multiple target (OS/Arch)
+
+1616928071
+dok
+i guess that make possible to simply use a if branch to call an arch specific function
+
+1616928112
+dok
+but maybe lazy analysis should only be done for compiletime expressions
+
+1616940070
+spacelove
+In the documentation for ComptimeStringMap there's a reference to ComptimeStringHashMap. Does this exist? I don't see it in the stdlib.
+
+1616940233
+spacelove
+"Like ComptimeStringHashMap but optimized for small sets of disparate string keys."
+
+1616940246
+spacelove
+I see that comment, but not that function.
+
+1616940614
+ifreund
+spacelove:
+
+1616940640
+ifreund
+oh wait, you already found it nvm
+
+1616940656
+ifreund
+I think that's a typo, s/ComptimeStringHashMap/ComptimeStringMap/
+
+1616940700
+spacelove
+I don't think it's a typo, why would ComptimeStringMap be like ComptimeStringMap but slightly different?
+
+1616940755
+ifreund
+
+
+1616940763
+ifreund
+it did exist but wasn't merged in the end
+
+1616940782
+ifreund
+oops wrong link
+
+1616940851
+spacelove
+Ah ok. Cool.
+
+1616940859
+spacelove
+Thanks.
+
+1616942055
+cepheus
+out of interest, zig is able to coerce `s orelse null` into [*c]u8 where `@TypeOf(s) == ?[:0]u8`, but not just s by itself?
+
+1616942064
+cepheus
+s/zig is/why is zig/
+
+1616942097
+cepheus
+(this is 0.7.1, things may be different on master, haven't checked)
+
+1616944587
+spacelove
+Does the zig stdlib have a way of writing variables to file? I can see how this might work: var f = try fs.Dir.writeFile(fs.cwd(),"file.dat", "test"); but what about if I want to write non-string data?
+
+1616944708
+g-w1
+what type of data do you want to write?
+
+1616944731
+spacelove
+gw-1! My man
+
+1616944765
+spacelove
+Look how far I've come <3
+
+1616944798
+spacelove
+I am trying to pre-compute that graph, so basically I'm trying to write a hashmap to file
+
+1616944841
+spacelove
+buildGraph returns a graph, and if I want to know if there's a way to avoid rebuilding the graph every time I run the program. I thought comptime was the answer but it doesn't seem to work yet
+
+1616944858
+spacelove
+So I thought I could write it to file, then include it, then somehow compile like that.
+
+1616944971
+g-w1
+you cannot write a hashmap to a file, since zig does not know what to do with it
+
+1616944992
+g-w1
+i reccomend iterating over the hashmap and then writing the key and value to the file
+
+1616945003
+spacelove
+Oy vey
+
+1616945055
+spacelove
+Is there a simpler way to accomplish this. Like something a programmer would be like, "oh you don't write to file to precompute, you do X"
+
+1616945086
+g-w1
+im not sure
+
+1616945092
+g-w1
+in the future comptime stuff would be cached
+
+1616945132
+spacelove
+Alrighty
+
+1616945247
+spacelove
+The problem is that the values are themselves arrays of strings
+
+1616945250
+spacelove
+Seems like a nightmare
+
+1616945352
+spacelove
+Maybe there's a way to write like the pure binary data to file
+
+1616945381
+g-w1
+sounds like you want serialization
+
+1616945399
+g-w1
+not sure there is a way to do that with a hashmap since it contains pointers and stuff
+
+1616945417
+spacelove
+Mamma mia
+
+1616945944
+ifreund
+you can serailize it into a simple list of keys/values and the deserialize back into a hashmap
+
+1616946499
+spacelove
+I can try that. Are there docs on serialization?
+
+1616946698
+g-w1
+spacelove: stuff can be precomputed at comptime as long as you dont mind extra compilation time.
+
+1616946709
+spacelove
+I don't. That's what I want to do
+
+1616946718
+g-w1
+ok makes sense
+
+1616946732
+spacelove
+But it seems like there's no way to precompute a hashmap at compile time
+
+1616946753
+g-w1
+what is the type of your hash map?
+
+1616946790
+spacelove
+StringHashMap. It's in the zigbin.io file.
+
+1616946792
+g-w1
+if its string tosomething use ComptimeStringMap
+
+1616946830
+g-w1
+it does not support dynamically adding stuff, so I reccomend putting stuff in a comptime array, and then transrefing it to that when you are done
+
+1616946874
+g-w1
+use this to make dynamic arrays:
+
+1616946894
+spacelove
+"Like ComptimeStringHashMap but optimized for small sets of disparate string keys." if I have 70k words... will it still work?
+
+1616946898
+spacelove
+That was my concern.
+
+1616946915
+spacelove
+Thanks for that talk btw.
+
+1616947168
+g-w1
+i think compitmestringmap would still have better performance than dynamically loading stuff from a file at runtime
+
+1616947204
+spacelove
+Yea I mean, my use case is, I only need to build this graph once, then the program can run forever
+
+1616947217
+spacelove
+So if ComptimeStringMap can do that that seems ideal
+
+1616947228
+g-w1
+well you can only build it once at compitme
+
+1616947790
+ifreund
+spacelove: ComptimeStringMap will likely be very inefficent with 70k keys
+
+1616947809
+ifreund
+especially if many of those keys are the same length as others
+
+1616947933
+ifreund
+you're probably better off either embedding your 70k strings in your binary and building a normal hashmap at runtime or using the implemention from
+
+1616949044
+vent
+Probably not a zig question, but I'm printing to stdout with terminal escape sequences to add color. Only, my terminal is not interpreting the escape sequences. I can verify the sequences are correct, as if I echo each line with `-e`, the colors all come out correct.
+
+1616949105
+vent
+To clarify, when I run the program, the escape sequences just get printed to the terminal like this:
+
+1616949201
+g-w1
+how do you write the escape codes in your zig program?
+
+1616949312
+Nypsie
+You must write your escape sequences using '\x1b['
+
+1616949344
+vent
+g-w1: The codes are just written to the char buffer like any other string. That buffer is then printed to stdout.
+
+1616949384
+vent
+Ah, yeah I see what you mean. I was escaping the backwards slash in my escape character
+
+1616949439
+vent
+Yep, got it by changing the escape char from "\\033[" to "\x1b[". Thanks!
+
+1616949524
+Nypsie
+You're welcome! :)
+
+1616955668
+artmb
+Hi all. I am trying to play with std lib code.But I am getting "import of file outside package path: '../std.zig' " when I ma trying to run a test: zig test lib/std/fmt/parse_float.zig
+
+1616955713
+g-w1
+use --main-pkg-path .
+
+1616955940
+artmb
+thanks. what is exactly a package path?
+
+1616955957
+g-w1
+it is where things can import stuff from
+
+1616956168
+artmb
+without setting this flag: `--main-pkg-path` zig will fallback to a basedir of source file ( lib/std/fmt/ in my case)?
+
+1616956359
+g-w1
+i think so
+
+1616956383
+ifreund
+yep
+
+1616956586
+artem1
+exit
+
+1616956590
+artem1
+rxit
+
+1616956593
+artem1
+exit
+
+1616957777
+artmb
+J
+
+1616960853
+ifreund
+andrewrk: currently working on switching the first paramter of the various astgen functions to be a *GenZir insted of a *Module, should be done pretty soon if you want to avoid conflicts
+
+1616960891
+andrewrk
+thanks for the heads up! I'm doing error sets, not worried about conflicts
+
+1616960949
+ifreund
+yeah, conflicts shoudn't be too bad :D
+
+1616960968
+ifreund
+renaming the file is already done
+
+1616961107
+ifreund
+part of me really wants to just make the gpa global for the self hosted compiler, but part of me feels like that would be un-ziggish
+
+1616961127
+ifreund
+justification is that there's no situation in which we want two gpas
+
+1616961150
+ifreund
+and then we don't have to take the (addmittedly light) memory/perf hit of passing it around
+
+1616961172
+ifreund
+I already made my gpa global in river :D
+
+1616961365
+andrewrk
+I'm fine with making gpa global
+
+1616961386
+andrewrk
+only reason I can think of to not do it would be if we were trying to debug some tricky thing, it could be useful to pass a different allocator to a different component
+
+1616961437
+andrewrk
+maybe let's not do it quite yet
+
+1616961457
+ifreund
+yeah, it definitely doesn't need to happen on this branch
+
+1616961485
+andrewrk
+btw I'm guessing you knew this but most of those perf ideas in BRANCH_TODO I was planning on filing an issue for and not blocking the branch on them
+
+1616961538
+ifreund
+makes sense
+
+1616962510
+g-w1
+andrewrk: fyi i think i fixed the remaining issues in the pr. also error sets 👀. are you doing lazy stuff for them?
+
+1616962543
+andrewrk
+I'm making them implemented similar to functions
+
+1616962558
+g-w1
+are they Decl s?
+
+1616962559
+andrewrk
+g-w1, do you mind rebasing after ifreund's commits?
+
+1616962566
+g-w1
+ill rebase
+
+1616962676
+g-w1
+that was ez lol
+
+1616962774
+g-w1
+pushed
+
+1616962790
+ifreund
+got one more coming soon, though it hopefully won't be too bad either
+
+1616962806
+ifreund
+sorry for the conflicts
+
+1616962885
+g-w1
+hmm, i think the caching system might be messed up. every time i do `./build-zirm-rel/zig build test-stage2 -Denable-qemu` it rebuilds the test suite even if i change no source files
+
+1616962895
+g-w1
+this only happened after the rebase
+
+1616962927
+ifreund
+g-w1: I think you need to do a cmake rebuild due to the file rename
+
+1616962961
+g-w1
+ahh, cmake is the worst
+
+1616963086
+g-w1
+ifreund: typo in translate-c.zig return @import("Astgen.zig").simple_types.has(name);
+
+1616963238
+ifreund
+urgh, I thought I did full rebuild
+
+1616963337
+andrewrk
+probably didn't -Denable-llvm which disables translate-c
+
+1616963364
+ifreund
+ah, yeah that'd be it
+
+1616963429
+ifreund
+g-w1: pushed a fix, thanks
+
+1616964249
+ifreund
+and pushed the astgen parameters change, sorry for any conflicts. This time I did build with -Denable-llvm though :)
+
+1616964308
+g_w1
+the rebase was pretty smooth this time
+
+1616964337
+ifreund
+that was quick indeed :)
+
+1616964417
+ifreund
+man the result location stuff is so clean in stage2
+
+1616964427
+ifreund
+(reading the comments on g_w1's PR
+
+1616964481
+ifreund
+anyhow I'm off for the night so don't worry about me causing any more conflicts
+
+1616964688
+g-w1
+ah all i have to do is toUnsignedInt
+
+1616964947
+g-w1
+the .{ .ty = u16_type } makes sure that it is an int, that
+
+1616966774
+spacelove
+I made something in zig!
+
+1616966785
+spacelove
+You can play with it at home <3
+
+1616969488
+ugla
+spacelove: nice work :)
+
+1616969933
+spacelove
+ugla thanks :-D
+

@@ -1,0 +1,488 @@
+1621039083
+andrewrk
+thanks casaca. Loris did an excellent job with it
+
+1621088957
+g-w1
+
+
+1621089418
+g-w1
+using nix-shell -p gcc gives the further errors that the person in the issue stated about zlib
+
+1621089557
+g-w1
+the question is, why shell out to gcc?
+
+1621089600
+g-w1
+heres the strace w/o gcc
+
+1621089753
+g-w1
+non-tarball zig works 👌
+
+1621089781
+g-w1
+my guess is the ci got borked
+
+1621089956
+g-w1
+nvm, its just that my dev env had gcc
+
+1621090065
+g-w1
+TheLemonMan: so now i must have a system c compiler in my env in order to use zig cc?
+
+1621091136
+v0idify
+
+
+1621096354
+jzelinskie
+since zig has comptime, why don't people use it to discover all the C files when they're writing build.zig files that call `lib.addCSourceFile`?
+
+1621096402
+Nypsie
+I've seen people do that ;)
+
+1621096436
+jzelinskie
+ah good, I was afraid there was maybe a reason you can't because I've only seen build files with huge lists of source files
+
+1621096535
+ifreund
+that wouldn't use comptime... just normal code run in the build.zig
+
+1621096556
+ifreund
+and there are very good reasons to explicitly list all the source files instead, infact I'd recommend this
+
+1621096569
+jzelinskie
+yeah good point -- it isn't comptime
+
+1621096573
+ifreund
+meson forces this for example
+
+1621096594
+jzelinskie
+is there a doc for meson that covers the subject well?
+
+1621096690
+ifreund
+jzelinskie:
+
+1621096699
+jzelinskie
+thanks!
+
+1621096717
+ifreund
+it's also just far more explicit
+
+1621096806
+jzelinskie
+the section actually sounds like an argument to actually make it use comptime though 🤣
+
+1621096811
+jzelinskie
+that section*
+
+1621096835
+jzelinskie
+but yeah, being explicit seems fine
+
+1621096880
+ifreund
+you can't make syscalls at comptime
+
+1621096911
+jzelinskie
+ah, well that settles that ;)
+
+1621101387
+andrewrk
+to be clear, build.zig runs at runtime
+
+1621101400
+andrewrk
+but that might be a bit counter intuitive, since it runs before compiling your code
+
+1621101419
+jzelinskie
+yeah, it makes sense if you think of it as a separate build tool
+
+1621101456
+jzelinskie
+which it is or else it'd be some crazy JIT thing
+
+1621101466
+andrewrk
+ifreund, I want to make the default to use zig-provided libc (not try to detect native libc) when compiling natively and not linking any native system libs
+
+1621101472
+jzelinskie
+I'm currently deep in the automake/autotools weeds
+
+1621101511
+g-w1
+* repl: if you try `run` with -ofmt=c you get an access denied error because it tries to execute the .c file as a child process instead of executing `zig run` on it. <- andrewrk do you want `zig run file.zig -ofmt=c` to work, or only `run` in the repl to work for c files?
+
+1621101514
+andrewrk
+jzelinskie, I've found sometimes the best strategy is to just guess rather than try to read all that horrible stuff
+
+1621101526
+jzelinskie
+yeah, I just want to see the final generated makefile
+
+1621101558
+andrewrk
+ah right yeah that's useful. also useful is running a real build with `make VERBOSE=1` and looking at the output
+
+1621101595
+ifreund
+andrewrk: I'm fine with that in theory, but don't know how you would implement that
+
+1621101630
+g-w1
+yay! now i won't need gcc for zig
+
+1621101631
+ifreund
+how does the compiler know where a given library comes from? I guess the user has to tell it somehow
+
+1621101785
+jzelinskie
+holy shit yeah... running make with verbose is what I want not to read this mess
+
+1621101864
+jzelinskie
+I'm always afraid to run makefiles because I don't know if they're going to `make install` and just start dumping/overwriting shit to my system
+
+1621101886
+jzelinskie
+I should've just done this in docker :\
+
+1621103286
+jzelinskie
+the `make VERBOSE=1` isn't quite as useful as I'd like because this project using libtool
+
+1621103866
+andrewrk
+ifreund, if you pass -lfoo and it's not one of the known libc libs, then it assumes system provided. otherwise, assumes no system dependencies
+
+1621104160
+andrewrk
+this is already the case for whether to run native system include / library directories
+
+1621104246
+ifreund
+ok, and if the user is providing their own shared objects they can just put them on the command line like `zig build-exe -l main.zig foo.so` and we would use the zig-provided libc?
+
+1621104288
+jzelinskie
+are .inc files autotools? it looks like jq stuffs the builtin jq expressions (defined in JQ's expression language) into an object file using whatever tool uses .inc
+
+1621104295
+ifreund
+oops, that should be -lc not -l
+
+1621104979
+jzelinskie
+nvm, it's actually just using the preprocessor to include it
+
+1621105192
+jzelinskie
+is the zig builder ordered in anyway? for example, do I need to specify that I'm linking to libc before I add my C source files?
+
+1621105232
+g-w1
+i don't think so
+
+1621105623
+g-w1
+b.exec is ordered tho ofc
+
+1621105773
+nerthus
+to be a bit of a bikeshedder, in the "how to build LLVM" part of the docs, there is the ~/local suggestion but wouldnt ~/.local be better to respect XDG spec?
+
+1621106830
+andrewrk
+jzelinskie, sometimes C code uses .inc instead of .c when #including stuff
+
+1621106846
+andrewrk
+ifreund, that sounds about right
+
+1621107139
+jzelinskie
+what is PIC when it comes to linking? When I was reading about libtool it talks about it and build.zig for redis forces it on
+
+1621107193
+jzelinskie
+I feel like I can never effectively google this stuff because the words overlap with too many other things
+
+1621107606
+andrewrk
+Position Independent Code. you need it when making a static library but know that it will eventually be linked into a shared library
+
+1621108554
+betawaffle
+jzelinskie: pic can’t use any absolute addresses.
+
+1621108570
+betawaffle
+Like for jumps, globals, etc
+
+1621111090
+jzelinskie
+what's the difference between `.linkLibC()` and `.linkSystemLibrary("c")`? is one not using the zig distributed libc?
+
+1621111128
+ifreund
+jzelinskie: there is no difference
+
+1621111355
+jzelinskie
+hmm, I'm not really sure how I should include this `.inc` file, as it `.addCSourceFile()` hates the extension
+
+1621111779
+ifreund
+what is in the file?
+
+1621111793
+ifreund
+.inc isn't some standard C thing unless I'm very mistaken
+
+1621111828
+jzelinskie
+it's a bunch of strings that get #included in another c source file
+
+1621111852
+ifreund
+you don't need to compile it then
+
+1621111877
+jzelinskie
+`static const char jq_builtins[] = #include "src/builtin.inc"` that's the literal code
+
+1621111894
+ifreund
+yes, but all you need to do is make sure it's in the include path
+
+1621111908
+ifreund
+it will then get pulled in when you're compiling the c file that includes it
+
+1621111962
+jzelinskie
+I guess I should use `.addIncludeDir()`then rather than specifying each include file individually?
+
+1621111994
+ifreund
+yes, addIncludeDir() for the directory with your headers
+
+1621112005
+ifreund
+and addCSource() for the .c files
+
+1621112074
+jzelinskie
+`fatal error: 'src/builtin.inc' file not found` :\
+
+1621112150
+jzelinskie
+the src directory has both the headers and the source files
+
+1621112324
+ifreund
+does it have the builtin.inc file too?
+
+1621112335
+jzelinskie
+yep, everything is in src
+
+1621112350
+ifreund
+and did you add "." as an include directory
+
+1621112373
+jzelinskie
+I did "src"
+
+1621112382
+ifreund
+that include statement uses the path src/builtin.inc, which is realtive to the include directory
+
+1621112389
+ifreund
+which means src won't work
+
+1621112398
+ifreund
+because there is no src/src/builtin.inc
+
+1621112403
+jzelinskie
+ah yeah duh
+
+1621112412
+jzelinskie
+that fixed it, damn thanks
+
+1621112496
+ifreund
+no problem!
+
+1621112569
+jzelinskie
+it looks like it's using my system's macos libc and not the target that's shipped with zig, do I have to specify that?
+
+1621112593
+jzelinskie
+error(compilation): clang failed with stderr: /Users/jzelinskie/Code/oss/jq/src/builtin.c:1368:14: error: static declaration of 'strptime' follows non-static declaration
+
+1621112594
+jzelinskie
+/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/time.h:117:7: note: previous declaration is here
+
+1621112684
+jzelinskie
+I'm getting quite a few errors from  preprocessor macros that are evaluating as if I'm missing things
+
+1621112731
+ifreund
+using native-native-gnu as the target will make it use the libc zig ships
+
+1621112773
+jzelinskie
+I figured that'd be the case with `const target = b.standardTargetOptions(.{});`
+
+1621112793
+jzelinskie
+ah, i'm never setting the target
+
+1621112798
+ifreund
+this default will be changed back to using the libc zig ships when not linking system libs soon
+
+1621112812
+ifreund
+as andrewrk and I were just discussing above :D
+
+1621113628
+jzelinskie
+👍
+
+1621119277
+mpli
+hey folks, my friend tried joining this channel for the first time and received a ban for some unknown reason. Can someone explain what happened? (his username is Mysoft)
+
+1621119675
+ugla
+mpli: does he have a registered nick?
+
+1621119721
+mpli
+give me a sec, ill ask him
+
+1621119796
+jamii
+Hello!
+
+1621119801
+jamii
+I'm having some trouble with async.
+
+1621119822
+jamii
+
+
+1621119861
+jamii
+The intention is to suspend this toy interpreter after a fixed amount of work so it can live in another event loop.
+
+1621119906
+jamii
+But with the current code on 0.7.1 I get "awaiting function resumed"
+
+1621119908
+jamii
+
+
+1621119970
+jamii
+I dont understand why. The eval seems to reach suspend{} and then I call resume on it. The later call to await in main isn't even reached.
+
+1621120005
+jamii
+I thought maybe there was a sneaky await on IO somewhere in eval but I don't know how to check.
+
+1621120028
+AtomToast
+Damn, gpa just telling me where I fucked up with a double free is pretty fucking neat
+
+1621120052
+mpli
+@ugla he does and is authenticated as Mysoft
+
+1621120248
+AtomToast
+<jamii "But with the current code on 0.7"> I don't know much about async but I think using 0.7.1 isn't really recommended
+
+1621120274
+ikskuh
+0.7.1 is soon over half a year old now i think
+
+1621120289
+jamii
+Ok, I'll try with master
+
+1621120445
+jamii
+Ok, same on masggter but with a nicer stack trace -
+
+1621120878
+jamii
+Here is a very stripped down version that produces the same error -
+
+1621120885
+jamii
+I guess I have some fundamental misunderstanding here.
+
+1621120915
+jamii
+If I move the suspend into `eval` then it works fine.
+
+1621121057
+jamii
+Updated -
+
+1621121074
+jamii
+Is this a bug or am I just totally misunderstanding how suspend works?
+
+1621121564
+ifreund
+mpli: could be that his username is matched by some wildcard ban targeting some past trouble maker, I believe andrewrk is currently the only op here
+
+1621121603
+mpli
+weird, he is pretty chill
+
+1621121614
+mpli
+and he says he didnt get any bans before
+
+1621121785
+mpli
+I reached out to andrew, thanks for the help ifreund
+
+1621122766
+fengb
+jamii: b_frame implicitly awaits on a's result. You'll need to manually resume a, which isn't actually set anywhere
+

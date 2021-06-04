@@ -1,0 +1,948 @@
+1609891280
+FireFox317
+even better :) however naming a file llvm.zig is pretty dangerous, because putting functions 'globally' in that file will cause stage1 to emit function names like `llvm.foo` which llvm considers intrinsics ;p
+
+1609891378
+andrewrk
+ohh hmm is that why you originally moved it?
+
+1609891400
+FireFox317
+exactly
+
+1609891419
+andrewrk
+if it's in codegen dir I think stage1 will emit `codegen.llvm.foo`
+
+1609891443
+FireFox317
+oh maybe it does yeah, let me check that
+
+1609891715
+FireFox317
+andrewrk, just so you know, on the ci we do not pass the -Denable-llvm flag yet
+
+1609891777
+andrewrk
+ah right
+
+1609892177
+andrewrk
+meanwhile, I got -femit-h integrated with incremental compilation :)
+
+1609892347
+FireFox317
+Nice!
+
+1609892353
+pixelherodev
+Very nice! :D
+
+1609892369
+pixelherodev
+Ah right, I need to get more CBE work done tommorow :)
+
+1609892390
+andrewrk
+I reworked all of it
+
+1609892458
+pixelherodev
+CBE? Or emit-h in particular?
+
+1609892497
+andrewrk
+all of it
+
+1609892504
+pixelherodev
+Well okay then :)
+
+1609892510
+pixelherodev
+Did you see my PR for it?
+
+1609892517
+andrewrk
+yeah I merged it then reworked all of it
+
+1609892529
+pixelherodev
+Ah, so I should close it?
+
+1609892541
+andrewrk
+no just sit tight, I'm about to push
+
+1609892796
+pixelherodev
+Gotcha :)
+
+1609892929
+andrewrk
+we're going to need the test harness to support testing updates and making sure the emit-h output is correct
+
+1609892950
+FireFox317
+andrewrk, renaming and moving of llvm backend files has been added the PR and the testing of all the targets will go in a different PR. goodnight!
+
+1609892961
+andrewrk
+FireFox317, goodnight! nice work!
+
+1609892975
+pixelherodev
+My PR solved the first half, at least
+
+1609893817
+andrewrk
+pushed
+
+1609894067
+andrewrk
+and now I think it's finally time for that coding stream I said I was gonna do yesterday
+
+1609894333
+g-w1
+nice, from my profiling it seems analyzeInst and analyzeBody are the most slow functions
+
+1609896474
+mikdusan
+andrew what if we introduced a new target `abi` of `apple` -> x86_64-macos-apple <- which means "use the SDK. use the apple linker.". I'm not saying to make this the
+
+1609896497
+mikdusan
+*andrewrk
+
+1609896538
+pixelherodev
+Or we could choose
+
+1609896589
+mikdusan
+here's an example... the bundled headers for macos do NOT work with Big Sur SDK. all stop.
+
+1609896642
+mikdusan
+if you take that stance, I guarantee you frameworks will never work except for an EXACT version of framework that is compatible with zig's bundled macos headers.
+
+1609896863
+mikdusan
+and it's an API surface area thing. while our tricks logic may appear to work for a trivial program, the more frameworks that are used, the more likely we get versions butting heads
+
+1609904177
+andrewrk
+mikdusan, I think you have a good point, let me think about it. I do think there is plenty of room for applications which do not depend on any frameworks
+
+1609904193
+andrewrk
+and we don't bundle any framework headers, just libc
+
+1609904965
+mikdusan
+to target non-framework binaries is simpler indeed. we would just need to shore up > 10.15 OS detection for < 11.0 applications and because /usr/include and libc++ includes/libs are bundled that would defacto mean "x86_64-macos-gnu" means never use Xcode, SDK or external ld.
+
+1609905028
+mikdusan
+ie. in addition to no frameworks, it also means "never use SDKs"
+
+1609905101
+andrewrk
+I think it's a worthy proposal. we have a similar situation happening right now with windows-msvc vs windows-gnu
+
+1609905254
+mikdusan
+yeah the analog i guess would be macos-xcode and macos-gnu (macos-bsd? lol)
+
+1609905389
+mikdusan
+how lame am I <-- just discovered (enabled) github dark
+
+1609905444
+fengb
+Is there a github after dark? 🤔
+
+1609905596
+pixelherodev
+I think I'm going with the "split one big compilation into many small ones" option - figured out a good solution which basically just involves replacing @imports with the equivalent of a header :)
+
+1609905630
+pixelherodev
+Allows doing big compilations with a single root source file, but still breaking it down into one partial compilation unit per input file, then rejoining them later
+
+1609910643
+daurnimator
+mikdusan: zig treats cross compilation as a first class citizen. apple doesn't. what you're suggesting demotes one of zig's goals.
+
+1609910867
+mikdusan
+I'm seeking to improve macos-hosted builds. cross-compiling to macos need not be effected
+
+1609911362
+mikdusan
+from a birds eye view, it could just be that zig gears to only require enough headers to build against libSystem (libc) with the understanding that it's limited.
+
+1609911478
+mikdusan
+limited in ways like don't use macos bundled stuff like libc++, libedit, libexpat, etc etc. and of course don't use frameworks.
+
+1609911532
+mikdusan
+and then the recommended way is to use a contributed library for build.zig which has xcode toolchain support.
+
+1609911559
+mikdusan
+that would mean for example the issue that got me back on this,
+
+1609911585
+mikdusan
+that a project depending on 3rd-party { src/deps/imgui, src/deps/sokol },
+
+1609911622
+mikdusan
+would need to build those 3rd parties with build.zig using xcode toolchain support
+
+1609911636
+mikdusan
+that's probably not such a bad thing
+
+1609911799
+mikdusan
+apple will continue doing things like this; one day they'll realize /usr/lib is aniquated and drop it completely to make everything frameworks. That can't happen for Big Sur, but could for macos 12.x or 13.x
+
+1609911844
+mikdusan
+s/realize/classify/
+
+1609942144
+koakuma
+Continuing the sparc64 f128 debugging from yesterday
+
+1609942192
+koakuma
+I found that the cause is what appears to be a miscompilation of the bitcast in compiler_rt.addXf3
+
+1609942473
+koakuma
+
+
+1609942502
+koakuma
+So, the load happens before the result is stored, resulting in garbage values
+
+1609942533
+koakuma
+I'm not familiar with the Zig codegen part, any hint on where should I look?
+
+1609942671
+ifreund
+well, stage1 uses llvm for its codegen so either there's a bug in what it tells llvm to generate or you've found an llvm bug
+
+1609942706
+ifreund
+either way I'd recommend opening a zig issue with all that information as a first step
+
+1609943825
+koakuma
+Mhm, opened issue 7706 to track this
+
+1609945861
+koakuma
+The weird thing is that if I make a simple bitcasting function, it gets compiled correctly
+
+1609945861
+koakuma
+It's just that one bitcast in addXf3 that gets miscompiled
+
+1609948111
+oats
+running 'zig fmt main.zig' gets me this error on windows, for any file:
+
+1609948114
+oats
+error: unable to open 'main.zig': error.Unexpected
+
+1609948120
+oats
+any ideas why that may be?
+
+1609948199
+oats
+oh, seems to be an open issue
+
+1609948206
+oats
+
+
+1609956595
+mikdusan
+have an old school function that will either succeed or fail. don't care about reason. return type `bool` or `!void` and `return error.Failure;` ?
+
+1609956614
+mikdusan
+s/old school/simple
+
+1609956653
+fengb
+If the function name indicates the returned status, a bool is fine
+
+1609956663
+fengb
+If it's more mutation based, I'd prefer !void
+
+1609956674
+ifreund
+!void lets you use try
+
+1609956718
+mikdusan
+it's a detection function. param is pointer to struct that gets modified on success. yeah sounds like !void gets thumbs up. thanks
+
+1609958835
+pixelherodev
+ifreund: try is sugar, code shouldn't be deliberately written for the sake of using sugar, it's there to make other pieces easier to use when you're already using them...
+
+1609959094
+justin_smith
+pixelherodev: I think the idea here is that you can communicate a "failure" with a true versus false, or by returning an error state, and depending on what you are attempting one or the other might communicate design intent better
+
+1609959110
+pixelherodev
+justin_smith: I agree with that completely.
+
+1609959122
+pixelherodev
+I don't think "!void lets you use try" should be factored in at all, though.
+
+1609959133
+olabaz
+Hi, I am brand new to zig and I'm trying to compile the hello.zig example in the documentation but it fails.
+
+1609959139
+ifreund
+s/lets you use try/lets you return the error up the call stack if you want/
+
+1609959142
+pixelherodev
+That is, I don't think language features should be considered relevant
+
+1609959144
+olabaz
+the error is: ./test.zig:4:38: error: no member named 'writer' in struct 'std.fs.file.File'
+
+1609959148
+pixelherodev
+olabaz: what version of the compiler?
+
+1609959153
+ifreund
+the sugar is irrelevant here
+
+1609959163
+olabaz
+pixelherodev: how do I check?
+
+1609959165
+pixelherodev
+ifreund: sure, but that's not how you phrased it - I agree with it as rephrased
+
+1609959167
+ifreund
+zig version
+
+1609959169
+pixelherodev
+olabaz: `zig v` ^
+
+1609959172
+olabaz
+0.6.0
+
+1609959175
+ifreund
+pixelherodev: fair :D
+
+1609959176
+pixelherodev
+Yeah, too old :P
+
+1609959183
+olabaz
+wtf I got it from apt
+
+1609959188
+pixelherodev
+Yeah, that's your problem.
+
+1609959194
+ifreund
+debian is always out of date
+
+1609959194
+pixelherodev
+Debian version is too old :P
+
+1609959202
+pixelherodev
+To be fair to Debian, that's normally a good thing
+
+1609959207
+fengb
+Try upgrading to 0.7.0 or 0.7.1
+
+1609959260
+olabaz
+can I upgrade from zig or do I need to reinstall the newer version
+
+1609959269
+fengb
+Yeah Debian is always at least 6 months behind
+
+1609959288
+pixelherodev
+I do wish that rapid changes weren't the norm :(
+
+1609959292
+fengb
+ziglang.org has master builds that you can unzip
+
+1609959304
+pixelherodev
+Ideally, Debian would always be up to date because software wouldn't keep chucking in new features
+
+1609959308
+ifreund
+olabaz: zig can't upgrade it itself, you can download a statically linked recent build here:
+
+1609959323
+fengb
+Not packaged but you can run it from anywhere
+
+1609959346
+fengb
+Yeah Debian is designed for stability, not edge :P
+
+1609959359
+ifreund
+pixelherodev: how does software progress then? I for one am not satisfied with the current state of the "linux desktop"
+
+1609959376
+pixelherodev
+ifreund: neither am I, which is why I'm likely going to nuke my last Linux box today.
+
+1609959382
+fengb
+Hell its unstable repo is more stable than most other distro’s lts
+
+1609959387
+olabaz
+should I just grab 0.8.0 or is 0.7.1 stable the better choice
+
+1609959396
+pixelherodev
+There is no 0.8.0...
+
+1609959402
+pixelherodev
+Ahh, master build is labeled as 0.8?
+
+1609959406
+olabaz
+yeah
+
+1609959407
+ifreund
+I guess you're saying "ideally software was already perfect" which would be nice, but sadly not the case
+
+1609959413
+pixelherodev
+ifreund: not what I'm saying at all
+
+1609959413
+fengb
+Most of us run against master
+
+1609959430
+pixelherodev
+ifreund: I'm saying bug fixes and actual improvements only, no feature expansion
+
+1609959443
+fengb
+But 0.7.1 should be pretty stable for a few months
+
+1609959457
+pixelherodev
+fengb: unless upstream decides to do 1717 at the same time I did ;)
+
+1609959480
+olabaz
+is master the same as master on github?
+
+1609959484
+ifreund
+yes
+
+1609959487
+fengb
+Yes
+
+1609959496
+ifreund
+though the automated builds will lag behind slightly
+
+1609959499
+olabaz
+ok I'll just do that and rebuild every once in a while
+
+1609959504
+fengb
+The “official” versioned release is just a snapshot, not a contract if stability
+
+1609959504
+olabaz
+(clone github)
+
+1609959525
+pixelherodev
+note that building requires LLVM installed
+
+1609959530
+pixelherodev
+Though, if you're on Debian, that's less ofa n issue :P
+
+1609959531
+fengb
+Not yet anyway. 1.0 will be the first actual stable release but that’s in a few years
+
+1609959591
+pixelherodev
+ifreund: to use a better example: a C compiler. My ideal linux distro would reject all patches to a C compiler other than bug fixes for Debian-lengths of time. No optimizations would be added until there's been at least a year without a single bug report about it, for instance.
+
+1609959600
+olabaz
+oh I don't have llvm
+
+1609959617
+pixelherodev
+ifreund: A better way to put it is that I don't want
+
+1609959631
+pixelherodev
+Linux distros don't curate finely enough in my opinion
+
+1609959652
+pixelherodev
+Alternate distinction: I like Arch's split of the AUR.
+
+1609959674
+fengb
+I wish Arch offered easier ways of distributing binaries
+
+1609959676
+pixelherodev
+I want the core official repo to be fully usable with actual software (not minimal, but *curated*)
+
+1609959703
+pixelherodev
+I want a repo for which every package is
+
+1609959712
+pixelherodev
+I want, in short, Oasis Linux :P
+
+1609959717
+fengb
+Nobody in Arch really distributes prepackaged stuff like .deb
+
+1609959723
+fengb
+Even though it’s possible
+
+1609959811
+pixelherodev
+Maybe I should switch to Oasis+Nix instead of nuking it entirely...
+
+1609959862
+pixelherodev
+Or Oasis+bespoke-package-manager :P
+
+1609959926
+pixelherodev
+... or, you know, oasis and that's it? That actually sounds perfectly reasonable for me
+
+1609959978
+ifreund
+pixelherodev: you might be interested in this nix/guix-inspired but with less C++/glib package manager:
+
+1609960006
+ifreund
+though it is admittedly quite obscure currently
+
+1609960105
+companion_cube
+Let me guess, it's written in Janet?
+
+1609960151
+ifreund
+C and Janet
+
+1609960176
+ifreund
+Janet is used for the package definitions
+
+1609960234
+justin_smith
+in a test I'm using an array literal to provide input to a function that takes a slice, I see the message "error: array literal requires address-of operator to coerce to slice type '[][]Placement" - what does that look like syntactically?
+
+1609960249
+fengb
+&[_]Placement{}
+
+1609960258
+justin_smith
+fengb: great, thanks
+
+1609960541
+justin_smith
+fengb: I'm still having trouble - it's a 2d array and I can't seem to combine the declarations and nested declarations that make the compiler happy
+
+1609960646
+ifreund
+&[_][]Foo{&[_]Foo{}}
+
+1609960726
+ifreund
+whoops, need a const there
+
+1609960741
+justin_smith
+I got expected type '[]Placement', found '*const [2]Placement'
+
+1609960744
+ifreund
+&[_][]const Foo{&[_]Foo{}}
+
+1609960749
+justin_smith
+ahh
+
+1609960869
+justin_smith
+ifreund: I think this is getting closer but the error looks a lot like what I started with:
+
+1609960950
+ifreund
+justin_smith: your place_tile function requires mutable slices
+
+1609960969
+justin_smith
+ifreund: oh right, of course it does, and I can't do that with literals
+
+1609961003
+ifreund
+you need to declare each inner array as it's own mutable stack variable
+
+1609961061
+pixelherodev
+companion_cube, ifreund: janet?
+
+1609961087
+ifreund
+pixelherodev: the most sane lisp ive seen so far:
+
+1609961233
+ifreund
+justin_smith: here:
+
+1609961406
+ifreund
+pixelherodev: sorry, that link probably doesn't work with your browser:
+
+1609961426
+justin_smith
+ifreund: I think it's a good sign that that looks like what I ended up with, still getting: "error: expected type '*[][]Placement', found '*[2][]Placement'"
+
+1609961470
+ikskuh
+marler8997: i assume you didn't see/follow the PR that created the original problem in the first place?
+
+1609961472
+ifreund
+why does place_tile expect a pointer to a slice?
+
+1609961479
+ifreund
+that seems very odd
+
+1609961512
+ifreund
+justin_smith: this is how you would do that though
+
+1609961516
+justin_smith
+ifreund: probably because of my relative ignorance of the language, it's probably fixable
+
+1609961516
+marler8997
+ikskuh, I believe I followed it but I didn't realize SocketNotConnected was a compile-time error (not a runtime error)
+
+1609961524
+ifreund
+but I'd be surprised if this is really what you want
+
+1609961551
+marler8997
+but then why is it a SendToError?  would it also be a codebug when returned by sendto as well?
+
+1609961578
+justin_smith
+ifreund: what likely happened was I was shotgun debugging an unexpected result and ended up changing the slice into a pointer to slice and never changed it back
+
+1609961580
+ikskuh
+Because you can call sendto on both UDP and TCP sockets
+
+1609961591
+marler8997
+not following
+
+1609961612
+marler8997
+why would it be a runtime bug for sendto, but not send?
+
+1609961661
+marler8997
+a *runtime error (not bug)
+
+1609961922
+g-w1
+is this correct? it works (top level) `const x: u32 = {return 5;}; pub fn main() void {@compileLog(x);}` (stage1)
+
+1609962081
+pixelherodev
+ifreund: uhh
+
+1609962086
+pixelherodev
+the github link worked fine lol
+
+1609962098
+g-w1
+that seems like a stage1 bug to me
+
+1609962098
+pixelherodev
+Github is trash on
+
+1609962105
+pixelherodev
+sr.ht is still muchhhh nicer on mothra though
+
+1609962153
+ifreund
+g-w1: indeed :D
+
+1609962183
+g-w1
+it was found by a beginner on discord who just stumbled across it because they didn't know the blk: syntax yet. probably should be fixed
+
+1609962251
+g-w1
+and it segfaults stage2. :)
+
+1609962991
+marler8997
+ikskuh?
+
+1609963011
+ikskuh
+i am here, but occupied
+
+1609963456
+olabaz
+is there a difference in either compile time/exe size if I @import("std") vs just @import("std").debug.print
+
+1609963523
+ifreund
+olabaz: no
+
+1609963579
+ifreund
+the zig compiler analyzes all code lazily
+
+1609963581
+pixelherodev
+Not remotely, no
+
+1609964746
+pixelherodev
+I'd even say that any system in which it made a difference was poorly designed :P
+
+1609965184
+lf94
+> using mothra to browse the web
+
+1609965199
+lf94
+you just just be mounting remote fs :)
+
+1609965222
+pixelherodev
+not when the remote is a HTTP server I don't ;)
+
+1609965238
+lf94
+that sucks :D
+
+1609965280
+lf94
+does sr.ht have an api?
+
+1609965291
+lf94
+for example, to list projects
+
+1609965408
+ikskuh
+marler8997: not sure why that decision was made
+
+1609965418
+ikskuh
+imho it should be a mistake in both cases
+
+1609965768
+olabaz
+when I run zig test tests.zig I only get "All 1 tests passed" but it doesn't say the name like in the docs 1/1 test "string literals"... OK
+
+1609965843
+g-w1
+thats because it is piped in the docs so the terminal escape codes dont work. you can pipe to less: `zig test test.zig 2>&1 | less` to get everything
+
+1609965979
+olabaz
+I see, thanks
+
+1609967327
+marler8997
+ikskuh, ok thanks for clearing that up
+
+1609967378
+marler8997
+although, I'm not sure on all platforms and in all cases, it's not possible for send to return ENOTCONN or WSAENOTCONN because of a disconection (i.e. it would be a runtime error in this case)
+
+1609967412
+marler8997
+documentation seems a little hazy on it
+
+1609967512
+olabaz
+why is S.x in the namespaced_global.zig example in the doc a global variable. Shouldn't S not exist after exiting the function foo()?
+
+1609967597
+olabaz
+I would expect you need a keyword like "static" in C?
+
+1609967831
+fengb
+All container variables are global
+
+1609967833
+ifreund
+S is just a name for the type of the struct declared there
+
+1609967875
+ifreund
+the struct type itself is "static" if you will, and variables declared within it are also static in the C sense/globabl
+
+1609967920
+ifreund
+note that files are also structs
+
+1609968014
+olabaz
+oh so S is a definition of the struct it's not an instance of one
+
+1609968047
+ifreund
+right, @TypeOf(S) is type
+
+1609968071
+olabaz
+can I redefine S?
+
+1609968080
+olabaz
+oh I guess not cuz it's const
+
+1609968100
+ifreund
+indeed, and types are required to be const by the language
+
+1609968154
+olabaz
+so I can't change the number/types of the fields but I can change their default values
+
+1609968298
+olabaz
+?
+
+1609968338
+g-w1
+no, you cant change anything
+
+1609968349
+g-w1
+think of it as defining a struct
+
+1609968424
+olabaz
+but it seems like S.x += 1 is changing the value of x
+
+1609968430
+olabaz
+field
+
+1609968490
+olabaz
+so if I were to declare something of type S before and after calling foo() one would have its .x = 1234 and the other .x = 1235?
+
+1609968511
+g-w1
+no, S is the type of the struct. do`var t =  S { .x = 5}; t.x=  6;`
+
+1609968524
+fengb
+S.x is a declaration, not a field. It’s like a static variable in Java
+
+1609968567
+g-w1
+a field looks like this `const S = struct { x: u32 };`
+
+1609968630
+olabaz
+ah I see
+
+1609969661
+olabaz
+ok I think I get it. And this value S.x can only be accessed from within foo() and only by calling S.x?
+
+1609969998
+g-w1
+check this example out.
+
+1609971795
+marler8997
+ikskuh, I'm looking into removing SocketNotConnected, however, I think there are use cases for it
+
+1609971820
+marler8997
+for example, when you have multiple threads that have a socket handle, the way to signal the socket to be closed is to call shutdown on it
+
+1609971840
+marler8997
+that can cause the program to call "send" or "recv", and that may produce an ENOTCONN
+
+1609971844
+marler8997
+right?
+

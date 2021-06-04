@@ -1,0 +1,652 @@
+1609550148
+Daimanta
+While I'm here anyway: I couldn't find a function to transform a "string" into an integer. Is there any such function?
+
+1609550162
+fengb
+std.fmt.parseInt
+
+1609550189
+Daimanta
+Ah, thanks. Now I can remove my own abomination ;)
+
+1609552177
+fraktor
+Has anyone used Zig with single-header libraries before? I'm having trouble how to define something like NUKLEAR_IMPLEMENTATION for example when I include the header.
+
+1609554051
+andrewrk
+fraktor, -DNUKLEAR_IMPLEMENTATION=1
+
+1609554945
+companion_cube
+isn't nuklear unmaintained?
+
+1609554963
+companion_cube
+hmmm, or is it just the old repo that is archived
+
+1609555486
+daurnimator
+can someone with a debug build of zig handy post a stack trace to
+
+1609555789
+g-w1
+daurnimator:
+
+1609556211
+daurnimator
+g-w1: thanks. added to issue :)
+
+1609556576
+fraktor
+andrewrk: It needs to be defined in a particular file; other places just reference the header-only version.
+
+1609556585
+fraktor
+Maybe I shouldn't go for a header-only library...
+
+1609556763
+andrewrk
+fraktor, are you using build.zig?
+
+1609556792
+andrewrk
+addCSource lets you add c flags for that specific file
+
+1609556961
+fraktor
+Oh I misunderstood, thanks.
+
+1609557654
+daurnimator
+andrewrk: re:
+
+1609557700
+andrewrk
+first we evaluate (undefined & 0xf0) which results in undefined
+
+1609557711
+andrewrk
+then we evaluate (undefined | 0x0f) which results in undefined
+
+1609557748
+andrewrk
+`(@as(u8, undefined) & 0xf0) | 0x0f` will be constant-folded into `@as(u8, undefined)`
+
+1609557773
+daurnimator
+so then there is no stage1 bug in #7635: its a bug (and design flaw) in PackedIntArray.
+
+1609557854
+andrewrk
+I see
+
+1609557885
+andrewrk
+well it's still a stage1 bug because you are allowed to do &= on an undefined value
+
+1609557913
+andrewrk
+"use of undefined value here causes undefined behavior" pointing to `target &= mask` is incorrect
+
+1609557942
+daurnimator
+okay; should we split the issue?
+
+1609557950
+andrewrk
+sure
+
+1609557971
+daurnimator
+I'm not sure how we should solve the design flaw in PackedIntArray.... I think it would need to ban passing `undefined` to .set ?
+
+1609557978
+daurnimator
+but that's not easy or detectable
+
+1609557992
+daurnimator
+it also raises the question for what to use for undefined values instead of undefined
+
+1609557997
+daurnimator
+0 i guess?
+
+1609558143
+daurnimator
+hmmmm. if PackedIntArray worked on `packed struct { a: u1, b: u1, c: u1, d: u1, e: u1, f: u1, g: u1, h: u1}` then it be fine I guess
+
+1609558177
+daurnimator
+though the fact that you have to resort to that suggests a language flaw :P
+
+1609558314
+g-w1
+andrewrk: it seems like you are astgening the func body in the comptime function call. if it is called at runtime also it will be astgened again. should this be cached?
+
+1609558334
+andrewrk
+daurnimator, the dissonance comes from simultaneously trying to treat an integer as a mathematical integer and as a bag of bits
+
+1609558363
+andrewrk
+there are other places where this dissonance shows up too and I agree it is something to consider
+
+1609558405
+andrewrk
+g-w1, good question
+
+1609558423
+andrewrk
+definitely seems worth looking into
+
+1609558450
+g-w1
+we should probably do some benchmarks. I suspect astgen doesn't take much time
+
+1609558463
+andrewrk
+I want to get to a point where we can run a fairly complex algorithm in zig stage2 comptime and compare its perf and memory usage to an equivalent python3 script
+
+1609558483
+daurnimator
+andrewrk: huh. maybe #7512 has some merit after all
+
+1609558558
+andrewrk
+g-w1, lots of fun stuff to work on in stage2 :)  I'll try to get you some code review action before bed tonight
+
+1609558679
+g-w1
+thx, if you are debating which one 7092 is gonna be the root of all my error stuff going forwards so its probably best to get merged first. it needs a rebase tho
+
+1609558954
+andrewrk
+ok you got it
+
+1609558992
+andrewrk
+hmm this is failing the CI tests
+
+1609559039
+g-w1
+that was happening a few days ago when I last touched it
+
+1609559110
+g-w1
+test-stage2 -Denable-qemu works fine on my machine tho. its in the docgen code
+
+1609559133
+andrewrk
+I see
+
+1609559158
+andrewrk
+when you rebase it would you mind cleaning up some of those commits? for example I don't think there needs to be revert commits right? could just remove both the revert commit and the original commit from the PR
+
+1609559226
+g-w1
+yes. looking at the diff there are a few things that I left in by accident too Module.zig:2777, so ill clean those up too
+
+1609559249
+andrewrk
+much appreciated
+
+1609559298
+andrewrk
+here's my rule of thumb: choose one: (1) organize the PR into distinct commits that will make sense for the reviewer to review separately from each other, or (2) make the entire PR 1 commit
+
+1609559320
+g-w1
+ah thx
+
+1609560173
+g-w1
+hmm, looking at my code revealed a few weird things. guess thats what happens when you start to work on code that you left for 1.5 months. I left a review on my own pr! next time ill do this beforehand so i dont waste your time
+
+1609560225
+andrewrk
+no worries
+
+1609560892
+daurnimator
+I put up a PR with EnumSet. I wrote it for the pattern: `pub const StandardOptionsConfig = struct { release_mode: EnumSet(builtin.Mode) = EnumSet(builtin.Mode).Full};` but I realised that its useful in a whole lot of places.
+
+1609560900
+daurnimator
+It might even be useful for OS bitflag interfaces
+
+1609562023
+g-w1
+ok, now all the obvious (to me) bugs are marked :P
+
+1609563561
+pixelherodev
+Personally, I prefer (1) there
+
+1609563604
+pixelherodev
+But some of my past PRs didn't do a good job at that, and (2) is definitely better than some I've seen [and some I've made]
+
+1609563617
+g-w1
+is the way to achieve 1 (or 2) rebasing a lot?
+
+1609563626
+g-w1
+or just being neat?
+
+1609563704
+pixelherodev
+Mostly the latter, partly the former
+
+1609563719
+pixelherodev
+g-w1: see `git add -p`
+
+1609563729
+pixelherodev
+It lets you interactively choose which bits go into which commit
+
+1609563736
+g-w1
+yep, ik abt it. its nice
+
+1609563736
+pixelherodev
+(but you
+
+1609563777
+pixelherodev
+I've made a habit of splitting commits via `git reset HEAD^ && git add -p && git commit &&...`
+
+1609564171
+andrewrk
+g-w1, it helps if you come up with the smallest testable checkpoint
+
+1609564193
+andrewrk
+it's reaaaally nice when each commit has 1 new test case and the corresponding code to make it pass
+
+1609564202
+andrewrk
+not always achievable tho of course
+
+1609564232
+andrewrk
+but those PRs tend to get merged really fast
+
+1609567361
+daurnimator
+pixelherodev: g-w1: I use this too:
+
+1609568736
+Kingsquee
+is there anything like a hashset in the std?
+
+1609568780
+daurnimator
+Kingsquee: HashMap with void value type
+
+1609568799
+daurnimator
+Kingsquee: there's also BufSet for sets of strings.
+
+1609568804
+Kingsquee
+as in AutoHashMap(T, .{}) ?
+
+1609568813
+daurnimator
+Kingsquee: I also put up a PR for EnumSet
+
+1609568827
+daurnimator
+Kingsquee: so I guess it all depends on what you want a set
+
+1609568840
+Kingsquee
+a dumb struct
+
+1609568843
+daurnimator
+Kingsquee: `AutoHashMap(T, void)`
+
+1609568853
+Kingsquee
+ah, didn't realize void was a type
+
+1609573169
+Kingsquee
+do we have an operator for computing div and rem simultaneously?
+
+1609573247
+Kingsquee
+a-la div, ldiv, lldiv
+
+1609573294
+daurnimator
+Kingsquee: no. just do them and the optimiser tends to figure it out
+
+1609574403
+daurnimator
+is there a known failure on master right now? not sure why  #7649 failed
+
+1609575178
+andrewrk
+yeah we're hitting OOM on windows
+
+1609575189
+andrewrk
+on the std lib tests
+
+1609575379
+daurnimator
+andrewrk: okay; is there anything i should do about it?
+
+1609575402
+andrewrk
+no; I'll have to figure out how to mitigate problem tomorrow to make the CI green again
+
+1609575693
+daurnimator
+--test-filter=a, --test-filter=b, etc. :P
+
+1609576270
+pixelherodev
+On separate CI jobs ;P
+
+1609576313
+pixelherodev
+or, accept that CI is inpractical for now, and locally merge PRs in batches, testing them in full?
+
+1609576337
+pixelherodev
+Or, set up a bespoke CI with more RAM
+
+1609578128
+pixelherodev
+buf45
+
+1609578130
+pixelherodev
+oops
+
+1609579328
+daurnimator
+andrewrk: should .standardOptions() also subsume .standardTargetOptions() ?
+
+1609579338
+andrewrk
+yes I think so
+
+1609579500
+daurnimator
+currently `.standardTargetOptions`/`.standardReleaseOptions`/etc save away their value in the builder context. do you want to keep that pattern?
+
+1609579518
+daurnimator
+the fact they did was why I was thinking it made more sense for steps to automatically inherit
+
+1609591552
+daurnimator
+hmmm. going through everything in the repo... we're inconsistent about if we set build mode and target on test steps
+
+1609592695
+ifreund
+Yeah, I really think automatically inheriting by default would be better
+
+1609592744
+ifreund
+I honestly can't think of a use case when you'd need to do something more complex
+
+1609599269
+g-w1
+ok thx for the feedback
+
+1609599336
+betawaffle
+is there some magic bit-shifty way to round a number up to the next power of two?
+
+1609599482
+ifreund
+betawaffle: something with @clz() should work
+
+1609599561
+ifreund
+1 << (@bitSizeOf(@TypeOf(x)) - @clz(x) + 1)
+
+1609599564
+ifreund
+maybe
+
+1609599586
+daurnimator
+betawaffle: yes. math.ceilPowerOfTwo and friends
+
+1609599641
+ifreund
+which is indeed using @clz(), but with a nice API
+
+1609599710
+scientes
+and your example doesn't work if it already is a power of two
+
+1609599818
+ifreund
+indeed, it probably needs an @intCast() as well
+
+1609599825
+ifreund
+zig's pretty anal about the types when shifting
+
+1609600113
+scientes
+there could be a nice extend that just adds zeros
+
+1609600137
+scientes
+i.e. a big-endian zero-extend
+
+1609600156
+scientes
+(not big-endian byte order, but big-endian bit order)
+
+1609600184
+scientes
+...which is one of the reasons I proposed to remove the concept of bytes
+
+1609611359
+FireFox317
+andrewrk, the c code testing of stage2 that you added, causes a deadlock when linking the test-stage2 with libc (and all LLVM stuff). When I comment out the c tests it doesn't deadlock. Also when I directly run the test binary (not through `zig test`) it also doesn't deadlock.
+
+1609611991
+FireFox317
+andrewrk, okay i managed to find the problem
+
+1609612530
+FireFox317
+andrewrk, created #7659
+
+1609613231
+andrewrk
+ifreund, did you see
+
+1609613250
+andrewrk
+FireFox317, hmm I thought I fixed that recently
+
+1609613335
+andrewrk
+FireFox317, oh, the same thing that commit noted in #7596 has to be done to the test harness
+
+1609613342
+andrewrk
+(or we need to implement #7596)
+
+1609613381
+andrewrk
+in summary destroy the Compilation before executing `zig run`
+
+1609613396
+andrewrk
+but then that workaround can be reverted if we do the 7596 idea
+
+1609613491
+FireFox317
+andrewrk, ah yes it is exactly 7596, but then for another case. I will do the workaround i think
+
+1609613626
+andrewrk
+ifreund, daurnimator: I will reconsider the zig build system thing
+
+1609614341
+g-w1
+andrewrk: here you say that you will introduce lazy values
+
+1609622500
+kbd
+What's the right way to share one allocator in a program containing multiple modules? Must I pass it in everywhere or is there something easier?
+
+1609622715
+ifreund
+well if it's a gpa you could just make it a global
+
+1609622732
+ifreund
+if you're doing arenas or something else you probably do want to pass it everywhere
+
+1609623161
+andrewrk
+don't you typically initialize a module? you could pass it in there and then store it
+
+1609624402
+kbd
+ifreund: yeah it's a gpa, I'm just writing a "do its thing and exit" command line program. It worked fine as a global when everything was in one file. Then I did the goofy "put functions in another file and reflect on it to build a hash table of its public functions" we talked about yesterday, but some of those need an allocator (along with other globals). So I tried importing "main.zig" from "funcs.zig" and get
+
+1609624408
+kbd
+a lot of "cannot store runtime value in compile time variable" when I try to do that.
+
+1609624521
+kbd
+It's not just the allocator, really, but "how do I share globals in my whole progarm".
+
+1609624629
+kbd
+I guess create a globals.zig with a bunch of things set to undefined and then initialize them all in main.
+
+1609624805
+ifreund
+importing main.zig should work fine in general, something unusual is happening in your case
+
+1609624931
+kbd
+hmm, good to know that it's "ok" to import your main back from a another file.
+
+1609624971
+kbd
+it's actually when I do the reflection that I start getting errors. If I comment that out the program builds.
+
+1609625334
+ifreund
+your reflection is probably seeing your import then. I thought the @typeInfo() would only show public decls but that could be wrong
+
+1609625562
+kbd
+as soon as I put in the `inline for (decls) |d| {}` I start getting "cannot store runtime value in compile time variable" on 'var A = mymain.A;'
+
+1609626272
+kbd
+Yeah, I moved all globals over to globals.zig to see if that made a difference and I still get "cannot store runtime value in compile time variable" if I try to iterate over the decls in that module.
+
+1609626477
+ifreund
+kbd: probably need to see the code to be of much help
+
+1609626478
+kbd
+It'd probably work if I only referred in code to the *functions*, but since all "decls" includes the module-level variables it doesn't work at compile-time.
+
+1609626499
+kbd
+I'll pastebin a minimal example in a bit.
+
+1609626559
+ifreund
+you can skip the non-decl functions in your loop
+
+1609626740
+ifreund
+*non-function decls
+
+1609627209
+kbd
+yeah in the loop you can skip them, but all members are still unrolled at compile time I guess? Anyway, here's the gist, I should have narrowed it down to this for you in the first place:
+
+1609627286
+kbd
+added the compile error in a comment
+
+1609627373
+ifreund
+hrm
+
+1609627427
+ifreund
+ok as a work around you could do `const foo = struct { usingnamespace @import("funcs.zig"); }` and then do your inline for on the decls of foo
+
+1609627447
+ifreund
+usingnamespace will only grab the pub decls
+
+1609627486
+ifreund
+I'm not sure if @typeInfo() is supposed to contain non-pub decls or not
+
+1609627526
+kbd
+it contains all, but you can filter them with `is_pub`
+
+1609627540
+kbd
+but in my case that doesn't help
+
+1609627546
+kbd
+trying your code
+
+1609628027
+mikdusan
+kbd, why not just `const main = @import("main.zig");` and access via `main.dummy_allocator` ?
+
+1609628084
+mikdusan
+if you
+
+1609628279
+ifreund
+pretty sure that wouldn't change anything here
+
+1609628322
+ifreund
+cleaner than the usingnamespace hack I suggested would be putting the function decls you want to iterate in a sub struct instead of leaving them in the top level of the file
+
+1609628747
+kbd
+I'm wrong btw, the decls doesn't contain non-public functions.
+
+1609629200
+mikdusan
+kbd added to gist
+
+1609631240
+andrewrk
+mikdusan, I bet you'd have a nice chat with kubkon about the macos stuff - he's been diving deep into it lately
+
+1609631252
+andrewrk
+I think he prefers discord
+

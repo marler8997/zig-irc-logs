@@ -1,0 +1,268 @@
+1611878786
+marler8997
+andrewrk, looking for direction, should I pursue a change in std.json to support u64 integers?
+
+1611878849
+andrewrk
+hm doesn't json only support 64 bit floats for numbers?
+
+1611878924
+marler8997
+I thought it supported arbitrary precision, looking
+
+1611878942
+andrewrk
+I poked around a little. I think it could make sense to support u64 as well as BigInt even
+
+1611878984
+andrewrk
+for writing, this would emit as a string if necessary; for reading, it would support reading both strings and numbers and emit an error if there was a fraction component
+
+1611879055
+marler8997
+when would it output a string?  It's it's bigger than u64 max?
+
+1611879132
+andrewrk
+if storing the value as a f64 would destroy information
+
+1611879141
+marler8997
+gotcha
+
+1611879142
+andrewrk
+(53 bits)
+
+1611879178
+marler8997
+what do you think about making the number type configurable?
+
+1611879196
+andrewrk
+what's the use case there?
+
+1611879209
+andrewrk
+seems like i64, u64, BigInt covers all possible needs
+
+1611879220
+marler8997
+that's true
+
+1611879235
+marler8997
+yeah can't think of any use cases
+
+1611879270
+ugla
+
+
+1611879297
+marler8997
+so, replace Float and Integer with a Number that handles everything?
+
+1611879304
+marler8997
+in std.json.Value?
+
+1611879350
+andrewrk
+what's the purpose there?
+
+1611879392
+marler8997
+so the json parse will be able to parse any thing that's valid JSON
+
+1611879414
+andrewrk
+having Float separate so that you can store a float and have the json renderer decide the best way to output it into json is part of the abstraction
+
+1611879466
+marler8997
+yeah I was thinking the same, I just thought Number would handle it all for you
+
+1611879474
+marler8997
+so Number would also be a union
+
+1611879500
+marler8997
+Would make the Value union match the JSON grammar, kinda nifty
+
+1611879551
+andrewrk
+if we wanted to do that then we would just have Number: f64 and call it a day
+
+1611879612
+marler8997
+but that doesn't handle large integers
+
+1611879633
+andrewrk
+I see, so you want number to have a sub-union
+
+1611879641
+marler8997
+that's one idea
+
+1611879668
+marler8997
+I was thinking of punting the decision to the user by making it configurable
+
+1611879682
+marler8997
+but the alternative is just supporting all kinds of numbers
+
+1611879684
+andrewrk
+I think it's much nicer with a non-generic type
+
+1611879770
+marler8997
+if we don't make it generic, then do you think we should support all possible numbers representable by the JSON spec, or a subset?
+
+1611879814
+marler8997
+I think all possible could be BigInt with a decimal component, BigFrac? :)
+
+1611879835
+andrewrk
+we have BigRational already but I'm not sure that's warranted here
+
+1611879847
+marler8997
+so you think we should support a subset?
+
+1611879890
+andrewrk
+not sure
+
+1611879989
+marler8997
+gotcha, well for me it seems like it should either be configurable, or support everything
+
+1611880035
+marler8997
+is that just me?
+
+1611880344
+ugla
+My impression is that JS has acted as a lowest common denominator, and there numbers are f64.
+
+1611880387
+andrewrk
+marler8997, that logic does make sense to me
+
+1611880425
+andrewrk
+to be clear I'm down for config options passed to the parser - just not making it generic
+
+1611880462
+andrewrk
+sorry I think making it generic was a straw man I constructed accidentally
+
+1611882470
+marler8997
+ok well, I'd like to do what I can to at least add support for u64, so what path would you deem appropriate for me to accomplish this goal?
+
+1611882511
+marler8997
+create  Number union that can support i64/f64 and BigInt?
+
+1611883628
+andrewrk
+I would support that endeavor
+
+1611883643
+andrewrk
+I would also support flattening it. I think it's implementor's choice
+
+1611883698
+marler8997
+well in that case, what if just add UInteger as a case to the union for now and leave BigInt up to the next guy?
+
+1611883707
+marler8997
+UInteger meaning u64
+
+1611884047
+andrewrk
+I'd be happy to merge such an improvement
+
+1611884049
+johnLate
+
+
+1611884103
+andrewrk
+johnLate, struct initializations expressions are evaluated in the order they appear in the source
+
+1611884127
+johnLate
+so if .handle_frame and .conn were switched, it would be a problem?
+
+1611884130
+andrewrk
+yes
+
+1611884200
+johnLate
+so... client.* = Client{ ...} is equivalent to client.*.conn = ...; client.*.handle_frame = ...; // ?
+
+1611884463
+johnLate
+what I mean: I can be sure that there will never be a temporary Client{} object that is later copied to client.*? (My assumptions were probably tainted from C++)
+
+1611885247
+andrewrk
+johnLate, in zig, expressions pass their "result location" to sub-expressions and the language guarantees that the expr result goes directly into that location. the issue to document this better is
+
+1611885261
+andrewrk
+async function calls were one of the main motivations for the language working this way
+
+1611885321
+johnLate
+so about async... do I understand correctly that async functions can not do arbitrary recursion and io_mode == .evented makes main and thereby the whole program async?
+
+1611885424
+andrewrk
+async is modelled as a function calling convention. when you don't explicitly provide a calling convention, zig is free to choose any calling convention that it wants, and in this way it will infer to use the async calling convention if a function calls another async function, or uses await, or suspend
+
+1611885601
+johnLate
+ok maybe I need an example to understand it better: currently, can I write a something like the tcp chat server with io_mode == .evented that does e.g. jsonStringify in client.handle()? if so, how? or does this depend on
+
+1611885981
+andrewrk
+jsonStringify needs to get rewritten with safe recursion in mind
+
+1611885992
+andrewrk
+currently it is violating the planned rules for how recursion will work
+
+1611886016
+andrewrk
+as a workaround, you could, instead of having jsonStringify write directly to your async stream, have it write to an array list buffer in memory, and then send that to your async stream
+
+1611886027
+andrewrk
+this will cause the json functions to not be async, working around the issue
+
+1611887986
+marler8997
+daurnimator does that work with recursive types?
+
+1611888042
+marler8997
+and it does look like I'd also need #5326
+
+1611888058
+marler8997
+the "Kind" field is like the "tag" of a union
+
+1611892217
+johnLate
+damn, wasted 1.5h to rediscover
+

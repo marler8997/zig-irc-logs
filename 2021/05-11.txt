@@ -1,0 +1,1348 @@
+1620710104
+adamkowalski
+Is there a way to build out a switch statement given an enum using meta programming
+
+1620710121
+adamkowalski
+For example if you wanted to print out the value of the enum as a string
+
+1620710162
+adamkowalski
+I don't want to actually list all the branches of the switch, I want to generate each branch and say that if the branch gets chosen just write the enum value to stdout
+
+1620715930
+Amun_Ra
+@enumToInt?
+
+1620718084
+mikdusan
+heh on dragonfly `file /boot/kernel/kernel` has a colorful ld loader (interpreter) :)
+
+1620718086
+mikdusan
+kernel: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /red/herring, not stripped
+
+1620726596
+ifreund
+daurnimator: any more input on ttps://github.com/ziglang/zig/pull/8698 ? do len()/span() work for your use-case?
+
+1620726838
+daurnimator
+ifreund: the problem with len() is that it always trusts sentineled slices rather than finding the sentinel
+
+1620726956
+ifreund
+daurnimator: to be honest, I haven't seen a use-case where such behavior is required on a sentinel terminated slice/array that wasn't subtly buggy yet
+
+1620726964
+ifreund
+do you have a concrete example?
+
+1620726988
+daurnimator
+ifreund: sockaddr_un.sun_path ?
+
+1620727060
+ifreund
+daurnimator: that should be a plain array, not seninel terminated
+
+1620727071
+ifreund
+if it is sentinel terminated, that's a bug
+
+1620727154
+daurnimator
+heh; you're wrong but also right: according to the spec its null terminated; but linux gets it wrong in certain circumstances so you can't count on it
+
+1620727162
+daurnimator
+let me think for a minute :P
+
+1620727195
+ifreund
+daurnimator: null terminated in C means there is a 0
+
+1620727217
+ifreund
+if there is not one at the end and you use a 0 terminated array type, that is Illegal behavior in zig
+
+1620727237
+ifreund
+s/means/usually means/ I'm sure there are exceptions
+
+1620727259
+daurnimator
+a lot of C libraries put a null after all arrays just to be safe
+
+1620727264
+ifreund
+Which is exactly why I started this pull request in the first place
+
+1620727273
+ifreund
+daurnimator: yes you're right, but we can't rely on that
+
+1620727298
+daurnimator
+we can't rely on it universally; but for the libraries that do: lenZ is the right function for it
+
+1620727301
+ifreund
+C's type system is not strong enough to statically ensure there is a 0 at the end
+
+1620727322
+daurnimator
+the type system isn't; but libraries document it
+
+1620727403
+ifreund
+fair, though scanZ() will work exactly the same as the current lenZ()/spanZ() for 0 terminated arrays/slices
+
+1620727416
+ifreund
+the only difference is that it requires them to be 0 terminated
+
+1620727468
+daurnimator
+true for 0 terminated.
+
+1620727474
+ifreund
+The use-case my PR doesn't currently support is sentinel terminated arrays/slices with a non 0 sentinel
+
+1620727496
+ifreund
+in the case that iteration should always occur
+
+1620727587
+TheLemonMan
+mikdusan, I finally found where the i386 problem is... we're specifying the c library components in the wrong order
+
+1620727605
+TheLemonMan
+clang uses -lm -lpthread -lc while we use -lc -lm -lpthread
+
+1620727624
+ifreund
+... that matters?
+
+1620727657
+TheLemonMan
+yeah, especially since our stubs are a bit wrong (#8714)
+
+1620727686
+TheLemonMan
+the link order changes the lookup order used by ldso
+
+1620727686
+daurnimator
+ifreund: yes link order matters
+
+1620727741
+ifreund
+I guess glibc doesn't do what musl does and put everything in the same so
+
+1620727747
+daurnimator
+ifreund: so yeah I guess the new function works for the 0 sentinel....... though it seems less generic to me.
+
+1620727777
+ifreund
+daurnimator: you're right that it's less generic, but it has to be to work properly for non-sentinel terminated arrays/slices
+
+1620727793
+TheLemonMan
+yeah, musl takes a pragmatic approach
+
+1620727818
+ifreund
+which are the correct type to use in many cases when interfacing with an array from C containing a sentinel terminated string
+
+1620727875
+daurnimator
+ifreund: are you refering to `[*c]` pointers?
+
+1620727914
+ifreund
+I'm refering to C struct containing an array which is known to hold a 0 terminated string
+
+1620727925
+daurnimator
+or just arrays?
+
+1620727959
+ifreund
+when binding this you have to use a non-sentinel terminated array type unless the library makes some explicit gaurentee that they will put a 0 in the last slot of the array in all cases
+
+1620727998
+daurnimator
+for arrays you'd currently need to do: `spanZ(@ptrCast([*:0]T, &myarray)`... but I guess that loses the safety on length?
+
+1620728008
+ifreund
+yep
+
+1620728025
+daurnimator
+though actually `scanLenZ` doesn't have length safety either
+
+1620728053
+daurnimator
+(and it's not only safety: it's an optimization too)
+
+1620728104
+daurnimator
+okay in that case I think `scanSentinel` with the signature you've suggested works.
+
+1620728107
+daurnimator
+though please make it length-safe?
+
+1620728147
+ifreund
+daurnimator: it is length safe right now for non-sentinel terminated types
+
+1620728175
+ifreund
+actually for all types
+
+1620728187
+ifreund
+*all types for which the length is known
+
+1620728211
+ifreund
+daurnimator: I'd like to have scanZ() as well as an alias for scanSentinel(ptr, 0)
+
+1620728311
+mikdusan
+TheLemonMan: nice!
+
+1620728326
+mikdusan
+it's sad there are so many linking differences
+
+1620728337
+daurnimator
+ifreund: mmmmm, I dunno about the alias... the explictness seems nice
+
+1620728393
+daurnimator
+ifreund: in `scanSentinel` there is also no need/want to assert that the sentinel on the array/slice matches the one passed
+
+1620728473
+TheLemonMan
+the real question is: why the produced binaries are correctly loading on my system despite the library order being wrong?
+
+1620728498
+TheLemonMan
+the difference between ubuntu and debian should be minimal (or none at all)
+
+1620728526
+daurnimator
+TheLemonMan: because glibc has moved symbols between libraries and not kept everything up to date?
+
+1620728527
+mikdusan
+when in wrong order, is there a buildtime or linktime error? or just bad runtime
+
+1620728592
+TheLemonMan
+daurnimator, I've double-checked and both systems show the same symbols at the same places
+
+1620728626
+TheLemonMan
+mikdusan, ld.so tries to find a match in the other .so deps
+
+1620728631
+daurnimator
+TheLemonMan: hmmm. do they have constructors at all?
+
+1620728642
+mikdusan
+oh noes csu stuff :)
+
+1620728658
+TheLemonMan
+but on the ci system the lookup fails right after hitting libc.so.6, only for that symbol
+
+1620728667
+TheLemonMan
+daurnimator, don't think so
+
+1620728668
+daurnimator
+TheLemonMan: otherwise you might be hitting the neverending pain of dynamically linking libpthread that we used to have in lua
+
+1620728694
+daurnimator
+a lot of glibc internals do one thing if libpthread is unloaded; and another if libpthread is loaded.
+
+1620728713
+TheLemonMan
+yeah that suuucks
+
+1620728726
+mikdusan
+so yeah is it that if there is no libpthread, then single-threaded, otherwise it NEEDS to find the symb from pthread to be multi?
+
+1620728747
+daurnimator
+mikdusan: yeah... and some things incorrectly cache the face that libpthread is unloaded
+
+1620728749
+mikdusan
+linker games. It's a TV show
+
+1620728770
+daurnimator
+or at least they did 5 years ago
+
+1620728774
+daurnimator
+and we went on a bug reporting spree
+
+1620728813
+mikdusan
+5 years ain't long enough. Andrew tweaked x86_64 baseline to x86_64_v2 and in about 3 minutes there were issue reports. And that's 10 years ago cpu stuff.
+
+1620728822
+daurnimator
+
+
+1620728950
+TheLemonMan
+ifreund, thanks for the merge! time to rebase some PRs
+
+1620728966
+daurnimator
+mikdusan: yeah I see
+
+1620728983
+ifreund
+TheLemonMan: no problem, changes looked nice and straightforward and it fixes that CI failure :)
+
+1620728995
+daurnimator
+though it appears even bugs with acks have that
+
+1620729001
+daurnimator
+so I guess glibc doesn't use the status field
+
+1620729030
+TheLemonMan
+I've never checked if the native libc detection feature works for multilibs
+
+1620729098
+ifreund
+daurnimator: I think there is a need to assert that the sentinel in the type matches the one passed, otherwise we can't return a sentinel-terminated slice of the right type
+
+1620729101
+mikdusan
+i don't think it does; I've seen no support for more than more crtlib dir
+
+1620729112
+mikdusan
+err wait side issue
+
+1620729123
+daurnimator
+ifreund: what if I want to find a span until the first ' ' in a null-terminated array?
+
+1620729151
+ifreund
+daurnimator: do you expect the return type to be []T or [:' ']T ?
+
+1620729165
+ifreund
+I guess we could actually do the latter if we make the sentinel arg comptime
+
+1620729177
+TheLemonMan
+ah right, it only works for native targets
+
+1620729237
+mikdusan
+one thing to watch out for is we don't support > 1 crtlib dir. and some platforms need that like dragonfly. I wonder if all linux distros just need 1 as long as you identify the correct multilib
+
+1620729470
+mikdusan
+hmm yeah alpinelinux sticks out. it has /usr/lib/ for most csu objects. but then crtbegin/crtend pair is a compiler-provided thing so it's found in another path
+
+1620729788
+daurnimator
+ifreund: in that case, `[:' ']u8`, and yeah, I was thinking the sentinel would be a comptime argument
+
+1620729898
+ifreund
+daurnimator: the problem is that if the sentinel is not found in the length of the array/slice, we can't safely return a slice terminated with sentinel that wasn't found
+
+1620729914
+daurnimator
+good point
+
+1620729923
+ifreund
+I think your use case should be supported by scanSentinel(@as([]T, ptr), ' ') instead
+
+1620729944
+daurnimator
+in that case its just a []u8 return value and it doesn't have to be comptime known
+
+1620729996
+ifreund
+daurnimator: I think that in the cases where the sentinel is part of the type retunrning a sentinel terminated slice can be much more convienient
+
+1620730039
+ifreund
+always returning []T or []const T would be simpler though
+
+1620730054
+daurnimator
+ifreund: hmm okay.... so I guess if the sentinel matches that of the slice/array; then you use a more specific type; otherwise the plain slice
+
+1620730093
+ifreund
+yep that's my plan, which means we do need to require the sentinel passed to match that of the type if the type is sentinel terminated
+
+1620730109
+ifreund
+oh wait, didn't read carefully enough
+
+1620730117
+ifreund
+yeah we can support both use
+
+1620730131
+ifreund
+just need to make the return type a bit more complex
+
+1620730135
+daurnimator
+yeah
+
+1620730150
+ifreund
+cool, thanks for bouncing ideas with me on this
+
+1620730155
+daurnimator
+I like that this sort of gives us `split(s, ',', 1)`
+
+1620730179
+daurnimator
+so compare with psuedo-python
+
+1620730821
+ifreund
+daurnimator: what do you think of spanTo() as an alternative name?
+
+1620731632
+daurnimator
+ifreund: sliceTo?
+
+1620731646
+daurnimator
+sliceNotIncluding
+
+1620731719
+mq32
+sliceTerminatedBy
+
+1620731722
+earnestly
+(notincluding => excluding)
+
+1620731742
+ifreund
+I was trying to come up with something a little shorter/sweeter without losing accuracy
+
+1620731753
+ifreund
+I like sliceTo()
+
+1620731793
+earnestly
+Is this strchr?
+
+1620731828
+ifreund
+earnestly: pretty much, but returning a slice instead and with a much fancier type system
+
+1620731835
+earnestly
+Of course
+
+1620731847
+earnestly
+sliceto seems fine to describe that concept
+
+1620731870
+earnestly
+Although 'to' often denotes conversion of some sort
+
+1620731871
+ifreund
+this returns a slice from the start of the passed slice to the first occurence of the given element, not including that element
+
+1620731923
+earnestly
+Yeah, the documentation can mention the non-inclusive nature of the range, it doesn't necessarily have to be part of the name unless you are going to add inclusive ranges
+
+1620731954
+ifreund
+the signature will be `pub fn sliceTo(ptr: anytype, end: meta.Child(@TypeOf(ptr))) SliceTo(ptr, end)`
+
+1620731971
+ifreund
+and there will be a hefty doc comment explaining what it does for a wide variety of types
+
+1620731994
+earnestly
+vim has this motion with 't' and 'f' where the typical mnemonic is 't'o and 'f'ollowing
+
+1620731999
+earnestly
+You also have 'until'
+
+1620732002
+ifreund
+yep, so does kakoune
+
+1620732037
+earnestly
+And the word until is non-inclusive by definition, which is nice
+
+1620732056
+ifreund
+I'm not sure it is tbh
+
+1620732060
+earnestly
+sliceUpTo sliceUntil
+
+1620732099
+ifreund
+UpTo also isn't unambigously non-inclusice IMO
+
+1620732101
+mq32
+takeUntil ?
+
+1620732103
+earnestly
+sliceTill
+
+1620732119
+ifreund
+I think sliceTo() with a good doc comment is the right way to go here
+
+1620732138
+earnestly
+Toward heh
+
+1620732181
+ifreund
+one nice feature of this new API is that we no longer assume [*c] pointers are all 0 terminated
+
+1620732224
+earnestly
+How does it determine the length (do you pass it in?)
+
+1620732281
+ifreund
+it always iterates
+
+1620732292
+earnestly
+mq32: take is nice in that it has prior art
+
+1620732356
+earnestly
+ifreund: How does it know when to stop iterating?
+
+1620732421
+ifreund
+when it finds `end` or if the passed ptr type has a known max length it stops there
+
+1620732448
+earnestly
+Okay, that makes sense
+
+1620732507
+mikdusan
+libc uname() is hot garbage wrt bufsize
+
+1620732692
+TheLemonMan
+but it only takes a pointer
+
+1620732726
+mikdusan
+the fields are potiners to hard-coded bufsize for each
+
+1620732806
+earnestly
+That sounds perfect
+
+1620732814
+earnestly
+Why would you not want hardcoded buffer sizes?
+
+1620732838
+mikdusan
+is that a real question?
+
+1620732841
+earnestly
+Would you prefer dynamic memory allocation for each struct member?
+
+1620732859
+mikdusan
+to add uname() to std.os for zig,
+
+1620732885
+mikdusan
+I need to give it a struct. the struct has pointers to a buf for each member,
+
+1620732897
+mikdusan
+how do I know how big to make each member
+
+1620732945
+earnestly
+_UTSNAME_*_LENGTH
+
+1620732961
+earnestly
+glibc defines this as: #define _UTSNAME_LENGTH 65
+
+1620732972
+earnestly
+And uses it for each member
+
+1620732979
+ifreund
+mikdusan: isn't this a struct of arrays not a struct of pointers?
+
+1620732986
+earnestly
+Yes
+
+1620733001
+earnestly
+char sysname[65]; essentially
+
+1620733015
+ifreund
+which is exactly what musl does of course :D
+
+1620733028
+mikdusan
+whcih is exactly what *bsd doesn't use of course
+
+1620733040
+ifreund
+:/
+
+1620733091
+mikdusan
+i can hard code this just like our linux std.os does, but how in the fuck am I supposed to find out if this is stable for older versions of each os
+
+1620733151
+ifreund
+openbsd uses a different length, but seems to be the same idea pretty much
+
+1620733182
+ifreund
+mikdusan: this should just go in std.os.bits.linux or equivalent no?
+
+1620733520
+mikdusan
+here's a snip from linux manpage:
+
+1620733534
+mikdusan
+> The length of the fields in the struct varies.
+
+1620733547
+mikdusan
+> Some operating systems or libraries use a hardcoded 9 or 33 or 65 or 257.
+
+1620733553
+mikdusan
+> Other systems use SYS_NMLN or _SYS_NMLN or UTSLEN or _UTSNAME_LENGTH.
+
+1620733570
+mikdusan
+> Clearly, it is a  bad  idea to  use any of these constants; just use sizeof(...).
+
+1620733577
+mikdusan
+> Often 257 is chosen in order to have room for an internet hostname
+
+1620733582
+mikdusan
+. hot. garbage.
+
+1620733590
+TheLemonMan
+don't use uname them heh
+
+1620733594
+mikdusan
+exactly
+
+1620733630
+TheLemonMan
+*BSDs offer most of that info via sysctl
+
+1620733651
+TheLemonMan
+#6600 is also about this, we don't really care about uname() and its historical quirks
+
+1620733667
+mikdusan
+yeah I was being lazy. last one I am updating version detect is openbsd and it doesn't have sysctlbyname just sysctl. looks like that's still better than uname
+
+1620733671
+TheLemonMan
+we only care about getting
+
+1620736266
+ifreund
+
+
+1620736284
+ifreund
+"USING VLA'S IS ACTIVELY STUPID!"
+
+1620736395
+mikdusan
+just throw out slices altogether. to hell with them
+
+1620736398
+daurnimator
+I have once had a really good use-case for VLAs
+
+1620736413
+daurnimator
+or I should say: a really good use-case for alloca
+
+1620736417
+mikdusan
+oh you mean stack vla thingees?
+
+1620736419
+daurnimator
+
+
+1620736435
+earnestly
+How do you solve the inherent gets-like problem they have?
+
+1620736448
+earnestly
+(Or was it just 'hope')
+
+1620736468
+daurnimator
+earnestly: the use-case was related to UDP: udp packets have a small enough max size
+
+1620736492
+earnestly
+mikdusan: (VLAIS)
+
+1620736498
+earnestly
+So hope :p
+
+1620736525
+daurnimator
+i.e. an absolute max of 65536 bytes; in any actual situation a max of 9000 (over ethernet jumbo frames); in normal situation 1300 bytes or so.
+
+1620736581
+daurnimator
+the point of a VLA there is you don't want to use up >65536 bytes of stack in every frame that deals with UDP packets.
+
+1620736594
+daurnimator
+==> it's terrible for performance
+
+1620736618
+daurnimator
+anyway; that was the one genuine use-case for alloca/VLAs that I ever had.
+
+1620736889
+mikdusan
+yeah 64 KiB is like L1 cache size on cpus these days
+
+1620737159
+mq32
+mikdusan: even if you allocate a VLA that size, you're not even using the full cache
+
+1620737174
+mq32
+unless you fully use the memory, but then your cache will be invalidated either way
+
+1620737307
+mikdusan
+oh yeah you're right
+
+1620737327
+mikdusan
+so basically it's a stack-size limit killer
+
+1620738572
+ifreund
+TheLemonMan: looks like we need -ldl as well as -lpthread when using the native libc, I wonder how many more there are...
+
+1620738704
+ifreund
+do you know where that one should be placed in the linking order?
+
+1620738805
+TheLemonMan
+ifreund, ahh, that was my biggest fear
+
+1620738841
+TheLemonMan
+I think we should match what's done for the cross-compilation case then and link all the libs in glibc.libs (except for "ld")
+
+1620738876
+ifreund
+makes sense to me, shall I do that in my PR?
+
+1620738948
+TheLemonMan
+yeah, you may want to cherry-pick 2bb8e1f from #8705
+
+1620738966
+TheLemonMan
+that fixes the linking order
+
+1620738993
+ifreund
+ah sweet
+
+1620739112
+daurnimator
+TheLemonMan: leave out -lcrypt if you can
+
+1620739130
+ifreund
+daurnimator: there is no crypt in glibc.libs :)
+
+1620739137
+TheLemonMan
+now some qemu-ppc test case is failing, nice
+
+1620739162
+daurnimator
+ifreund: depends when :p
+
+1620739200
+TheLemonMan
+no implicit -lcrypt, if the user specifies that on the command line we're forced to link that in heh
+
+1620739213
+daurnimator
+but only sometimes
+
+1620739444
+mikdusan
+so... trying to comptime'ize system libc linking logic for variuos linux distros? 😬
+
+1620739606
+TheLemonMan
+and of course I can't reproduce the crash locally
+
+1620739621
+mikdusan
+curious what is your local linux distro
+
+1620739678
+TheLemonMan
+debian bullseye
+
+1620739808
+TheLemonMan
+ah fuck, the new test runner tricked me
+
+1620739881
+TheLemonMan
+there's one failing test but it won't tell you which one
+
+1620740051
+TheLemonMan
+but I also have a job interview to prepare for, let's put this on the backburner for a while
+
+1620740111
+ifreund
+good luck!
+
+1620740584
+TheLemonMan
+thank you!
+
+1620745199
+ifreund
+great, it looks like LibCInstallation.findNative() is broken on macos/arm64
+
+1620749902
+mikdusan
+semarie: re #8741, "unused". Do you mean the pseudo-constants like MAX, or do you mean ones that we don't use/ref in .zig code?
+
+1620750088
+semarie
+mikdusan: for me it is the ones that we don't use/ref in .zig
+
+1620750114
+semarie
+but I could understand people could wants them (even if zig simplifies things with @cInclude())
+
+1620750147
+semarie
+so if it is very important to provide all of them, at least don't include MAX
+
+1620754482
+andrewrk
+ifreund, ha, look at Daniel Micay's response to that, which is basically following my same reasoning to "comptime"
+
+1620755151
+ifreund
+andrewrk: yeah, I had this same complaint with every language until I found zig :D
+
+1620755238
+andrewrk
+TheLemonMan, oof yeah no stack traces from tests, I'll address this right away
+
+1620755274
+andrewrk
+we're going to want to implement
+
+1620755363
+ifreund
++1 to both points
+
+1620756283
+earnestly
+Wait, Micay is involved in zig
+
+1620756351
+earnestly
+If so, quite lucky
+
+1620756403
+ifreund
+earnestly: no, just in that email thread I linked above afaik
+
+1620756416
+TheLemonMan
+woo, #8705 is green
+
+1620756456
+earnestly
+ifreund: Ah, he pretty much single handidly killed off green threads in rust and moved it into a high performance focused language lol
+
+1620756551
+andrewrk
+ooh 8705 looks tasty
+
+1620756599
+andrewrk
+#1923 was easy, lol. should have done this years ago
+
+1620756646
+ifreund
+sweet
+
+1620756879
+earnestly
+ifreund: You've reminded me about a few things and I wonder; how does zig relate to llvm and noalias?  I remember this being a constant problem in rust (apparently due to requirements on C restrict).  Does zig bypass this (especially when/if zig has its own cbe)?
+
+1620756951
+TheLemonMan
+andrewrk, #1923 in stage1 or stage2?
+
+1620756956
+earnestly
+> Hitting issues of C being miscompiled leads to needing to figure out if the standard allows the compiler to be broken, which it probably does, so WONTFIX.
+
+1620756957
+earnestly
+heh
+
+1620756981
+andrewrk
+TheLemonMan, stage1
+
+1620756996
+TheLemonMan
+noice
+
+1620758678
+andrewrk
+ehhh turned out to not be so trivial
+
+1620758694
+andrewrk
+forgot I wanted to change how `catch` works too
+
+1620758792
+ifreund
+this proposal might be worth reviewing in this context:
+
+1620758877
+andrewrk
+noted
+
+1620758907
+andrewrk
+anyway with the last 2 commits we're in an OK place. it prints an error return trace, which may have some unhelpful entries at the beginning, but if you scroll down, the good stuff will be there
+
+1620759045
+ifreund
+so just like pretty much any other error return trace in a non-trivial project currently :P
+
+1620759226
+TheLemonMan
+ifreund, if you want to dig deeper into the mess that is libc linking have a look at is_libc_lib_name (wrong case?) and how it's used
+
+1620759509
+powerofzero
+Is there a way to make zig-test use the tty as stderr instead of capturing it in the tests?
+
+1620759715
+ifreund
+TheLemonMan: heh, yeah why is that snake_case. Is there any major issue with that right now though?
+
+1620759782
+TheLemonMan
+that function is used by the frontend to drop any component that's part of the default set of linked-in libs
+
+1620759807
+TheLemonMan
+it has some extra entries tho, that may be a problem (?)
+
+1620759836
+TheLemonMan
+your PR reminded me of that and #7796
+
+1620759853
+ifreund
+TheLemonMan: indeed, -lcrypt, -lnet, and -lresolv will get silently ignored
+
+1620759926
+TheLemonMan
+and update_glibc.zig is not producing any stub for those
+
+1620760390
+andrewrk
+TheLemonMan, the patch to glibc sysdep.h, is that fixed upstream?
+
+1620760413
+TheLemonMan
+yep, the sysdeps folder contents we ship are quite oold
+
+1620760428
+andrewrk
+gotcha
+
+1620762320
+ifreund
+I love the magic of git rebase when used properly. I had cherry-picked one of TheLemonMan's commits from his PR that just got merged, but git rebase on to master had no conflicts and just worked :)
+
+1620762587
+mikdusan
+reset, rebase, cherry-pick. there is nothing else
+
+1620762634
+noam
+lol
+
+1620762641
+ifreund
+throw in fetch and that's really all you need
+
+1620762646
+noam
+bisect is also tremendously useful
+
+1620762655
+noam
+Though it kinda requires good commit hygiene
+
+1620762670
+noam
+I ended up having to restructure the history of a branch to narrow its results down from "15 possible bad commits" lol
+
+1620762673
+ifreund
+yeah, if you have a lot of commits that don't compile it becomes less awesome
+
+1620762681
+noam
+Yeah, but that's on you :P
+
+1620762684
+noam
+(or, well, me)
+
+1620762691
+noam
+ifreund: or if it's broken for other reasons :P
+
+1620763280
+earnestly
+(git isn't your editor's save function heh)
+
+1620763525
+noam
+
+
+1620765226
+mikdusan
+do we have any desire for x86_64-macos to enable qemu during testing?
+
+1620765286
+mikdusan
+oh wait; no qemu-user mode on macos. for get I mentioned it :)
+
+1620766050
+noam
+andrewrk: if there's an @Foo(), for some nonexistent builtin Foo, and it doesn't get referenced, is the compiler supposed to notice? From the grammar + lazy analysis, I suspect no, but figured I should confirm
+
+1620766076
+g-w1
+yes, because everything gets astgened
+
+1620766101
+noam
+I'm asking about how it's
+
+1620766116
+g-w1
+i think that is how its supposed because the proposal was accepted
+
+1620766118
+noam
+I
+
+1620766156
+noam
+But it could easily go either way
+
+1620766168
+andrewrk
+a refined version of this question is: builtins are supposed to be part of the parser spec; an invalid builtin name is a parse error
+
+1620766182
+noam
+andrewrk: the grammar says a builtin identifier is just @ IDENTIFIER, though
+
+1620766199
+noam
+(not exactly, but yeah)
+
+1620766212
+andrewrk
+sorry, I edited that sentence and it stopped making sense. clarified:  builtins are supposed to be part of the parser spec; an invalid builtin name is supposed to be a parse error
+
+1620766219
+andrewrk
+I see that this is not currently implemented in zig-spec
+
+1620766240
+noam
+Gotcha, okay, thanks :)
+
+1620766248
+g-w1
+hmm, would that make the parser use less memory if implemented? because strings -> tags?
+
+1620766253
+noam
+Tweaking my handling of builtins 'cause I'm adding panic + tests :)
+
+1620766263
+noam
+g-w1: not by much, in theory
+
+1620766297
+andrewrk
+resources are not really a concern at this layer of design, it's more just about keeping the lang spec simple
+
+1620766311
+noam
+Sure, but it's also nice to know whether an impact exists
+
+1620766327
+noam
+... hmm, maybe not.
+
+1620766340
+noam
+Even if it's not intentional, that can influence design in undesirable ways
+
+1620766351
+andrewrk
+noam, note this accepted proposal which adds special syntax for some builtins:
+
+1620766352
+g-w1
+i see, but if that is the spec, it would make sense to implement it correctly. for example, if i wanted to use the parser in a seperate project, if the spec says @Foo shouldn't parse, but std.zig accepts it, that should be wrong
+
+1620766373
+noam
+I'm just going to use a hash table of acceptable values :P
+
+1620766404
+noam
+if(hmget(ctx.accel.known_builtins, ident) == NULL) ERROR("Invalid builtin: %s"...
+
+1620766412
+noam
+:)
+
+1620766417
+noam
+andrewrk: thanks :>)
+
+1620766816
+andrewrk
+g-w1, that's correct, when the spec disagrees with the implementation, it is either a bug in the implementation, or in the spec
+
+1620766853
+andrewrk
+bugs are to be expected when both are rapidly changing
+
+1620766870
+andrewrk
+this is why we're not 1.0 yet
+
+1620766923
+g-w1
+makes sense, i was just thinking that the if the spec said the parser should validate builtins, a nice optimisation would be to use tags for each builtin
+
+1620766929
+noam
+I really dislike 8643; I think daurminator's suggestion for expanding @Type makes more sense...
+
+1620766942
+noam
+andrewrk: what's the motivation for a dedicated builtin over expanding @Type?
+
+1620766983
+andrewrk
+why is everybody so obssessed with meta programming? stop it, lol
+
+1620766992
+noam
+?
+
+1620767024
+noam
+@Type already exists - why make a special case for this?
+
+1620767062
+andrewrk
+declarations are not allowed in @Type, plus it's a worse language than normal declarations
+
+1620767077
+noam
+True
+
+1620767101
+ifreund
+fuck, I totally forgot to rebase a PR for the std.testing changes and broke master. Will fix shortly
+
+1620767101
+mq32
+andrewrk: is that decided now?
+
+1620767106
+noam
+What's the advantage over 4245?
+
+1620767128
+noam
+That is,  struct (.{ .layout = .Extern })
+
+1620767167
+ifreund
+let it be known that green CI may be a lie on PRs older than a few days
+
+1620767582
+mikdusan
+green is for sick
+
+1620774477
+v0idify
+hmm, i remember i ended up choosing zig-opengl for some reason. is there a reason i shouldn't be using zgl?
+
+1620774496
+noam
+because OpenGL sucks? /s
+
+1620774543
+v0idify
+zig-opengl != zgl, i'm comparing zig libraries here :P
+
+1620774569
+v0idify
+or, well, zig-opengl are autogenerated bindings and zgl are homemade bindings :P
+
+1620774579
+noam
+I got that lol
+
+1620774584
+noam
+In that case, I'd say use zgl
+
+1620774591
+noam
+handwritten bindings are almost always better
+
+1620774661
+v0idify
+yeah, that's why after re-reviewing it i don't get why i didn't choose it (apart from it missing features but those can easily be implemented)
+
+1620774820
+v0idify
+i'm building a terrible, badly written gui library :D
+
+1620774841
+noam
+Good news: there are no good GUI libraries :P
+
+1620774850
+noam
+So you'll be in good company, at least!
+
+1620774962
+v0idify
+yay!
+
+1620775008
+noam
+I'd aim for "well-written" over "good" for a GUI library, personally
+
+1620775124
+v0idify
+dw it won't be well written either :D
+
+1620775132
+v0idify
+it will be zig fmt'd at least
+
+1620775224
+v0idify
+this is my strategy of having such bad expectations so when i release something no one will be disappointed
+
+1620775356
+noam
+I'll be disappointed
+

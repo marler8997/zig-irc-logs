@@ -1,0 +1,1380 @@
+1614902569
+mikdusan
+andrewrk: in our ci/azure scripts are you sniping install artifacts of "rebuild LLVM with zig" from zig-bootstrap to create the tarballs `zig+llvm+lld+clang-TARGET-...tar.xz` ?
+
+1614902629
+mikdusan
+this is in researching suport for macos arm64 tarball (ci/release)
+
+1614902717
+mikdusan
+or basically following zig wiki "how to build llvm/clang/lld" from source?
+
+1614902746
+mikdusan
+oh i guess my question is lame, let me ask again
+
+1614902781
+mikdusan
+what steps are you taking to generate tarballs `zig+llvm+lld+clang-TARGET-...tar.xz` used in ci scripts
+
+1614904447
+marler8997
+I'm at 30 minutes into Andrew/Loris pair programming stream
+
+1614904456
+marler8997
+where the make is failing but the command is not
+
+1614904472
+marler8997
+It's got to be environment variables right?  Is the makefile setting LD or something?
+
+1614904499
+andrewrk
+mikdusan, yep!
+
+1614904551
+andrewrk
+marler8997, <spoiler warning> we do eventually find the problem, a bug/missing feature of zig cc to support -MM
+
+1614904572
+marler8997
+ah
+
+1614904593
+mikdusan
+andrewrk: before I forget. -MM implies -E. and the -o overrides stdout behavior
+
+1614907499
+andrewrk
+mikdusan, marler8997: -MM support turned out to be an easy fix. zig cc with jemalloc "just works" now
+
+1614909274
+mikdusan
+nice
+
+1614910696
+qbit
+macos M1 was mentioned in the stream, is it working? last i tried i hit:
+
+1614910793
+mikdusan
+upgrade to master, you should have much better luck with bigsur
+
+1614910819
+qbit
+ooooo boy! :D
+
+1614910950
+brzg
+is there a way to specify that a function argument must be some variant of a generic, or do i just have to use anytype
+
+1614911001
+g-w1
+you can do fn f(comptime T: type, n: T)
+
+1614911102
+brzg
+i don't see how that would work, maybe my question was unclear: what i mean is, i want something like fn f(o: *std.io.Writer), but that actually works
+
+1614911127
+mikdusan
+but if you just want anykind of generic then use anytype, and let ducktyping do its job, or @typeInfo inspect and @compileError
+
+1614911272
+brzg
+i'll just duck anytype, thank
+
+1614912929
+andrewrk
+qbit, I'd wait a week or two (or maybe two more for zig 0.8.0) because Jakub is starting to work on upstreaming his macho linker code
+
+1614912965
+qbit
+ok
+
+1614913050
+qbit
+ill settle for running it on my openbsd machine (since it was recently imported into ports \o/)
+
+1614914096
+andrewrk
+nice
+
+1614914692
+mikdusan
+delving into cmake the last couple of weeks. the single-biggest issue with cmake is how it behaves very differently depending on its own installation path
+
+1614914714
+mikdusan
+so for example, on linux it's found in /usr/bin or some standard like that. just pkg add it and you're good to go
+
+1614914728
+mikdusan
+but on macos you get it by brew or macports or building it yourself
+
+1614914784
+mikdusan
+you can easily do the last option with nothing more than bone-stock macos and xcode installed. and as long as cmake is installed to a private "tree" (ie. no other libs mixed in) then it behaves like linux
+
+1614914810
+mikdusan
+however, when you use brew/macports, it gets installed in /usr/local or /opt/local . now here's the rub.
+
+1614914843
+mikdusan
+without doing ANYTHING to cmake that is special, if it comes from /usr/local/bin/cmake, it will search ../lib ../include automagically . same with /opt/local
+
+1614914847
+mikdusan
+(in macports case)
+
+1614914871
+mikdusan
+this fucks everything up. now depending on what brew/macports have installed, that's where those libraries are going to be found by cmake.
+
+1614914912
+mikdusan
+so when building llvm, where does it look for libxml2, or curses, or libedit, etc.
+
+1614914926
+mikdusan
+and then things get viral. because it finds stuff in the brew/macports trees.
+
+1614914971
+mikdusan
+so cmake can be told to stop doing that with one simple trick `-DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF`
+
+1614915007
+mikdusan
+but then macos BigSur (and Catalina) throw us a curve ball. we still need to teach it about SDK. and the following need to be set:
+
+1614915040
+mikdusan
+CMAKE_INCLUDE_PATH, CMAKE_LIBRARY_PATH, CMAKE_FRAMEWORK_PATH all pointing to the SDK-based paths. eg:
+
+1614915048
+mikdusan
+-DCMAKE_INCLUDE_PATH='/Applications/Xcode_12.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include'
+
+1614915105
+mikdusan
+and once that is done, cmake actually works decently on macos to build llvm from a super simple path of /usr/bin:/bin:/usr/sbin:/bin and empty macos system + xcode.
+
+1614915120
+mikdusan
+this holds true for subprojects cmake, lld, lldb too
+
+1614915138
+mikdusan
+/end verbose dump
+
+1614945347
+zags
+is there a good way to debug-print the name of the active field of a union?
+
+1614945479
+ifreund
+zags: std.meta.activeTag()
+
+1614945495
+zags
+lol, I knew it was going to be easy, thanks mate
+
+1614945598
+ifreund
+yeah, one of those things that @typeInfo() and comptime make possible without any extra language features or syntax :)
+
+1614954603
+olabaz
+hi, how is a 2D array stored in memory, is it row major and contiguous in memory?
+
+1614954627
+g-w1
+what is the type?
+
+1614954637
+olabaz
+f64
+
+1614954655
+g-w1
+*of the 2d array
+
+1614954703
+olabaz
+like [N][M]f64
+
+1614954711
+TheLemonMan
+if you're talking of a [ROW][COL]f64 then yes to both
+
+1614954806
+olabaz
+so Mat[i][j] would be at address M[0][0] + NRows * i + j?
+
+1614954882
+olabaz
+also, when would it not be stored in that way?
+
+1614954886
+ifreund
+yes
+
+1614954949
+ifreund
+well it's only stored "row major" if you consider the outer array to be rows
+
+1614954950
+TheLemonMan
+you can read the type as [ROW]T1 where T1 = [COL]f64, you're creating ROW arrays holding COL elements
+
+1614954997
+TheLemonMan
+it's not stored that way if you pick another memory layout
+
+1614955011
+TheLemonMan
+eg. sparse matrices
+
+1614955093
+olabaz
+ok, and is there a way to access the number of rows and cols? e.g. nrows == Mat.len and ncols == Mat[i].len?
+
+1614955112
+g-w1
+that exactly :)
+
+1614955244
+TheLemonMan
+g-w1, the elf bswap thing may be also useful in std.elf
+
+1614955465
+g-w1
+ah, I was even thinking std.mem (obviously I would have to clean it up a little more to only take structs and compile error otherwise)
+
+1614955547
+ifreund
+I'd vote to leave it out of the std for now, it's not exactly long or complex to implement
+
+1614955594
+ifreund
+I don't think this is a common enough operation to belong in std.mem especially, though the argument could probably be made for std.elf
+
+1614955603
+g-w1
+ok, lets see if any of the other backends need it too
+
+1614959016
+olabaz
+I'm trying to use @cImport, how can I add an include directory?
+
+1614959028
+ifreund
+-I/path/to/directory
+
+1614959060
+olabaz
+where do I put that?
+
+1614959070
+g-w1
+in the zig build-exe options
+
+1614959078
+g-w1
+or exe.addIncludeDir if in build.zig
+
+1614959251
+olabaz
+oh I see thanks
+
+1614959263
+g-w1
+TheLemonMan: actually it seems like std.elf uses this byteswap pattern twice so ill just put it there
+
+1614959555
+olabaz
+hmm, addIncludeDir and addSystemIncludeDir don't seem to work. It says it cannot find @cInclude("file.h")
+
+1614959564
+olabaz
+I am making a lib in case that matters
+
+1614959630
+g-w1
+exe.linkLibC() too
+
+1614959694
+olabaz
+yes I have that
+
+1614959705
+ifreund
+and where is file.h?
+
+1614959734
+olabaz
+/opt/include
+
+1614959835
+ifreund
+so you did foo.addIncludDir("/opt/include")?
+
+1614959892
+olabaz
+yeah
+
+1614959944
+olabaz
+I did lib.addIncludeDir
+
+1614959959
+olabaz
+oh I need to add it to test as well
+
+1614960081
+olabaz
+oh wait I don't need it for the addStaticLibrary? just for the addTest?
+
+1614960244
+ifreund
+you need it for any object you are building that includes the file.h
+
+1614961459
+TheLemonMan
+wrt #8140, what's better between asserting the pointer is not null and returning zero?
+
+1614962095
+olabaz
+Is it possible to create a type alias, e.g. MYINT = i64
+
+1614962122
+ugla
+const MYINT = i64;
+
+1614962124
+g-w1
+const MYINT = i64;
+
+1614962136
+g-w1
+same with functions
+
+1614962140
+olabaz
+and are they equivalent or is it its own type?
+
+1614962163
+olabaz
+like can I compare MYINT and i64 or are they now different types
+
+1614962192
+mipri
+that's taking i64 as a value, like const A = 0; they will be the same value.
+
+1614962204
+g-w1
+you can compare them, not different types
+
+1614962208
+g-w1
+iirc theres an issue for this tho
+
+1614962565
+mipri
+
+
+1614965696
+olabaz
+So I'm trying to call a C-function that modifies its argument. In the C function it takes in a pointer and I've written a Zig function that takes in a 2D zig array which I want to pass to the C function. How can I do this? I tried &A[0][0] but it says "cast discards const qualifier"
+
+1614966034
+ikskuh
+olabaz: this means that you have taken a pointer to immutable data
+
+1614966159
+ikskuh
+but the C function requires that you have mutable data
+
+1614966185
+olabaz
+ah ok I think I figured it out
+
+1614966208
+olabaz
+one other question, how can I pass an arbitrary size 2D array
+
+1614966229
+olabaz
+or a pointer to an arbitrary size 2D array
+
+1614966458
+ikskuh
+this depends on your use case
+
+1614966462
+ikskuh
+2D arrays are kinda tricky
+
+1614966601
+olabaz
+I don't know either dimension size at comptime
+
+1614966649
+ikskuh
+okay
+
+1614966658
+ikskuh
+so the only option is a linear 1D array
+
+1614966668
+ikskuh
+with dim_x, dim_y and stride
+
+1614966799
+olabaz
+ikskuh: ok so I should just stick with 1d arrays?
+
+1614966812
+ikskuh
+yep
+
+1614966822
+ikskuh
+2D arrays are not a concept in unmanaged code
+
+1614966833
+ikskuh
+you have to partition linear memory by hand
+
+1614966841
+ikskuh
+which is usually done by using a column- or row-major layout
+
+1614966862
+ikskuh
+so {0,1,2,3} will be {{0,1},{2,3}} or {{0,2}{1,3}}
+
+1614966892
+olabaz
+yeah, so I have C code that handles that
+
+1614966900
+ikskuh
+same applies in Zig
+
+1614966950
+olabaz
+Ideally I would make a 2d array in zig and pass it to a function in C that decomposes it into a linear array
+
+1614967033
+olabaz
+It's nicer to index using [i][j] than [nrow * i + j]
+
+1614967054
+olabaz
+ok I think I have an idea though
+
+1614967071
+olabaz
+I'll just write my own struct
+
+1614972840
+olabaz
+Why am I getting this error: ./src/matrix.zig:41:15: error: expected 3 argument(s), found 4
+
+1614972842
+olabaz
+matNxM.set(0, 0, 1.0);
+
+1614972850
+olabaz
+how am I passing 4 arguments
+
+1614972901
+olabaz
+oh it's self
+
+1614972905
+Nypsie
+The `matXnM` is passed as an argument
+
+1614972954
+olabaz
+I feel like the error should be clarified
+
+1614972969
+olabaz
+or maybe I'm just noob
+
+1614972990
+g-w1
+it should be clarified
+
+1614974119
+olabaz
+Is there a simple way to loop through a range e.g: for (int i = 0; i < N; i++)?
+
+1614974286
+ikskuh
+{var i: usize = 0; while(i < N) : (i += 1) { }}
+
+1614974330
+olabaz
+oh thanks
+
+1614974431
+mipri
+is there a pastebin for this channel?
+
+1614974461
+ifreund
+there are many you can use, I like 0x0.st
+
+1614974686
+mipri
+yeah that is nice.
+
+1614974791
+olabaz
+nice, I forgot while loops existed haha
+
+1614974807
+fengb
+for ([]u0{0} ** N) |, i|
+
+1614974822
+fengb
+`for ([_]u0{0} ** N) |_, i|`
+
+1614974854
+mipri
+hah, that's interesting.
+
+1614974925
+fengb
+And runtime lengths... `for (@as([*]u0, undefined)[0..N]) |_, i|`
+
+1614974925
+andrewrk
+every time you loop like that, ziggy sheds a tear
+
+1614974936
+zags
+lol
+
+1614975009
+andrewrk
+TheLemonMan, assert not null is the desired behavior here
+
+1614975101
+ikskuh
+btw, on the topic of loops:
+
+1614975152
+andrewrk
+ah, yes I noticed this pattern too!
+
+1614975175
+ikskuh
+it's really sweet and obvious
+
+1614975190
+ifreund
+ikskuh: does having the errdefer outside the loop generate better code than this?
+
+1614975192
+ikskuh
+i should write a blog post about patterns
+
+1614975211
+ikskuh
+ifreund: this is also cool!
+
+1614975266
+ikskuh
+another thing i discovered for testing:
+
+1614975304
+andrewrk
+ifreund, defer and errdefer are lowered in a not ideal way in stage1; the expression is duplicated at every scope exit point
+
+1614975323
+andrewrk
+in self-hosted, each defer/errdefer expression exists only once, and control flow is directed through them
+
+1614975380
+andrewrk
+I think that is unrelated to your question; your code is optimal
+
+1614975400
+ikskuh
+
+
+1614975598
+tdeo
+wait, what does errdefer in a loop do? i was under the impression defer was scope-based not function-based
+
+1614975635
+ifreund
+tdeo: it is scope based, it only runs if the try within the loop fails
+
+1614975650
+ifreund
+and only the errdefer of the current iteration runs
+
+1614975679
+ifreund
+andrewrk: cool, that all makes sense, glad we've once again cleaned things up in stage2 :)
+
+1614975712
+olabaz
+so how can I pass an unknown length array to a function I am getting: ./src/matrix.zig:65:60: error: expected type '[*]f64', found '[6]f64'
+
+1614975724
+tdeo
+olabaz: use & on the parameter when you're calling it
+
+1614975757
+tdeo
+*[6]f64 will coerce to [*]f64
+
+1614975761
+andrewrk
+tdeo, the idea is to write zig code such that a line of code could be inserted pretty much anywhere, with a `try` in it, and have it participate correctly in error handling / resource management
+
+1614975778
+andrewrk
+that's why you sometimes see errdefer even with no "try" after it
+
+1614975793
+ikskuh
+tdeo: ifreund is smart. he uses the outer for loop to determine the inner for loops run length
+
+1614975824
+olabaz
+oh I see, I had a const qualifier and it messed everything up
+
+1614975866
+tdeo
+about the errdefer in a loop: i see, the behaviour makes sense but isn't immediately intuitive
+
+1614975867
+ikskuh
+btw, andrewrk: again much love for giving us zig. i had such a good coding session in the last 48h
+
+1614975894
+ikskuh
+ifreund: the problem with your errdefer pattern is that you need to replicate the errdefer behind the loop when
+
+1614975909
+ifreund
+true
+
+1614975912
+andrewrk
+you're gonna have to start thanking a lot more people - I'm down to only 54% of the total commit count now :D
+
+1614975923
+ifreund
+ikskuh: or extract it to a separate function
+
+1614975932
+ifreund
+(the loop I mean)
+
+1614975945
+ifreund
+or hope #5610 is accepted
+
+1614975959
+ikskuh
+andrewrk: true, but you're the spark and source of most core ideas. also the reason why zig is not cluttered with features
+
+1614976087
+olabaz
+ok can someone code review this:
+
+1614976101
+TheLemonMan
+andrewrk, roger that, I'll send a PR if nobody beats me to it
+
+1614976117
+andrewrk
+thx for the mips issue btw
+
+1614976149
+ikskuh
+TheLemonMan: i was sceptical about the std.fmt refactoring first
+
+1614976157
+tdeo
+olabaz: this seems like it will not work with an allocator created at runtime, like an arena allocator. the allocator should not need to be known at comptime
+
+1614976161
+TheLemonMan
+np, I got commit access on the LLVM repo, the fixes for the other miscompilations are now in
+
+1614976164
+ikskuh
+but i used it today and it's a pretty cool pattern with std.fmt.fmtHexSliceUppercase
+
+1614976190
+andrewrk
+oh hell yeah, TheLemonMan with llvm commit access is incredible news for zig
+
+1614976214
+TheLemonMan
+ikskuh, glad you like it :) I prefer my hexdumps with plain {x}, the spacing helps so much
+
+1614976217
+ifreund
+\o/
+
+1614976231
+zags
+TheLemonMan: are they still using Subversion? :)
+
+1614976245
+olabaz
+tdeo: but I'm passing the allocator in as a variable
+
+1614976248
+tdeo
+olabaz: so you should probably have `pub fn Matrix(comptime T: type)` and `allocator: *Allocator` as a struct field
+
+1614976260
+tdeo
+you're passing it as a variable to the type itself
+
+1614976266
+TheLemonMan
+zags, thankfully it's git heh
+
+1614976274
+tdeo
+so only pointers that are known at compile time will work
+
+1614976276
+zags
+oh heh
+
+1614976293
+ikskuh
+TheLemonMan: doing a pr later which will be pretty useful for a lot of people :)
+
+1614976296
+olabaz
+ah ok
+
+1614976348
+TheLemonMan
+I also planned on moving Bi/BI into its separate Formatter, this way we finally get rid of all the weird formatters from the core fmt
+
+1614976351
+tdeo
+a common pattern with generic types in zig is to do `const Self = @This()` so you can use `Self` instead of `Matrix(T)` in the definition. nothing's wrong with typing it out, though
+
+1614976359
+ikskuh
+TheLemonMan: good idea
+
+1614976393
+ikskuh
+but we need to properly solve formatter alignment
+
+1614976400
+olabaz
+tdeo: where would I put that line, right at the beginning?
+
+1614976421
+ikskuh
+a hacky solution would be to first format without alignment into a counting writer, then use the result of this to align the output
+
+1614976425
+tdeo
+right before or after the struct fields i think
+
+1614976514
+TheLemonMan
+ikskuh, yeah, the core formatters should respect the options (too bad we can't force people's formatters to do so)
+
+1614976529
+TheLemonMan
+(nor to validate the fmt string, but that's a different story)
+
+1614976541
+ikskuh
+true
+
+1614976545
+TheLemonMan
+speaking of std.fmt, is anyone using the named parameters?
+
+1614976551
+ikskuh
+nope
+
+1614976552
+ikskuh
+:D
+
+1614976557
+ikskuh
+how is the syntax for them?
+
+1614976563
+ikskuh
+but even in current state, the formatting is so sweet
+
+1614976572
+andrewrk
+I think we have a discoverability problem for the named parameters
+
+1614976590
+TheLemonMan
+{[param_name]}, it's like positionals {[n]}
+
+1614976594
+andrewrk
+here is somewhere we should use them:
+
+1614976619
+ikskuh
+TheLemonMan: didn't know the syntax for positionals as well :D
+
+1614976623
+andrewrk
+tbh I forgot we had support for them
+
+1614976639
+ikskuh
+wait, does this mean i can just pass
+
+1614976653
+ikskuh
+print("{[x]}, {[y]}", Point { .x = 10, .y = 20 })
+
+1614976663
+tdeo
+there's no actual [] there
+
+1614976674
+tdeo
+just {x} {y}
+
+1614976682
+TheLemonMan
+nope, only anonymous tuples
+
+1614976691
+TheLemonMan
+print("{[x]}, {[y]}", .{ .x = 10, .y = 20 })
+
+1614976722
+tdeo
+wait, does it allow square brackets? because it worked without them for me
+
+1614976723
+TheLemonMan
+the restriction can be lifted, but then it'd be asymmetric wrt the other usage modes
+
+1614976758
+ikskuh
+ah, dang
+
+1614976806
+tdeo
+hm, not having brackets would be ambiguous. i think i didn't actually try and just assumed
+
+1614976840
+andrewrk
+since we are embracing the formatter pattern, do we perhaps want to use a different syntax than {} for formatting?
+
+1614976857
+andrewrk
+did C have it right all along with %?
+
+1614976867
+companion_cube
+print("«x» + «y»", …)
+
+1614976875
+ikskuh
+use / and \
+
+1614976883
+ikskuh
+print("/0\", .{ 10 });
+
+1614976899
+fengb
+lol
+
+1614976900
+ikskuh
+andrewrk: i think {} is pretty common
+
+1614976927
+ikskuh
+maybe we could use ticks: ``
+
+1614976940
+ikskuh
+print("Hello, `name`", .{ "andrew" });
+
+1614976950
+ikskuh
+.{ .name = "andrew" }
+
+1614977082
+ifreund
+can't wait to update my stuff to zig 0.8.0 so I can use named format parameters in zig-wayland's scanner
+
+1614977097
+fengb
+We have named params now?
+
+1614977140
+g-w1
+ifreund: will river use the latest release of zig?
+
+1614977173
+ifreund
+g-w1: yes, I track the lastest relase with river to make contributing/packaging easier and reduce churn
+
+1614977202
+g-w1
+ok, yeah that makes sense
+
+1614977236
+tdeo
+my latest fmt issue was motivated by me experimenting with pure zig wayland again
+
+1614977281
+tdeo
+i was wondering whether having every object be a simple wrapper over a u32 would make sense, with the connection being passed through on every call
+
+1614977282
+olabaz
+what is the difference between [*] and []. Is [] a slice and [*] a pointer to an unkown number of items?
+
+1614977297
+tdeo
+olabaz: correct
+
+1614977297
+andrewrk
+correct
+
+1614977311
+olabaz
+then allocator.alloc() returns a slice?
+
+1614977315
+olabaz
+instead of a pointer?
+
+1614977320
+g-w1
+yes
+
+1614977324
+olabaz
+why
+
+1614977330
+g-w1
+to get a single object use allocator.create
+
+1614977345
+g-w1
+because it is safer to get a length
+
+1614977389
+andrewrk
+olabaz, a slice is more useful than a pointer, since you know the length. why would you want something less useful?
+
+1614977414
+olabaz
+in my matrix struct I have a field data: [*]T
+
+1614977432
+andrewrk
+the `ptr` field of a slice will give you that type
+
+1614977434
+g-w1
+as a workaround you can do .ptr on what it alloc
+
+1614977447
+olabaz
+ah ok
+
+1614977482
+olabaz
+I think I can just make data: []T since I will know the size when I fill it up
+
+1614977562
+ifreund
+tdeo: that sounds quite interesting, I really think a pure zig wayland library could be
+
+1614977607
+ifreund
+unfortuneately I'm stuck with libwayland server-side at least cause there's no way I'm rewriting wlroots
+
+1614977615
+zags
+I see switching on "strings" have been a topic on discord a few times, would've been convenient right now. But I take it lowering to std.mem.eql doesn't fit the language? I didn't see anyone chime in when it was asked.
+
+1614977645
+olabaz
+ok here is my updated version:
+
+1614977659
+mipri
+zags: something more like
+
+1614977661
+ifreund
+zags: iirc someone implemented swtiching on strings and it wasn't any more optimal than the if-else chain with mem.eql()
+
+1614977679
+zags
+ifreund: yeah, but it's more convenient
+
+1614977691
+tdeo
+ifreund: i saw your issue comment on zig-wayland about protocol objects being generic over the version, i like that idea because it lets you bump the version and get compile errors where you should to change things
+
+1614977697
+tdeo
+i'm probably going to try that in mine
+
+1614977711
+companion_cube
+ifreund: it could be made more optimal by compilers
+
+1614977716
+g-w1
+zags: fengb does it in zigbot, so you can just use it if you want to not follow the conventions :)
+
+1614977722
+g-w1
+he hashes everything
+
+1614977723
+companion_cube
+with a trie, or any kind of decision tree really
+
+1614977749
+zags
+g-w1: yeah that works, but that's a trick :) I use string switching in a few languages, pretty neat
+
+1614977749
+ikskuh
+g-w1: "hashes"
+
+1614977760
+ikskuh
+afaik fengb just uses @bitCast to "hash" the string :D
+
+1614977765
+ifreund
+tdeo: cool, are you still working off the zwl repo? I'm curious to hear/see how it works out
+
+1614977772
+g-w1
+oh lmao
+
+1614977775
+zags
+hehe
+
+1614977847
+tdeo
+ifreund: i'll probably make a new one since i realized the name was already in use before my project
+
+1614977947
+tdeo
+hm, i wonder if we can guarantee single-field structs to have the same abi as the contained type
+
+1614977957
+Nypsie
+ifreund: Thanks for those zig fmt fixes. Makes fixing zls easier :P
+
+1614977991
+ifreund
+Nypsie: for sure, if you find any more bugs send them my way
+
+1614978022
+ifreund
+tdeo: I think distinct types that allow decls would be the cleaner solution there
+
+1614978024
+fengb
+It's a perfect has (assuming less than 16 characters and not all 0s)
+
+1614978025
+tdeo
+i was thinking about whether enum(inttype) or struct { id: inttype } is better if you don't have any abi restrictions (since the former can be used on in function parameters)
+
+1614978027
+fengb
+hash
+
+1614978059
+tdeo
+and the struct is probably better, but it would be nice to be able to use the struct over abi boundaries with an annotation like rust's #[repr(transparent)]
+
+1614978092
+tdeo
+but why do we need an annotation at all? guaranteeing that single-field structs are the same as their contents abi-wise shouldn't have any downsides, since that's already efficient, no?
+
+1614978126
+ifreund
+tdeo: what if the compiler wants to add extra fields in debug mode for some safety check
+
+1614978149
+tdeo
+that's true
+
+1614978172
+fengb
+zags: I prefer status quo. Right now you can pick your own algorithm using comptime matching. Go seems to use binary search, which can work but has major caveats
+
+1614978199
+fengb
+Whereas Zig switches mandates a switch table so something jumpable
+
+1614978232
+zags
+the compiler would work out a perfect hash yeah?
+
+1614978239
+ifreund
+tdeo: I think the enum is the way to go currently, but distinct types that allow decls would feel much less hacky
+
+1614978268
+fengb
+It's simpler to have a userland comptime implementation, especially since there's tradeoffs to every one of them
+
+1614978288
+tdeo
+yeah, i think that would be a nice addition. it would basically be the same as the enum but with no type restriction and fewer features
+
+1614978338
+ifreund
+this is pretty much what I do with wl.Fixed by the way:
+
+1614978378
+tdeo
+i was considering just handling fixed to/from f64 conversion during serialization/deserialization
+
+1614978395
+tdeo
+(this isn't about the types anymore but i'm wondering about your opinion on that)
+
+1614978440
+ifreund
+I'm not a fan, it's planned for zig to have first class support for fixed point numbers
+
+1614978446
+zags
+fengb: i think a lot of the time, people end up doing if/else chains to match strings, so switching on strings could lower to that and be no less efficient than that at least, with other userland tricks when you need something else. Not very important, but was curious since it's been asked a few times.
+
+1614978481
+ifreund
+which would make using them everywhere feasiable/ergonomic while also being more performant without any downside
+
+1614978527
+tdeo
+thanks. yeah, language-level fixed-point numbers would be really nice
+
+1614978672
+fengb
+Would literals be fixed point then?
+
+1614978839
+ifreund
+hrm, I can't find the proposal... I am I confusing this with saturating arithmetic being accepted?
+
+1614978914
+ifreund
+ah yep, not accepted yet :/
+
+1614979046
+tdeo
+hmm, i think there's a clean way to merge both handle types and opaque{} together but it'd make the pointer part of the type. `handle(u32){}` would be a distinct u32, but `handle{}` would be equivalent to `*opaque{}`.
+
+1614979081
+tdeo
+i think that'd get rid of types of unknown size, which is probably good, but it'd make function signatures look different from c and therefore easy to mess up
+
+1614979085
+olabaz
+I'm interfacing with a C library and one of the functions wants the array size as an c_int but array.len gives me usize. How should I deal witht his?
+
+1614979118
+tdeo
+olabaz: depends on how you want to handle the case if the array is too big
+
+1614979134
+olabaz
+i don't want to handle it
+
+1614979139
+ifreund
+@intCast() then
+
+1614979142
+TheLemonMan
+:O
+
+1614979145
+olabaz
+lol
+
+1614979166
+ifreund
+which is illegal behavior if your array is longer than a c_int's max
+
+1614979560
+olabaz
+And how to deal with: error: expected type '[*c]const f64', found '*[]f64'
+
+1614979584
+TheLemonMan
+you're missing a .ptr on the slice
+
+1614979587
+tdeo
+you're passing a pointer to a slice, but you should pass the pointer
+
+1614979663
+olabaz
+ah damn this is so confusing lol
+
+1614979697
+olabaz
+it's starting to make sense
+
+1614980019
+olabaz
+omg we compile and pass tests
+
+1614980127
+TheLemonMan
+woot woot
+
+1614981923
+olabaz
+is there a way to make sub tests e.g: Test("A") { Test("A1"); Test("A2");}
+
+1614981951
+g-w1
+why?
+
+1614981976
+olabaz
+so I can test a function with different types
+
+1614981979
+olabaz
+and loop over types
+
+1614982001
+tdeo
+you can do that in a single test
+
+1614982010
+tdeo
+i don't think there's more than that
+
+1614982024
+olabaz
+hmm ok
+
+1614982030
+tdeo
+maybe you can put a test in an anonymous struct, not sure how that'd get referenced though
+
+1614982035
+tdeo
+probably not recommended either way
+
+1614982541
+olabaz
+hmm, I guess I can't do a loop over types since I have comptime T
+
+1614982576
+tdeo
+you can iterate over types like `for ([_]type{u8, u32, u64})) |T| { ... }`
+
+1614982587
+tdeo
+that only works at comptime, of course
+
+1614982641
+g-w1
+i think you might need inline for
+
+1614982734
+olabaz
+g-w1: ah yeah adding inline worked
+
+1614983941
+zags_
+I'm looking for something that appends to an arraylist all the items from another arraylist, i.e Java-like "appendAll". Is there anything like that/would it be an acceptable PR?
+
+1614983977
+tdeo
+appendSlice?
+
+1614983995
+g-w1
+yeah, just do list.appendSlice(other.items)
+
+1614984041
+zags_
+oh damn, so nice, thanks guys
+
+1614984785
+olabaz
+I made a folder example and I'm trying to do @import("../src/matrix.zig") but it's giving me error: import of file outside package path: '../src/matrix.zig'
+
+1614984802
+olabaz
+compiling with: zig  run examples/ex_gemm.zig --library c
+
+1614984880
+g-w1
+you need --main-pkg-path
+
+1614984952
+olabaz
+nice, how do you know this?
+
+1614984995
+g-w1
+zig run --help
+
+1614985908
+olabaz
+I'm trying to add a print function to my struct but it tells me: ./src/matrix.zig:44:27: error: expected type 'zb.src.matrix.Matrix(f64)', found '*const [2:0]u8'
+
+1614986125
+olabaz
+meh w/e I just removed it lol
+
+1614988647
+olabaz
+is there a way to get the zero of a type
+
+1614988673
+olabaz
+for example for int 0, f64 0.0, Complex(f64) = Complex.new(0.0, 0.0)
+

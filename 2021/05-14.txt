@@ -1,0 +1,872 @@
+1620957265
+v0idify
+hey, how do i output llvm ir or assembly with `zig build`?
+
+1620957306
+daurnimator
+v0idify: in the build.zig you need to specify it
+
+1620957340
+v0idify
+daurnimator: is there a quick hack for debugging?
+
+1620957375
+v0idify
+or, how do i do it in general? i have no clue
+
+1620957436
+g-w1
+-femit-llvm-ir
+
+1620957506
+v0idify
+I can't find how to set that on build.zig :/ sorry for being a pain
+
+1620957554
+g-w1
+exe.emit_llvm_ir = true;
+
+1620957566
+v0idify
+thanks!
+
+1620957567
+g-w1
+just `grep emit_llvm_ir lib/std/build.zig` :P
+
+1620957739
+eyepatchOwl
+How popular is gyro for zig package management?
+
+1620959733
+jzelinskie
+i might be doing something wrong -- does `zig cc` not support the -E flag? I know it has limitations for the preprocessor.
+
+1620960081
+andrewrk
+jzelinskie, it is supposed to work but there may be a bug in zig's CLI parsing with regards to -E. what command are you trying to run?
+
+1620960195
+jzelinskie
+it's a little complicated... I wanted to see if I could use it for a more portable cgo cross compilation and making go binaries fully static is a bit of a mouthful
+
+1620960231
+jzelinskie
+`CGO_ENABLED=1 GOOS=linux GOARCH=amd64 CC="zig cc -target x86_64-linux" CXX="zig c++ -target x86_64-linux" go build --tags extended -o faq -v -ldflags '-s -w -X github.com/jzelinskie/faq/pkg/version.Version=0.0.8-dev -extldflags "-v -static"' -tags netgo github.com/jzelinskie/faq/cmd/faq` is the command I'm trying now... I just ripped it out of my Makefile and added the CC and CXX env vars + the `--tags extended`
+
+1620960268
+jzelinskie
+I'm also on macOS right now and not native linux
+
+1620960686
+andrewrk
+what version of go is that? I think until very recently you need a wrapper script otherwise go chops off the args to zig
+
+1620960784
+jzelinskie
+ah shit, you're right i think i need a 1.17 pre-release
+
+1620960819
+andrewrk
+you can do it pre 1.17, you just have to make zigcc and zigc++ scripts and put the args in there (including the target unfortunately)
+
+1620961171
+jzelinskie
+here's a good error message, it just couldn't find the libjq headers
+
+1620961767
+jzelinskie
+that's likely just because I
+
+1620961776
+jzelinskie
+I'm linking against libjq which is in /usr/local/include
+
+1620961876
+jzelinskie
+ok, now it's only the linker that's confused, haha
+
+1620961894
+andrewrk
+what's the error message?
+
+1620961919
+jzelinskie
+`ld.lld: error: unable to find library -ljq`
+
+1620961934
+daurnimator
+jzelinskie: `-L /usr/local/lib` ?
+
+1620961947
+daurnimator
+or where is your libjq.so?
+
+1620962087
+jzelinskie
+based on the amount of time it's taking -- everything appears to be working
+
+1620962146
+jzelinskie
+ah damn maybe not
+
+1620962157
+jzelinskie
+>warning: unsupported linker arg: --compress-debug-sections=zlib-gnu
+
+1620962194
+jzelinskie
+it looks like it's also not necessarily respecting a trick I have to do with cgo
+
+1620962269
+andrewrk
+that warning is harmless
+
+1620962322
+andrewrk
+what's the trick?
+
+1620962323
+jzelinskie
+so I do a trick where I write some additional C to help with the callbacks
+
+1620962333
+jzelinskie
+it only exists on the magical cgo comments
+
+1620962341
+jzelinskie
+here's my error message
+
+1620962370
+jzelinskie
+actually maybe that's not it, there's a bunch of undefined symbols
+
+1620962443
+andrewrk
+how are you telling zig about libjq?
+
+1620962444
+jzelinskie
+i mean, I'm pointing the linker to a directory full of .dylib and not .so
+
+1620962453
+jzelinskie
+`zig cc -I /usr/local/include -L /usr/local/lib -target x86_64-linux $@`
+
+1620962494
+andrewrk
+wait if the target is linux you definitely need a linux build of libjq, not a dylib (macos)
+
+1620962532
+andrewrk
+if you want you can make zig build libjq from source to solve this problem
+
+1620962542
+jzelinskie
+yeah, that's definitely the goal
+
+1620962603
+andrewrk
+libjq, is it this?
+
+1620962618
+jzelinskie
+yep 1.6
+
+1620962638
+jzelinskie
+
+
+1620962639
+andrewrk
+mmm so the annoying thing here is it looks like they use yacc and lex
+
+1620962654
+andrewrk
+so it's a bit more than a "drop these C files in your repo"
+
+1620962668
+andrewrk
+unless you wanna pre-build them :)
+
+1620962682
+andrewrk
+oh wait, it looks like they already do that
+
+1620962700
+jzelinskie
+oh, do they not check in the results of yacc and lex?
+
+1620962709
+andrewrk
+never mind, it looks like they do check them in
+
+1620962763
+jzelinskie
+I'm pretty inexperienced at reverse engineering C projects' build systems just from looking at their files
+
+1620962788
+jzelinskie
+stuff like autotools makes my head want to explode
+
+1620962794
+andrewrk
+the good news is in most cases it really is as simple as starting with the linker errors you have there, and then just adding .c files one by one until they go away
+
+1620962839
+jzelinskie
+I wonder if I should just be doing this on linux, so that CI can re-use what I make more easily
+
+1620962865
+andrewrk
+in theory with zig it's the same no matter which OS you dev on :)
+
+1620962866
+jzelinskie
+I'm hoping to use zig to cross compile fully static binaries for a bunch of platforms/archs
+
+1620962899
+jzelinskie
+fair point, i guess I'll have to build it myself if I want to do what I just described
+
+1620962936
+andrewrk
+I definitely think you can do this. in the future someone will have made a libjq zig package and it would be even more straightforward to do this. until then you'd have to be the one to figure out the minimal set of C files that faq depends on
+
+1620962990
+jzelinskie
+I'm not opposed to working on an libjq zig packages to get my feet wet
+
+1620963042
+jzelinskie
+no one is screaming for faq to build more portably (besides maybe some linux ARM people), so there's no rush
+
+1620963108
+andrewrk
+here's an (uncannily relevant) example of a simpler C library that has been modified to use a build.zig script:
+
+1620963131
+andrewrk
+it's a bit outdated, you might run into some language/build.zig modifications since this was last edited
+
+1620963156
+andrewrk
+the basic idea is there though
+
+1620963187
+andrewrk
+here's a more complicated and more up to date one:
+
+1620963216
+jzelinskie
+🤔 do people accept build.zig files upstream? I guess if they've already taken in every other c build system
+
+1620963232
+andrewrk
+mmm I don't recommend it yet. I think they would rightfully find it annoying at this stage of zig's maturity
+
+1620963261
+andrewrk
+but as we stabilize, part of the goal is to make zig attractive as a build system
+
+1620963294
+jzelinskie
+i mean, it already is clearly enough of one that I'm trying to use it for cgo 🤣
+
+1620963420
+andrewrk
+I know video is a bit of an annoying format to try to learn something but there's a 3-part series that shows the process of doing this build system stuff with Redis:
+
+1620963449
+jzelinskie
+i actually don't find video so bad as long as the player supports x2 speed
+
+1620963457
+jzelinskie
+vimeo does (so I just learned)
+
+1620963567
+daurnimator
+jzelinskie: I assume you saw
+
+1620963573
+andrewrk
+results are at
+
+1620963594
+andrewrk
+^^ this is probably very close to what you need for libjq
+
+1620963620
+jzelinskie
+yep, i found that cross compilation
+
+1620963677
+andrewrk
+good news though, jakub recently got aarch64-macos and x86_64-macos linking working, so that's 2 more targets you could have your CI create builds for :)
+
+1620963718
+andrewrk
+afaik that's a feature unique to zig at the moment. lld does not support these targets
+
+1620963733
+jzelinskie
+nice!
+
+1620963776
+jzelinskie
+semi-related I have another project that I cross compile that uses cgo and it's in a worse spot than faq
+
+1620963787
+jzelinskie
+it uses
+
+1620963801
+jzelinskie
+which links against system keychain libraries
+
+1620963852
+jzelinskie
+there is no platform that is going to have gnome keychain and macOS keychain headers/so
+
+1620963916
+jzelinskie
+I really wish there was some kind of global registry of ABIs
+
+1620963997
+andrewrk
+interesting, how would that work?
+
+1620964063
+jzelinskie
+I guess since the goal is to call into some dynamic library that isn't actually there, it'd work a little like how Go does syscalls on macOS
+
+1620964124
+jzelinskie
+(which I'm now trying to google for to find a good description)
+
+1620964286
+jzelinskie
+I guess I want just enough information to dynamic link against something a library that isn't on my machine. You can't really static link on macOS, so that's not a problem
+
+1620964302
+jzelinskie
+something (e.g. a library)
+
+1620964338
+daurnimator
+jzelinskie: you can static link on macOS; just not against system frameworks
+
+1620964370
+jzelinskie
+yeah, that's what I meant by "really" -- I articulated it poorly
+
+1620964401
+daurnimator
+jzelinskie: and "just enough information" is the headers; which we try and ship with zig :)
+
+1620964424
+jzelinskie
+zig targets ship the system headers?
+
+1620964439
+daurnimator
+yes; zig ships system headers for each target it supports where possible
+
+1620964465
+daurnimator
+see
+
+1620964570
+daurnimator
+huh... where did the OSX headers go? they were added in
+
+1620964573
+jzelinskie
+i guess system frameworks != system headers
+
+1620964593
+jzelinskie
+
+
+1620964620
+daurnimator
+jzelinskie: its just we don't have all the system headers.... yet
+
+1620964637
+daurnimator
+jzelinskie: I think the issue for OSX is that aside from libc, they're under a tricky license?
+
+1620964715
+jzelinskie
+yeah looks like the keychain is in CoreFoundation
+
+1620964810
+jzelinskie
+ah, nope it's just in something called "Security"
+
+1620964810
+daurnimator
+seems like CoreFoundation is under the Apple license (
+
+1620964822
+jzelinskie
+but it's using all the foundation types
+
+1620964834
+jzelinskie
+`#cgo LDFLAGS: -framework CoreFoundation -framework Security`
+
+1620964912
+jzelinskie
+
+
+1620964938
+daurnimator
+jzelinskie:
+
+1620964985
+jzelinskie
+turns out i honestly have no idea what restrictions the apple license has
+
+1620965042
+daurnimator
+jzelinskie: APSL is pretty liberal IIRC
+
+1620965087
+daurnimator
+andrewrk: what are your thoughts on including headers for Apple frameworks? is it just missing someone to do the work?
+
+1620965107
+jzelinskie
+I'd literally use zig for cgo at work if ya'll start shipping them
+
+1620965140
+andrewrk
+not sure. frameworks might be out of scope
+
+1620965195
+andrewrk
+might be able to support the --libc arg telling about framework directories, so you would be able to set that up
+
+1620965262
+daurnimator
+andrewrk: I guess its similar to the windows question of how much do we support? at the moment we ship all of mingw right? which is like shipping every system framework for OSX
+
+1620965283
+andrewrk
+windows is a lot more stable than macos
+
+1620965309
+jzelinskie
+it's true every major version of macOS breaks tons of system frameworks
+
+1620965358
+daurnimator
+andrewrk: why did I suddenly feel the ears of hundreds of OSX fanbois start burning? :P
+
+1620965384
+andrewrk
+I mean that's just a fact, as a deploy target
+
+1620965397
+jzelinskie
+I'm not sure the apple fanboys would defend the system frameworks 🤣
+
+1620965436
+jzelinskie
+You'd probably have to make targets for each major version of macOS
+
+1620965452
+jzelinskie
+`x86_64-macos11-gnu`
+
+1620965478
+andrewrk
+zig supports that already
+
+1620965502
+andrewrk
+I mean it supports target OS version range (min/max)
+
+1620965520
+andrewrk
+but right now we don't have different headers/libs for different versions
+
+1620965574
+jzelinskie
+yeah, maybe I'll find some concrete data on how often they actually break things. I've used one of the beta OS releases a few years ago and they made breaking changes and moved the paths on the filesystem 3 times during the beta
+
+1620965593
+jzelinskie
+obviously that was during a beta, but still
+
+1620965623
+daurnimator
+jzelinskie: in any case, zig really cares about cross-compilation
+
+1620965672
+jzelinskie
+do you think it makes sense to have some kind of third party repo for frameworks that integrates into zig's targets?
+
+1620965710
+daurnimator
+yes; and also no
+
+1620965713
+andrewrk
+I do want to explore how much we can offload support for cross compilation for many different targets from the main repo, to packages
+
+1620965738
+andrewrk
+but there is no package manager yet. that is blocking on finishing a faster and more memory efficient compiler, that can handle dealing with the more lines of code that will come with packages
+
+1620965875
+jzelinskie
+is there a compromise that could exist in the meantime? even if it's just "clone this repository into this subdirectory"
+
+1620966190
+jzelinskie
+i honestly feel like I'm asking for it all -- zig already does so much for cross compilation
+
+1620966402
+andrewrk
+for frameworks?
+
+1620966440
+andrewrk
+I don't know how to make it with status quo zig, but a near term solution would be to have the framework headers on disk and be able to use them for cross compiling
+
+1620966480
+andrewrk
+there are a few things needed before even this will work. I don't think Jakub has framework support yet in the macho linker code
+
+1620966631
+jzelinskie
+yeah, I might just be able to rip them out of the apple open source website and just duct tape everything together
+
+1620966835
+semarie
+andrewrk: I am unsure if someone answer you about 'c++ -E -Wp,-v -xc++ /dev/null' on OpenBSD :
+
+1620966852
+andrewrk
+semarie, thanks!
+
+1620966909
+semarie
+please note it is -current , so more pre-7.0 than 6.9 , notabily regarding llvm version. it is still llvm10 in 6.9 if it matters
+
+1620966925
+andrewrk
+semarie, can you try one more thing for me? `c++ -print-file-name=libstdc++.a` and `c++ -print-file-name=libc++.a` and `c++ -print-file-name=libc++abi.a`
+
+1620966962
+semarie
+here:
+
+1620966980
+semarie
+but OpenBSD still uses libstdc++.a on some archs :)
+
+1620966994
+semarie
+(like sparc64 for commun one)
+
+1620967426
+andrewrk
+semarie, thanks! that confirms my hope that libc++.a and libc++abi.a are in the same dir
+
+1620975985
+TheLemonMan
+for some reason zig c++ stopped working as it can't find asm/errno.h
+
+1620976018
+TheLemonMan
+this used to work a few moons ago, I wonder if the native libc switch has something to do with it
+
+1620976045
+andrewrk
+providing our own libc sure did have some simplifying properties :-/
+
+1620976079
+andrewrk
+I suppose we still have the option to rely on our own libc provision when there are no system-provided libraries to be linked against
+
+1620976114
+TheLemonMan
+I think this is just another problem with the include path order
+
+1620976360
+andrewrk
+I'm down to just 6 stage2 test failures left in #8554
+
+1620976387
+andrewrk
+when this branch is merged we can start trying to get behavior tests passing in stage2 one by one
+
+1620976454
+andrewrk
+there are still some tricky bits to debug in the compiler but with the logging system and the `zig astgen` command / clean separation of ZIR from the rest of the compiler, it's definitely an improvement in ability to troubleshoot and confidently fix problems
+
+1620976455
+txdv
+6 sounds like a small number, are those tests easy to get green?
+
+1620976475
+andrewrk
+yes they will be easy tomorrow morning; less so now that it is after midnight for me :)
+
+1620976489
+txdv
+omg, what a soldier :)
+
+1620976492
+txdv
+its morning here in europe
+
+1620976641
+andrewrk
+one thing that would be a big step up in debugging stage2 would be if there was a way to make gdb print custom textual representations of our types
+
+1620976661
+andrewrk
+Decl, Namespace, Value, Type, etc. gdb does not understand zig's namespacing, so it's not trivial to set up
+
+1620976683
+andrewrk
+idk what is all involved to make this happen. I think it is its own project
+
+1620976707
+andrewrk
+would be pretty slick if we could define "gdbPrint" methods on types and have that compile to GDB Python and Just Work
+
+1620976715
+txdv
+would help you in your current efforts significantly or is it a general nice to have?
+
+1620976723
+andrewrk
+both
+
+1620976752
+andrewrk
+it would speed up the development iterations; I'm having to recompile more often than if the debugger could understand more semantically
+
+1620976780
+TheLemonMan
+LLVM defines a dump method on several types you may want to print during a debugging session
+
+1620976798
+andrewrk
+yeah those are handy. I would love to have something like that for zig code
+
+1620976815
+andrewrk
+maybe we need to tell gdb that zig is c++ and tell it about namespaces? idk
+
+1620976827
+andrewrk
+recompiling stage2 with stage1 takes 40 seconds on my laptop
+
+1620976853
+TheLemonMan
+gdb (and lldb) don't like our loong names with dots in between
+
+1620976926
+xackus__
+last time i tried lldb i couldn't set a single breakpoint
+
+1620977042
+andrewrk
+28 seconds with a release mode stage1
+
+1620977066
+andrewrk
+anyway I've been working way too long today. good night all
+
+1620977077
+TheLemonMan
+gn
+
+1620977815
+txdv
+is the astgen command only present in that branch?
+
+1620978073
+nerthus
+does anyone have epoll usage examples?
+
+1620978818
+txdv
+nerthus: there is an entire blog post about it
+
+1620978825
+txdv
+io_mode = .evented
+
+1620978839
+txdv
+unless you want to use the epoll api directly, then you just use it like every other C library
+
+1621006375
+kiedtl
+Does std.ArrayList(Type).append ever invalidate pointers in the items slice?
+
+1621006381
+kiedtl
+s/in the/to the/
+
+1621007017
+kiedtl
+Hm, I guess it will if the capacity increases, right?
+
+1621007876
+cepheus
+yup
+
+1621008005
+cepheus
+you can instead do `addOneAssumeCapacity` and mutate the returned value if you know that you have sufficient capacity to append without reallocating though
+
+1621008154
+ifreund
+or appendAssumeCapacity()
+
+1621009009
+kiedtl
+Hm, I guess I'll look into using a linked list or something then
+
+1621009604
+ifreund
+kiedtl: yep, if you want pointer stability a linked list is the simplest option
+
+1621009612
+kiedtl
+But no automatic allocation :V
+
+1621009631
+kiedtl
+idk, I'll probably just write my own linked list
+
+1621014058
+v0idify
+hey, i stumbled upon a weird possibly-bug of zig and i can't make a minimal example :/
+
+1621014095
+v0idify
+basically, calling a function directly with a pointer works fine but when calling the same function through a function pointer inside a struct the pointer passed gets mangled/is wrong
+
+1621014126
+TheLemonMan
+code or it didn't happen
+
+1621014211
+v0idify
+ah yeah, well the code is at
+
+1621014222
+v0idify
+i'll keep trying to make a minimal example
+
+1621014763
+v0idify
+damn it i can't get it to work
+
+1621014779
+v0idify
+or rather, not to work :P
+
+1621014954
+andrewrk
+txdv, yes astgen command is new in that branch
+
+1621015973
+v0idify
+how can I tell what calling convention zig is using to call a function from LLVM IR?
+
+1621016008
+v0idify
+i suspect it's calling with the C convention even though it should be using normal zig
+
+1621016174
+TheLemonMan
+the function attributes (the #NNN) will tell you
+
+1621016528
+v0idify
+TheLemonMan: I can't find the attributes in one
+
+1621016794
+v0idify
+I hope this is helpful, LLVM IR from both calls:
+
+1621017583
+v0idify
+okay, forcibly calling it as an async function makes it work. I edited the bin with the code I did to do that; I believe this is a compiler bug (it's calling as a normal function when it should be calling as an async one)
+
+1621018284
+v0idify
+here it is, minimal reproducible:
+
+1621023226
+TheLemonMan
+andrewrk, #8733 is ready to be merged
+
+1621023258
+andrewrk
+nice, thank you for doing the code review on that one
+
+1621023304
+TheLemonMan
+np, I came to like floating point numbers over time heh
+
+1621023376
+andrewrk
+haha
+
+1621023550
+andrewrk
+btw TheLemonMan, SpexGuy made a fun graph regarding github issues that I wanted to show you
+
+1621023556
+andrewrk
+one sec
+
+1621023616
+andrewrk
+
+
+1621023629
+andrewrk
+"Neat issue visualization from
+
+1621023653
+andrewrk
+ok but specifically this part:
+
+1621023679
+TheLemonMan
+I can't unsee the chopped labels on the axis hah
+
+1621023687
+andrewrk
+
+
+1621023692
+andrewrk
+"My fav part is the fight against 1000 issues that happened between February and April 2020."
+
+1621023799
+TheLemonMan
+we were this close to the 0 issues milestone!
+
+1621031485
+casaca
+congrats to the zig team and contributors for the fastly.com blog post
+
+1621031691
+v0idify
+
+

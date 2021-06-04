@@ -1,0 +1,2692 @@
+1615420930
+kameliya[m]
+haha! yeah, nice :) i had a similar feeling when i started using zig in earnest ~9 months ago. i've just been having a super good time since then; really feels like what i was missing when i wanted to do low-level stuff but without the clunky feeling rust picked up.
+
+1615421006
+vent
+I was very happy to see there's an svd2zig, I tried it out on an SVD file for my stm32h7. Once I've picked up some speed, I think Zig would be great for some bare-metal coding.
+
+1615421031
+vent
+Only thing I haven't quite worked out is how Zig's runtime safety checks would work on a target like that.
+
+1615421075
+ifreund
+you'd define your own panic handler to do whatever you want
+
+1615421101
+kameliya[m]
+yeah! i've been using zig on baremetal aarch64 and riscv64 and handling the panics oneself is quite clean.
+
+1615421124
+vent
+Ah nice. I suppose I'd probably just send it's output over a serialport, or the ITM that's on the target's ST-LINK. Very nice.
+
+1615421137
+kameliya[m]
+yep! and then maybe trigger a reset or whatever
+
+1615421153
+kameliya[m]
+
+
+1615421165
+kameliya[m]
+you can see here how the stdlib lets you override panic by defining one in your root compilation unit
+
+1615421195
+kameliya[m]
+it just checks if your root module has a public `panic` decl, and if it does, that becomes the panic handler for the whole, otherwise the builtin one is used
+
+1615421282
+vent
+Ah thanks!
+
+1615421285
+vent
+And one thing I'm very excited is the convention of passing in an allocator to anything that needs dynamic memory. That lets you use pretty much anything on a heapless target, since you could just pass in a `std.heap.FixedBufferAllocator`.
+
+1615421303
+vent
+Which is an idea so good I'm surprised I haven't heard of it before.
+
+1615421334
+kameliya[m]
+right! it's also super nice because it means you can decide to restrict memory use by a component whenever you want, by passing it a more restrictive allocator.
+
+1615421348
+kameliya[m]
+the design encourages people to handle out of memory properly.
+
+1615421497
+vent
+We do a fair amount of bare-metal stuff at my work, I may try to get the company using it instead of C once it's got a 1.0 release. Although that'll be hard for a safety-critical product without a MISRA cert and all that other bureaucratic nonsense.
+
+1615421541
+kameliya[m]
+ah, yes. even by 1.0 (might be some years), I would still be reading the assembly output pretty carefully if it was safety-critical!
+
+1615421720
+vent
+Yeah, and safety-critical stuff is always a decade or two behind the bleeding edge, so it'll be some time. Eventually they'll come to their senses of moving away from C in favour of something with builtin safety checks though.
+
+1615421735
+vent
+Hopefully in my lifetime at least.
+
+1615421742
+kameliya[m]
+hah, yes
+
+1615421743
+kameliya[m]
+fingers crossed
+
+1615421767
+ennui
+just started with zig, feel a bit disappointed. the following snippet takes ~0.6 s to run on a modern NixOs desktop:
+
+1615421767
+ennui
+{ echo "// $(date)"; echo 'pub fn main() void {}';} > basic.zig && time zig run ./basic.zig
+
+1615421767
+ennui
+a C equivalent might take a tenth of that time. is this normal?
+
+1615421770
+kameliya[m]
+my work is currently rails and typescript, so no zig here, yet ..!
+
+1615421770
+ennui
+
+
+1615421794
+kameliya[m]
+ennui: that's including compiling with llvm .. do you mean to include that time?
+
+1615421805
+ennui
+yes, i mean the compile times
+
+1615421808
+ennui
+time
+
+1615421824
+kameliya[m]
+yes, it's not a super optimised compiler yet
+
+1615421830
+g-w1
+thats going to be fixed soon with the new stage2 compiler. the one written in c++ is pretty slow but thats going to change soon!
+
+1615421850
+ennui
+kameliya, g-w1: great to hear that, thank you!
+
+1615421853
+g-w1
+stage2 is written in zig and is being hevealy developed
+
+1615421888
+ennui
+perfect, i'm really exited about how where this is going.
+
+1615421931
+vent
+I noticed that Zig's language is designed so that each line can be symboled without context, hence the lack of multiline comments like C and the somewhat weird syntax for multiline strings. I think that's pretty clever.
+
+1615421948
+kameliya[m]
+vent: one time when zig would've
+
+1615421964
+kameliya[m]
+sometimes I get annoyed when I have to do a lot of casts with ints, but then i remember what it took to find this bug.
+
+1615421987
+kameliya[m]
+vent: right! as far as i'm aware there's a lot of focus on why the lexing and parsing are the way they are. i'm not too across the details.
+
+1615422014
+vent
+Ah yeah! We've all experienced bugs like that. Yeah, this is why I like my type systems really,
+
+1615422064
+kameliya[m]
+yeah :)
+
+1615422137
+vent
+Oh! One thing that blew my mind is arbitrary-width integers. How the hell does Zig get away with that? The fact you can do stuff like this make me very happy:
+
+1615422173
+kameliya[m]
+i suspect LLVM gives us a big hand there, but fair warning: packed structs are currently weirdly broken on some edges.
+
+1615422188
+kameliya[m]
+the going advice is to assert the `@sizeOf` and/or `@bitSizeOf` the struct is what you expect
+
+1615422214
+kameliya[m]
+because sometimes you'll put 64 bits in a packed struct but then you check and zig proudly tells you there's 65 bits and it's 9 bytes wide
+
+1615422219
+g-w1
+at comptime!
+
+1615422236
+kameliya[m]
+yes! not at runtime
+
+1615422324
+vent
+Ah, thanks for the advice. Would that be using `std.debug.assert`? It would execute at compile time if you're passing @sizeOf and a comptime_int right?
+
+1615422377
+vent
+Something like this?: comptime std.debug.assert(@sizeOf(Float) == 4);
+
+1615422411
+kameliya[m]
+yep, that'll do. or `comptime { std.debug.assert(...); }` at the top level
+
+1615422414
+kameliya[m]
+you'll get something like this:
+
+1615422450
+vent
+Yep, just tried asserting it's 3 bytes, and the build failed. Fantastic.
+
+1615422462
+kameliya[m]
+hah >.< oof
+
+1615422480
+kameliya[m]
+yeah. for the moment, i'm hacking around it with bit shifts and masks. it sucks, but we'll get there soon enough.
+
+1615422554
+vent
+I think I may keep going with the packed struct approach because I love it so much, and just make sure to assert the size. They'll only get more stable over time.
+
+1615422576
+kameliya[m]
+yes. you can also do comptime magic to select what works depending on the compiler!
+
+1615422602
+kameliya[m]
+
+
+1615422636
+kameliya[m]
+here i'm checking whether the elf_header has the "machine" field and using it if so. once that PR gets merged, it'll start working generally, until then it falls back to an empty string.
+
+1615422729
+vent
+See I love the way reflection is so easy like that. And it's all checked at comptime, so it's all good! I've not seen generic code this readable before.
+
+1615422769
+kameliya[m]
+right? it lets you do some really interesting stuff, in a way that feels very flexible and not.. hacky? it makes sense, you can think about it cleanly.
+
+1615422864
+kameliya[m]
+another example:
+
+1615422875
+vent
+Well you can understand what's going on by just walking through the code. The idea feels like it
+
+1615422887
+kameliya[m]
+sometimes i can't even dereference a pointer because the MMU is broken
+
+1615422891
+kameliya[m]
+but i still want some debug output
+
+1615422910
+kameliya[m]
+this unrolls the entire `[]const u8` message into the code, so it doesn't try to read from anywhere
+
+1615422954
+vent
+Ohh, that's cool. I was wondering why the `msg` was comptime.
+
+1615422962
+kameliya[m]
+vent: right, yeah! at some stage it starts to feel less hacky and you feel like the compiler is very flexible.
+
+1615422972
+kameliya[m]
+yeah, it's just for that exact purpose
+
+1615422986
+kameliya[m]
+`carefullyAt` above it lets you freely intermix comptime-known strings and integers
+
+1615422991
+kameliya[m]
+and unrolls all of it
+
+1615422996
+g-w1
+it will feel less magic once there are 0 compiler bugs too. it will fee like this is how it meant to be
+
+1615423004
+vent
+To me it makes me feel like working with the type system at a much more granular level.
+
+1615423006
+kameliya[m]
+yes, definitely
+
+1615423184
+vent
+Couldn't that `inline while` be something like `inline for (parts_info) |field|`?
+
+1615423323
+kameliya[m]
+👀 yes, absolutely!
+
+1615423328
+kameliya[m]
+i had it written one way before
+
+1615423357
+kameliya[m]
+it'll be `... |info, i|` since i need to use the index, but yeah, nice!
+
+1615423407
+kameliya[m]
+i should clarify, i'm no expert on this stuff, but i like using it to make nice stuff happen. a lot of what i do can probably be cleaned up
+
+1615423484
+kameliya[m]
+better now.
+
+1615423526
+vent
+I'm not sure you even need the index, since you're only using `i` to indext to `parts`.
+
+1615423558
+kameliya[m]
+i do! i'm iterating parts_info, not parts.
+
+1615423567
+kameliya[m]
+parts_info is derived from `@TypeOf(parts)`, not `parts` itself.
+
+1615423568
+vent
+What Zig needs is a really pedantic linter. I think it fit's it's Zen idea of "Only one obvious way to do things"
+
+1615423574
+kameliya[m]
+so it doesn't have values.
+
+1615423576
+kameliya[m]
+hmm, maybe!
+
+1615423619
+vent
+Oh, yeah you're right, my mistake. I forgot `parts_info` and `parts` were different.
+
+1615423649
+kameliya[m]
+ya. i can only iterate the types at comptime, not the values.
+
+1615423765
+vent
+Oh wow, I just read the README for that repo. That's really impressive!
+
+1615423998
+kameliya[m]
+oh, thanks! it's been lots of fun :)
+
+1615424107
+kameliya[m]
+honestly the best part of it has been the motivation for making fixes to qemu and u-boot.
+
+1615424110
+kameliya[m]
+it's been good experience
+
+1615424317
+kameliya[m]
+bbiab, lunch
+
+1615424514
+vent
+Yeah it looks like a great project. I think I had some issues with u-boot before on an IMX6, where it wasn't booting from emmc when the micro was verifying the key signature of the u-boot image. But it would work fine booting from an SD card. I forget what our solution was.
+
+1615424549
+vent
+Well I'm off to hit the hay. Great chat :)
+
+1615426198
+g-w1
+vent: if you see this, I think the idea is for the linter to be in the compiler. from what ive heard, there will be no warnings, only compile errors.
+
+1615432463
+dyeplexer
+In
+
+1615434331
+g-w1
+it does not work in a non-comptime scope
+
+1615434369
+g-w1
+if you do comptime { var inferred_variable = 5000; } it works because this is at comptime so a variable of type comptime_int works!
+
+1615434395
+dyeplexer
+yes. Was the statement valid before though?
+
+1615434405
+g-w1
+i dont think
+
+1615434412
+g-w1
+that should probably be cleared up
+
+1615434431
+g-w1
+raising an issue on the discord rn
+
+1615434437
+dyeplexer
+i see
+
+1615441981
+andrewrk
+g-w1, what's the question?
+
+1615442036
+andrewrk
+hello dyeplexer
+
+1615442062
+andrewrk
+zig requires integers to have a known size if you want to put a runtime value in them, so it knows how much memory to use for the variable
+
+1615442250
+dyeplexer
+yes. The example mentioned in
+
+1615442407
+andrewrk
+it looks like it is only intended to demonstrate syntax
+
+1615442882
+dyeplexer
+even, so, I think it would be better to include a note about this behaviour and link to the later section regarding comptime. a person who tries compiling and trying things as the tutorial progresses would be confused about the behaviour with no asterisks given.
+
+1615442890
+dyeplexer
+*even so,
+
+1615443053
+andrewrk
+Sobeston is a friendly chap, you could try bringing it up with him
+
+1615443173
+andrewrk
+he's the one who runs ziglearn.org
+
+1615444985
+dyeplexer
+hm. The latest revision on git for the chapter now assigns a coerced value to the inferred var, so the snippet is correct now.
+
+1615445074
+dyeplexer
+I'll still put on an issue for better elaboration I guess
+
+1615450142
+protheory8-new-m
+Is there a way to convert `[]const u8` to `[*]const u8`?
+
+1615450432
+daurnimator
+protheory8-new-m: `.ptr`
+
+1615450479
+protheory8-new-m
+Thanks, this wasn't showing up in auto completion for some reason.
+
+1615455515
+txdv
+const Self = @This(); why is this needed? Seems like some boilerplate to which everyone does
+
+1615455625
+ifreund
+txdv: it is only needed in generics or other situations where you don't have access to the specific type
+
+1615455678
+ifreund
+we're moving away from using it where not necessary in the self-hosted compilers codebase
+
+1615457106
+constatinus
+guys how can i create a multidimensional array of strings []const []const u8?
+
+1615457175
+ifreund
+are the contents fixed at comptime or do they change at runtime?
+
+1615457203
+constatinus
+fixed at comptime
+
+1615457248
+ifreund
+const foo: []const []const u8 = &[_][]const u8{ "foo", "bar" };
+
+1615457295
+ifreund
+what you do is create an array of constant slices and then take the address of that array, which coreces to a slice
+
+1615457307
+ifreund
+[_] means that the size is inferred, [2] would work as well
+
+1615457409
+constatinus
+aha, i didnt take its adress with &
+
+1615457415
+constatinus
+thanks
+
+1615457483
+txdv
+I have a: [16]u8 = undefined; i am trying it to pass to std.rypto.random.bytes(a), but i'm getting '[]u8', found '*const [16]u8'
+
+1615457509
+txdv
+i guess i need a slice std.rypto.random.bytes(a[0..]) but even then I get expected type '[]u8', found '[]const u8'
+
+1615457553
+txdv
+nevermind, i defined a as const instead of var
+
+1615457688
+txdv
+I find it strange that when I'm not using a method, the implementation of it can be faulty and the compiler won't complain
+
+1615457690
+FrancescoAlem
+Does this seem like idiomatic Zig code or Idiotic Zig code:
+
+1615457691
+FrancescoAlem
+const std = @import("std");
+
+1615457691
+FrancescoAlem
+const mem = std.mem;
+
+1615457692
+FrancescoAlem
+const print = std.debug.print;
+
+1615457692
+FrancescoAlem
+pub fn is_anagram(wa: anytype, wb: anytype) bool {
+
+1615457693
+FrancescoAlem
+var cnt = [_]i32{0} ** 26;
+
+1615457693
+FrancescoAlem
+if (wa.len != wb.len) {
+
+1615457694
+FrancescoAlem
+return false;
+
+1615457694
+FrancescoAlem
+}
+
+1615457695
+FrancescoAlem
+var i: usize = 0;
+
+1615457695
+FrancescoAlem
+var same: bool = true;
+
+1615457696
+FrancescoAlem
+while (i < wa.len) : (i += 1) {
+
+1615457696
+FrancescoAlem
+var la = std.ascii.toLower(wa[i]);
+
+1615457697
+FrancescoAlem
+var lb = std.ascii.toLower(wb[i]);
+
+1615457697
+FrancescoAlem
+if (la >= 'a' and la <= 'z' and lb >= 'a' and lb <= 'z') {
+
+1615457698
+FrancescoAlem
+cnt[la - 'a'] +%= 1;
+
+1615457698
+ikskuh
+whaaaaaaa
+
+1615457698
+FrancescoAlem
+cnt[lb - 'a'] -%= 1;
+
+1615457699
+FrancescoAlem
+} else {
+
+1615457710
+FrancescoAlem
+const words = [_][]const u8{ "ciao", "Ciao", "Cioa", "cane", "bello", "aoci", "bana", "neca", "Cane", "ANec" };
+
+1615457711
+FrancescoAlem
+var l1 = try find_anagrams(a, "cane", words);
+
+1615457711
+FrancescoAlem
+var l2 = try find_anagrams(a, "ciao", words);
+
+1615457712
+FrancescoAlem
+{
+
+1615457712
+ikskuh
+FrancescoAlem: please use a pastebin instead of spanning this channel
+
+1615457712
+FrancescoAlem
+var i: usize = 0;
+
+1615457713
+FrancescoAlem
+while (i < l1.items.len) : (i += 1) {
+
+1615457713
+FrancescoAlem
+print("{}  -> {} {}\n", .{ words[i], @boolToInt(l1.items[i]), @boolToInt(l2.items[i]) });
+
+1615457714
+FrancescoAlem
+}
+
+1615457714
+FrancescoAlem
+}
+
+1615457715
+FrancescoAlem
+defer l1.deinit();
+
+1615457715
+FrancescoAlem
+defer l2.deinit();
+
+1615457716
+FrancescoAlem
+}
+
+1615457716
+FrancescoAlem
+feel free to ignore me :)
+
+1615457721
+FrancescoAlem
+Yes sorry!
+
+1615457729
+ikskuh
+you just shoved up all relevant content two screens here ;)
+
+1615457742
+ikskuh
+and i cannot read a bit of it, it's super scrambled
+
+1615457785
+FrancescoAlem
+
+
+1615457786
+txdv
+FrancescoAlem good IRC etiquette is to use pastebins for code snippets, even github has "gists"
+
+1615457801
+FrancescoAlem
+I'm very sorry guys
+
+1615457808
+ikskuh
+you're new to IRC?
+
+1615457810
+FrancescoAlem
+yes
+
+1615457815
+ikskuh
+ah
+
+1615457834
+ikskuh
+just be happy that we don't have rate limiting applied, would've resulted in a kick for most channels i know :D
+
+1615457851
+ikskuh
+so now let's look at that pastebin
+
+1615457945
+ifreund
+txdv: zig is very lazy in what it semantically analyzes. This what makes e.g. branching on the target operating system at comptime finen
+
+1615457977
+ifreund
+code targeted at linux only won't compile if you're building on FreeBSD
+
+1615457980
+ikskuh
+FrancescoAlem: with your words: the `defer`s in main are idiotic :D
+
+1615457987
+ikskuh
+if you write it like that, no defer is needed
+
+1615457997
+FrancescoAlem
+ah, what should I do instead?
+
+1615458010
+ikskuh
+a good place for `defer l1.deinit();` is after line 44
+
+1615458011
+dutchie
+nothing, since it'll all get cleaned up with the arena deinit
+
+1615458020
+ikskuh
+because otherwise when line 45 fails, you have a memory leak
+
+1615458030
+ikskuh
+dutchie: still bad code style ;)
+
+1615458044
+dutchie
+ikskuh: heh, maybe
+
+1615458066
+ikskuh
+the defer is completly useless at this point, so it can either be removed
+
+1615458071
+ikskuh
+or moved to a place where it
+
+1615458080
+FrancescoAlem
+Where should it be?
+
+1615458099
+dutchie
+lines 12 and 48: why use while and not for?
+
+1615458138
+FrancescoAlem
+what is the syntax for for?
+
+1615458141
+dutchie
+FrancescoAlem: normally you want a defer (or errdefer) right after you obtain the resource you want to clean up
+
+1615458165
+FrancescoAlem
+Okay, so just after var l1=...  I should put a defer deinit
+
+1615458208
+ikskuh
+yeah exactly :)
+
+1615458212
+dutchie
+yeah, just before the next `try` which risks returning and not cleaning up l1
+
+1615458233
+ikskuh
+FrancescoAlem: another point is the use of `anytype` in find_anagrams is not necessary
+
+1615458260
+dutchie
+similarly you probably want an `errdefer bvec.deinit()` in find_anagrams before the for loop
+
+1615458271
+dutchie
+since if one of the appends fails, that function will return an error and bvec will leak
+
+1615458274
+ikskuh
+find_anagrams(a: *std.mem.Allocator, word: []const u8, list: []const []const u8)
+
+1615458313
+dutchie
+similarly you can avoid anytype in is_anagram: `fn is_anagram(wa: []const u8, wb: []const u8) bool`
+
+1615458396
+FrancescoAlem
+modifying the type signature leads to :./anagram.zig:44:43: error: expected type '[]const []const u8', found '[10][]const u8'
+
+1615458420
+FrancescoAlem
+Thank you dutchie
+
+1615458425
+constatinus
+can zig read the output of a ChildProcess? the stdin field is a ?File for some reason
+
+1615458460
+dutchie
+FrancescoAlem: should work if you call it like `find_anagrams(a, "ciao", &words)`
+
+1615458557
+ikskuh
+FrancescoAlem: as dutchie showed: pointers to arrays coerce to slices, thus "*[10][]const u8" will fit your type and you just have to use "&words"
+
+1615458664
+ifreund
+constatinus: set stdin_behavior/stdout_behavior
+
+1615458672
+ifreund
+note that stdin is the input not the output though
+
+1615458738
+FrancescoAlem
+okay it worked, I get the `defer`/`errdefer` tips, but why is explicit types good style?
+
+1615458744
+constatinus
+yeah i meant the stdout field, but theyre both the same. i set it to stdout-behaviour to Pipe and when i spawn the process stdout is still null
+
+1615458812
+constatinus
+
+
+1615458845
+dutchie
+FrancescoAlem: it'll give you better error messages and helps document what your functions are doing
+
+1615458848
+ifreund
+constatinus: you are checking stdin not stdout
+
+1615458870
+constatinus
+oh god kill me
+
+1615458876
+constatinus
+thanks idk how that go there
+
+1615458882
+constatinus
+got*
+
+1615458893
+ifreund
+no problem, glad it was easy to fix :)
+
+1615459256
+FrancescoAlem
+dutchie good point! Thanks everyone
+
+1615459402
+snamber
+Hey everyone, I am attempting to create a library to connect two different geospatial tools together. Both are C libraries. I think zig would be the perfect fit to achieve this in a more modern / elegant / safe manner.
+
+1615459412
+snamber
+Now I need to wrap / use these two C libraries, and at least one of them is quite complex.
+
+1615459434
+snamber
+Is there a way to achieve autocompletions ala zigtools/zls for imported C libraries? Or how do you go about wrapping a more complex C library in zig? Maybe there's a video or resources for that?
+
+1615459482
+ifreund
+zls doesn't support that yet sadly
+
+1615459523
+ifreund
+if you want to take the time to write good manual bindings you can get something quite a bit nicer to use than the autogenerated output of @cImport()
+
+1615459553
+ifreund
+I did this for my project in
+
+1615459616
+snamber
+Exactly, zls even mentions that in the readme
+
+1615459627
+snamber
+How did you go about it?
+
+1615459634
+snamber
+(I'm checking the repos now)
+
+1615459673
+ifreund
+I mostly just ran `zig translate-c` on the headers I want to translate then copy pasted bits of that and cleaned up the results
+
+1615459685
+ifreund
+getting rid of all [*c] pointers in the process
+
+1615459697
+ifreund
+I also gave a talk on these bindings at fosdem this year:
+
+1615459720
+ifreund
+it was a good bit of work, but very worth it for my project in the long term
+
+1615459762
+snamber
+I can imagine; I'll try it on the smaller of the two libraries first, to learn the approach
+
+1615459768
+snamber
+Thanks a lot for the link!
+
+1615459814
+ifreund
+no problem!
+
+1615459872
+snamber
+changing naked pointers to slices, getting a nice build system, and the benefits of a readable, safe, fast language might be worth it to put in the work
+
+1615459916
+snamber
+the bet is that in the longer run it would be faster than working in C directly
+
+1615459956
+ifreund
+I'm definitely more productive in Zig than C at this point
+
+1615459973
+ifreund
+Even though I've been writing zig for a much shorter time
+
+1615460119
+snamber
+That's very good to hear; ok I'll watch your talk now, and get to wrapping the small library! Thanks!
+
+1615463035
+constatinus
+another question, in ChildProcess.stdin, before i spawn a process, stdin is null, how can i create a File in it so that i can input stdin in my ChildProcess and then run (spawn) it?
+
+1615463271
+ifreund
+constatinus: if you set stdin_behavior to pipe, stdin will be set to the write end of a pipe on spawning the process
+
+1615463638
+constatinus
+its set to pipe, but i didnt spawn it beforehand. Now, in this segment of code
+
+1615463640
+constatinus
+somehow?
+
+1615463890
+ifreund
+that dependes on what the process you are spawning expects. You could try closing the pipe after you are done writing
+
+1615463894
+constatinus
+ah, i got it
+
+1615463897
+constatinus
+just now
+
+1615463915
+constatinus
+i did fil.close() after the _ = try ... line
+
+1615463924
+ifreund
+also you probably want to use file.writer().writeAll()
+
+1615463940
+ifreund
+a raw write might not write the full beffer
+
+1615464013
+constatinus
+alright im using writer now
+
+1615468186
+vent
+g-w1: On your point about linting in Zig, and how there would be no warnings only compiler errors. I think that's a good idea to be honest. I think the opportunity for people to ignore lints is too big, and so making them compiler errors that you either have to fix or toggle the linter off for that section of code is a good idea. Just gotta make sure there are no false-positives.
+
+1615468288
+g-w1
+from what ive heard, zig is focused on maintanable code, that means that nothing will compile if it is not good code
+
+1615468372
+vent
+That's a very sensible philosophy
+
+1615468425
+vent
+"Quick and dirty" hacks are why my old company is now going out of business lol
+
+1615468437
+vent
+Well, not
+
+1615468483
+ikskuh
+"Quick and clean" is my experience with zig :D
+
+1615468692
+g-w1
+vent: see
+
+1615468898
+vent
+I think a good solution would be for errors like "unused variable" and "change this while to a for" to only be errors in release builds. In debug builds they're warnings.
+
+1615468923
+g-w1
+there is a proposal like this for "sloppy mode" already
+
+1615468956
+vent
+I think that still follows the idea of "no warnings, only errors", but more practically. You only care about reducing warnings when you're cleaning up and finalizing your code for release anyway.
+
+1615469019
+vent
+I do think that casing should be an error though. If you
+
+1615469110
+g-w1
+if you have ideas like this, the best way to make them heard is to make a proposal on github
+
+1615469224
+vent
+I think I'll do just that. Although that chat log would disagree, I'm a big fan of Rust's warnings for incorrect casing. I think it's the only way you'll be able to keep casing standardized as the language grows.
+
+1615469304
+g-w1
+ill say one thing, some people start making proposals without having written zig, so just make sure that you are comfortable with the language before making a proposal so that it has a greatest chance of getting accepted
+
+1615469363
+vent
+Yeah, that's a good idea. I'll spend more time with the language and maybe make the proposal in a week or so.
+
+1615470770
+g-w1
+is this a bug or not? ./src/main.zig:252:9: error: incompatible types: 'std.io.writer.Writer(void,std.io.NullWriter,std.io.dummyWrite)' and 'std.io.writer.Writer(*std.io.buffered_writer.BufferedWriter(4096,std.io.writer.Writer(std.fs.file.File,std.os.WriteError,std.fs.file.File.write)),std.os.WriteError,std.io.buffered_writer.BufferedWriter(4096,std.io.writer.Writer(std.fs.file.File,std.os.WriteError,std.fs.file.File.write)).write)' if
+
+1615470770
+g-w1
+(args.flag("--skip-output")) std.io.null_writer else buffered_out_stream.writer(),
+
+1615470793
+g-w1
+*in stage1
+
+1615470874
+g-w1
+I think it is not a bug in stage1, but some people on the discord server think it isolier
+
+1615470883
+g-w1
+s/isolier/is
+
+1615471445
+superdump
+i am trying to get zls to work on macos. i followed the instructions but when running zls from the command line i get: dyld: Symbol not found: __tlv_bootstrap
+
+1615471462
+superdump
+i'm wondering if this is perhaps something to do with the llvm setup
+
+1615471637
+g-w1
+seems like this issue
+
+1615471650
+g-w1
+it seems like a LLD (llvm) bug
+
+1615471767
+g-w1
+what instructions did you follow?
+
+1615471772
+g-w1
+and what zig version?
+
+1615472030
+superdump
+i installed zig with homebrew
+
+1615472053
+snamber
+superdump at hash d9e46dceeca3f66b87e6b2e36415417495d2d2a0 the zig build works, and that version of zig can then compile zls as well
+
+1615472054
+superdump
+zig: 0.7.1
+
+1615472064
+Nypsie
+I think this happens with the release binary of zls. The macos version was crosscompiled which had that error back then
+
+1615472074
+superdump
+ok
+
+1615472082
+snamber
+That hash sounds random, but it's a kind of recent hash (after 0.7.1) but before the AST rewrite
+
+1615472086
+superdump
+so i could try just building zls with my installed zig?
+
+1615472118
+snamber
+the way it worked for me is this: first build zig at that hash, and then build zls with that newly built zig
+
+1615472125
+Nypsie
+There were some changes that require you to have more recent version of Zig than 0.7.1, but older than current master :P
+
+1615472130
+Nypsie
+I'd suggest what Snamber said
+
+1615472166
+snamber
+honestly I was intimidated at first, but building zig is actually pretty painless
+
+1615472178
+Nypsie
+Alex is back now so I'll cooperate with him to get my PR merged so it works with master again.
+
+1615472210
+g-w1
+there are still some regressions, but those can be fixed after the merge ig
+
+1615472219
+g-w1
+its very hard to make repros for it :(
+
+1615472226
+Nypsie
+Ah you found more regressions? :(
+
+1615472229
+g-w1
+yeah
+
+1615472472
+superdump
+using zig 0.7.1 to build the 0.1.0 version of zls seems to at least allow the zls binary to run
+
+1615472496
+g-w1
+that will work too i think :)
+
+1615472498
+snamber
+that's another way, good idea
+
+1615472537
+snamber
+then you miss out on the zig developments since 0.7.1, but that's all, and you don't need to compile zig
+
+1615472737
+superdump
+my intention was to try to stick to releases for now as i'm completely new to the language
+
+1615472809
+g-w1
+thats fine, 0.1.0 will work totally fine for you as it was released around the time that 0.7.1 was released
+
+1615473884
+superdump
+hmmmmm. i'm thinking i'll have a go at ray tracing in one weekend. first thing i'm thinking of is to initialise a library project, and then write example programs that use different parts of the library. so i guess for each example program i will need to add an executable target to the build that depends on the library target that was generated by zig init-lib. and then it's not clear to me if i can just make separate files in
+
+1615473884
+superdump
+src/ and import them into src/main.zig and everything will magically work... need to do some reading i guess
+
+1615474249
+g-w1
+
+
+1615474265
+g-w1
+see this: then you will find the exe in zig-cache/bin/exename
+
+1615474275
+g-w1
+you can do this multiple times in build.zig
+
+1615474306
+ikskuh
+superdump: you don't even need to use "init-lib" when you want to write a zig library
+
+1615474316
+ikskuh
+zig libraries are just source files, there is no binary forma
+
+1615474342
+g-w1
+that should probably cleared up
+
+1615474522
+g-w1
+maybe once a package manager exists, init-lib should init a zig library instead of a c library
+
+1615474522
+ifreund
+probably by adding an init-package or similar after we have a package manager
+
+1615475735
+kevinsjoberg
+Have anyone managed to get Zig to run on macOS Big Sur? I'm getting the following error after installation.
+
+1615475883
+g-w1
+try using master
+
+1615476000
+snamber
+I encountered that issue as well. That was one reason why (like mentioned above) I built zig at d9e46dceeca3f66b87e6b2e36415417495d2d2a0.. this works on Big Sur and it works with zls
+
+1615476042
+snamber
+"Why not master head?" - Because zls doesn't work with master head
+
+1615476045
+snamber
+(yet)
+
+1615476120
+snamber
+kevinsjoberg: ^ hope that helps (plus some encouragement: building zig works actually exactly as advertised, fairly painless)
+
+1615476250
+g-w1
+you can also just download a zls binary from github i think
+
+1615476260
+g-w1
+then you can use master zig
+
+1615476275
+superdump
+g-w1: do i need to list all source files or does importing a file into a file that is in a static library target make things 'just work'? also, don't i need to specify the dependency of the example executable on the library i'm making?
+
+1615476309
+g-w1
+it should Just Work
+
+1615476348
+g-w1
+as long as you have an executable that imports other .zig files, it will work, no header/linking/other stuff required
+
+1615476419
+superdump
+i think ideally i'd like the examples to link as if the project's library were an external dependency, to show how to use it if you see what i mean
+
+1615476472
+superdump
+can i import the project as a namespace? so if it's in a directory called 'project' then i could import 'project'?
+
+1615476512
+ifreund
+you can only import files not directories
+
+1615476515
+superdump
+or else if i were to make a separate project that is supposed to use this library project (let's call the exe and lib) how would i make use of lib from exe?
+
+1615476521
+superdump
+ah
+
+1615476532
+superdump
+so it's all just path based
+
+1615476547
+superdump
+that's nice and simple. i dig it :)
+
+1615476550
+ifreund
+yep, and files are just structs, there's no special semantics
+
+1615476637
+ifreund
+you can also create packages using the build system though, which allow you to import things by name instead of by path like @import("std");
+
+1615476658
+ifreund
+I have an example here:
+
+1615476660
+g-w1
+note: there is no binary form of a zig library. it is only source-based.
+
+1615476765
+kevinsjoberg
+g-w1 snamber thanks for the help. I built master and it worked perfectly. Appreciate the help!
+
+1615477028
+snamber
+kevinsjoberg: awesome!
+
+1615477050
+superdump
+hmm. i'm thinking of having something like src/lib.zig which is kind of a 'top-level' library import, and then within that file i would like to have import of something like other.zig which is also in src/, and sort of re-export everything from that namespace. the idea being that in my example i do something like const mylib = @import("../src/lib.zig"); and then mylib.other.something(); if you see what i mean.
+
+1615477061
+superdump
+does that make sense as a way of structuring things within zig?
+
+1615477099
+ifreund
+sounds reasonable to me
+
+1615477124
+ifreund
+the jury's still out on what exactly idiomatic Zig is, so experimentation is good
+
+1615477136
+superdump
+how do i 're-export' other.zig through lib.zig?
+
+1615477157
+ifreund
+in lib.zig: `pub const other = @import("other.zig");`
+
+1615477163
+ikskuh
+pub const other = @import("other.zig");
+
+1615477167
+ikskuh
+...
+
+1615477167
+superdump
+ah, i was close
+
+1615477174
+superdump
+i did export const other = ...
+
+1615477176
+ikskuh
+welcome to zig. where two people write literally the same code :D
+
+1615477186
+ikskuh
+"export" will export a
+
+1615477204
+ifreund
+(which you could then call from C code)
+
+1615477206
+ikskuh
+so another C library can import then
+
+1615477289
+superdump
+aha, i see
+
+1615477326
+superdump
+so, next problem: what path should i use for the import in examples/exe.zig to make use of src/lib.zig ?
+
+1615477367
+g-w1
+you want to addPackage in build.zig to src/lib.zig as whatever your package name is and then @import("thatname")
+
+1615477374
+superdump
+../src/lib.zig didn't work, nor did src/lib.zig (it said ./examples/ppm.zig:1:12: error: import of file outside package path: '../src/lib.zig' so i thought maybe trying a path relative to the base)
+
+1615477393
+g-w1
+example_exe.addPackage in build.zig
+
+1615477404
+g-w1
+
+
+1615477522
+g-w1
+so in your case in build.zig example_exe.addPackage(.{.name = "mylib", .path = "src/lib.zig"}); then in examples/ppm.zig you can @import("mylib") to get src/lib.zig
+
+1615477567
+superdump
+bingo, thanks. it feels a little odd not to define the product of building the library that is the main focus of the project as a package, and then just be able to import that or add it as a dependency to the executable
+
+1615477609
+dutchie
+the point is that the library is the source code, and therefore doesn't need to be built
+
+1615477612
+superdump
+it feels like i'm defining a target that is a static library build of the project, and then redefining that static library as a package but only for that one executable
+
+1615477621
+g-w1
+the compiler
+
+1615477708
+g-w1
+what build.zig does is actually just invoke the compiler: zig build-exe examples/ppm.zig --pkg-begin mylib src/lib.zig --pkg-end
+
+1615477711
+superdump
+ah right, yes i remember hearing something about that in andrew's 2018 video
+
+1615477720
+superdump
+so you are not supposed to build the static library and then link it into the executable
+
+1615477726
+g-w1
+then you can @import("mylib") from ppm.zig the exact same way
+
+1615477730
+g-w1
+superdump: exactly
+
+1615477749
+superdump
+you are supposed to specify all the source code to build for that particular target, and then zig builds it as one unit into the result
+
+1615477760
+g-w1
+you can if you wan't, but the code will be less optimised and you won't be able to use cool zig things like errors and union(enum)s
+
+1615477765
+g-w1
+superdump: yes
+
+1615477798
+superdump
+right. unlearning and relearning. thank you for answering my initial hump questions :)
+
+1615477816
+g-w1
+np :)
+
+1615477946
+dutchie
+i find it amusing how much harder all this makes releasing a closed-source library in zig
+
+1615477982
+superdump
+ziglearn.org looks like the piece i was perhaps missing. i was looking for something like the rust book. i'll have a read through that
+
+1615477999
+dutchie
+i guess you'd have to put out some binary blob and a wrapper library
+
+1615478018
+g-w1
+maybe, or just use the c abi
+
+1615478052
+dutchie
+yeah, that's what i was thinking at first. but as you said you lose a lot of nice features
+
+1615478480
+superdump
+could there be a way to shove the zig-specific stuff alongside the static library so that if you're using it from zig, you can retain the magical errors and such, and if using from C then you have to live with not? although you still need to be able to handle errors from C so i'm not sure how that would work
+
+1615478863
+ifreund
+you probably want to map zig error sets to C enums if exporting a C API for a zig libraray
+
+1615479311
+yyp
+How does linking system C libraries in Zig work internally? How could #8144 even become a thing?
+
+1615479510
+ifreund
+yyp: to be able to cross compile to arbitrary glibc versions zig generates a stub libc.so file for the desired glibc version and links against that
+
+1615479535
+ifreund
+this works fine if you aren't also linking against system libraries built against a different glibc version
+
+1615479553
+ifreund
+the fix is to make zig default to linking against the system libc if this is the case
+
+1615479673
+ifreund
+(you can already tell zig to do this with zig build-exe --libc)
+
+1615479887
+yyp
+Is it possible to apply --libc to zig build (not build-exe)?
+
+1615479909
+ifreund
+yyp: yes, see the comments at the end of the river issue
+
+1615480168
+yyp
+That works, thank you!
+
+1615480297
+superdump
+ifreund: in that case it might be nice to have some way of automatically mapping from/to zig error sets and C enums. but perhaps that's too complex to add as a feature. i definitely respect the keeping it small and simple ethos
+
+1615480342
+ifreund
+superdump: you can probably implement a function that does that for you at comptime with @typeInfo() and @Type()
+
+1615480362
+superdump
+hehehe, shiny
+
+1615480362
+ifreund
+zig's metaprogramming is quite powerful despite being simple :)
+
+1615480374
+superdump
+i definitely like the idea of comptime
+
+1615480425
+g-w1
+i tried that, but stage1 didn't allow it, but thats an implementation bug
+
+1615480869
+superdump
+is it intended that a 'standard' C-style for (int i = 0; i < N;  i++) {} loop be implemented using while instead, or is there some range syntax or something to use with a for loop?
+
+1615480963
+dutchie
+`var i: usize = 0; while (i < n) : (i += 1) { ... }`
+
+1615480984
+dutchie
+optionally wrap the whole thing in a block if you don't want i to leak scope
+
+1615480995
+dutchie
+for loops only work on arrays and slices
+
+1615481079
+superdump
+right, i was wondering if there was a way of generating the array of values with a range or something
+
+1615481115
+superdump
+but that would then use the memory for the full array perhaps, unless the generator were an iterator or something
+
+1615481148
+dutchie
+yeah, there is an alternative pattern for "iterators"
+
+1615481165
+superdump
+ah, you said for loops only work on arrays and slices. so not iterators. i only briefly saw something about iterators
+
+1615481173
+dutchie
+`var iter = Something.iter(); while (iter.next()) |item| { ... }`
+
+1615481204
+superdump
+mmm
+
+1615481228
+dutchie
+i wonder whether there is a place in std for a counting iterator
+
+1615481231
+superdump
+ok, while loop it is i guess
+
+1615481244
+dutchie
+probably not, since you can just do it with the first while loop i showed
+
+1615481246
+superdump
+yeah, i was wondering if there was one, but i don't know if it gains anything
+
+1615481250
+superdump
+exactly
+
+1615481262
+superdump
+if anything it's just slightly more verbose perhaps
+
+1615481895
+superdump
+what should i use from the standard library if i want to print to stdout some text data that is actually meant to go to stdout as it is the output of the program and not a log message?
+
+1615481904
+superdump
+std.debug.print prints to stderr
+
+1615481937
+dutchie
+std.io.getStdOut gives you a File
+
+1615481945
+g-w1
+`const stdout = std.io.getStdOut(); try stdout.print("hi", .{});`
+
+1615481963
+dutchie
+won't you have to .writer() it before calling print?
+
+1615482200
+superdump
+you do
+
+1615482209
+superdump
+with .writer() it works
+
+1615482211
+superdump
+nice
+
+1615482215
+superdump
+it's alive!
+
+1615482820
+superdump
+"Zig gives no guarantees about the in-memory order of fields in a struct, or its size." that's... a thing
+
+1615482846
+fengb
+It's allowed to reorder to optimize the struct for either performance or size, yes
+
+1615482854
+g-w1
+its so that you can have optimisations. if you want garuentees, use `extern struct {}` which uses c abi
+
+1615482913
+superdump
+i was thinking for example about making a struct to hold a colour, and perhaps writing that colour data directly to disk from memory
+
+1615482930
+superdump
+extern struct {} sounds useful then
+
+1615482943
+fengb
+`extern struct` has size guarantees yeah
+
+1615482955
+fengb
+consistency guarantees*
+
+1615483021
+g-w1
+yes superdump thats what std.elf uses for serializing and deseralizing elf headers
+
+1615483157
+ifreund
+packed structs will be the better choice for stuff like this than extern structs when they are less buggy in stage2
+
+1615483174
+ifreund
+they already work great if you're careful to keep everything byte aligned
+
+1615483190
+g-w1
+yeah, although sometimes extern structs can act packed, they do in this case (elf)
+
+1615483241
+superdump
+maybe as i am learning i will try using plain structs and see what problems i hit
+
+1615483245
+ifreund
+indeed, though they also require a fair amount of care and familiarity with the C ABI to make sure you don't introduce padding
+
+1615484862
+marler8997
+zig_version..??.??
+
+1615484888
+marler8997
+wth, how do these new features get in and I have no idea about them ?
+
+1615488591
+superdump
+if i want a variable for an uncompressed image in memory, in C i might just malloc enough memory for a 1D array and used width * y + x to index into it. how would you do it in zig? maybe a 2D array would be preferred but perhaps the dimensions are not known at compile time?
+
+1615488666
+g-w1
+use an allocator:
+
+1615489023
+ifreund
+superdump: if the dimensions aren't comptime known I'd probably just do that the same way as in C
+
+1615490045
+superdump
+./examples/ray_tracer.zig:31:57: error: expected type '[]u8', found '*[90000].zigzag.vec.Vec3'
+
+1615490045
+superdump
+var allocator = std.heap.FixedBufferAllocator.init(&image).allocator;
+
+1615490051
+superdump
+what's happening here?
+
+1615490071
+superdump
+can i not pass something other than []u8 to .init() ?
+
+1615490212
+superdump
+perhaps FixedBufferAllocator is only for allocating []u8
+
+1615490255
+Gliptic
+it's not for allocating only []u8, but it will allocate
+
+1615490312
+Gliptic
+also, I don't think you can just do .allocator, you need to store this as a FixedBufferAllocator somewhere
+
+1615490366
+g-w1
+it uses fieldParentPtr to do an interface
+
+1615490372
+superdump
+in the fixed buffer allocator example here:
+
+1615490379
+superdump
+if so, i think i misunderstood
+
+1615490386
+superdump
+earlier
+
+1615490397
+Gliptic
+superdump: yes, that's what's happening
+
+1615490402
+superdump
+ok
+
+1615490411
+TheLemonMan
+marler8997, ping
+
+1615490419
+marler8997
+hey
+
+1615490435
+superdump
+then i guess i want a heap allocation and to use that allocated memory as backing for a []T
+
+1615490470
+Gliptic
+or just use a heap allocator directly?
+
+1615490471
+TheLemonMan
+are you still running Windows?
+
+1615490511
+g-w1
+superdump: why don't you use the std.heap.GeneralPurposeAllocator(.{}){} ?
+
+1615490528
+marler8997
+of course, always have been
+
+1615490600
+superdump
+g-w1: i have just realised that i should :)
+
+1615490624
+g-w1
+nice
+
+1615490626
+TheLemonMan
+bad habits are hard to die, amirite ;) anyways can you give #8174 a spin? the console stuff doesn't work on Wine and I didn't find enough time to fix that bug
+
+1615490645
+superdump
+i hadn't read the entire section and i just misunderstood what the fixed buffer allocator was doing so i thought i could use it. i was wrong
+
+1615490661
+TheLemonMan
+it should™ work, drop a line in the PR if it does(n't)
+
+1615490853
+andrewrk
+ooh I'm excited about this one
+
+1615490869
+g-w1
+does it fix the bug that you asked loris to fix?
+
+1615490875
+marler8997
+yeah I give it a spin in a big, if I don't forget :)
+
+1615490878
+marler8997
+*bit
+
+1615490889
+andrewrk
+g-w1, looks like it
+
+1615490898
+g-w1
+nice
+
+1615490999
+TheLemonMan
+marler8997, I've just learned that sticking post-it notes all around your screen is the best way to avoid forgetting stuff
+
+1615491029
+marler8997
+that's a freakin awesome idea
+
+1615491036
+marler8997
+do you actually do that?
+
+1615491089
+TheLemonMan
+yep, the laptop looks quite funny when closed heh
+
+1615491101
+marler8997
+I'm literally going to do that now
+
+1615491275
+andrewrk
+lol
+
+1615491296
+andrewrk
+marler8997, if you tell me it works fine on windows I'm going to spank that merge button straight away
+
+1615491311
+marler8997
+lol
+
+1615491320
+marler8997
+I'll see if I can get to it soon then
+
+1615491424
+TheLemonMan
+take your time, I'll periodically ping you heh
+
+1615491749
+tav
+hey guys — long time, hope all is well
+
+1615491790
+tav
+I'm coming back to Zig and have a few questions:
+
+1615491843
+tav
+1. Is it possible to annotate struct fields with additional metadata yet? e.g. to support database models, serialisation info, etc.?
+
+1615491894
+TheLemonMan
+no
+
+1615491941
+tav
+2. Is it possible to generate a struct using a code generator, e.g. for protobuf messages, and then hand-write custom methods for those structs while keeping struct definition and additional methods within the same package somehow?
+
+1615492062
+TheLemonMan
+maybe with some creative use of usingnamespace
+
+1615492171
+tav
+the doc on usingnamespace wasn't super helpful. any chance you could elaborate?
+
+1615492212
+g-w1
+tav: see this
+
+1615492231
+g-w1
+you can combine struct namespaces at compile time based on different comptime values
+
+1615492352
+tav
+I see. So I could "restructure" into a parent namespace, pretending it's all part of the struct namespace?
+
+1615492371
+TheLemonMan
+it's a way of mixing-in methods into a given struct
+
+1615492405
+tav
+thanks — will play around with that!
+
+1615492407
+TheLemonMan
+mind that you cannot mix-in fields, only methods (and const?)
+
+1615492436
+tav
+that's great. just methods is all I need
+
+1615492496
+tav
+3. Are there any libraries for safely communicating across threads? e.g. something like channels?
+
+1615492740
+tav
+4. Is it possible to return more than just the error code/type and have it handled as an error? e.g. structured error information
+
+1615492767
+g-w1
+no, usually you use a context variable passed to the function to return error info
+
+1615492801
+tav
+ah, so you'd fill in the context with error data?
+
+1615492821
+g-w1
+yes
+
+1615492858
+tav
+is there an established pattern for this somewhere?
+
+1615492902
+g-w1
+not "established" but see
+
+1615492966
+tav
+thanks!
+
+1615493041
+tav
+5. Is it possible to access the @src info for the caller? e.g. to support debug logging without having to call @src() everywhere
+
+1615493074
+g-w1
+i dont think so
+
+1615493177
+tav
+6. Is there a pattern to propagate cancellation info? e.g. to unblock something that's being awaited
+
+1615493320
+tav
+7. Final question: What are some good code bases to read to get a feel for current Zig? besides Zig itself that is
+
+1615493387
+g-w1
+this is pretty nice
+
+1615493446
+ifreund
+self plug:
+
+1615493597
+tav
+thanks for all the answers, g-w1, TheLemonMan and ifreund!
+
+1615495747
+andrewrk
+TheLemonMan, what do you think about this idea I just had: new policy for llvm updates: as soon as they release rc1 we merge the llvmxx branch into master
+
+1615495811
+andrewrk
+hmm seems a bit chaotic
+
+1615495878
+andrewrk
+another question, how to translate {Bi2} to the new fmt stuff? specifically the '2'
+
+1615495904
+andrewrk
+that tells how many significant digits to display
+
+1615495910
+TheLemonMan
+{:2}
+
+1615495939
+TheLemonMan
+hmm, merging early is a bit dangerous for people just wanting to use master
+
+1615495956
+TheLemonMan
+but such is life on master, I like that idea
+
+1615495966
+ifreund
+andrewrk: from the prespective of a zig contributor who has thus far managed to avoid needing to build llvm from source, that sounds kinda painful
+
+1615496051
+marler8997
+TheLemonMan, what's an easy way to test your change?
+
+1615496076
+andrewrk
+ifreund, how are you providing the llvm dependency currently?
+
+1615496098
+andrewrk
+marler8997, run the std lib tests while resizing the terminal chaotically
+
+1615496099
+ifreund
+andrewrk: right now I just use my distro (void)'s llvm package
+
+1615496112
+marler8997
+ok
+
+1615496118
+andrewrk
+ifreund, I see - that's going to stop working regardless once 12 gets released in a few days
+
+1615496121
+ifreund
+to deal with the lag between the last llvm release and the void package being updated I used a binary from nixpkgs for awhile
+
+1615496139
+ifreund
+but I don't think nixpkgs provides binaries for the rc builds
+
+1615496145
+andrewrk
+I see
+
+1615496173
+ifreund
+just to give some perspective, I'm sure I could manage to build from source given enough motivation
+
+1615496187
+g-w1
+what is the motivation for this change? im not sure im seeing it
+
+1615496203
+ifreund
+more testing for the new llvm to catch regressions
+
+1615496212
+g-w1
+ah
+
+1615496217
+andrewrk
+the CI gets involved more quickly. we get forced to explicitly report bugs and disable the failing tests
+
+1615496229
+andrewrk
+right now llvm12 branch is festering a bit with some unreported bugs
+
+1615496231
+g-w1
+how will the ci get llvm12?
+
+1615496240
+andrewrk
+I spend all day compiling llvm12 for every target
+
+1615496246
+andrewrk
+creating tarballs for the ci to download
+
+1615496260
+andrewrk
+oh yeah I remember one reason we don't do this. because I don't want to do that multiple times
+
+1615496271
+andrewrk
+it's enough to do it for the actual release and bug fix releases
+
+1615496273
+g-w1
+wont every rc you have to do it again?
+
+1615496286
+andrewrk
+yeah we're saying the same thing right now
+
+1615496291
+g-w1
+does llvm not provide binaries for rcs? i assume they have enough power
+
+1615496323
+andrewrk
+they don't provide what we need
+
+1615496339
+g-w1
+ok
+
+1615496878
+andrewrk
+TheLemonMan, btw did you have any interest in attending stage2 compiler dev meetings? so far we've been doing them on discord. right now joachimschmidt is going over the arm feature detection stuff
+
+1615496889
+andrewrk
+we can change venue if it helps
+
+1615498940
+ifreund
+I guess not having to deal with zig fmt might keep things a little more contained
+
+1615498987
+Nypsie
+I guess we're 'lucky' that the sema part is still incomplete and we don't have to refactor as much as if we did it at the very end
+
+1615498988
+g-w1
+is it also going to be ir.zig? I just had that question. or will that be another day?
+
+1615499044
+marler8997
+TheLemonMan, looks like it's crashing at the moment:
+
+1615499053
+ifreund
+g-w1: as I understand it, tzir-memory-layout will be the 3rd and final branch
+
+1615499065
+ifreund
+probably also the time to s/ir/tzir/
+
+1615499082
+andrewrk
+yes and zir_sema.zig is getting renamed to Sema.zig
+
+1615499095
+g-w1
+its going to be a struct?
+
+1615499127
+andrewrk
+ifreund, it touches about 11029 lines of code. the other branch touched 20,800
+
+1615499151
+andrewrk
+hmm I should meansure by deleted lines. s/20,800/16,573/
+
+1615499192
+Nypsie
+You'll mostly be operating on an index. You use that index to get the tag from a tag list, and data from the data list which could contain the lhs and rhs for a binaryOp for example.
+
+1615499223
+ifreund
+andrewrk: cool, I hope to find time to contribute a few commits to the branch. Helping on the last one got me very comfortable with that part of the codebase
+
+1615499233
+Nypsie
+(to g-w1, I need to learn how to IRC properly)
+
+1615499267
+ifreund
+I figure if I learn my way around the rest of the compiler as well I'll have the power to fix any bugs I want :D
+
+1615499328
+andrewrk
+sweet!
+
+1615499329
+Nypsie
+ifreund, I'm with you there. Even though I didn't manage to contribute to the ast branch, fixing bugs in zls which uses zig's parser made me pretty comfortable with its structure, the 'pitfalls', etc
+
+1615499419
+TheLemonMan
+andrewrk, interest yes, time not so much as of lately... do you keep a log of the meetings content? (or is that a video meeting ?)
+
+1615499431
+TheLemonMan
+marler8997, shit, can you dump the contents of info ?
+
+1615499483
+andrewrk
+TheLemonMan, it's a voice meeting with screen sharing whenever it is useful. this is the best meetings we got:
+
+1615499491
+andrewrk
+s/meetings/minutes/
+
+1615499595
+andrewrk
+Nypsie, ifreund: I'll work on getting this branch contributor ready. right now it has half baked ideas and experiments
+
+1615499603
+andrewrk
+hopefully by end of my day today :)
+
+1615499653
+ifreund
+andrewrk: no pressure, I have plenty of other things on my infinite TODO list :D
+
+1615499676
+Nypsie
+andrewrk: Please don't feel rushed by my enthousiasm. I'll see when it's ready :) (Also, it's 11pm here so don't expect anything from me)
+
+1615499707
+ifreund
+11pm is about the perfect time to start that one last commit that keeps you up till 3
+
+1615499720
+andrewrk
+haha been there
+
+1615499738
+TheLemonMan
+sleep deprivation and git don't mix well
+
+1615499812
+Nypsie
+Oh yeah definitely. And it being friday tomorrow is the perfect excuse to slack off at work :P
+
+1615499841
+Nypsie
+(I tell myself, but regret it everytime)
+
+1615499850
+dutchie
+up until 3 and then go to sleep halfway through a conflict-filled rebase -i
+
+1615499855
+dutchie
+i have definitely done that
+
+1615499894
+TheLemonMan
+Friday is the perfect time to leave the CI red and head home
+
+1615499924
+fengb
+
+
+1615500092
+ifreund
+man is this some new feature of youtube?
+
+1615500149
+andrewrk
+I think the CI might be red right now
+
+1615500230
+TheLemonMan
+expired SSL certs, nice
+
+1615500919
+marler8997
+TheLemonMan, had to step away but I'm back, let me see if I can get that "info" for you :)
+
+1615501010
+zags
+oh noes, loris ended the community update with the F word, we lost a bunch of programming prudes :D
+
+1615501021
+TheLemonMan
+hah, so the post-it trick worked
+
+1615501052
+marler8997
+lol, yeah seems to be working
+
+1615501091
+marler8997
+
+
+1615501117
+dok
+Hello
+
+1615501150
+g-w1
+hey dok!
+
+1615501179
+marler8997
+these COORD structures only hold 2 u16 values
+
+1615501179
+TheLemonMan
+marler8997, is your Window really 9001 lines long?
+
+1615501187
+marler8997
+the buffer is yeah
+
+1615501191
+TheLemonMan
+
+
+1615501193
+marler8997
+so I can scroll up
+
+1615501220
+marler8997
+I actually set it to 9001 :) I don't think I even did that on purpose!
+
+1615501266
+TheLemonMan
+oh, so I guess I should take srWindow into account
+
+1615501268
+marler8997
+that's funny, good thing I tested it because if it was someone else it probably would have worked :)
+
+1615501354
+TheLemonMan
+try replacing `info.dwSize.Y` with `info.srWindow.top - info.srWindow.bottom`
+
+1615501407
+marler8997
+btw, good thing zig crashes on overflow, otherwise we just would have got some wonky result that we'd be spending forever trying to debug
+
+1615501441
+TheLemonMan
+how many visibile lines do you have?
+
+1615501448
+marler8997
+3
+
+1615501451
+marler8997
+30
+
+1615501478
+TheLemonMan
+182-153 is 29, you're lying!
+
+1615501503
+TheLemonMan
+(or add a +1 in the formula above)
+
+1615501504
+marler8997
+gotta add +1
+
+1615501536
+TheLemonMan
+just WinAPI being WinAPI
+
+1615501548
+marler8997
+that won't work though
+
+1615501558
+marler8997
+because dwCursorPosition.Y is 182
+
+1615501689
+TheLemonMan
+consistency is overrated, subtracting srWindow.top should normalize that value for the visible viewport
+
+1615501715
+marler8997
+yeah I think that might do it
+
+1615501837
+marler8997
+fixed the crash
+
+1615501843
+marler8997
+output wonky, might be off by 1
+
+1615501850
+marler8997
+const fill_chars = @intCast(windows.DWORD, info.dwSize.X * (info.dwCursorPosition.Y - info.srWindow.Top) - info.dwCursorPosition.X);
+
+1615502104
+marler8997
+tried adding 1:
+
+1615502104
+marler8997
+const fill_chars = @intCast(windows.DWORD, info.dwSize.X * (info.dwCursorPosition.Y - info.srWindow.Top + 1) - info.dwCursorPosition.X);
+
+1615502110
+marler8997
+output still seems wonky
+
+1615502129
+marler8997
+maybe if you fix that crash you can get something working on wine?
+
+1615502195
+TheLemonMan
+Wine's implementation of FillConsoleOutputCharacter is somehow always returning an error
+
+1615502345
+marler8997
+ah, nevermind then
+
+1615502345
+TheLemonMan
+hmm, you want the number of lines below the cursor so it should be ((info.srWindow.Top - info.srWindow.Bottom + 1 - (info.dwCursorPosition.Y - info.srWindow.Top))
+
+1615502479
+marler8997
+thread 7960 panic: attempt to cast negative value to unsigned integer
+
+1615502485
+TheLemonMan
+of course it's top - bottom
+
+1615502493
+TheLemonMan
+the hell, I should go to sleep
+
+1615502653
+marler8997
+top=2286 bottom=2333 y=2333
+
+1615502785
+TheLemonMan
+makes sense, it's going to clear only one line
+
+1615502814
+marler8997
+I don't get it, what's the right expression?
+
+1615502880
+TheLemonMan
+info.dwSize.X * ((info.srWindow.Bottom - info.srWindow.Top + 1 - (info.dwCursorPosition.Y - info.srWindow.Top)) - info.dwCursorPosition.X
+
+1615502905
+TheLemonMan
+and we're neglecting the window left/right coordinates, hoping they're not useful
+
+1615502953
+marler8997
+still getting a negative value from that
+
+1615503084
+marler8997
+this expression: (info.srWindow.Bottom - info.srWindow.Top + 1 - (info.dwCursorPosition.Y - info.srWindow.Top))
+
+1615503097
+marler8997
+you're expecting that to evaluate to 1 in my case correct? when the cursor is at the bottom
+
+1615503160
+TheLemonMan
+yeah
+
+1615503203
+marler8997
+top=2353 bottom=2400 y=2399 x=53 width=139
+
+1615503283
+marler8997
+so if that expresion is 1, then you're subtracting the X position from it?   that's just going to be negative
+
+1615503329
+marler8997
+I'm not sure what this length is, but is it suppose to be the number of characters from the start of the visible window up to the cursor?
+
+1615503363
+marler8997
+if so, I might have it
+
+1615503382
+TheLemonMan
+you've missed the multiplication by info.dwSize.X
+
+1615503391
+TheLemonMan
+then you subtract the X position
+
+1615503402
+marler8997
+yeah
+
+1615503415
+TheLemonMan
+that's the number of characters from the cursor to the end of the window
+
+1615503419
+marler8997
+the parenthesis were doing the subtraction first
+
+1615503450
+marler8997
+info.dwSize.X * ((info.srWindow.Bottom
+
+1615503455
+marler8997
+should have been this I think:
+
+1615503458
+marler8997
+info.dwSize.X * (info.srWindow.Bottom
+
+1615503507
+TheLemonMan
+yeah, I did type one ( too much
+
+1615503529
+marler8997
+crash gone
+
+1615503532
+marler8997
+output still wonky :(
+
+1615503624
+marler8997
+
+
+1615503847
+TheLemonMan
+welp, let's call it a day, my brain shut down
+
+1615503858
+marler8997
+trying one thing
+
+1615503868
+marler8997
+nope, didn't work
+
+1615503873
+marler8997
+ok, try again another day
+
+1615503878
+TheLemonMan
+I'll eventually steal some Windows PC and figure this out
+
+1615503900
+TheLemonMan
+'gn
+
+1615503903
+marler8997
+ZSF should send you one :)
+
+1615503956
+marler8997
+gofundme to get LemonBoy a windows machine :)
+
+1615504368
+andrewrk
+TheLemonMan, ZSF will send you a machine in a heartbeat, just name what you want
+
+1615504405
+andrewrk
+I've been trying to give him money and hardware for months lol
+
+1615504430
+earnestly
+They left before marler8997's comment about getting one
+
+1615504437
+ifreund
+He certainly deserves it
+
+1615504449
+earnestly
+I remember way back when he was writing lemonbar
+
+1615504450
+ifreund
+earnestly: yeah but I know for a fact he snoops the logs :P
+
+1615504473
+zags
+juicy
+
+1615504473
+earnestly
+It's always nice to see people become pretty great
+
+1615504749
+ifreund
+andrewrk: could you merge
+
+1615504764
+ifreund
+(or give me permssions to do so myself if you feel like it :P)
+
+1615504870
+andrewrk
+ifreund, patch looks good, also you have write perms now
+
+1615504943
+ifreund
+sweet, thanks :)
+
+1615505256
+LewisGaul
+Hey all, just watched Loris's community update on youtube and had a couple of questions on community spaces:
+
+1615505256
+LewisGaul
+- Is there a list of Zig-related blog posts anywhere? If not I'd be happy to create one - I have a couple of blog posts that I don't think have much reach right now!
+
+1615505257
+LewisGaul
+- Is there a Q&A style community, like discourse? I'm used to the discourse spaces of Python/Rust/Elm, and quite like the format personally, both for asking and answering (the ability to ask a question and come back to it later, without it getting lost in chat)
+
+1615505311
+ifreund
+LewisGaul: I guess the subreddit is the closed thing we have to the latter
+
+1615505343
+ifreund
+as for a collection of zig blog post I haven't seen anything like that yet, would certainly be cool!
+
+1615505359
+ifreund
+filtering by the zig tag on lobste.rs might be a good starting point
+
+1615505379
+LewisGaul
+ah right yeah, I haven't ever really used reddit actually. I guess I could stick a list in a gist, is that a good choice of format?
+
+1615505421
+LewisGaul
+Also, unrelatedly, I have been meaning to finish off that zig fmt PR, will get to it soon hopefully
+
+1615505429
+g-w1
+maybe a wiki page is better? (although that could get a little self-promotionaly)
+
+1615505510
+LewisGaul
+I wasn't sure whether the Zig GH org would be the right place to maintain a list of blog posts as in theory they could be changed under their feet, so perhaps better to have more of an unofficial list with a lower bar to getting posts added there? Not sure :)
+
+1615505617
+LewisGaul
+on the other hand it doesn't make a lot of sense for someone 'random' (e.g. me!) to have gatekeeper powers
+
+1615505640
+ifreund
+makes total sense, the zig community is all about decentralization
+
+1615505662
+ifreund
+if you're list should happen to become too closed someone else can always make another :P
+
+1615505672
+LewisGaul
+haha, ok sure :)
+
+1615505706
+ifreund
+LewisGaul: and RE that zig fmt PR, no stress I was actually meaning to finish off myself tomorrow if I find the time
+
+1615505796
+LewisGaul
+ifreund I did start taking a look at the suggestion you had, but was looking into removing the separate treatment of the two block cases, and ended up getting into a bit of a mess. The problem is I don't have the context of why the two cases were made separate in the first place :)
+
+1615505817
+LewisGaul
+If you want to just finish it off on my PR branch then feel free, I'll be interested to see your solution
+

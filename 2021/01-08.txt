@@ -1,0 +1,352 @@
+1610065054
+g-w1
+ah marler8997, I think I see what you are asking, I think it is meant to be like cmake where it just builds in your cwd. that is what people discussed in the meeting
+
+1610065228
+marler8997
+g-w1, ah I see
+
+1610066164
+andrewrk
+the main deciding factor was that it enables the use case of having a bunch of different build flags that you could mix and match so the user could name their own directories and do their own flag combos
+
+1610067114
+marler8997
+gotcha, makes sense
+
+1610069505
+mikdusan
+andrewrk: forgive my nubby question; but why don't we allow errors with Builder's entry `pub fn build() !void` -- end up doing `catch unreachable` in a lot of places
+
+1610069713
+andrewrk
+mikdusan, I think we should allow it
+
+1610069731
+andrewrk
+but the reason we do catch unreachable a lot in build.zig APIs is just to make the API nicer since having the build script panic on OOM is reasonable
+
+1610069753
+daurnimator
+andrewrk: I don't know about that
+
+1610069771
+daurnimator
+it means that if I e.g. create a temporary directory as part of the build script.... then it might not cleaned up
+
+1610069783
+mikdusan
+tbh I find writing with `catch unreachable` style that I end up functionalizing a lot of stuff that should just be inline blocks
+
+1610069821
+mikdusan
+inline blocks with `try` where needed of course.
+
+1610069840
+mikdusan
+ok thanks. was just wondering what the future might bring
+
+1610069948
+mikdusan
+also there is an issue with adding C sources for frameworks and this one simple trick in build.Builder might swat a lot of grief,
+
+1610069969
+mikdusan
+when an exe is told about framework dirs,
+
+1610069990
+mikdusan
+it does the right thing for linking.
+
+1610070038
+mikdusan
+but C sources... or C++ sources... they never learn about -F directories. So while compiling lines for C sources do not need to know about each framework like the linker does,
+
+1610070044
+mikdusan
+C sources need to know about -F dirs.
+
+1610070115
+mikdusan
+and we've been getting away with it for a while somehow, but good things are happening now that I'm adding -F there.
+
+1610070944
+andrewrk
+mikdusan, in the future we will want alternate build runner modes where we collect the build configuration and do something other than execute it. so I think it would be wise to handle OOM differently, as you and daurnimator are suggesting
+
+1610070972
+andrewrk
+but I think it is ok to rely on the fact that build scripts will always be run in a safe build mode (probably debug)
+
+1610071002
+andrewrk
+btw I'm gonna stream in about 15 min, gonna try to build self-hosted for web assembly and make an in-browser zig playground
+
+1610071407
+fengb
+:o
+
+1610073342
+mikdusan
+this... rabbit hole goes so deep.
+
+1610087097
+andrewrk
+fengb, do you know if there is a webassembly abort instruction? or a way to throw an error that stops web assembly execution
+
+1610087134
+andrewrk
+ah there's a trap instruction
+
+1610090327
+FireFox317
+andrewrk, are you online?
+
+1610090400
+andrewrk
+hello
+
+1610090417
+FireFox317
+morning
+
+1610090520
+FireFox317
+is the TZIR that I show in #7718 actually the correct output and is it just a matter of handling that in the backend, or is actually invalid TZIR and we are missing some loads?
+
+1610090549
+FireFox317
+I just need a few hints before I totally grok this :P
+
+1610090700
+andrewrk
+let me check real quick
+
+1610090833
+andrewrk
+FireFox317, the TZIR looks good to me
+
+1610090865
+andrewrk
+I think that store you are pointing out is a dead store but it's because of the `val` result location being passed to the block. I think we will need a dead store elimination pass to get rid of such things
+
+1610090911
+andrewrk
+your suggested fix does not make sense to me since the types are wrong, you can't store a *i32 into an *i32
+
+1610091050
+FireFox317
+nope indeed, that solution doesnt make sense to me anymore too. I understand it better now. I actually meant that there is a load missing from %2 and then store that in %15.
+
+1610091071
+FireFox317
+But in this case I think we can use a phi node to get one of the two values in the breaks
+
+1610091106
+andrewrk
+nope, no load missing, it's ideal to get the value from %3. %2 is dead memory
+
+1610091108
+FireFox317
+so you are also saying that for example %8 is a dead store?
+
+1610091127
+andrewrk
+yes and there is a corresponding one at %12
+
+1610091146
+FireFox317
+yep indeed, okay thanks. I think I can implement this in the LLVM backend :)
+
+1610091147
+andrewrk
+they wouldn't have been dead if the type ended up being a struct
+
+1610091163
+FireFox317
+nope indeed, its the `NodeMayNeedMemoryLocation` concept thing
+
+1610091167
+andrewrk
+I don't think you need to detect the dead stores - this affects all backends so it should be solved in the frontend
+
+1610091187
+andrewrk
+you can just do the allocs and stores like normal and don't worry about it
+
+1610091213
+FireFox317
+yes i know :) I was referring to implementing of the phi nodes and stuff
+
+1610091231
+andrewrk
+ah I see
+
+1610091243
+FireFox317
+thanks for talking me through this!
+
+1610091246
+andrewrk
+np!
+
+1610113335
+xyproto
+I recently went from "meh" to really believing that Zig has a future. But, I can't live without syntactic sugar. Are there any plans for macros/addons/preprocessors/Zig++ that can provide some sweet syntastic sugar?
+
+1610113720
+ltr
+xyproto: IMO one of the points of zig is to avoid such things
+
+1610114088
+xyproto
+ltr: I see.
+
+1610114122
+xyproto
+ltr: That also makes sense, for readability and minimalism.
+
+1610115422
+daurnimator
+xyproto: no need for macros when you have comptime
+
+1610115811
+fengb
+andrewrk: opcode 00 = unreachable = trap crash
+
+1610119711
+tnorth
+Hi there. I'm using mmap() to store some data (f32). for that, I did cast the pointer resulting from mmap() to [*]align(std.mem.page_size)f32. This seems to work. But then to unmap() the file, I need to raw pointer back. How can I cast back?
+
+1610119834
+tnorth
+(I tried several combinations but always get an error such as expected type '[]align(4096) u8', found '[*]align(4096) const u8')
+
+1610120084
+ifreund
+std.os.mmap() returns a slice, which is a "fat pointer" i.e. a pointer plus a length
+
+1610120138
+ifreund
+I'd recommed just storing that as it is what std.os.munmap() expects, but if you want to store the length separately for some reason you may slice your pointer when passing it to munmap
+
+1610120164
+ifreund
+e.g. munmap(my_ptr[0..mapped_lenght]);
+
+1610120213
+ifreund
+why do you need to mmap here instead of just allocating out of curiosity?
+
+1610120247
+tnorth
+thanks I'll try that. I just started playing with Zig :)
+
+1610120262
+tnorth
+@ifreund: the reason is that I plan to store a lot of data that might not fit in memory
+
+1610120365
+koakuma
+
+
+1610120365
+koakuma
+Looks like the FreeBSD CI is trying to install a nonexistent package?
+
+1610120437
+tnorth
+ifreund: with your solution, the result pointer is a []u8; but I want to write f32 values inside that space. How can I achieve this, since I can't cast slices?
+
+1610120481
+ifreund
+tnorth: mmap gives you ram not disk
+
+1610120500
+ifreund
+tnorth: std.mem.bytesAsSlice
+
+1610120539
+ifreund
+tnorth: really though you should just be using an allocator.
+
+1610120553
+ifreund
+mmap is how allocators get memory from the system
+
+1610120563
+ifreund
+if you want to write to disk you need to open a file
+
+1610120649
+tnorth
+I open a disk file with mmap(), I expect the system to read from disk into memory as I access it and let it swap out the rest; won't that work?
+
+1610120686
+tnorth
+ifreund: I'd like to have that data (array) to disk to be able to reuse it, that's why I don't pick an allocator
+
+1610120978
+tnorth
+btw, bytesAsSlice() is what I needed, thanks a lot!
+
+1610122927
+ifreund
+tnorth: indeed, memory mapping the file allows the kernel to lazily load the data from the file as you access it
+
+1610122962
+ifreund
+I missed that you were mmapping a file earlier :D
+
+1610124369
+tnorth
+ifreund: with works very well with your suggestion, thank you again!
+
+1610124396
+ifreund
+no problem!
+
+1610133327
+TheLemonMan
+FireFox317, good job with the LLVM backend!
+
+1610133379
+FireFox317
+TheLemonMan, thanks! It is surprisingly fun to work on it.
+
+1610133429
+FireFox317
+probs to andrewrk, for designing the ZIR in a SSA form, because that maps really good to LLVM IR :P
+
+1610133514
+TheLemonMan
+if you can afford it link against a debug build of LLVM, that'll help you spot many API mis-uses
+
+1610133728
+FireFox317
+ah that's a good suggestion indeed
+
+1610138603
+andrewrk
+FireFox317, you could also try a release build with -DLLVM_ENABLE_ASSERTIONS=ON
+
+1610138634
+andrewrk
+then you'd switch to a debug build if you hit one, to figure out more details
+
+1610150043
+belgin
+hello
+
+1610150101
+belgin
+the main page says "Zig uses undefined behavior as a razor sharp tool for both bug prevention and performance enhancement." but in the documenration it's not clear how ub can cause performance enhancement.
+
+1610150138
+CommunistWolf
+same as in C, really. you can just assume certain things can't happen
+
+1610150165
+andrewrk
+check out the link in the 4th bullet point just below that sentence
+

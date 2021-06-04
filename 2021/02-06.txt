@@ -1,0 +1,484 @@
+1612570480
+ifreund
+andrewrk: not going to get pointer types done tonight. I'm off to bed now, will rebase and pick it up again in the morning
+
+1612570595
+andrewrk
+good night! thanks for the help today
+
+1612570832
+ifreund
+you're welcome :)
+
+1612573327
+zags
+i'm passing structs to a function taking "anytype". Is there a way to access/update this struct by field index rather than name?
+
+1612573420
+zags
+or iterate over field members and set them, if possible
+
+1612573525
+andrewrk
+you can use @typeInfo for that and there are some helper methods in std.meta
+
+1612573603
+zags
+noice, thanks
+
+1612575230
+zags
+is there a more terse way to express arrays of string literals than
+
+1612575241
+zags
+[]const []const u8 = &.{"aaaa", "bbbbb"}
+
+1612575242
+zags
+?
+
+1612575265
+zags
+I got that from #7200 because I couldn't find another way haha
+
+1612575547
+zags
+anyway, std.meta and @field made it easy to write a generic zip :D
+
+1612584996
+andrewrk
+ifreund, I'm done working for today but I started on asm expressions
+
+1612606631
+Swahili
+Hi :)
+
+1612607993
+ifreund
+o7
+
+1612621553
+zags
+ifreund: great fosdem talk, very effective pedagogy
+
+1612621619
+ifreund
+thank you!
+
+1612621633
+ifreund
+if you have any questions you can join #fosdem-zig on freenode to ask them
+
+1612621674
+ikskuh
+or you can send me the message and i will forward it
+
+1612625570
+zags
+hmm, no way to chain together functions that may fail? I was somehow expecting try f().!.g() to work
+
+1612625631
+ikskuh
+zags: nope, just call them one after another
+
+1612625699
+zags
+that didn't compile, says:
+
+1612625701
+zags
+type '@typeInfo(@typeInfo(@TypeOf(MyType(u8).from)).Fn.return_type.?).ErrorUnion.error_set!*MyType(u8)' does not support field access
+
+1612625716
+ifreund
+try g(try f())
+
+1612625729
+zags
+yikes
+
+1612625751
+ifreund
+or maybe try (try f()).g();
+
+1612625762
+zags
+f isn't an argument though
+
+1612625767
+zags
+oh the lsat one
+
+1612625770
+ifreund
+not sure what exactly you intended
+
+1612625794
+zags
+i intent to have a generic struct returning !*@This() so I can chain calls together
+
+1612625802
+ifreund
+note that try foo() is just sugar for foo() catch |err| return err
+
+1612625822
+zags
+this is a stream-style API, I need the chaining syntax to be smooth
+
+1612625827
+zags
+can easily be 10-15 calls
+
+1612625913
+zags
+i wonder if there's an issue proposal to fix this or if I should write something
+
+1612625958
+ifreund
+Don't know of one off the top of my head
+
+1612625977
+zags
+it's like Java streams, so from(slice).filter(less).map(something).foreach(...something...)
+
+1612625986
+ifreund
+yeah I see what your goal
+
+1612625991
+zags
+cool
+
+1612626018
+ifreund
+I'm trying to think of a better way to do that
+
+1612626031
+zags
+so the current parenthesised try chaining makes it a no-go in terms of api usability
+
+1612626048
+zags
+ifreund: one way is to not propagate errors in functions, but keep a stream state
+
+1612626053
+zags
+then ignore chained calls if there's an error
+
+1612626060
+zags
+then propagate error in the terminating call
+
+1612626066
+zags
+i think i'll do that
+
+1612626072
+zags
+not optimal, but ok
+
+1612626140
+ifreund
+yeah that makes sense
+
+1612626154
+ifreund
+I'm not sure that's inherently suboptimal either, it would certainly be less branchy
+
+1612626228
+zags
+and an error flag isn't exactly much memory overhead either
+
+1612627231
+zags
+ifreund: embarrasing noob question... but an error flag can simply be "var err: anyerror!void = undefined;" right ?    And then I do "if (err) {} else |e| { return e; }" in the terminating functions of the stream. Maybe there's a better way.
+
+1612627272
+zags
+i guess "err" should actually be called "ok" here :D
+
+1612627311
+ifreund
+zags: just anyerror should work I think
+
+1612627317
+ifreund
+o
+
+1612627350
+ifreund
+oh though you want to store the case where there was no error as well, yeah that works
+
+1612627357
+zags
+expected error union type, found 'anyerror
+
+1612627364
+zags
+alright, thanks
+
+1612629257
+zags
+Yay, it works
+
+1612629271
+zags
+var result = try intStream.from(&ages).filter(lessThan(500)).map(f64, asFloat64).reduce(@as(f64,1), mul);
+
+1612629274
+zags
+std.testing.expectEqual(result, 39270);
+
+1612629301
+zags
+zig <3
+
+1612629313
+ifreund
+very cool, I haven't seen anyone make an API like that in zig yet :)
+
+1612629329
+zags
+might make a lib out of it
+
+1612629341
+zags
+could lazyness and parallelism
+
+1612629345
+zags
+could add*
+
+1612633799
+viashimo
+when - if ever - would @TypeOf return .Struct?
+
+1612633841
+viashimo
+I'm trying to use an AutoHashMap where the key is a struct (I think... eg. const S = struct { ... }), but since @TypeOf returns .Type, the default hash function won't work with it
+
+1612634705
+g-w1
+do const S = struct { ... }; const item_of_type_s = S{ ... }; then you can hash item_of_type_s
+
+1612635790
+viashimo
+g-w1: thanks for the suggestion. it doesn't seem to work though. I get the following error: error: expected type 'type', found 'S' when declaring `var hm: std.hash_map.AutoHashMap(item_of_S, u64)`
+
+1612635869
+g-w1
+hmm, oh yeah S should work ...
+
+1612636187
+txdv
+Hi guys, are there videos of the second 2 talks of FOSDEM available somewhere to watch?
+
+1612636203
+ikskuh
+no public FOSDEM talk available yet
+
+1612636218
+ikskuh
+
+
+1612636254
+txdv
+nice
+
+1612636317
+txdv
+did you use latex for your slides?
+
+1612636366
+ikskuh
+yeah
+
+1612636370
+ikskuh
+beamer, default
+
+1612640644
+Swahili
+Is the version from "brew install zig", the master version mentioned in
+
+1612640689
+ifreund
+Swahili: that depends, what version does homebrew give you? You can run `zig version` to find out
+
+1612640718
+Swahili
+ifreund: thanks for looking! I have 0.7.1 just getting started with zig from today
+
+1612640741
+Swahili
+thought about just writing "tests" to learn a bit
+
+1612640764
+ifreund
+Swahili: that would not be the master version then, master would say something like 0.8.0-dev.1071+7069459a7
+
+1612640765
+Swahili
+but thought about adding the zig language server
+
+1612640792
+Swahili
+ifreund: ok thanks, I'll try brew install zig --HEAD
+
+1612640796
+ifreund
+if you haven't seen this webside yet, I'd highly recommend checking it out:
+
+1612640814
+Swahili
+ifreund: yeh checking it, but also checking the main docs
+
+1612640926
+ifreund
+the main docs are good if you're already comfortable with low-level programming and just need a language reference to get going
+
+1612641029
+Swahili
+ifreund: ok thanks for letting me know ;)
+
+1612643666
+ifreund
+andrewrk: I've been distracted/occupied by fosdem today, getting back to pointer types now though (there sure are a lot of pointer types :D)
+
+1612645836
+Swahili
+I'm testing zig with vscode and the zls. The auto-completion is not fully available right?
+
+1612645873
+ifreund
+I get pretty good autocompletion in kakoune with zls
+
+1612645881
+Swahili
+Let's say, I do @import("std").*, I'd like to see what's available, does that work?
+
+1612645888
+Swahili
+kakoune, I'll check that
+
+1612645981
+ifreund
+interesting, trying to autocomplete right after the @import("std") doesn't work. doing const std = @import("std"); std.<try to complete> does though
+
+1612646007
+Swahili
+ifreund: I'll check that on vscode :) I also just found
+
+1612646011
+Swahili
+this will do, to get started :)
+
+1612646101
+ifreund
+note that the autogenerated std docs there are not complete, there is stuff in the source that isn't listed there
+
+1612646110
+ifreund
+I personally just read the std source
+
+1612646121
+ifreund
+(which goto-definition from zls helps a lot with)
+
+1612646260
+ifreund
+andrewrk: it feels weird that the c of [*c] is treated as an identifier by the tokenizer...
+
+1612646351
+ifreund
+I feel like there probably isn't anything that could be done about that though
+
+1612650854
+zag
+What would the idiomatic zig way be in terms of heterogenous containers?
+
+1612651294
+justin_smith
+zag: if I understand your question correctly, I think it's making a tagged union type for the types the container allows
+
+1612651347
+justin_smith
+the compiler ensures that code consuming tagged unions has cases to handle the tagged types
+
+1612651593
+v0idify
+is there a way to tell the event loop or a specific frame to run on the main thread?
+
+1612651688
+zag
+justin_smith: looks like a good approach, thanks
+
+1612651731
+zag
+justin_smith: but wait, that means every item is as large as the largest type right?
+
+1612651768
+justin_smith
+right, but if that's a concern it's easy to use a pointer to limit the max to usize
+
+1612651818
+justin_smith
+zag: I don't know how a heterogenous collection would work otherwise (in languages where it's trivial, everything is a pointer)
+
+1612651845
+justin_smith
+(every non-primitive / non-array that is)
+
+1612651869
+ifreund
+you can store a tagged union of pointers if you want
+
+1612651879
+justin_smith
+right, that's what I meant
+
+1612651879
+ifreund
+though then you need to allocate memory separately for each element
+
+1612651882
+zag
+sure, like, java makes it easy by having a common root type for everything
+
+1612651897
+zag
+separate allocation is fine
+
+1612651902
+justin_smith
+zag: not just that - it only supports heap allocation, and only allows passing args as pointers
+
+1612651928
+zag
+args are values actually
+
+1612651933
+zag
+but some values are references :)
+
+1612651942
+zag
+primitives and references are values
+
+1612651949
+zag
+passed by copy
+
+1612651973
+zag
+*value
+
+1612652012
+zag
+i'll do the tagged union of pointers thing
+
+1612654230
+ifreund
+andrewrk: pointer types done and PR up :) I'm off to bed now
+

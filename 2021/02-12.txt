@@ -1,0 +1,1052 @@
+1613088032
+andrewrk
+we'll want to coordinate with godbolt because they have `pub inline fn panic(...`
+
+1613088049
+andrewrk
+so the moment this is merged, godbolt for master branch zig breaks until we send them a PR
+
+1613088105
+andrewrk
+they've been pretty good about merging PRs tho
+
+1613088291
+tdeo
+got it, will try to do that
+
+1613088326
+marler8997
+everyone it's time to zigup your compiler and cleanse your projects of evil, cast out the demon of ambiguous array specifiers!
+
+1613088361
+andrewrk
+hahaha
+
+1613088414
+tdeo
+andrewrk: looks like it's not inline there
+
+1613088424
+tdeo
+can't find it on the website, either
+
+1613088431
+tdeo
+just double-checking i'm not missing anything
+
+1613088434
+andrewrk
+great! no task on our end then :)
+
+1613088444
+tdeo
+sounds good
+
+1613099206
+tdeo
+the nth time i only realize i should add tests after i open the pr...
+
+1613099520
+andrewrk
+it's all good, thanks for following up with a test case
+
+1613129657
+caolanm
+I seem to remember seeing an easy way to turn C error codes from a .h file into zig errors but now I can't find it and I'm starting to think I imagined it.
+
+1613129707
+caolanm
+Does anything like that exist? or do I just make a switch block to convert those codes to zig errors?
+
+1613132652
+ifreund
+caolanm: I don't know of anything like that, though you may be able to implement something with comptime reflection
+
+1613132660
+ifreund
+I'd just go with a switch myself, much simpler
+
+1613132798
+dutchie
+you can replicate the example with soundio and have a `fn foo_err(err: c_int) !void`:
+
+1613134669
+zags
+is llvm still breaking things massively on every release? I recall regretting not using their "stable" C api when doing my backend
+
+1613134730
+zags
+but that was like 7-8 years ago
+
+1613135459
+DarkUranium
+AFAIK it is, but I haven't looked at it in a while either.
+
+1613135474
+DarkUranium
+Also, their C API isn't exactly stable either. It's stablER, but not really stable.
+
+1613136032
+zags
+yeah for sure, it's "best effort"
+
+1613136398
+caolanm
+dutchie: the @intToEnum doesn't seem to get much much over a switch statemnt directly on the number using the C constants to match against
+
+1613136402
+caolanm
+or am I missing something?
+
+1613136473
+dutchie
+depends on whether you need to use the enum elsewhere i guess
+
+1613136492
+dutchie
+the main idea is to use a function to convert error codes into !void
+
+1613136516
+dutchie
+then you can just `try foo_err(c.blah(...));`
+
+1613136549
+caolanm
+right, yes. missed the significance of that
+
+1613136549
+dutchie
+or just handle errors in the idiomatic zig way however you want to
+
+1613136565
+caolanm
+makes it easy to wrap those c api calls
+
+1613136576
+caolanm
+thanks dutchie
+
+1613136643
+marler8997
+found an issue where I'm calling a WINAPI function from Zig and it's returning a struct with 2 f32 floats...is this a known issue?
+
+1613136847
+ifreund
+marler8997: yeah, returning structs of floats by value is known to be buggy in stage1
+
+1613136862
+ifreund
+(over the C ABI I mean)
+
+1613136897
+marler8997
+ifreund ok good, at least it's a known issue
+
+1613137020
+ifreund
+
+
+1613137083
+ifreund
+I think the issue here is that the struct is <= 16 bytes
+
+1613137086
+marler8997
+Must fall under this one: "x86_64: struct & union return values <= 16 bytes"
+
+1613137095
+marler8997
+it's only 8 bytes
+
+1613137433
+marler8997
+looks like it works as a function parameter, just not a return value
+
+1613138224
+mikdusan
+I've had my morning coffee and still can't find where `std.fmt` handles StackTrace printing (ie. result from @errorReturnTrace() )
+
+1613138277
+ifreund
+mikdusan: that's handled by std.debug.dumpStackTrace() no?
+
+1613138299
+mikdusan
+I thought so.. but can't find that hook from .fmt
+
+1613138500
+ifreund
+are you sure std.fmt can handle builtin.Stacktrace? in start.zig it is just passed directly to the std.debug function
+
+1613138518
+mikdusan
+std.debug.warn("--> {} <--\n",.{ @errorReturnTrace() });
+
+1613138543
+mikdusan
+the output is between `-->` and `<--`
+
+1613138546
+ifreund
+mikdusan: oh, builtin.StackTrace has a fomat() function defined of course
+
+1613138556
+mikdusan
+ugh ! black magic I tell ya
+
+1613138558
+mikdusan
+thanks
+
+1613138563
+ifreund
+no problem!
+
+1613138921
+marler8997
+ifreund, interesting, the 2-float struct works if I define the function in Zig, even with callconv(.Stdcall), so Zig current implementation actually works, it's just different from the C specifiction right now...lol
+
+1613139021
+ifreund
+marler8997: interesting indeed, it should be a compiler error though tbh since doing the wrong thing silently is worse
+
+1613139149
+marler8997
+yeah that would definitely be an improvement on the status quo
+
+1613140414
+mikdusan
+error trace behavior I'm seeing is this: the error stack is
+
+1613140417
+mikdusan
+but this can't be right
+
+1613140436
+mikdusan
+if it were, a worker queue that catches errors would grow infinitely
+
+1613140486
+ifreund
+i'm pretty sure that's accurate :/
+
+1613148096
+mikdusan
+marler8997: would you mind take a look at
+
+1613148142
+mikdusan
+main changes: notry -> catch, continue -> try, and added ability to inspect an error without modifying error-stack before propagation (`raise;`)
+
+1613148396
+mikdusan
+i'm a bit on the fence about partial #1923-like behavior. the alternative can be to remain explicit. and allow `raise <error-union>`
+
+1613148453
+mikdusan
+ie: same as `try <error-union>` except that instead of merge/propagate it becomes reset/propagate with `raise <error-union>`
+
+1613148567
+ifreund
+mikdusan: interesting proposal, I wonder if the features propsed in #5610 could be worked into it, it kind seems to go in the opposite direction
+
+1613148588
+ifreund
+or at least if the use-case could be supported, doesn't matter to me exactly how
+
+1613148616
+mikdusan
+oh i haven't seen that one. reading.
+
+1613148792
+ifreund
+also I'm assuming that in your proposal errdefers no longer get run on `return error.Foo` only on `try error.Foo`?
+
+1613148809
+mikdusan
+correct. return is no longer anything to do with error-handling.
+
+1613148831
+mikdusan
+that was my primary motivation -- get rid of that ambiguity
+
+1613148874
+ifreund
+yeah it looks like your proposed changes would make error stack traces much cleaner
+
+1613149155
+mikdusan
+ifreund: if you `break :blk err;` do we need capture? `} catch |err| {`
+
+1613149260
+mikdusan
+hmm I guess not. it's consistent today that catch is unambiguous and can choose not to capture
+
+1613149300
+ifreund
+yeah, assuming the current error semantics, the block would evaluate to an error union, which is a valid lhs for catch
+
+1613149334
+ifreund
+there would be no difference between using catch on a block and using it on a function returning an error union
+
+1613149710
+mikdusan
+so back to orig question... looks like proposals are orthogonal; and #5610's try overload does not interfere with my pending proposal, and new reset error-stack semantics doesn't interfere with 5612
+
+1613149792
+ifreund
+yeah after looking at yours more I agree
+
+1613149896
+ifreund
+I think the big downside to your proposal (which isn't listed) is that it introduces new semantics. (for example, `try foo` is not longer simple sugar for `foo catch |e| return e`
+
+1613149929
+mikdusan
+yeah in the latest rev, `try <errorset>` is new. but `try <error-union>` is unchanged
+
+1613149972
+ifreund
+it's no longer sugar for return though right? it's something else
+
+1613149973
+mikdusan
+by unchanged I mean the new sugar is `foo catch |e| try e;` but it's still the same thing
+
+1613149981
+ifreund
+ah I see
+
+1613150034
+mikdusan
+i know it does look odd. hey `try` is sugar for `something something try` looks recursive
+
+1613150052
+mikdusan
+it's either that or new keyword?
+
+1613150109
+fengb
+Why raise and not throw? 🙃
+
+1613150126
+fengb
+Lets reinvent C++/Java exceptions :P
+
+1613150139
+mikdusan
+fail/raise/throw blah
+
+1613150142
+ifreund
+also it feels inconsistent that `raise` with no operand leaves the stack unchanged while `raise` with an operand resets it
+
+1613150198
+mikdusan
+ifreund: true; I have to put something in that is parsable for the compiler. I would not be opposed to new keywords vs these overloads
+
+1613150250
+mikdusan
+as an aside, `raise;` is something I would expect to be pretty rare.
+
+1613150250
+ifreund
+more keywords is better than excessive overloading/inconsistency IMO
+
+1613150337
+fengb
+I'm confused by the difference between `try err` and `raise err`
+
+1613150360
+fengb
+Oh reset == reset the stack, so it looks like a new error?
+
+1613150394
+mikdusan
+yes, when raise has an arg, it is reset,push,propagate error-stack.
+
+1613150413
+mikdusan
+try is today's behavior of.. keep pushing on the error-stack and propagate
+
+1613150434
+fengb
+I'm not a fan of raise [noargs] behaving differently. imo, it's just easier to remove it and force you to `try err`
+
+1613150454
+mikdusan
+but `try err` adds to the error-stack.
+
+1613150463
+fengb
+Oh
+
+1613150488
+mikdusan
+i know it's a small case. edge case. but it would be slick if we can just... inspect, log, and re-propagate
+
+1613150512
+fengb
+Yeah I get it, but it feels weird that raise [noarg] is radically different from raise err
+
+1613150516
+mikdusan
+reraise
+
+1613150525
+ifreund
+pass
+
+1613150526
+mikdusan
+or change to `fail` and `refail` respectively.
+
+1613150536
+mikdusan
+oh pass. interesting.
+
+1613150566
+fengb
+I like this direction. Clarifies a bunch of error cases and forces some self documentation. I had a much smaller scope proposal:
+
+1613150680
+mikdusan
+yes I'll add references to both these proposals
+
+1613150699
+mikdusan
+and what you sight as motivation in #2562 is indeed the same motivation I had
+
+1613150822
+mikdusan
+though thinking more, 2562 addresses something else too -- `return try...` which sounds reasonable.
+
+1613150907
+mikdusan
+in my prop... hot take... would the equiv would need to be either `return catch author.getUser();` or `const rv = try author.getUser(); return rv;`
+
+1613150947
+mikdusan
+hmm.. no .. scratch taht. my prop doesn't want that.
+
+1613150962
+fengb
+Hmm why? `return try foo();` would unwrap the value if it's successful, and if not it'll auto raise
+
+1613150998
+mikdusan
+ah yes you are right. gawd, I panic'd there for a sec thought my whole prop would bite it.
+
+1613151043
+mikdusan
+nice. so 2562 is orthogonal to mine too. me likes.
+
+1613151064
+fengb
+Well your proposal would obviate the need for mine
+
+1613151078
+fengb
+Since it captures everything I wanted (no implicit returning of errors)
+
+1613151109
+mikdusan
+oh yeah, except I didn't include that syntax which you 2562 has. I'll incorporate it.
+
+1613151118
+mikdusan
+s/syntax/sample code/
+
+1613151900
+zags_
+nice proposal, but raise is so short and sweet it's an invitation for people to start doing bad error handling (namely losing information about entry path to source of raise), where better option exists. Since it's for rare edge cases, it should maybe be called something truly ugly like reset_and_throw.
+
+1613152016
+fengb
+`tryhard`
+
+1613152033
+zags_
+and diehard to exit with the error? :D
+
+1613152067
+mikdusan
+tryharder
+
+1613152071
+mikdusan
+lol
+
+1613152181
+mikdusan
+so we have `usingnamespace` as a deterrent for abuse. so maybe just `raiseagain`
+
+1613152223
+mikdusan
+gut reaction: anyone like `fail` more than `raise` ?
+
+1613152235
+mikdusan
+(we all know `throw` is just no)
+
+1613152332
+fengb
+`throwup`
+
+1613152366
+ifreund
+I like fail more
+
+1613152383
+ifreund
+sounds less like "raise an exception"
+
+1613152394
+mikdusan
+yeah sounds thin.. like a primitive... not an object
+
+1613152410
+mikdusan
+I'm gonna swap it out and see how it looks
+
+1613152434
+zags_
+Josh Groban lyrics to make it happen
+
+1613152456
+zags_
+you_raise_me_up and shit
+
+1613152797
+tane
+howdy
+
+1613152825
+tane
+
+
+1613152827
+zags_
+aloha
+
+1613152845
+tane
+wouldn't `shrinkRetainingCapacity` be a better choice there?
+
+1613152910
+zags_
+howso, it reallocs down
+
+1613152945
+fengb
+Maybe! There's a good reason this got renamed:
+
+1613153011
+tane
+isn't it strange to throw away fine buffer space or do I have a misconception about calling realloc with a smaller size than the pointer already points to?
+
+1613153099
+ifreund
+Yeah I think that sould keep the capacity
+
+1613153175
+fengb
+I think it wasn't obvious before so nobody paid attention until after the rename
+
+1613153937
+marler8997
+mikdusan changes look great
+
+1613154479
+zags
+is there a way to convince godbolt to only include assembly for the pasted program, i.e. strip away stdlib stuff and such?
+
+1613154537
+marler8997
+the only way I know of is to remove references to stdlib stuff
+
+1613154560
+marler8997
+-strip might help as well, and -Orelease-small
+
+1613154636
+zags
+ReleaseSmall helps, but then it probably disables some of the very optimizations I wanna look at if they're happening :D
+
+1613154662
+zags
+it doesn't like -strip
+
+1613154675
+zags
+ah --strip
+
+1613154681
+g-w1
+add a panic handler
+
+1613154702
+zags
+-O ReleaseFast --strip gives the desired result
+
+1613154730
+zags
+g-w1: wdym? that will make the assembly output smaller?
+
+1613154857
+mikdusan
+pending #7812 update. now using `fail` instead of `raise`. and added code samples `f2(), f3(), f4()` to show correct `return` usage for error-union, error-union as value, and error-union with nested error-union as value
+
+1613154860
+mikdusan
+
+
+1613154936
+mikdusan
+ugh. every. time. i see an error.
+
+1613154994
+dch
+
+
+1613155023
+dch
+
+
+1613155073
+g-w1
+zags: right now it needs code to handle a stack trace on panic. overriding the default panic handler will make the output smaller. pub fn panic(message: []const u8, stack_trace: ?*@import("builtin").StackTrace) noreturn { while (true) {}}
+
+1613155437
+ifreund
+dch: that is for defining varargs functions in zig, not for calling such functions defined in zig
+
+1613155443
+ifreund
+*C
+
+1613155449
+zags
+g-w1: cool tip, thanks
+
+1613155478
+dch
+ifreund: yay, so I can use variadic functions freely without offending the compiler gods? \o/
+
+1613155508
+dch
+its the reverse that doesn't yet work, then
+
+1613155524
+ifreund
+dch: yeah, though iirc type checking of variadic parameters is either broken or not complete so be careful
+
+1613155573
+dch
+ifreund: I'm writing some very noob blog posts on using zig to talk to c, i'm somewhat new to this level of programming
+
+1613155664
+zags
+g-w1: so I'm supposed to put there anywhere top-level? Doesn't seem to compile, godbolt says "note: previous definition is here" but nothing else
+
+1613155674
+zags
+put that*
+
+1613155727
+g-w1
+oh, godbolt probably already does it :D
+
+1613155732
+zags
+aha
+
+1613155760
+zags
+i'm down to 431 assembly lines now, that's "fine" :D
+
+1613155770
+g-w1
+yep
+
+1613155812
+zags
+explains why it mysteriously put the red marker at the end of the document :D
+
+1613155837
+zags
+good to know about, thanks mate
+
+1613155856
+ifreund
+dch: nice, always cool to see more stuff written about zig :)
+
+1613155899
+ifreund
+I've done quite a lot of Zig/C interop for my wayland compositor so if you have any other questions hit me up
+
+1613156018
+zags
+ifreund: both ways, so also exposing zig to C?
+
+1613156063
+zags
+what's the general pattern for making a .h file given a Zig file? Do I need to write wrappers or just annotate with extern?
+
+1613156093
+ifreund
+zags: All I've done has been using C from Zig not the other way around
+
+1613156130
+ifreund
+zig will eventually generate .h files for you, which I think is at least partially implmenent in stage2
+
+1613156177
+zags
+noice
+
+1613156200
+ifreund
+oh shit it totally works
+
+1613156205
+ifreund
+it's just kinda hidden
+
+1613156233
+ifreund
+zig build-lib -femit-h -fno-LLVM
+
+1613156288
+zags
+(exploding head emoji)
+
+1613156318
+ifreund
+well, I haven't tested it on anything other than a simple add function
+
+1613156668
+noam
+Muahaha. ifreund:
+
+1613156673
+tane
+ifreund, any hints on how to attack that `shrinkAndFree` => `shrinkRetainingCapacity` thing, should I post an issue or add a PR (for single line..)? :)
+
+1613156681
+noam
+Static 8+4n bytes per node, where n is the number of children
+
+1613156741
+ifreund
+tane: just open a PR
+
+1613156749
+tane
+ok, thanks
+
+1613156783
+ifreund
+noam: how many nodes though?
+
+1613156792
+noam
+ifreund: same number
+
+1613156810
+noam
+I think... I'll have to check
+
+1613156815
+ifreund
+what did you change then?
+
+1613156835
+noam
+I dropped the extra_data, lhs, and rhs, and replaced it with nargs + arg_indexes
+
+1613156856
+mikdusan
+how many bits for nargs
+
+1613156860
+noam
+Basically, instead of {u8 tag; u32 meta; u32 lhs; u32 rhs;} it's now {u16 tag; u16 nargs; u32 token_index; u32 kids[];}
+
+1613156874
+noam
+Metadata is now included as a child node instead of being shown in a separate tree, but that might be a bad idea
+
+1613156879
+noam
+That's the last thing I still need to work out, really
+
+1613156913
+noam
+By keeping u32 alignment, I can just store nodes as a u32[], and any index is either a tag+nargs, a token_index, or the index of a kid
+
+1613157834
+marler8997
+mikdusam this line needs corrected "    // NEW: keyword `catch`, type is error-union"
+
+1613157850
+marler8997
+since we switched to "catch", not a new keyword anymore
+
+1613157859
+marler8997
+I spelled your name wrong, mikdusan
+
+1613157993
+mikdusan
+updated
+
+1613158216
+marler8997
+in "Related proposals", you could mention that this proposal could be used to solve #2647
+
+1613158254
+marler8997
+well it doesn't solve, maybe say it would provide a syntax to solve #2647?
+
+1613158568
+marler8997
+so with "return catch doit()" does that mean errdefers won't execute?
+
+1613158694
+mikdusan
+tbh I haven't explored all the defer/errdefer permutations (which I should now do), but hot take is prefix-catch doesn't want error handling and no error is propagated. so if not propagated, then errdefer does not trigger
+
+1613158747
+marler8997
+so I'm a bit perplexed at what happens with return catch doit()
+
+1613158763
+marler8997
+maybe it should be an error to return an error union from a function?
+
+1613158771
+marler8997
+as a value
+
+1613158801
+marler8997
+like, if you catch the error union, you'd have to do something like fail catch doit()
+
+1613158956
+mikdusan
+there may not be a motivating case for it but if one can do this: `const x = catch doit();` then one is always free to do `return x;` and making `return (catch doit())` (parens added for clarity of expr) compile-error seems weird to me
+
+1613159028
+marler8997
+if you did return x, and x is an error, and errdefers don't run (your hot take), then what happens on the caller? Does their catch trigger?
+
+1613159042
+mikdusan
+error is gone
+
+1613159061
+marler8997
+how is it gone?
+
+1613159073
+marler8997
+it's an error-union value that is in an error state
+
+1613159077
+marler8997
+so what state is it in now?
+
+1613159160
+mikdusan
+the value exists. but isn't the question "are we error-handling" or "did we eat the error handling"?
+
+1613159210
+marler8997
+well I'm have a few questions now since you said that "the error is gone"
+
+1613159217
+marler8997
+say, doit returns error.Overflow
+
+1613159224
+marler8997
+and we return catch doit()
+
+1613159253
+marler8997
+but you're saying "return catch doit()" won't be returning error.Overflow?
+
+1613159270
+marler8997
+then what is it returning?
+
+1613159317
+marler8997
+if we make returning error unions a compile error, then it means that a function will only return an error if an only-if error handling has been triggered
+
+1613159324
+mikdusan
+yes. `const x = catch doit(); // x is union { error, u32 } without error handling/treatment
+
+1613159335
+marler8997
+otherwise, a function could return an error-union value in a error state, but error handling hasn't been triggered
+
+1613159385
+marler8997
+right I understand that part
+
+1613159390
+marler8997
+I'm talking about "return x" after that
+
+1613159411
+mikdusan
+bare with me. I'm slower than you.
+
+1613159470
+mikdusan
+ok so f3(). `return x;` and the callsite is `const foo = f3();` . it's allowed. it's not an error.
+
+1613159473
+marler8997
+one thing it could mean is "return catch doit()" would return an error up to the caller, but it wouldn't add an error on the error stack and errdefers won't run, so it would be a way to return an error without putting your function on the stack
+
+1613159523
+mikdusan
+notice f3() is what statically (lexically) decides if there is to be error-treatment.
+
+1613159531
+mikdusan
+there is no `!` thus no error treatment
+
+1613159546
+mikdusan
+thus we allow returning value because that's all it is.
+
+1613159548
+marler8997
+is f3() the same signature as in your proposal?
+
+1613159561
+marler8997
+is it's return type u32?
+
+1613159596
+marler8997
+would be nice to jump on a discord call and discuss? you have that ability?
+
+1613159619
+mikdusan
+yeah I've got discord. mic should work but never tried.
+
+1613159628
+marler8997
+cool let's give it a try
+
+1613162079
+tane
+the compiler sure takes a lot of memory, impressive :)
+
+1613162617
+ifreund
+yeah, stage1 is very much not optimal
+
+1613164803
+ed_t
+with var x:usize = ??? you can use std.math.log2(x) but not std.math.exp2(x), what should I be using ( 1 << x does not work since x is not comptime known)
+
+1613165254
+ed_t
+neither powi(2,x) or shl(1,x) work as zig complains: error: expected type 'type', found 'comptime_int'
+
+1613165398
+Gliptic
+look at the signature of those
+
+1613165633
+ed_t
+I understand the error, I am just looking for the inverse of log2(usize) and, so far, have not found it.
+
+1613165777
+Gliptic
+then you know they take three parameters?
+
+1613165817
+ed_t
+Gliptic sorry, you are correct.  thanks
+
+1613165871
+ed_t
+sometimes you see what you expect, not what is actually there
+
+1613166181
+ed_t
+so ...shl(usize,1,x) does what i need
+
+1613171293
+zags
+what's the easy way to reset an ArrayList? I want to clear all elements and start adding things again. Like vector::clear, i.e no need to reallocate.
+
+1613171302
+zags
+s/easy/efficient
+
+1613171437
+geemili
+zags: `array_list.shrinkRetainingCapacity`
+
+1613171899
+zags
+ominous name, but looks like it updates .items length etc, thanks"
+
+1613171955
+zags
+translating to setItemLength in my head :D
+
+1613172140
+andrewrk
+setItemLength would imply you could grow it
+
+1613172157
+andrewrk
+there is also shrinkAndFree
+
+1613172444
+zags
+well, item length can be 0, so not sure the implication holds, and shrinkRetainingCapacity says nothing about items and lenghts so it wasn't obvious - but it's just about learning what the names mean
+
+1613172470
+zags
+tbh i looked for clear, but that's just because that's what c++ use :)
+
+1613172505
+zags
+oh i see what you mean, setItemLength would be a bad name
+
+1613172777
+andrewrk
+adding clear would be nice, it would be clearRetainingCapacity and clearAndFree
+
+1613172964
+zags
+nice. I have an struct with its own arena allocator, and an ArrayList using that arena as a backing allocator. I think my struct's deinit() can simply deinit the arena. But it feels correct to still call arraylist.deinit() as well. I mean, that's the right pattern right? If there's a deinit() function, I call since it may do other things.
+
+1613173000
+zags
+Probably wasteful in this case, but in general seems like a good principle as you can't expect people to look inside deinit's on everything.
+
+1613173212
+andrewrk
+the pattern I have landed on is to almost always use a general purpose allocator to back ArrayLists, with `defer list.deinit();`, and then once the size is finalized, copy it into the arena with `arena.dupe(T, list.items)`
+
+1613173239
+andrewrk
+empirically this improved performance, presumably because of less wasted memory and better cache friendliness of the arena memory
+
+1613173519
+zags
+Thank you sir, noted
+
