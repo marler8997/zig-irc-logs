@@ -1,0 +1,464 @@
+1537835172
+wink_
+andrewrk: I tried to use gobolt to see what the code looked like when returning a ?i32, but it gave an error "[zig trunk #1] error: return type '?i32' not allowed in function with calling convention 'ccc'
+
+1537835195
+wink_
+because it was doing an "export", seems reasonable
+
+1537835283
+andrewrk
+wink_,  you'll have to call your function that returns ?i32 from an exported function that only uses the C ABI
+
+1537835285
+wink_
+But if I change to a "pub" then it doesn't generate assembly.
+
+1537835303
+andrewrk
+this is working as designed
+
+1537835435
+wink_
+ok, I think I've got it, let me see
+
+1537835694
+wink_
+worked, I created "export fn xx() void { _ = square(2); } and that worked, I wonder if the default app should use that technique?
+
+1537836109
+andrewrk
+there's no way that created a non-empty function
+
+1537836137
+andrewrk
+unless you made square export
+
+1537836193
+andrewrk
+wink_, what are you trying to accomplish?
+
+1537836194
+wink_
+Its in debug mode by default, so square was created
+
+1537836227
+wink_
+Funny you'd ask: the reason I looking at godbolt was I was curious how ?TypeId.Int worked. With a pointer I've assumed null == 0 and its a test for zero, but was curious how it worked with TypeId.Int.
+
+1537836429
+andrewrk
+you're curious what the debug assembly is?
+
+1537836437
+andrewrk
+probably better off looking at llvm ir than x86
+
+1537836704
+wink_
+I was curious what the ABI was, the assembly is hard, but it looks like in release-fast the stack has a "null" flag and the data is returned in the register, is that correct?
+
+1537836765
+wink_
+(I'm guessing not ABI doc's yet and I suspect it'll change before 1.0)
+
+1537836773
+wink_
+s/not/no/
+
+1537836846
+andrewrk
+there's no ABI for optional types other than optional pointers
+
+1537836856
+andrewrk
+that's why you get that compile error above
+
+1537836970
+wink_
+yea, no C ABI but there is some convention for zig or maybe I'm not asking the question properly.
+
+1537836985
+andrewrk
+there is purposefully no specified convention
+
+1537837004
+andrewrk
+so that zig/llvm can choose however it wants to represent based on any number of factors
+
+1537837146
+wink_
+hmm, it be nice if there was some convention so that eventually some shim could be used to interface to/from zig without being restricted to C but no worries now.
+
+1537837190
+andrewrk
+I'm not convinced that we need that
+
+1537837195
+andrewrk
+what problems would it solve?
+
+1537837208
+andrewrk
+(I know there are answers to this, but I have alternate solutions to the problems)
+
+1537837795
+scientes
+andrewrk, i agree that we should stick to C ABI
+
+1537838055
+wink_
+I'm not suggesting doing away or changing the C ABI just a way to use Zig Types via other applications in other apps. Just a thought.
+
+1537838078
+scientes
+that means extending the C ABI
+
+1537838123
+scientes
+like if you do optional types you have to make the first argument a bit field on true/false for first optional argument, second optional argument, et cetera
+
+1537838150
+scientes
+but designing calling conventions is really difficult and highly dependent on the hardware architecture
+
+1537838175
+scientes
+so i think we should stick to the C ABI, even if it means limiting the types that can be passed
+
+1537838212
+wink_
+sg
+
+1537838267
+scientes
+you can always pass a pointer to the zig type
+
+1537838270
+scientes
+right?
+
+1537838363
+andrewrk
+scientes, right. you would probably create an @OpaqueType() and then ptr cast that to/from your zig type in the C API layer
+
+1537838383
+andrewrk
+we could probably have zig do the opaque type thing automatically
+
+1537838417
+wink_
+Yea, but you don't you need to know the layout of a `var x: ?usize;`
+
+1537838476
+andrewrk
+no, because the layout is contained within the zig code which is all internally consistent
+
+1537838514
+andrewrk
+sorry, read that as, "But don't you need to know...?"
+
+1537838624
+wink_
+confused, if you pass an @OpaqueType() which is a `var pX: *?size` the layout in memory has to be defined so it can be accessed properly in the C code, right?
+
+1537838660
+andrewrk
+the C code sees a pointer to forward decl
+
+1537838672
+andrewrk
+this is a common pattern in C
+
+1537838800
+wink_
+but isn't a `var x: ?usize` have a "tag" field associated with it so you know if it's null or not?
+
+1537838824
+wink_
+s/isn't/doesn't/
+
+1537838838
+scientes
+it does, i see it in lldb all the time
+
+1537838901
+wink_
+so if you want to pass a pointer to x to a C program it needs to know the memory layout of the two fields, correct?
+
+1537839115
+scientes
+so i guess i was wrong in saying that you could "just pass a pointer"
+
+1537839115
+scientes
+yes, and it would be good if this was not defined in zig
+
+1537839117
+andrewrk
+if you want the C code to know the memory layout then you have to use the C ABI
+
+1537839117
+andrewrk
+wink_, if you use the opaque type strategy then you would have to use an accessor function
+
+1537839186
+wink_
+ok
+
+1537839197
+andrewrk
+another strategy you could have is have the extern struct be a field in your zig struct, and pass a pointer to that
+
+1537839207
+andrewrk
+and use @fieldParentPtr to get the zig struct from the C struct pointer
+
+1537839236
+andrewrk
+that works if you want to have some "public" fields exported in the library API, but also have private state
+
+1537839255
+andrewrk
+that matches the most common API pattern for C libraries
+
+1537839536
+wink_
+I guess I was just thinking if Zig became very popular, they might want to access Zig native API's and data. But hey, that's a good problem to have :)
+
+1537839543
+wink_
+gtg, later
+
+1537839566
+andrewrk
+I have solutions to this problem for well-defined values of "they"
+
+1537839574
+scientes
+wink_, making that possible locks down the flexibility of the zig language, and it essentially means creating a second language (an ABI)
+
+1537839598
+scientes
+look how the C++ ABI changes all the time, it is gross
+
+1537839762
+andrewrk
+for example when packages become a thing, we will cache debug builds of packages in this way
+
+1537860523
+Hejsil
+andrewrk, @noInlineCall doesn't seem to be working
+
+1537860559
+Hejsil
+This is a bug, right?
+
+1537861335
+Hejsil
+It seems that when everything is constant, the compiler doesn't care about the @noInlineCall
+
+1537881680
+andrewrk
+Hejsil, hmm yep that's a bug
+
+1537881718
+andrewrk
+unfortunately that might be an llvm bug which means it's harder to fix
+
+1537883135
+unique_id
+andrew, once I have a website, maybe for 0.4 or 0.5 I can add my game under "Active external projects using Zig". I think that would help Zig.
+
+1537883153
+andrewrk
+sounds great
+
+1537884917
+unique_id
+Is it a known issue (is it an issue?) that some libraries can't be found unless also linking c? So with "--library lz4" lz4 isn't found, but with "--library lz4 --library c" lz4 is found.
+
+1537885102
+andrewrk
+unique_id, what's the error message when it can't be found?
+
+1537885128
+unique_id
+andrewrk, "lld: error: unable to find library -llz4"
+
+1537885137
+andrewrk
+huh. that's strange
+
+1537885144
+andrewrk
+I would have expected linker errors with the libc symbols
+
+1537894557
+unique_id
+I am having to add --library-path /usr/lib (or /usr/local/lib) for it to find my libraries that I've put in there. Was that intended?
+
+1537894635
+unique_id
+I don't know how it's been finding other libraries that I've been using
+
+1537895242
+unique_id
+It seems that all the dependencies I've been using have been in places like /usr/lib/x86_64-linux-gnu
+
+1537895814
+andrewrk
+ah that's probably why the above lz4 thing happened
+
+1537895921
+andrewrk
+I'll think about how library paths should work. my first thought is that it should be the job of the build system to find libraries and know about default paths and things like that
+
+1537896258
+wink_
+andrewrk, scientes: A use case for "knowing" the layout. I've created an Actor system (
+
+1537896258
+wink_
+able to easily control the layout or know what the layout Zig uses. The scenario where this is important is when the Actors are on the same computer using queues to pass messages. Thoughts?
+
+1537896331
+andrewrk
+best bet is probably to use the C ABI for this use case
+
+1537896367
+wink_
+By that you mean `packed struct`, correct?
+
+1537896368
+andrewrk
+although I wouldn't discount the null hypothesis of an explicit serialization and deserialization layer without benchmarking it
+
+1537896386
+andrewrk
+no, by that I mean `extern struct`, although `packed struct` would also work in this use case
+
+1537896435
+andrewrk
+I would tackle this problem by defining a message format that makes sense independent of programming languages, and then write a serialization/deserialization layer to handle it
+
+1537896667
+wink_
+agreed that's what I'll do when there is a "network" involved, but when the Actors are on the same computer sert/desert should not be required. When we have an `extern struct` where can I find the alignment/layout rules?
+
+1537896750
+andrewrk
+it's the C ABI
+
+1537896896
+wink_
+k, txs!
+
+1537898979
+unique_id
+In what directories does build.zig's .linkSystemLibrary look?
+
+1537899047
+andrewrk
+unique_id, all it does is add -lfoo to the link line:
+
+1537899090
+andrewrk
+you can use .addLibPath to add directories
+
+1537899270
+wink_
+Searching around the it seems section [6.7.2.1](
+
+1537899271
+wink_
+type."
+
+1537899306
+andrewrk
+the c standard does not define a C ABI
+
+1537899324
+andrewrk
+the C ABI is defined by a tuple of (operating system, architecture, C compiler environment)
+
+1537899343
+andrewrk
+which corresponds to the  --target-os --target-arch --target-environ flags of zig
+
+1537899399
+unique_id
+andrewrk: Ok, then I don't understand why "--library Foo" does not find libFoo.so in /usr/lib or /usr/local/lib, but gcc's -lFoo does.
+
+1537899412
+unique_id
+I have to add --library-path /usr/lib
+
+1537899445
+unique_id
+ok I'll try .addLibPath
+
+1537900456
+Jenz
+AFAIK, there's no docs for the `use` keyword?
+
+1537900961
+andrewrk
+Jenz,
+
+1537900972
+andrewrk
+I filed this in response to your question
+
+1537901308
+wink_
+andrewrk: So, for example, with os=OsLinux arch=ZIGLLVM_x86_64 and environ=ZIGLLVM_GNUABI64 is it Zig or LLVM that is determining the the alignment of struct fields.
+
+1537901403
+andrewrk
+in the current implementation, the c++ code uses LLVM API to find out alignment. but the information could be determined without llvm
+
+1537902267
+Jenz
+Excellent, thanks andrewrk
+
+1537907859
+Jenz
+I feel there should be a bit more pretty way to ignore return value than `_ = someFoo();`
+
+1537908061
+unique_id
+(I like it)
+
+1537908130
+andrewrk
+Jenz, "pretty" was never one of zig's goals
+
+1537908151
+andrewrk
+the minor cognitive dissonance you feel when ignoring a return value is entirely intentional
+
+1537908319
+Jenz
+Ok, no can do about that I guess, this kind of thing is one I've started getting used to...
+
+1537908582
+Jenz
+Ugh, xorg keeps crashing
+
+1537908731
+Jenz
+What do people think about
+
+1537908747
+wink_
+andrewrk: interesting, will the stage 2 zig compiler use the "LLVM API to find out alignment", just curious?
+
+1537908937
+andrewrk
+wink_, probably not. it's faster and less complicated to calculate it without creating LLVM types
+
+1537915107
+wink_
+txs
+

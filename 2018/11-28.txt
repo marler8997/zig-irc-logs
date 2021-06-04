@@ -1,0 +1,312 @@
+1543369745
+daurnimator
+andrewrk: what is your view on aliasing?
+
+1543369757
+daurnimator
+andrewrk: have you though about no-alias by default?
+
+1543369760
+daurnimator
++t
+
+1543369776
+andrewrk
+
+
+1543369799
+daurnimator
+also I just found
+
+1543372365
+suirad
+ive always enjoyed how aliasing and stuff works in ponylang
+
+1543378215
+ibebrett
+question about the allocator code
+
+1543378327
+ibebrett
+note that
+
+1543378345
+ibebrett
+however the allocFn "inner function"
+
+1543378353
+ibebrett
+does not assume that parameter is comptime
+
+1543378397
+ibebrett
+is there a reason why it couldn't? It would help me with using a "child allocator" as an implementation for a debug checking allocator i'd like to create
+
+1543381108
+suirad
+ibebrett: i made something similar if you need a hand
+
+1543382428
+ibebrett
+thanks, I'd like to take a look
+
+1543382711
+suirad
+ibebrett:
+
+1543382921
+ibebrett
+tanks
+
+1543397499
+forgot-password
+Hi :)
+
+1543402000
+Hejsil
+forgot-password, Yo
+
+1543402280
+forgot-password
+Hey :) I'm currently playing around with OpenGL in zig, but the glShaderSource function is giving me a few problems.
+
+1543402364
+forgot-password
+I have a source string of type `[]const u8` and glShaderSource has the signature /Users/hannes/Documents/playground/zig-test/hello.zig:52:29: error: expected type 'type', found 'extern fn(u32, i32
+
+1543402368
+forgot-password
+, ?[*]const ?[*]const u8, ?[*]const i32) void'
+
+1543402384
+forgot-password
+Oops, sorry for that fuck-up ^^
+
+1543402592
+forgot-password
+And I'm not sure how the get a [*]const [*]const u8 from my source string. I at least got it compile with @ptrCast(const[*] const[*]const u8, &vsrc.ptr), where vsrc is my shader source. It also doesn't crash at runtime, but it doesn't seem like the way to go :p
+
+1543402962
+Hejsil
+Well, [*]const [*]const u8 smells a lot like a 2 dim array. Sure this argument is suppose to just point to 1 string?
+
+1543403003
+Hejsil
+"Specifies an array of pointers to strings containing the source code to be loaded into the shader."
+
+1543403009
+forgot-password
+No it can actually take an array of strings
+
+1543403072
+forgot-password
+Wait if I do &vsrc.ptr don't I have a pointer to a pointer to a char, which is basically a two-dimensional array of chars or an array of strings?
+
+1543403136
+Hejsil
+That is true. Sadly @typeOf(&vsrc.ptr) will be *const [*]const u8
+
+1543403171
+Hejsil
+This is probably the cleanest:
+
+1543403405
+forgot-password
+Thank you, will get back to you soon :)
+
+1543403862
+forgot-password
+Is the `c"a"` saying that it should be interpreted as a single character and not a string?
+
+1543403938
+Hejsil
+No, it a c string literal. It gives you a null terminated string
+
+1543403964
+Hejsil
+Which you'll most likely need when calling into C :)
+
+1543404026
+forgot-password
+Ohh, that's how I do that... Does it work for multiline strings?
+
+1543404064
+Hejsil
+Yes, just append c to all lines
+
+1543404068
+Hejsil
+c\\
+
+1543404196
+forgot-password
+Sorry if I'm bothering you with such basic questions, but the langref.html isn't the most complete documentation I know of :P
+
+1543404717
+forgot-password
+Would I have to import strlen/build it myself in order to get the length of a c string or is there a std function? Because I can't find any
+
+1543405303
+Hejsil
+There is std.cstr.len and mem.len (they do the same).
+
+1543405325
+Hejsil
+mem.len is the generic implementation for getting the length of any null terminated array
+
+1543405407
+Hejsil
+Ops, sorry. I just read this comment on cstr.len: "Deprecated, use mem.len"
+
+1543405414
+Hejsil
+mem.len it is
+
+1543408425
+daurnimator
+Hejsil: I'm not sure why that exists TBH
+
+1543408446
+daurnimator
+I feel like mem.indexOf(x, '0'); would be more self explanatory
+
+1543409107
+forgot-password
+Hi, it's me again. I just created a gist where I commented a few lines I need help with. Thanks in advance to anybody who takes a look at it :)
+
+1543409119
+forgot-password
+Here's the link to the gist:
+
+1543411408
+Hejsil
+daurnimator, well indexOf only works on slices, so it is always safe and returns ?usize
+
+1543411424
+Hejsil
+mem.len works on unknown length points, is unsafe and returns usize
+
+1543411448
+Hejsil
+Maybe mem.indexOfAny is better, as then you can have any termination you want
+
+1543411541
+Hejsil
+forgot-password. the logLength question is related to this issue:
+
+1543411580
+Hejsil
+Currently, you could do @ptrCast([*]u32, &logLength) instead of declaring the array, but it feels pretty bad to do ptr casts
+
+1543411596
+Hejsil
+As for allocators
+
+1543411602
+MajorLag
+If you have an idea the maximum size that you care about for the log, you can just create a static buffer and pass that directly without an allocator: `var staticMemory: [max_size]u8 = undefined;` `c.glShaderInfoLog(shader, std.math.min(logLength, max_size), null, &staticMemory);`. If you'd rather dynamically allocate to ensure you can get the entire log: `var direct_allocator = std.hea.DirectAllocator.init(); var allocator = &direct_alloca
+
+1543411603
+MajorLag
+tor.allocator; var allocatedMemory = allocator.alloc(u8, logLength); c.glShaderInfoLog(shader, logLength, null, allocatedMemory);`
+
+1543411652
+MajorLag
+there may need to be a pointer cast in there, I've not had to interface with C for a while.
+
+1543411737
+MajorLag
+Oh, and you'll probably want to free that memory at some point `defer allocator.free(allocatedMemory);` will ensure it is freed at scope exit.
+
+1543411822
+Hejsil
+Well, was making an example, but you summed it up
+
+1543413214
+forgot-password
+Thank you very much, that helps me a lot :)
+
+1543415159
+forgot-password
+MajorLag, do I need to initialize staticMemory? I updated the gist from earlier (the function of concern is `getShaderInfoLog`) if you want to take a look at it. I'm currently working on a Mac and OpenGL support was deprecated by Apple earlier this year, so I'm not sure whether my problems are caused by that or if they happen due to my code. The latter is obviously much more likely
+
+1543415378
+MajorLag
+Your buffer can't be const, because you're going to modify it.
+
+1543415430
+MajorLag
+also you can't return it as a slice, since it is on the stack, it isn't valid outside the scope of the function.
+
+1543415513
+forgot-password
+I see, that makes sense
+
+1543415574
+MajorLag
+Two options: move the buffer to the global scope (and make it var) and return a slice of it, or dynamically allocate it, in which case you'll need the allocator to be declared and initialized in the global scope and you'll need to free the memory later.
+
+1543415700
+forgot-password
+Wouldn't passing the allocator as an argument be a lot cleaner? Or is that not possible?
+
+1543415743
+Hejsil
+That is the recommended way to do allocations (passing allocators around)
+
+1543415852
+forgot-password
+I'm gonna keep it global for now... I can still do some cleanup when I got it to work ^^
+
+1543416479
+forgot-password
+Alright, now I can get the log, but when I try to log it via `warn` it crashes with “unreachable code“. If I put a `warn` after my `c.glGetShaderInfoLog`-call it still gets written, so I'm guessing that's not the problem
+
+1543416608
+MajorLag
+Does it say which line number and file the unreachable is in?
+
+1543416668
+MajorLag
+And yes, typically allocators are passed in as the first parameter to functions that need them. You'd still have to declare the allocator itself globally so that it is in scope for the duration of the allocation's lifetime.
+
+1543416684
+MajorLag
+Well, or in main
+
+1543416864
+MajorLag
+` @ptrCast([*]u8, &buffer)` allocator.alloc returns a slice, so you don't want `&buffer` here since buffer is already a pointer. You don't even need `@ptrCast` here, you can do `buffer.ptr` to get the `[*]u8` prat of the slice.
+
+1543416981
+forgot-password
+Oh, that actually caused the crash... It works now :)
+
+1543417225
+Hejsil
+Hmmm. I wounder if we should structure the interface in std like this instead:
+
+1543417233
+forgot-password
+Is a std.heap.DirectAllocator not a subset of std.mem.Allocator?
+
+1543417376
+MajorLag
+std.heap.DirectAllocator is an implementation of the std.mem.Allocator interface. The actuall interface is the `.allocator` part of the initilaized DirectAllocator instance.
+
+1543417424
+MajorLag
+`var allocator = &direct_allocator.allocator;` <= allocator is of type *std.mem.Allocator.
+
+1543417449
+MajorLag
+`direct_allocator` is of type std.heap.DirectAllocator.
+
+1543419144
+forgot-password
+Thank you everybody, the code now works without a problem :)
+
+1543419759
+forgot-password
+I was just looking into Vulkan and look what I found here:
+

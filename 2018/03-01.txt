@@ -1,0 +1,376 @@
+1519907179
+hoppetosse
+andrewrk: I'm soooo close to getting a win32 framebuffer up
+
+1519907200
+hoppetosse
+?.c:1:1: note: integer value 2147483648 cannot be implicitly casted to type 'c_long'
+
+1519907209
+hoppetosse
+?.c:1:1: note: use of undeclared identifier 'int'
+
+1519907321
+hoppetosse
+I've basically traced the first error to  the parsing of an enum which has an element of value -1 and another 0x80000000
+
+1519907344
+MajorLag
+Huh, I think I am doing more or less the same thing as you. Ran in to the same problem, with CW_USEDEFAULT?
+
+1519907371
+MajorLag
+translate-c makes a mess of it: pub const CW_USEDEFAULT = if (@typeId(@typeOf(2147483648)) == @import("builtin").TypeId.Pointer) @ptrCast(c_int, 2147483648) else if (@typeId(@typeOf(2147483648)) == @import("builtin").TypeId.Int) @intToPtr(c_int, 2147483648) else c_int(2147483648);
+
+1519907390
+MajorLag
+I replaced it with: pub const CW_USEDEFAULT = @bitCast(c_int, c_uint(0x80000000));
+
+1519907396
+hoppetosse
+pub const DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INTERNAL: c_int = -2147483648;
+
+1519907418
+hoppetosse
+Yeah, thats's the second error
+
+1519907429
+hoppetosse
+I think it happenss before that point though
+
+1519907460
+hoppetosse
+I also get this in the importc output: const
+
+1519907467
+MajorLag
+oh, wait, that CW_DEFAULT line I pasted says c_int, that must be from a correction attempt because I swear translate-c inserted 'int' instead.
+
+1519907494
+hoppetosse
+Yeah, I think something goes weird before
+
+1519907519
+hoppetosse
+Are you importing windows.h with WIN32_LEAN_AND_MEAN?
+
+1519907528
+MajorLag
+Yep, I have the same line in my windows.h.zig
+
+1519907561
+MajorLag
+I ran translate-c over windows.h and import it as zig. Lets me manually correct it.
+
+1519907618
+hoppetosse
+const c = @cImport({
+
+1519907618
+hoppetosse
+@cDefine("WIN32_LEAN_AND_MEAN", "");
+
+1519907618
+hoppetosse
+});
+
+1519907618
+hoppetosse
+@cInclude("stdlib.h");
+
+1519907618
+hoppetosse
+@cInclude("windows.h");
+
+1519907642
+hoppetosse
+That cDefine makes a lot of stuff not get included
+
+1519907656
+hoppetosse
+makes the output a lot smaller with less room for error
+
+1519907688
+hoppetosse
+
+
+1519907703
+MajorLag
+I just commented out everything but the constants, and I manually go and uncomment the procedures I need since I'd have to manually touch each of them to get them to link properly anyway.
+
+1519907766
+MajorLag
+translate-c doesn't handle the MAKEINTRESOURCE macro, so it missed a bunch of stuff from winuser.h I had to manually add.
+
+1519907773
+hoppetosse
+That actually sounds pretty clever
+
+1519907786
+hoppetosse
+yeah, I had to recreate MAKEINTRESOURCE
+
+1519907856
+hoppetosse
+I'm gonna try what you did, running translate c and importing as zig without the offending lines
+
+1519907879
+hoppetosse
+thanks for the idea!
+
+1519907960
+hoppetosse
+how do I run just translate-c?
+
+1519907968
+MajorLag
+There are several instances where translate-c inserts "int" as a type for some reason, now that I've searched for it in places Id idn't already touch. Interesting.
+
+1519907976
+MajorLag
+zig translate-c windows.h
+
+1519907984
+hoppetosse
+do a regex search for \Wint\W
+
+1519907996
+hoppetosse
+thanks
+
+1519908012
+MajorLag
+Yeah, I got them all, I'm just surprised it happens.
+
+1519908027
+hoppetosse
+Is there any way to define that WIN32_LEAN_AND_MEAN?
+
+1519908106
+MajorLag
+I'm not aware of a way to do it from the commandline. When I've had to do that I've just created a new header file with the define and then the include of what I wanted
+
+1519908109
+hoppetosse
+I was running it with --verbose-cimport and piping the output to a file
+
+1519908202
+hoppetosse
+PS E:\Projects\Tick\platform\framebuffer> zig translate-c windows.hunexpected error from clang: error reading 'windows.h'                                                                  unable to parse C file: C compile errors
+
+1519908264
+MajorLag
+interesting, I didn't have any problems with it. Oh, are you sure you're pointing at all the right system include paths?
+
+1519908286
+hoppetosse
+I didn't specify any, but I'll try that now
+
+1519908314
+MajorLag
+-isystem "./" -isystem ".../VC/BuildTools/include" -isystem ".../VC/BuildTools/ucrt" are what I've got
+
+1519908611
+hoppetosse
+No luck =/
+
+1519908641
+MajorLag
+odd.
+
+1519908657
+hoppetosse
+I don't have those BuildTools folders
+
+1519908672
+hoppetosse
+I have them at C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\include
+
+1519908682
+hoppetosse
+tried it with 12.0 as well
+
+1519908698
+MajorLag
+You're using VisualStudio I imagine. I'm just using the BuildTools without VS. I'm not sure where the equivelent VS folders are.
+
+1519908721
+hoppetosse
+Yeah, pretty sure these are the equivalent ones
+
+1519908722
+MajorLag
+I can confirm that translate-c doesn't error for me, I just ran it again to make sure I wasn't crazy.
+
+1519908729
+hoppetosse
+there's a windows.h in there, so...
+
+1519908751
+hoppetosse
+I'm a few commits behind master, but I dont think anything's been done sice
+
+1519908760
+hoppetosse
+are you running a debug build or release build?
+
+1519908774
+MajorLag
+whatever the build artifact is. I'm pretty sure it's release.
+
+1519908785
+hoppetosse
+Then yeah, same here
+
+1519908800
+hoppetosse
+I mean, I compiled it, but it's release
+
+1519908807
+MajorLag
+0.1.1.1c1c0691, alsoa  few commits behind
+
+1519908890
+hoppetosse
+Could you send me your windows.h.zig?
+
+1519908922
+MajorLag
+in addition to the include with windows.h, you also need the base one (contains stdint.h) and ucrt one (contains wchar.h)
+
+1519908925
+MajorLag
+Sure, one sec
+
+1519908937
+MajorLag
+It's ~63k lines.
+
+1519908954
+hoppetosse
+Yeah, nevermind
+
+1519908970
+hoppetosse
+let me make sure those other files are there
+
+1519909011
+hoppetosse
+Yeah, the files are there
+
+1519909136
+MajorLag
+well, if you change your mind, paste.ubuntu took it but is choking on it a bit:
+
+1519909373
+hoppetosse
+thanks!
+
+1519909432
+MajorLag
+I don't know if it will apply to you or not, but I get "error: link error" when building with that unless I manually designate where each extern fn comes from and make it stdcallcc. Which is why most of them are commented out.
+
+1519911418
+hoppetosse
+MajorLag: Well, at least now I'm not getting import errors, but the compiler crashes =)
+
+1519911487
+hoppetosse
+MajorLag: Well, at least now I'm not getting import errors, but the compiler crashes =)
+
+1519911505
+hoppetosse
+(sorry, wrong window)
+
+1519912270
+hoppetosse
+And now at least it doesn't crash, but I'm getting a linking error.
+
+1519914773
+MajorLag
+Is it "error: link error"? I get that with the older version of LLVM unless I go in and manually make the extern fns specify the library they're in and mark them stdcallcc.  pub extern "user32" stdcallcc fn CreateWindowEXA(....
+
+1519923247
+MajorLag
+Is there a way to make lld not treat all warnings as errors?
+
+1519923891
+andrewrk
+MajorLag, hmm I'm not sure. here's a list of options:
+
+1519923923
+andrewrk
+oh yeah, I see it
+
+1519923928
+andrewrk
+WX
+
+1519924106
+andrewrk
+I would need to add a way to pass linker args with the zig command line, or decide that we should default to that setting on windows
+
+1519924109
+andrewrk
+what are you running into?
+
+1519924148
+MajorLag
+That was going to be my follow up question.
+
+1519924260
+MajorLag
+Eh, just playing around trying to build against MinGW64 libs. Supposedly they fixed this issue with -aligncomm in .drectve at some point, but not in this one. It'd be fine if I could tell LLD to just ignore it, though I'm pretty sure the next thing I'll run into is "error: link error"
+
+1519930708
+andrewrk
+MajorLag, what's stopping you from using the llvm6 branch?
+
+1519930720
+andrewrk
+(sincere question - maybe I can help you get it working)
+
+1519930760
+andrewrk
+do you need a pre-built binary for llvm? or do you need me to make the llvm6 appveyor artifacts work?
+
+1519930840
+andrewrk
+Hejsil, yeah that's still not supposed to be allowed. You're successfully creating an identifier named "type" but that conflicts with the existing "type"  identifier. same error for trying to declare a variable with the same name twice
+
+1519931153
+MajorLag
+I'd rather have the artifacts work, but it isn't a big deal. Though if you know of a place I can get a prebuilt llvm6 for windows I can compile to obejct and link with that to see if it works.
+
+1519932310
+andrewrk
+I don't know of a place, but you could follow the instructions for building one yourself, if you want to wait a long time:
+
+1519932336
+andrewrk
+files are here:
+
+1519938696
+jacobdufault
+andrewrk: curious if you have any thoughts on go vs zig language design (ignoring the fact that go is not really targeting a similar performance model), it seems like the languages have some shared ideals/goals w.r.t. simplicity
+
+1519938719
+MajorLag
+Thanks andrewrk, I'll maybe take a look at that in the near future.
+
+1519938789
+andrewrk
+jacobdufault, my main complaints about go are: hidden memory allocation which it is impossible to check for failure,  tedious and therefore easy to bungle error handling, lack of generics
+
+1519938824
+andrewrk
+also, I
+
+1519940802
+hoppetosse
+MajorLag: Yeah, that's the error
+
+1519940844
+hoppetosse
+I'll keep y'all posted =)
+

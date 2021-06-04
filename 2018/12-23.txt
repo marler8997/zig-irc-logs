@@ -1,0 +1,432 @@
+1545523375
+knebulae
+andrewrk: so I'm having a weird problem with llvm, specifically in Driver.cpp.  Despite /ENTRY:"EfiMain" being passed properly, inside llvm, when it performs linking, it is not propagating that value from the linker options (others are coming through fine).  This causes lld to fail with an "entry point must be defined" error.
+
+1545523457
+knebulae
+andrewrk: the relevant code begins on line 1370 of deps/lld/COFF/Driver.cpp
+
+1545523511
+knebulae
+andrewrk: the Config->Entry value is NULL for whatever reason.
+
+1545524971
+knebulae
+andrewrk: perhaps I've misunderstood the nature of this error.  I did make good progress though.  Almost there.
+
+1545525539
+daurnimator
+andrewrk: the lazy extern problem
+
+1545529756
+ross_k
+Can anyone point me to the docs for what's happening in the function signature for ptr in
+
+1545529779
+ross_k
+(the section starting with t:)
+
+1545529830
+daurnimator
+ross_k: it is paired with the `t:` on line 10.
+
+1545529908
+daurnimator
+ross_k: see
+
+1545529919
+daurnimator
+> Blocks are expressions. When labeled, break can be used to return a value from the block:
+
+1545530068
+ross_k
+Oh, so the block starting t: is an expression which returns a type?
+
+1545530618
+daurnimator
+yes
+
+1545530651
+ross_k
+Cool, thanks
+
+1545531305
+knebulae
+andrewrk: I've tracked down the issue (via manually running lld-link on the .obj that zig creates).  lld-link doesn't like my .lib files (Visual Studio 17), complaining "unknown file type".  Interestingly enough, it shows the full path to the original .obj file that was used to create the .lib file (maybe that's just the way .lib archiving works).
+
+1545534196
+andrewrk
+knebulae, the LLD team is pretty active in the COFF parts of it. you could try using master branch of LLD and see if it's fixed, and if not file a bug
+
+1545534658
+knebulae
+ok
+
+1545534733
+andrewrk
+if that leads to a resolution I'll look into backporting it so that you can have it before zig 0.4.0 is released
+
+1545537319
+knebulae
+andrewrk: thank you, and I'll let you know asap.
+
+1545572955
+ross_k
+The docs don't seem to mention this, but it seems pass-by-value  parameters are always const:
+
+1545572962
+ross_k
+Is that right?
+
+1545573668
+MajorLag
+ross_k, I think this is what you are observing: For optimization reasons, when you pass a struct by value the compiler is free to pass it as either a copy or a pointer behind the scenes and you pinky swear not to modify it. If you need to modify it you have to pass it as a pointer. I'm trying to dig up the issue for you.
+
+1545573705
+MajorLag
+Ah, here it is:
+
+1545573711
+daurnimator
+ross_k: IIRC all args are const
+
+1545573781
+unique_id
+ross_k: As daurnimator says, all are const. If you want to mutate you'll have to make a copy (which is easily optimized out). Rust chose to let the programmer mark the field as mutable: "mut x: i32" but Zig wants to stay small so you just make a copy
+
+1545574339
+ross_k
+Thanks, that makes sense.
+
+1545584452
+knebulae
+andrewrk: well, I began climbing the mountain with LLVM master this morning.  Rebuilt llvm, clang, & lld.  Made the necessary changes to zig for LLVM 8, and now and staring at a linking error that is obviously the result of a template gone awry somewhere, but C++ template debugging is not my strong suit at all.
+
+1545584501
+andrewrk
+knebulae, ah, sorry I didn't intend for you to have to make zig work with llvm 8, I was thinking you would just build LLD master and run that manually
+
+1545584508
+andrewrk
+btw we have a branch for that, llvm8
+
+1545584515
+knebulae
+ok.
+
+1545584569
+andrewrk
+I haven't updated it in a while
+
+1545584594
+knebulae
+Well, I'm 4 unresolved externals away from having a zig that works on LLVM 8. Lol.
+
+1545584657
+andrewrk
+knebulae, but you have an LLD built from master right?
+
+1545584666
+knebulae
+yes
+
+1545584670
+knebulae
+debug and release
+
+1545584672
+andrewrk
+can you use master branch zig with llvm 7 like normal, and then do the final link step with your newer LLD?
+
+1545584691
+knebulae
+yes
+
+1545584711
+andrewrk
+that will be enough to know if we can just try to backport the fix or if we need to make a bug report
+
+1545584841
+knebulae
+There is something interesting with library handling that I suspect is the root of my problem.  If I try this the other way around, creating a library with zig and attempting to use MS-LINK for the final .efi file, MS-LINK complains that the subsystem does not allow imports; but if I don't mark the entrypoint function as an export in zig, MS-LINK can't find it. :/
+
+1545584898
+knebulae
+So perhaps there is a subtlety between simply making a function c-visible and making/marking it as an import function?
+
+1545584929
+andrewrk
+from a zig language perspective, if you don't mark a function as `export` then it's not going to show up in the object file / library at all
+
+1545584944
+knebulae
+right, and that's to be expected
+
+1545584951
+andrewrk
+so you definitely need that. you do have some linkage options:
+
+1545584975
+andrewrk
+you can find those enum values in the source printed by `zig builtin` which dumps the contents of @import("builtin")
+
+1545584995
+knebulae
+very helpful.  thank you.
+
+1545585002
+andrewrk
+based on what you've found so far, however, it seems that the default of strong linkage is fine
+
+1545585042
+andrewrk
+one clue could be that this would be the same problem faced by using Clang and LLD to create a UEFI application
+
+1545585053
+andrewrk
+so if anyone has pioneered down that path, their discoveries would apply to zig as well
+
+1545585061
+andrewrk
+however, I suspect that pioneer may in fact be you :)
+
+1545585153
+knebulae
+Well, I'm probably the only one attempting clang & EDK-II.  Most people are VisualStudio/MSVC & EDK-II.  People using clang and gcc are probably using gnu-efi, which is much more basic.  And GPL instead of BSD/MIT.
+
+1545585163
+andrewrk
+knebulae, if you need to try any more linker options, I believe that LLD supports most if not all of these:
+
+1545585205
+andrewrk
+you might also try --target-environ msvc
+
+1545585215
+knebulae
+Yeah, llvm documents which options they support and where they are progress-wise.
+
+1545585229
+andrewrk
+that communicates to zig that your idea of "The C ABI" is MSVC
+
+1545585242
+knebulae
+That option is only required if you use a generic invocation of lld.  I use lld-link to avoid ambiguity.
+
+1545585260
+knebulae
+sorry, to zig; gotcha.
+
+1545585272
+knebulae
+lld has a similar option.
+
+1545585298
+andrewrk
+yeah - in summary, whenever you're trying to mix zig object/library files and MSVC object/library files/linker, best to use --target-environ msvc
+
+1545585335
+knebulae
+ok
+
+1545587331
+knebulae
+This is just disappointing.  I have so much code to basically
+
+1545588385
+andrewrk
+knebulae, yeah, that's the hard part
+
+1545588413
+knebulae
+I love it though...
+
+1545589429
+Zaab1t
+Hello everyone
+
+1545589432
+Zaab1t
+just downloaded Zig!
+
+1545589442
+andrewrk
+hi Zaab1t
+
+1545591145
+Zaab1t
+alright so im just reading through the documentation a bit
+
+1545591172
+Zaab1t
+why is stdout var and not const in the hello world example?
+
+1545591284
+andrewrk
+Zaab1t, because the write method used to take a mutable pointer to the file struct. but that's changed, so I think you can use const now
+
+1545591312
+andrewrk
+thanks! I'll update that in the master branch
+
+1545591587
+Zaab1t
+andrewrk: If you hold my hand, I'd love to make some commits as I walk through the docs
+
+1545592062
+andrewrk
+Zaab1t, I'm happy to help
+
+1545593054
+Zaab1t
+why are some "tests" written as comptime here?
+
+1545593115
+andrewrk
+Zaab1t, to show that the expressions can be evaluated at compile-time
+
+1545593138
+andrewrk
+try modifying the assertion to fail and running the test
+
+1545593154
+andrewrk
+(you can copy that whole arrays test block into a file and run it with the command it shows below)
+
+1545593411
+suirad
+good afternoon
+
+1545593422
+suirad
+andrewrk: what is the most straightforward way to move a register into a var with inline asm in zig? also, are there any limitations of asm in comptime? i have a theory id like to prove using it
+
+1545593496
+andrewrk
+suirad, you can't do asm at comptime. if you put asm in a comptime block that is "module level assembly"
+
+1545593521
+andrewrk
+to be clear, if you put it in a top level comptime block. if you put asm in a comptime block inside a function you'll get "unable to evaluate constant expression"
+
+1545593700
+suirad
+so, to be clear, you can put asm in a top level comptime block; but you cannot inside a function. Am I understanding that correctly?
+
+1545593712
+andrewrk
+suirad, to move a register into a var:
+
+1545593717
+andrewrk
+except don't make it volatile
+
+1545593735
+andrewrk
+and use `var xyz = asm (...);` instead of `return asm(...);`
+
+1545593764
+andrewrk
+you can put asm in a function, but you cannot execute asm at comptime
+
+1545593776
+andrewrk
+asm in a top level comptime block is interpreted to be module-level assembly
+
+1545593813
+suirad
+gotcha, thanks.
+
+1545593938
+andrewrk
+Zaab1t, by the way, if you're looking to contribute, I'd suggest using master branch rather than 0.3.0
+
+1545607101
+knebulae
+andrewrk:
+
+1545607117
+knebulae
+I cheated a little (linked using MS link).
+
+1545607132
+andrewrk
+neat!
+
+1545607147
+andrewrk
+that u16 string literal is begging for a comptime function
+
+1545607268
+knebulae
+True, but I haven't learned any zig yet :/ lol.
+
+1545607866
+andrewrk
+knebulae, I just updated the llvm8 branch to work with trunk. tests haven't finished running yet but they're passing so far
+
+1545608022
+knebulae
+good news!  I still need to figure out why lld doesn't like my libraries.  I thought it might be LTCG (MS's version of LTO), but I turned that off and rebuilt, and the same problem.  There is no way LLVM8 cannot read/write these .lib files(*).  *Yes, there is in fact a way.
+
+1545608626
+andrewrk
+knebulae, it really might be as simple as LLD needing a new feature
+
+1545608677
+andrewrk
+and with active devs, all we need is a good bug report to make it happen
+
+1545608843
+knebulae
+I'd like to submit a PR at least with the changes I made thus far.
+
+1545608865
+knebulae
+well, maybe not.
+
+1545608877
+andrewrk
+why not?
+
+1545609004
+knebulae
+well, it doesn't produce an executable with llvm7, and if it winds up requiring an embedded llvm8 to work... Maybe just not the right time.
+
+1545609024
+knebulae
+sorry, lld8
+
+1545609032
+mgxm
+andrewrk:
+
+1545609054
+mgxm
+It's avout the segfault on freebsd when cross compiling the std lib tests for linux
+
+1545609103
+andrewrk
+mgxm, I feel like I just fixed something similar to this recently
+
+1545609161
+andrewrk
+mgxm, it was Hejsil:
+
+1545609190
+andrewrk
+looks like if you rebase your branch on master (or merge master in) it should fix it
+
+1545609404
+mgxm
+ouch..
+
+1545609413
+mgxm
+I'll do that
+
+1545609414
+mgxm
+thank you
+

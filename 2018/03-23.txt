@@ -1,0 +1,564 @@
+1521764193
+andrewrk
+jzelinskie, here's the code that runs before main:
+
+1521764213
+andrewrk
+and here's the default panic handler if you don't provide your own:
+
+1521764226
+andrewrk
+(this happens if you trip a runtime safety check)
+
+1521764292
+andrewrk
+that's all the runtime there is
+
+1521764536
+jzelinskie
+nice
+
+1521764564
+andrewrk
+even coroutines do not require a runtime
+
+1521764598
+andrewrk
+although to be useful in practice, one ends up implementing an event loop in userland
+
+1521764603
+jzelinskie
+i think someone asked this last night, but how powerful are enums?
+
+1521764641
+andrewrk
+are you asking about tagged unions?
+
+1521764664
+jzelinskie
+const tagged unions
+
+1521764671
+andrewrk
+
+
+1521764679
+andrewrk
+is that a  c++ concept? what does the const do?
+
+1521764715
+jzelinskie
+not cpp, more of a haskell style thing
+
+1521764740
+jzelinskie
+e.g. myFavoriteOdds = { One: 1, Two: 2, Three: 3 }
+
+1521764751
+jzelinskie
+hmm 2 isn't odd
+
+1521764754
+jzelinskie
+you get the point though
+
+1521764770
+jzelinskie
+basically being able to declare a type as a subset of another
+
+1521764786
+jzelinskie
+it would let you turn this
+
+1521764807
+jzelinskie
+into a type that only allows those values
+
+1521764874
+andrewrk
+you can assign the tag value of an enum
+
+1521764882
+andrewrk
+and you can specify the integer tag type of an enum
+
+1521765011
+jzelinskie
+you know what you need that Joey's language has? a playground
+
+1521765041
+andrewrk
+that sounds nice
+
+1521765051
+andrewrk
+we have a docker image if that's helpful
+
+1521765064
+jzelinskie
+yeah, but we can't link each other to runnable code snippets
+
+1521765072
+andrewrk
+ah, godbolt style
+
+1521765112
+jzelinskie
+yup
+
+1521765136
+jzelinskie
+godbolt is pretty nuts though since i've only really used it for looking at asm
+
+1521765170
+jzelinskie
+
+
+1521765175
+jzelinskie
+
+
+1521765300
+jzelinskie
+can you do zero copy C FFI?
+
+1521765357
+jzelinskie
+i suppose it depends on the types, e.g. you'd get a "CString" from calling into C rather than a string, right?
+
+1521765734
+andrewrk
+a "c string" is `&u8`, e.g. a pointer to a u8
+
+1521765753
+andrewrk
+it's planned to introduce a pointer type that notes that there is a null value at the end
+
+1521765887
+andrewrk
+
+
+1521765916
+andrewrk
+because zig has no memory management, C FFI has no overhead
+
+1521766242
+jzelinskie
+so basically everything from C FFI is &u8?
+
+1521766253
+MajorLag
+every c string is
+
+1521766278
+MajorLag
+other things are appropriate mappings. zig has c_int, c_long, etc to ensure you match the native abi
+
+1521766294
+jzelinskie
+structs?
+
+1521766300
+MajorLag
+are just structs
+
+1521766304
+andrewrk
+`extern struct` guarantees C ABI
+
+1521766312
+jzelinskie
+awesome
+
+1521766319
+andrewrk
+same with union
+
+1521766320
+jzelinskie
+i remember you saying that now
+
+1521766351
+andrewrk
+we also have `packed struct` where you get exactly the fields you list, in exactly that order, no padding, and you can use integer types smaller than 8 bits to get bit fields
+
+1521771976
+hobomatic
+i don't think there is an issue for this, and i think this is a pretty minimal case, working from 0.2.0 on linux_x86_64:
+
+1521773456
+hobomatic
+i know this isn't actually a good way to do this (endianness) and there is mem.readInt, but it seems like this should be possible
+
+1521773787
+hobomatic
+but I am pretty stupid about machine numbers and alignment and packing and all that, so maybe not
+
+1521775737
+MajorLag
+that's odd
+
+1521775760
+MajorLag
+if you move the var to global scope it works. also `var n32 = *@ptrCast(&i32, @alignCast(@alignOf(i32), &n8[0]));` works.
+
+1521775832
+MajorLag
+actually wait, no, in global scope it gives a different value.
+
+1521775844
+hobomatic
+haha
+
+1521775852
+hobomatic
+spooky
+
+1521775909
+MajorLag
+yeah, it's definitely just hitting uninitialized memory when you put the var in global scope
+
+1521776193
+hobomatic
+yeah for me it gives a different number and the test fails for some reason, i guess a segfault or something equivalent. No panic stacktrace like an assertion failure.
+
+1521776274
+hobomatic
+(using var in global scope)
+
+1521776339
+hobomatic
+yeah its a segfault when i run the test executable from zig-cache
+
+1521776617
+MajorLag
+it happens even if it is an array of a single u32. So I think var arrays must be special, probably have a size prefix or something?
+
+1521776652
+accidental
+hey all, I'm going through documentation and don't think this is possible, but is there a way to define an implicit cast?
+
+1521776667
+MajorLag
+and @bitCast isn't aware of that I guess
+
+1521776703
+MajorLag
+the docs just say that @bitCast asserts the types have the same size, and indeed [4]u8 has the same size as i32.
+
+1521776716
+MajorLag
+and it works for const.
+
+1521776726
+accidental
+specifically, I'd like to be able to use std.fmt with a custom type, and as far as I can tell the only non-built in formatter is for things that can be implicitly converted to []u8
+
+1521776765
+MajorLag
+oh, that's what you mean.
+
+1521776836
+MajorLag
+I don't think that's currently possible, but I think there's a plan to have a way of extending std.fmt at least.
+
+1521776888
+accidental
+hrm ok cool - kinda what I thought after skimming source but didn't know if it was a thing
+
+1521776928
+accidental
+I can wrap printf to do something similar, or I guess you could have a third party formatting library that could handle it, but yeah
+
+1521777074
+MajorLag
+it's pretty easy to write a comptime function for formatting custom types. I did an experiment a while back where I wrote something to inspect and print an entire struct:
+
+1521777114
+accidental
+oh sweet, I'll definitely take a look at that, thanks
+
+1521777542
+accidental
+so looking through that
+
+1521777595
+accidental
+it's pretty much what the current format stuff does, in that it's comptime hardcoding types (switch on @typeId, has to be known types)
+
+1521777646
+accidental
+is there a way to comptime dispatch to some type specific function?
+
+1521777657
+MajorLag
+Ultimately everything is a known type. It takes a struct, any struct, and decomposes it into primitive types.
+
+1521777718
+MajorLag
+yeah, you can just switch on the type. switch(@typeOf(whatever)) { TypeA => ... TypeB => ....}
+
+1521777741
+accidental
+I guess I want to be able to extend that switch in a different library
+
+1521777745
+accidental
+module
+
+1521777769
+accidental
+introduce a TypeC I guess, you know?
+
+1521777782
+accidental
+sorry, if I'm being dense
+
+1521777824
+sand-witch
+Are global variables known to be not working?
+
+1521777922
+sand-witch
+dont pay attention those file path names though..misleading nonsense at this point
+
+1521778052
+sand-witch
+Sigh, I was going to clean this code better up. It's just doing nonsense. Important part is that it thinks there's a redefinition of ptr.
+
+1521778061
+MajorLag
+accidental: Yeah, I see what you're saying. I can think of ways to do that, but they're pretty involved, returning comptime types and stuff.
+
+1521778163
+MajorLag
+sand-witch, huh, I would think you'd be able to shadow... actually I think there might be an issue for this...
+
+1521778263
+MajorLag
+Might be related to
+
+1521779160
+sand-witch
+MajorLag: This is the other error I was referring to
+
+1521779542
+sand-witch
+MajorLag: Here's a much better one:
+
+1521779560
+hobomatic
+
+
+1521779585
+hobomatic
+it seems like its running it at compile time and screwing up hygene
+
+1521779626
+hobomatic
+and if you change n to var, it gives that other error about not being able to evaluate n
+
+1521779758
+hobomatic
+well, not 'n' duplicates, but like 10 in that case.
+
+1521780034
+andrewrk
+hobomatic: that is supposed to work and there is an open issue for it
+
+1521780052
+andrewrk
+I'll find it for you tomorrow and fix it
+
+1521780063
+hobomatic
+irt the @bitcast thing?
+
+1521780072
+andrewrk
+Bitcasting an array to an int
+
+1521780074
+andrewrk
+Yes
+
+1521780077
+hobomatic
+ah, ok
+
+1521780274
+andrewrk
+sand-witch: I'll have a look at your paste tomorrow. Good night all
+
+1521780310
+sand-witch
+alright, thanks. It's big issue though. Good night.
+
+1521780314
+sand-witch
+it's no*
+
+1521790202
+GitHub111
+[zig] tiehuis pushed 1 new commit to master:
+
+1521790202
+GitHub111
+zig/master 3d1732e Marc Tiehuis: Fix OpqaueType usage in exported c functions...
+
+1521798106
+GitHub176
+[zig] tiehuis pushed 1 new commit to master:
+
+1521798106
+GitHub176
+zig/master 7350181 Marc Tiehuis: Fix os.File.mode function
+
+1521811436
+sand-witch
+Is there a for loop for when you're not iterating over something? I just want to run the loop n many times.
+
+1521813973
+andrewrk
+sand-witch: while loops support a continue clause
+
+1521814033
+andrewrk
+while (i < n) : (i += 1) { }
+
+1521815463
+andrewrk
+hobomatic: bitcasting to and from an array:
+
+1521816241
+MajorLag
+andrewrk, was the other isse that came up last night with the shadowing a bug or intentional?
+
+1521816399
+andrewrk
+MajorLag, it's intentional that global variable shadowing is not allowed
+
+1521816436
+andrewrk
+the reasoning for this is that it provides a helpful guarantee when reading code
+
+1521816562
+andrewrk
+sand-witch, zig does not allow shadowing of global variables. what else were you running into?
+
+1521816623
+andrewrk
+the one with "unable to evaluate constant expression" - you are trying to execute malloc at compile time, which is impossible since the heap is not available until runtime
+
+1521816654
+andrewrk
+zig does not have static initializers - global variable declarations at top level scope  are executed at compile time
+
+1521816700
+andrewrk
+it's so nice when people are running into completely intentional compile errors with correct messages, instead of bugs :)
+
+1521816961
+Hejsil
+It's kinda rare to find a bug in Zig that doesn't crash the compiler :)
+
+1521816979
+Hejsil
+Or maybe I've just been writing to much comptime code
+
+1521816991
+Hejsil
+That's like the easiest way to hit asserts
+
+1521817003
+andrewrk
+sorry Hejsil :(
+
+1521817021
+andrewrk
+I'm going to take a much more disciplined approach when coding the self hosted compiler comptime stuff
+
+1521817036
+andrewrk
+the current c++ code was experimental and I changed strategies several times
+
+1521817061
+MajorLag
+I find the same when doing fancy comptime tricks Hejsil. But I rarely run into runtime bugs, so it's ok.
+
+1521817083
+andrewrk
+we used to go straight from AST to LLVM IR
+
+1521817103
+Hejsil
+It's a lot better to crash that have a runtime bug
+
+1521817164
+andrewrk
+how's the pokemon randomizer going? looks like it works for pokemon emerald?
+
+1521817185
+Hejsil
+I have trainer randomization working on Emerald.
+
+1521817204
+Hejsil
+Most US versions of generation 3 games probably works now
+
+1521817217
+Hejsil
+But no testing
+
+1521817255
+andrewrk
+I bet if you did a writeup of this project with some demos and stuff it would be pretty popular in tech news
+
+1521817257
+Hejsil
+I have loading of nds roms nearly working. This will allow me to randomize gen4 and 4 games
+
+1521817274
+Hejsil
+It's not really ready yet though :)
+
+1521817282
+andrewrk
+fair :)
+
+1521817306
+MajorLag
+I'd read it. From what I understand, Pokemon code has a lot of tricks for size reduction, so I'm curious how it's dealt with.
+
+1521817308
+Hejsil
+It's hard when you have a competitor that is fully featured for gen 1-5 games
+
+1521817362
+Hejsil
+My biggest challenge so far have been loading the file system from the nds rom format
+
+1521817369
+Hejsil
+There is a lot of tricks
+
+1521823337
+jacobdufault
+andrewrk: does zig depend on more than just libclang? Because I've found libclang has some issues, ie, it doesn't use the same compiler driver as clang so command line parsing is a bit of a mess (re
+
+1521830196
+andrewrk
+jacobdufault, no, it only depends on libclang. that's good to note, thanks. I'll have to experiment with it and update the issue
+
+1521830226
+andrewrk
+the Grand Bootstrapping Plan is still ok thought, because you can substitute using zig as a c++ compiler with just using the clang binaries that we produced from the previous steps
+
+1521848701
+MajorLag
+andrewrk: there's no way to um.. `catch` a compile error right? I'm thinking that if there were, or if there was a way to introspect a type's namespaced functions, it'd be really trivial to add cutsom formatters. It'd be useful in general for ducktyping with `var`, I think.
+
+1521849148
+MajorLag
+actually... there might be a better way...
+

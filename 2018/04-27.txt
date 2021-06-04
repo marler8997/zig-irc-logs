@@ -1,0 +1,444 @@
+1524788748
+andrewrk
+achambe, there's a cost for unused imports if you use the `use` keyword
+
+1524788754
+andrewrk
+which is one reason that it is discouraged
+
+1524788778
+andrewrk
+(although there are appropriate times to use it)
+
+1524791773
+alexnask
+Hmm I'm having trouble with Fn TypeInfos
+
+1524791793
+alexnask
+I'd like to generate the original info, before all generic parameters get type erased etc.
+
+1524791818
+alexnask
+Idk if type erased is the right terminology
+
+1524792055
+alexnask
+I'm guessing I could generate it if I got the FnTableEntry
+
+1524792093
+alexnask
+But that's not possible since I'm operating on types, hmm
+
+1524792444
+andrewrk
+you only have information up to the first generic parameter
+
+1524792466
+alexnask
+Right
+
+1524792498
+alexnask
+I'll be able to output correct information for function decls (methods + in namespaces) though
+
+1524792501
+alexnask
+So that's good :p
+
+1524795163
+alexnask
+Only definition info left (+ Namespace info which is basically just definition info)
+
+1524795170
+alexnask
+And tests + docs
+
+1524831543
+Dodo
+alexnask, do you have a second?
+
+1524831623
+Dodo
+can git clone
+
+1524831706
+Dodo
+'cuz when I initialize an 'ExactChunks' Iterator within the 'DoubleChunks' Iterator, the slicelength and chunk_size printen are correct, however in the first .next() call,
+
+1524831712
+Dodo
+I get: "exactuchunks next: self.slice.len = 833948219584, chunk_size = 833948219696"
+
+1524831721
+Dodo
+which is really not true xD
+
+1524832236
+Dodo
+mh, fixed it, but mhhh
+
+1524832638
+alexnask
+What was it?
+
+1524832644
+alexnask
+Some kind of memory corruption I presume?
+
+1524832663
+Dodo
+I guess
+
+1524832668
+Dodo
+hold on let me push
+
+1524832707
+alexnask
+@andrewrk Are TldIdCompTime comptime blocks?
+
+1524832743
+Dodo
+
+
+1524832756
+Dodo
+that use to be &Iterator(T) I believe
+
+1524832760
+Dodo
+or []T
+
+1524832779
+Dodo
+but now I gotta write 'var head_next = (self.head.it).next() ?? return null;  '
+
+1524832781
+alexnask
+Right the issue was that
+
+1524832798
+alexnask
+You were assigning &ExactChunks(T).init(splitted[0], chunk_size).it to .head
+
+1524832812
+alexnask
+But ExactChunks(T).init(splitted[0], chunk_size) is only valid in the current stack frame
+
+1524832828
+Dodo
+oh crap
+
+1524832841
+alexnask
+so as soon as you return from init .it points to some random memory on the stack
+
+1524832860
+alexnask
+which leads to @fieldPtrParent to give you a pointer to some memory thati s not ExactChunks
+
+1524832863
+alexnask
+etc.etc.
+
+1524832869
+Dodo
+good lord
+
+1524832871
+Dodo
+thats bad
+
+1524832891
+alexnask
+Yes, the interface pattern you are using is pretty error prone imho
+
+1524832901
+alexnask
+@MajorLag has some code that checks for those kind of errors in safe mode
+
+1524832925
+Dodo
+luckely the test catched it
+
+1524832939
+alexnask
+Take a look here:
+
+1524832976
+alexnask
+basically he adds some magic number to all  implementations
+
+1524832999
+alexnask
+And checks for it when getting the self pointer from the interface
+
+1524833035
+Dodo
+so if I say that self.head is 'Iterator(T)', and then write '&self.head.next() ?? return null;' , it should also work?
+
+1524833062
+alexnask
+No, you always need to keep the implementation struct on the stack if you are going to use it later
+
+1524833074
+alexnask
+If you only keep the Interface(T)
+
+1524833081
+alexnask
+You will basically copy the function pointers
+
+1524833089
+Dodo
+mhh
+
+1524833093
+alexnask
+But when calling them they assume that the whole object is alive
+
+1524833100
+alexnask
+@fieldParentPtr
+
+1524833111
+alexnask
+Looks at the offset of the field in the struct
+
+1524833121
+alexnask
+And gets you back a pointer to the whole struct based on that offset
+
+1524833138
+alexnask
+So if you've only copied the .it field, it will return garbage
+
+1524833165
+Dodo
+pfwhoa
+
+1524833179
+Dodo
+so I applied the correct fix ... mhh
+
+1524833183
+Dodo
+good to know
+
+1524833186
+alexnask
+If you want to be able to only keep the Iterator(T)
+
+1524833198
+alexnask
+Then the Iterator(T) should own the memory of the implementation object
+
+1524833216
+alexnask
+As well as the function pointers to the implementation's functions
+
+1524833260
+alexnask
+For example Iterator(T) could have 16 bytes or so of data to store the implementations
+
+1524833271
+alexnask
+I'll make a gist for you on how it's done later if you're interested
+
+1524833274
+alexnask
+I have to run atm
+
+1524833300
+Dodo
+oh yeah, I'd like to!
+
+1524833325
+Dodo
+no problem haha, I'll be around the whole day I think, otherwise tomorrow afternoon
+
+1524833327
+alexnask
+It's basically the same idea I showed you with the vtable metaprogramming stuff but I'll make it more focused, not so generic :P
+
+1524833338
+alexnask
+All right, see you later then :
+
+1524833339
+alexnask
+:)
+
+1524833346
+Dodo
+byyee!
+
+1524833438
+alexnask
+(You can use any allocation strategy you want but storing the object inline is the most convenient most of the time)
+
+1524834569
+MajorLag
+@alexnask: unfortunately the "guard field" pattern I was using didn't really help that much, due to how the stack behaves in reality. Half the time code that should have crashed would work because the guard value just happend to still be within valid memory somehow, until you switched siwtched compile modes, OSs, or otherwise changed enough stuff to make the stack behave differently. andrewrk and I talked about a runtime check that could c
+
+1524834569
+MajorLag
+ver cases like this by checking at return if you were returning a pointer to an address an a stack frame that's about to die, but I'm not sure how plausible it is.
+
+1524835229
+Dodo
+if I take a function with 1 argument: 'bytes: []u8', can I say: 'bytes = bytes[4..]' ?
+
+1524835284
+Dodo
+because I get '  error: cannot assign to constant'
+
+1524835884
+Hejsil
+Arguments are const
+
+1524835912
+Hejsil
+fn a(b: usize) void. Here b is declared as const b = ...
+
+1524836494
+Dodo
+how can I make them non const?
+
+1524836535
+Dodo
+it would be nice to be able to do such a thing
+
+1524837344
+alexnask
+@Dodo take a look at this:
+
+1524841796
+Dodo
+what happens if you subtract without @subWithOverflow, but the subtraction might actually overflow?
+
+1524841938
+andrewrk
+alexnask,  Are TldIdCompTime comptime blocks? => yes
+
+1524841957
+andrewrk
+I didn't make progress on pointer reform last night
+
+1524841997
+andrewrk
+but I did come up with an AtomicQueue data structure that is: many reader, many writer, non-allocating, thread-safe, lock-free
+
+1524846702
+Dodo
+is there a way I can make this prettier?
+
+1524846758
+Dodo
+now it's 4 times the same,... verry explicit
+
+1524847080
+Dodo
+I mean, I could make a helper function that returns !usize, depending if the digit was larger than 10 or whatever, and have atoi() return that error,
+
+1524847106
+Dodo
+but that would involve more checks, right? 'cuz then atoi() has to check if it got back an error or a usize,...
+
+1524850095
+alexnask_
+Dod did you see the gist i shared btw?
+
+1524850109
+alexnask_
+Dodo*
+
+1524851402
+alexnask_
+Dodo did you look at the gist i posted?
+
+1524851430
+alexnask_
+Its an alternate iterator interface implementation
+
+1524853917
+Dodo
+I did not
+
+1524853925
+Dodo
+I think I was having dinner haha
+
+1524854010
+Dodo
+oh I see it
+
+1524854094
+Dodo
+
+
+1524854294
+Dodo
+would that mean you could say something like "Range(0, 10).enumerate().take(10).map(//somefunc)" ?
+
+1524854767
+Dodo
+but...the struct you'd like to implement Iterator for, has to be smaller than or equal to 16 bytes?
+
+1524854777
+alexnask_
+Yes
+
+1524854797
+alexnask_
+You could heap allocate the object if it doesnt fit
+
+1524854811
+alexnask_
+Essentially a small buffer optomozation
+
+1524854837
+Dodo
+can't you pass in the size of the struct so its always stack allocated?
+
+1524854855
+Dodo
+and have `mem` be the size?
+
+1524854901
+alexnask_
+This would require a new iterator type for each type size
+
+1524854921
+alexnask_
+So a new interface
+
+1524854931
+alexnask_
+Otherwise you can heap allocate
+
+1524854974
+alexnask_
+But keeping a buffer around for small objects still would be good
+
+1524855003
+Dodo
+yeahh
+
+1524856721
+Dodo
+I'll try and update the current version tomorrow :)
+
+1524863118
+alexnask
+@Dodo check out the updated gist when you can, it implementes a SBO that holds the heap and allocator pointers when the object is too big to fit in the inline buffer
+
+1524863140
+alexnask
+You need at least 17 bytes on x64 though (2 pointers + 1 flag byte)
+
+1524863162
+alexnask
+(17 bytes of inplace buffer)
+

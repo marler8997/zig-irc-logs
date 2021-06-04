@@ -1,0 +1,948 @@
+1533859434
+unique_id
+I should have said this earlier. I guess I was trying to balance what other people have said about Vulkan with my experience, like one Khronos member once said "Vulkan is not low level" it justs fits the hardware better but that isn't true. Examples:
+
+1533859619
+unique_id
+For proper usage you'll have to suballocate the memory you get from Vulkan. So you'll either write your own allocator or use a library. You'll have to handle low memory situations yourself. AMD has 256 MiB of special device local memory thats host_local but you should probably make use of it as normal memory if device_local memory is low. So we're already writing vendor specific code here, but you can make it generic so it'll
+
+1533859621
+unique_id
+work if other devices have such memory.
+
+1533859785
+unique_id
+You don't have to do this, but if the computer is low on vram then your app will perform worse than on OpenGL if you don't. What's more? Integrated GPUs vs dedicated GPUs. Dedicated GPUs have device_local memory which is a pain to move things to. On Integrated GPUs you'll have to not do that, and not doing things is also work.
+
+1533860044
+unique_id
+Descriptor Sets are a pain to learn. And as with everything in Vulkan you have maximum freedom. You can pick from a number of strategies with regards to Descriptor sets and this isn't something an app developer should have to think about
+
+1533860061
+unique_id
+I haven't checked out Metal but it is probably what OpenGL Next should have been. Vulkan should be buried in the deepest and darkest corners of huge game engines, and nowhere else.
+
+1533860152
+unique_id
+But it's up to you :)
+
+1533860295
+unique_id
+host_visible* (not host_local), not that it matters
+
+1533860643
+unique_id
+It might seem surprising, but it actually takes a lot of work to reach OpenGL's GPU (not CPU) performance with Vulkan, simply because you're sort of taking the role of the driver writer. On the CPU side you'll destroy OpenGL, not so on the GPU side.
+
+1533866510
+andrewrk
+whew. finally finished basic fs watching support on all supported platforms
+
+1533866523
+andrewrk
+now just a couple platform-agnostic bugs to fix and I can merge this monster branch
+
+1533866551
+scientes
+sweet
+
+1533866563
+andrewrk
+unique_id, brb I'm going to grab some food and then read your messages
+
+1533868077
+unique_id
+I would conclude that for games Vulkan is overall great but for non-games there are a lot of concepts that you really don't want to be thinking about when trying to work on your app. If we had Metal the choice would be easy.
+
+1533869313
+andrewrk
+unique_id, I've 2 ideas upon reading your comments -
+
+1533869354
+andrewrk
+one is that, eventually we would want an implementation of some kind of graphics in vulkan in zig just to avoid a C library dependency. the holy grail is a multimedia application with no libc dependency
+
+1533869396
+andrewrk
+and another idea is - maybe we shouldn't be caring about the graphics card at all. maybe we should be doing 100% CPU rendering
+
+1533870080
+scientes
+mmap() should return [*]u8, not usize
+
+1533870129
+scientes
+or hell, it could even return []u8 using the length parameter
+
+1533870166
+scientes
+but i guess these are raw interfaces...
+
+1533870509
+andrewrk
+scientes, what type safety would [*]u8 provide instead of usize?
+
+1533870528
+scientes
+none
+
+1533870529
+scientes
+var db_fd = linux.open("/var/cache/command-not-found/db\0", linux.O_RDONLY, 0);
+
+1533870550
+scientes
+how am i suppose to make zero-terminated string before #265 gets fixed
+
+1533870562
+scientes
+home/shawn/git/command-not-found/bisect.zig:78:28: error: invalid character: '0'
+
+1533870566
+andrewrk
+scientes, with a c string literal
+
+1533870577
+andrewrk
+c"/var/cache/command-not-found/db"
+
+1533870620
+andrewrk
+zig string literals are [N]u8; c string literals are &const u8
+
+1533870673
+scientes
+and why can't I put \0 in zig string literals?
+
+1533870678
+andrewrk
+\x00
+
+1533870682
+scientes
+oh ok
+
+1533870759
+scientes
+i also have to cast open() to i32
+
+1533870896
+andrewrk
+scientes, I recommend std.os.posixOpen
+
+1533870910
+andrewrk
+I'm not sure how I like the naming convention, but it's the abstraction you want, probably
+
+1533870959
+scientes
+yes
+
+1533870980
+scientes
+const file = @import("std").os.file; <== doesn't work
+
+1533871024
+scientes
+wait, i didn't need file cause i'm using mmap()
+
+1533871078
+scientes
+Ahh i stayed away from posixOpen cause I didn't feel like i needed to allocate memory
+
+1533871084
+andrewrk
+posixOpenC
+
+1533871140
+andrewrk
+using mmap to read a file? what's your plan for handling I/O failure or OOM?
+
+1533871162
+scientes
+hmmm good point
+
+1533871383
+scientes
+hmm i don't have permissions for mlock2()
+
+1533871717
+scientes
+its ok if the program crashes in those cases
+
+1533871781
+scientes
+I just wish i knew the error SIGIO? SIGSEGV?
+
+1533871790
+andrewrk
+I believe it is SIGBUS
+
+1533871829
+andrewrk
+I wonder how to test it
+
+1533871862
+scientes
+it is
+
+1533872364
+kristate
+andrewrk: I am in a meeting, but want to get your thoughts on var args in os.posix.*
+
+1533872392
+kristate
+up until now we don't have a var args function included, so I didn't have any examples to go on
+
+1533872393
+andrewrk
+hi kristate
+
+1533872427
+kristate
+I think we have the same tastes and writing varToSyscall really sucked for me
+
+1533872438
+kristate
+it feels like a hack, and that's why I feel push back from you
+
+1533872460
+andrewrk
+it sounds like we're on the same page
+
+1533872484
+kristate
+but at the same time, and what is cool about zig, is that it's very exacting
+
+1533872502
+kristate
+so, even though it's a usize at the end, you have to cast it from a pointer or from an int
+
+1533872517
+andrewrk
+I did notice that - that makes sense
+
+1533872640
+unique_id
+andrewrk: If integrated GPUs weren't a thing I'd agree with you that maybe we shouldn't even think about GPU rendering. However, in the age of heterogeneous computing and integrated GPUs, everyone's principle (Microsoft, hardware vendors, etc) should be to make it as easy as possible to access efficient hardware for our use tasks, and as programmers our principle should be to make proper use of the hardware made available to us.
+
+1533872699
+unique_id
+we're just missing an easy way to access that juicy hardware! Maybe vulkan is the answer.
+
+1533872738
+andrewrk
+kristate, did you see my suggestion to directly use the C library from macos-specific code, directly use the linux syscallN functions from linux-specific code, and to make a per-F_CMD abstraction when you need it in code that is shared by both?
+
+1533872763
+andrewrk
+I think it would be good to start from the code you're trying to write, and then do the abstraction later, rather than the abstraction first
+
+1533872769
+kristate
+andrewrk: yes, but that sort of goes against the idea of a std lib
+
+1533872779
+andrewrk
+yes, but we'll get there
+
+1533872801
+kristate
+if you don't like varToSyscall, I will wire-up that code inside of fcntl
+
+1533872807
+kristate
+and if we use it in more places
+
+1533872813
+kristate
+then we can take that out into varToSyscall
+
+1533872821
+andrewrk
+that makes sense to me
+
+1533872842
+kristate
+zig highlight says: Focus on debugging your application rather than debugging your knowledge of your programming language.
+
+1533872866
+kristate
+I think that if we have os.posix.fcntl that it will be simple enough for everyone to use
+
+1533872881
+andrewrk
+kristate, if you make a PR with a working UDP server or TCP server that has nice tests, it's going to get merged, regardless of how you integrate with fcntl- if I see a better way to abstract it, I'll do it when I merge
+
+1533872894
+andrewrk
+I'm not going to stop your forward progress
+
+1533872903
+kristate
+I will knock-out varToSyscall and integrate it into fcntl
+
+1533872916
+andrewrk
+but if the PR is just fnctl, it seems like you're trying to figure out the best way to abstract that particular thing, so then the API of fcntl becomes the focus
+
+1533872936
+kristate
+andrewrk: thanks Andrew -- I have some good surprises in store for you. I have been talking to alot of people about zig here in Japan.
+
+1533872943
+andrewrk
+exciting!
+
+1533872961
+kristate
+okay, I need to get some work done in this meeting. brb
+
+1533872964
+andrewrk
+ttyl
+
+1533872986
+andrewrk
+unique_id, that makes sense to me. and for a music studio, it further makes sense that you'd want to use the GPU for anything you can to free up CPU for audio processing
+
+1533873647
+andrewrk
+kristate, btw, async-fs is nearly good enough to merge - just a couple bug fixes
+
+1533874085
+unique_id
+andrewrk: I need to backtrack on my statement. The thing is I've never known how efficient 2d/UI rendering on the CPU is, and there's this that's coming out any day now (please look at this):
+
+1533874135
+andrewrk
+ooh event based environments
+
+1533874263
+unique_id
+that thing is going to be insane
+
+1533874278
+unique_id
+it'll be open source
+
+1533874299
+unique_id
+so you can imagine how much easier it's going to be to use this
+
+1533874311
+unique_id
+well, ported
+
+1533875630
+unique_id
+but the CPU can't win this battle as the resolution of the monitors increase. I hope they do stop at 8k though, or 4k.
+
+1533876363
+andrewrk
+unique_id, I predict the limit will be determined by VR
+
+1533877052
+scientes
+dies zig have VLAs?
+
+1533877064
+scientes
+on the stack
+
+1533877705
+andrewrk
+scientes, nope. it used to but I removed them
+
+1533877996
+andrewrk
+I recommend determining the maximum amount of memory required and using a fixed length array
+
+1533878037
+scientes
+on 64-bit platforms there is no shortage of addressing space
+
+1533878059
+scientes
+although you still can't free stack memory
+
+1533878099
+andrewrk
+one of zig's design goals is to make it possible to have a statically determined stack space upper bound
+
+1533878169
+andrewrk
+in addition, certain things should not have the possibility of failure, and have deterministic performance: for example calling a function (and hence using more stack space) must not fail/crash, and must not trap, causing non-determisistic performance
+
+1533878226
+scientes
+ahh deterministic performance is a real issue there, i can see that
+
+1533878234
+scientes
+the others are turing complete issues
+
+1533878292
+scientes
+cause the performant way of handling stack overflow is to trap SIGSEGV with a guard page
+
+1533878300
+scientes
+(which java does, but not go)
+
+1533878363
+andrewrk
+but if your function call traps, that function call is now slower than it otherwise would have been
+
+1533878373
+scientes
+yes
+
+1533878374
+andrewrk
+and if you relied on the timing, then that is a problem
+
+1533878489
+scientes
+you can still have a way of guaranteeing available stack space...
+
+1533878574
+scientes
+alot of the hash collision issues were just papered over, and should really switch to uses balances search trees with untrusted input
+
+1533878610
+scientes
+I guess the new hashes are quite a bit better however
+
+1533879990
+andrewrk
+kristate, I'm staying up late, trying to merge async-fs before bed
+
+1533880014
+kristate
+andrewrk: cool, yes if we get async-fs out then I can rapidly get UDP and TCP out too
+
+1533880045
+kristate
+it has been a moving target, but I am excited. We're about to get a stable async foundation.
+
+1533880115
+andrewrk
+I need to make one more adjustment to cancel semantics
+
+1533880119
+andrewrk
+I'll type up an issue tonight
+
+1533880752
+kristate
+ok
+
+1533881419
+kristate
+here is a webrtc conference:
+
+1533881422
+kristate
+anyone is welcome to join
+
+1533881511
+scientes
+i don't have a camera
+
+1533881519
+scientes
+but hi
+
+1533881524
+kristate
+hi
+
+1533882068
+kristate
+scientes: do you want to update your username on jitsi?
+
+1533882072
+kristate
+thanks
+
+1533882661
+kristate
+scientes: what time is it where you are?
+
+1533882708
+scientes
+11:30
+
+1533882713
+scientes
+PM
+
+1533882777
+kristate
+scientes: are you a washi
+
+1533882782
+kristate
+washingtonian ?
+
+1533882785
+scientes
+yeah
+
+1533882803
+kristate
+I am too -- grew-up in Poulsbo and also in Kirkland
+
+1533882837
+scientes
+I was in kirkland yesterday for my day job
+
+1533882847
+kristate
+scientes: cool, where do you work?
+
+1533882857
+scientes
+I am a flagger, usually for CableCom
+
+1533882915
+scientes
+which is comcast contractor
+
+1533882932
+kristate
+yeah, but you can write code! :)
+
+1533882972
+scientes
+I wrote that red-black tree implmentation, and I once worked out all the race conditions to do a async version
+
+1533882978
+scientes
+thats what i'm trying to think about now
+
+1533883009
+kristate
+scientes: how old are you? my brother lives in Tacoma which should be near everett
+
+1533883016
+scientes
+28
+
+1533883118
+kristate
+scientes: you seem like a pretty good guy -- I will talk to my brother
+
+1533883134
+kristate
+the more people hacking on zig, the better
+
+1533883166
+kristate
+Your mind would be better put to use writing code instead of flagging, I think
+
+1533883226
+kristate
+scientes: is there a reason why you haven't gone into programming as a full time job?
+
+1533883353
+kristate
+scientes: if you can write linux kernel patches (like this one:
+
+1533883398
+scientes
+yeah i wanted my hardware to work :)
+
+1533883498
+kristate
+scientes: my company is currently rewriting our core software product (a new internet suite) into zig and we could use a hand. I see that you are interested in crypto
+
+1533883528
+kristate
+here is a video of me talking about it:
+
+1533883672
+scientes
+yeah i was going to add tls support to distcc (which I maintain) but I wanted to be as easy as wireguard
+
+1533883740
+kristate
+Cool, I think that you can help us out.
+
+1533883759
+tiehuis
+great, can log in to irc again
+
+1533883765
+kristate
+tiehuis: we're in a webrtc chat
+
+1533883772
+kristate
+
+
+1533883786
+kristate
+andrewrk: are you still online?
+
+1533883806
+andrewrk
+kristate, yes but I'm about to go to bed
+
+1533883820
+andrewrk
+I'll put a shirt on and say hi :)
+
+1533883824
+kristate
+okay
+
+1533883827
+kristate
+:)
+
+1533883911
+tiehuis
+no camera and microphone right now here so i'll need to pass today
+
+1533884068
+kristate
+
+
+1533884176
+scientes
+TLS!
+
+1533884456
+kristate
+
+
+1533884525
+kristate
+
+
+1533885059
+scientes
+I wanted to write a socketcan driver cause this one was HORRIBLE
+
+1533887323
+scientes
+I see how you did a spinlock here:
+
+1533887324
+scientes
+while (@atomicRmw(u8, &self.lock, builtin.AtomicRmwOp.Xchg, 1, AtomicOrder.SeqCst) != 0) {}
+
+1533887324
+scientes
+defer assert(@atomicRmw(u8, &self.lock, builtin.AtomicRmwOp.Xchg, 0, AtomicOrder.SeqCst) == 1);
+
+1533887331
+scientes
+but how do i implement a trylock() ?
+
+1533887424
+scientes
+@atomicLoad(u8, &self.ulock AtomicOrder.SeqCst) == 1 ?
+
+1533887579
+tiehuis
+i think you'd want a @cmpxchg for that
+
+1533887589
+tiehuis
+
+
+1533887629
+tiehuis
+then do an @atomicRmw when you are done
+
+1533887802
+scientes
+with builtin.AtomicOrder.SeqCst twice?
+
+1533887906
+tiehuis
+i'd just do SeqCst for safety and then later on you can see if you can relax the conditions
+
+1533887928
+tiehuis
+can never remember the specific memory order guarantees offhand
+
+1533900918
+MajorLag
+Oh no, Exapunks is out. This is going to cut into my zig time.
+
+1533914882
+MajorLag
+Does anyone know, what is the easiest way to format a comptime known integer for use with @compileError?
+
+1533915280
+andrewrk
+MajorLag, hmm. I just thought about it, and it's altogether too difficult to do, isn't it?
+
+1533915339
+andrewrk
+I think you could make comptimeIntToStr that uses std.fmt.bufPrint on a fixed size array and then returns it
+
+1533915596
+MajorLag
+looks like fmt.formatIntBuf if what you want to wrap.
+
+1533915605
+MajorLag
+bufPrint uses var args
+
+1533915902
+andrewrk
+ah
+
+1533915980
+MajorLag
+huh... is there a limit on @compileError length? if not I may have found a bug.
+
+1533916214
+MajorLag
+hmm.. looks like a bug.
+
+1533916303
+andrewrk
+damn
+
+1533916400
+scientes
+while (node.right) |i| {
+
+1533916414
+scientes
+do I have to do something to make sure that load doesn't get lifted out of the loop?
+
+1533916575
+MajorLag
+andrewrk, found another bug while putting together a test case too.
+
+1533916620
+andrewrk
+scientes, can you elaborate? what are you worried about happening?
+
+1533916640
+scientes
+it getting written by another thread
+
+1533916720
+andrewrk
+there's a whole set of rules you need to follow in this situation
+
+1533916734
+scientes
+yeah i'm getting into
+
+1533916741
+andrewrk
+and there is no language safety yet to help you
+
+1533916744
+scientes
+
+
+1533916770
+MajorLag
+..make that 3 bugs. oh boy
+
+1533916775
+andrewrk
+MajorLag, goodness :(
+
+1533916795
+andrewrk
+but don't worry I'm not gonna hate the messenger
+
+1533916798
+MajorLag
+I'll have to see if they're all really the same issue or just coincidence.
+
+1533916821
+MajorLag
+They seem related
+
+1533916863
+andrewrk
+scientes, you are guaranteed that loads/stores won't move across an atomic operation (at least one with SeqCst)
+
+1533916889
+andrewrk
+that's pretty much the only guarantee you get about loads and stores with regards to concurrency
+
+1533916911
+scientes
+but I still have to assure there is a load at all, cause in C that load can be put outside the loop
+
+1533916927
+MajorLag
+4...
+
+1533917085
+scientes
+so i think I need builtin.AtomicOrder.Acquire
+
+1533917148
+MajorLag
+nevermind, back to 3
+
+1533917175
+andrewrk
+MajorLag, godspeed
+
+1533917202
+andrewrk
+scientes, you can use @atomicLoad
+
+1533917210
+scientes
+yeah thats what i'm doing
+
+1533917237
+andrewrk
+@atomicLoad (at least with SeqCst) is guaranteed to not move across any other loads/stores
+
+1533917504
+MajorLag
+andrewrk, one of these might not be a bug, but is confusing. Should maybe be considered an enhancement. Basically, if you call a function that uses all comptime-known values, with a comptime-known parameter, it should be able to evaluate to a constant expression, shouldn't it? yet you need to specify `comptime` at the call site.
+
+1533917528
+andrewrk
+MajorLag, yes, I think there is an issue for that:
+
+1533917989
+MajorLag
+Ok, I think the remaining 2 bugs are the same one then.
+
+1533918019
+MajorLag
+comptime string concatenation ignores slice bounds and assumes all []u8 are cstrings.
+
+1533918420
+MajorLag
+ok, maybe only @compileLog assumes cstrings. anyway, issue coming up.
+
+1533918537
+andrewrk
+much appreciated
+
+1533918819
+MajorLag
+and now that I know why it wasn't working, I can work around it by copying the slice to an array before passing it back.
+
+1533927429
+MajorLag
+Hmm.. seems like it is not really possible to pass an `fn(type)u8` to another function at comptime. You can @ptrCast to/from *void, but then it explodes when you call it.
+
+1533930409
+andrewrk
+that's fixable
+
+1533933591
+andrewrk
+I have decided that self-hosted compiler (stage2) is not a realistic goal for 0.3.0 (scheduled for sept 12)
+
+1533933623
+andrewrk
+and I have decided that windows stack traces and macos stack traces are important for 0.3.0
+
+1533933646
+andrewrk
+I don't want zig to be accused of being "linux-first"
+
+1533934840
+andrewrk
+also, I'm going on vacation tonight. spending 1 week with my family. I might have time to merge PRs and respond to issues, but not much else.
+
+1533935460
+unique_id
+That sounds like a smart choice. Have fun on your vacation.
+
+1533938001
+mnoronha
+Hi, was just trying out zig and was having trouble getting interop examples to work. Am I doing anything obviously wrong? (link:
+
+1533938059
+mnoronha
+I might just be looking at the wrong docs
+
+1533938119
+mnoronha
+Apparently not -- I just swapped in the example from the docs exactly and had no luck
+
+1533938166
+MajorLag
+That looks right. Is there an error message?
+
+1533938179
+scientes
+
+
+1533938319
+mnoronha
+I added it as a comment, since it was a bit long (on the same gist)
+
+1533938358
+mnoronha
+fwiw, I'm using v0.2.0, from homebrew iirc
+
+1533938409
+MajorLag
+oh, that's way out of date compared to master. It should still work, but I don't know how much help I can be with the details.
+
+1533938443
+mnoronha
+Ah I see. Should I build from the source on master then?
+
+1533938504
+MajorLag
+<aybe, but I think all that's happening in this case is that Zig can't find your C headers.
+
+1533938540
+shodan45
+Just starting to learn zig, reading
+
+1533938586
+shodan45
+(under "modify an array")
+
+1533938631
+MajorLag
+mnoronha: see: zig --help, look for --libc-include-dir and similar
+
+1533938672
+MajorLag
+shodan45: i is an automatic index for the for loop, it is usize. it has to be explicitly casted to i32 because i32 doesn't wholly contain the possible range of usize.
+
+1533938739
+shodan45
+MajorLag: ah ok, interesting. Haven't come across usize yet.
+
+1533938822
+MajorLag
+on debug and release-safe builds, the int cast asserts that i will fit in i32, in release-fast it is compiled out and if i somehow exceeded an i32 you'd get undefined behavior.
+
+1533938857
+MajorLag
+usize is in the primitive types section, it is an unsigned integer that is the same size as a native pointer.
+
+1533938881
+MajorLag
+(so u32 on 32-bit, u64 on 64-bit).
+
+1533939119
+scientes
+anyone used zig on avr yet?
+
+1533939794
+mnoronha
+Cool, everything works now (I didn't have to point to a weird location for my libc, just made it un-weird)
+
+1533940193
+scientes
+is there a way of getting arguments without using libc?
+

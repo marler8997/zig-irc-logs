@@ -1,0 +1,548 @@
+1544832273
+MajorLag
+Ah, I see.
+
+1544832770
+MajorLag
+Would what I was thinking even be possible? Having comptime struct fileds that are only exposed at comptime? I imagine no, for the same reason we don't have global comptime vars.
+
+1544832988
+andrewrk
+I'm not sure I understand what you're describing
+
+1544834381
+MajorLag
+A field that is a comptime var. As far as runtime is concerned it doesn't exist, it can only be set, read, and modified at compile time, if that makes any sense.
+
+1544834673
+andrewrk
+I see. Hmm, let me think for a moment
+
+1544834807
+andrewrk
+I'm having trouble understanding the implications of this concept
+
+1544834831
+andrewrk
+I suspect that the the problem it would solve could be solved a simpler way
+
+1544836487
+MajorLag
+I could just pass the comptime value separately. I dunno, I'm probably trying too hard to make the api feel right while solving all use cases.
+
+1544837481
+MajorLag
+it's annoying because casting everything in a runtime version of an interface feels dirty, but so does using `var` everywhere. #1669 would help with the latter I think, but it would mean that you have to write special adapters for runtime-dispatch... which is probably ok since I'm assuming they're an edge case. I think I'm just overthinking it.
+
+1544837511
+MajorLag
+I may have had too much sugar at the company holiday party.
+
+1544837603
+andrewrk
+it's a really tough problem. the way I'm approaching it is to solve the other language problems first where we can be sure the solution is the right idea. Then hopefully this leads us down the best path for this particular issue
+
+1544837811
+MajorLag
+I figure I should at least try working on it now because a) its relevant to what I'm planning on doing with serialization (in a new image lib and std zlib implementation if no one beats me to it), and b) the sooner we start trying things and finding out why they're a problem (or not) the more information we'll have when it comes time that we need to have it solved.
+
+1544837880
+andrewrk
+that sounds reasonable
+
+1544838363
+diltsman
+Is there some pastebin somewhere that I can put some code for a question on?
+
+1544838450
+MajorLag
+any pastebin works, or a gist
+
+1544838452
+andrewrk
+diltsman, I like clbin.com
+
+1544843009
+diltsman
+So, I am getting bad values for linker variables in my Zig program.  Here is the relevant code:
+
+1544843070
+andrewrk
+diltsman, this might be an LLD bug report
+
+1544843124
+andrewrk
+diltsman, which ones had the wrong values?
+
+1544843158
+diltsman
+andrewrk, I am getting it running on the board.  Give me a second.
+
+1544843319
+diltsman
+db and de have bad values, so d_size is bad.  Might take me a minute to get the .bss variable values.
+
+1544843387
+andrewrk
+diltsman, hmm I haven't tested `extern const` - it should work but can you try making it an `extern var` instead?
+
+1544843398
+andrewrk
+if that fixes it, it's a bug in zig for sure
+
+1544843473
+andrewrk
+otherwise, I think we should file a bug report to LLD
+
+1544843926
+andrewrk
+diltsman, we should be able to look at the object file that is produced and see if the offsets are correct without putting it on the board
+
+1544844260
+diltsman
+andrewrk, which variables should I change to extern var, and how would I dump that information?
+
+1544844333
+andrewrk
+diltsman, I believe you can use `objdump -D` and then search for the symbols and look at the address
+
+1544844344
+andrewrk
+objdump -D your_elf_file
+
+1544844380
+andrewrk
+try changing all the `extern const` to `extern var`. shouldn't make a difference in theory
+
+1544844814
+diltsman
+_data_begin is at 0x20000000, _bss_begin is at 0x20000004.  _data_end and _bss_end are not listed.
+
+1544845415
+diltsman
+andrewrk, when it calculates db, it loads the value at 0x804c0, which is in flash, but beyond the part that is used.
+
+1544845609
+andrewrk
+diltsman, oh! you can't have variables in a nakedcc function
+
+1544845626
+andrewrk
+
+
+1544845658
+andrewrk
+maybe do your entry function with module level assembly and have it call your main function
+
+1544845676
+andrewrk
+like this:
+
+1544846333
+diltsman
+andrewrk, some of my issue was having _start be naked.  It was using the stack but not reserving space on it.  Once I removed nakedcc it is at least not faulting.
+
+1544846374
+diltsman
+Everything appears to be working right, but it is attempting to load _data_begin, _data_end, _bss_begin, and _bss_end from uninitialized flash, so all are reading as 0xffffffff.
+
+1544847750
+diltsman
+andrewrk, at least it isn't faulting now.  I still have to figure out the variables, though.  Do they get put in a special section?
+
+1544847795
+andrewrk
+diltsman, the extern variables? I believe that is determined by the linker
+
+1544848109
+diltsman
+andrewrk, Yeah.  The code is trying to load them from addresses that appear to be in the .got section.
+
+1544848613
+diltsman
+andrewrk, in the ELF file, it has the .got section initialized with the correct data, but it is not initialized when it is loaded on the device.
+
+1544848662
+andrewrk
+hmmm
+
+1544848691
+andrewrk
+you're just looking at the addresses of them though
+
+1544848706
+andrewrk
+oh
+
+1544848717
+andrewrk
+diltsman, I wonder if this issue is related:
+
+1544848724
+andrewrk
+are you using zig build, or CLI ?
+
+1544848742
+diltsman
+I have a build.zig.  It is in the gist.
+
+1544848745
+andrewrk
+this won't be necessary after that issue is resolved, but try passing `--static`, or change your build script to addStaticExecutable
+
+1544848767
+andrewrk
+yeah, try replacing b.addExecutable with b.addStaticExecutable
+
+1544848791
+andrewrk
+(after the issue is solved you'll have to revert this change because it will be done automatically for freestanding and won't be an option)
+
+1544849047
+diltsman
+andrewrk, after making that change, it no longer produces a .got section (which is where the linker constants were loaded from) and just produces the constants by loading immediate values.  So, this works, but doesn't explain why the .got isn't loaded.  I'm going to explore that some more.
+
+1544849409
+andrewrk
+diltsman, got stands for Global Offset Table which has to do with Position Indepenent Code, which is irrelevant for freestanding targets, according to my understanding
+
+1544849419
+andrewrk
+it's for dynamic linking
+
+1544849668
+diltsman
+andrewrk, that makes sense.  However, if I dump the .got section into the .text, then everything works, too.
+
+1544849731
+andrewrk
+diltsman, that makes sense - but you definitely want to make this change because the Position Independent Code is slightly worse than static code
+
+1544849748
+diltsman
+Ok, I will do that.  Thanks!
+
+1544849749
+andrewrk
+(this will happen automatically in the freestanding target once #1828 is fixed)
+
+1544849754
+andrewrk
+no problem, glad we got it sorted
+
+1544849765
+andrewrk
+it's good to know that the 2 problems you had are open issues
+
+1544849777
+andrewrk
+so presumably it would have "just worked" in zig 1.0.0 :)
+
+1544850407
+diltsman
+Or maybe even Zig 0.4.0.
+
+1544850449
+diltsman
+andrewrk, the only other issue (at least with the build of Zig that I am using) is some of the ARM EABI intrinsics, which is also a known issue.
+
+1544851671
+andrewrk
+diltsman, can you add a list of the ones that are missing for you here:
+
+1544851691
+andrewrk
+if it's just a few of them, I can prioritize those to unblock you
+
+1544853126
+MajorLag
+hmm, so another issue with comptime-dispatch interface: if you want to store it in a struct (`ArrayList(T)` for example) you have to pass the interface type too, and then any other structure that wants to use an arraylist has to do that too. That seems like a pretty significant downside of that method.
+
+1544858614
+reductum
+I'm getting "unable to evaluate constant expression"
+
+1544858669
+reductum
+Ah. Because calling math.log2() ruins the const-ness
+
+1544858929
+andrewrk
+reductum, I suggest: const ShiftInt = math.Log2Type(T); const result = a << @intCast(ShiftInt, b);
+
+1544858946
+andrewrk
+or maybe you can make `b` actually be a smaller int size so the cast isn't necessary
+
+1544859023
+reductum
+Ah. Because calling math.log2() ruins the const-ness
+
+1544859027
+reductum
+woops
+
+1544859049
+reductum
+I had overlooked math.Log2Type()
+
+1544859140
+reductum
+Oh, unless you mean math.Log2Int()
+
+1544860001
+zachcarter
+I'm running into an error on macosx when trying to spawn a thread -
+
+1544860025
+zachcarter
+I'm probably doing something wrong / stupid, but I'm not sure why I'm getting the error message I am. I've included the error message in the gist.
+
+1544860402
+reductum
+andrewrk: Thanks for your help. This is currently working: @shlExact(@intCast(T, 1), @intCast(math.Log2Int(T), i));
+
+1544860689
+andrewrk
+reductum, I suggest `T(1)` instead of `@intCast(T, 1)`
+
+1544860703
+andrewrk
+you can implicitly cast comptime-known integers to any integer type
+
+1544861634
+zachcarter
+nevermind - I understand why that code is failing.
+
+1544861962
+zachcarter
+well - I got around that error, but ran into some more - `no member named 'SOCK_CLOEXEC' in '/usr/local/lib/zig/std/os/darwin.zig'`
+
+1544861980
+zachcarter
+wondering if threads are supported yet on darwin, or if I'm just doing something fundamentally wrong
+
+1544862191
+IntoxicatedHippo
+Is there a way to loop over an enum?
+
+1544862398
+zachcarter
+okay - I just ran another program that uses threads and it worked fine, so something is up with mine.
+
+1544862629
+reductum
+andrewrk: Indeed T(1) works as expected.
+
+1544862677
+reductum
+I currently have a few asserts at the beginning of this function enforcing requirements about `T`, that it's an unsigned int, that it has a minimum number of bits, etc.
+
+1544862708
+reductum
+I'm looking for a way to replace those asserts with compile-time errors.
+
+1544862838
+reductum
+Ohh I just realized comptime is documented now. For some reason I had thought it wasn't. Maybe I was mixing that up with allocators.
+
+1544862840
+zachcarter
+not my threading code that's failing - it's some code that's relying on std.event.net
+
+1544862910
+reductum
+Comptime is so cool
+
+1544865295
+zachcarter
+I see now the error message in the test I was pulling code from :P
+
+1544876230
+sjums
+boiled down my 80 lines of crashing code to what can fit in a tweet (the oldschool 140 char tweet that is).
+
+1544876249
+sjums
+The zig compiler stands no chance against me!!
+
+1544878962
+Hejsil
+MajorLag, here is how I imagined ArrayLists being implemented with the new system:
+
+1544878995
+Hejsil
+Basically, the default ArrayList will use a dynamic dispatch Allocator (because this is the simplest to work with)
+
+1544879043
+Hejsil
+And then there is different degrees of freedom depending on what you need
+
+1544879093
+Hejsil
+You can have an ArrayList that doesn't store it's allocator (useful for when multiple ArrayList can share an allocator and you wonna save space)
+
+1544879166
+Hejsil
+Or you can have an ArrayList where you have a custom allocator, no dynamic dispatch
+
+1544879211
+Hejsil
+I think this is the same thing andrewrk wanted to change about the BigInt implementation
+
+1544879535
+MajorLag
+In the case where not storing the allocator you could keep it in a struct var and wrap the same interface functions over that struct.
+
+1544879707
+MajorLag
+One thing I'd like to avoid is having to implement everything twice, once for runtime and once for comptime dispatch. This would get particularly annoying on any struct that wants to hold a handle to an allocator. Maybe that shouldn't be the pattern, but for a mere @sizeOf(usize) bytes it does prevent accidentally using the wrong allocator.
+
+1544879788
+MajorLag
+I'm still hopeful that if I stare at the problem long enough a more elegant solution will reveal itself.
+
+1544879797
+Hejsil
+Lol
+
+1544879844
+Hejsil
+Idk, the solution i present does not have two implementations for a ArrayList (one for static and one for dynamic dispatch)
+
+1544879883
+Hejsil
+The only annoying thing is, that the ArrayList with an allocator have to wrap the non allocator ArrayList and expose the same functions
+
+1544879975
+MajorLag
+I'm not sure you don't need two separate allocator interfaces (convenience function collection) in your example. One that erases type and one that doesn't.
+
+1544880031
+Hejsil
+Well, the dyn dispatch allocator implements the same small interface that the static ones do
+
+1544880036
+Hejsil
+So you can call the same functions on it
+
+1544880154
+Hejsil
+Dyn dispatch:
+
+1544880164
+Hejsil
+The call the same mem.alloc
+
+1544880313
+Hejsil
+Basically allocators only have alloc, realloc, free (all only working on []u8). Then I implement the helper functions as free functions (mem.alloc(allocator: var, comptime T: type, num: usize), mem.create(allocator: var, init: var), mem.realloc(allocator: var, comptime T: type, old: var, new_size: usize)
+
+1544880747
+MajorLag
+In a way, mem has become the interface. `allocator` may as well be @OpaqueType to the callee, it's just a handle. There's definitely an advantage to that conception of an interface, but it means the callee applies the interface to some handle instead of being passed an interface. I don't think there are any real limitations to that, but I'd have to think on it.
+
+1544880803
+Hejsil
+Alright go for it
+
+1544880837
+MajorLag
+Also, not that I can think of abetter way to do it yet but your vtable implementation freaks me out a little. reminds me too much of my typeclass experiment.
+
+1544880879
+MajorLag
+All that checking of function types for compatibility.
+
+1544881360
+Hejsil
+MajorLag, yea it is a little much. I'm basically doing the type systems work
+
+1544881408
+Hejsil
+If i could easily generate wrappers that casts the "self" ptr to the concrete type, then that might be better
+
+1544881447
+MajorLag
+I think there might be a way to make the type system do the work and then erase, which should give us the saftey we want. Working out how to do that was where I left off last night.
+
+1544881519
+Hejsil
+That could be nice
+
+1544881629
+MajorLag
+It would also be nice, re #1669, if there were an easy way to generate a traitFn for checking an interface from its definition.
+
+1544882095
+MajorLag
+Possibly traitFns for interfaces could just do nothing and act soleley as documentation in the function signature too.
+
+1544883239
+IntoxicatedHippo
+Has there been any discussion about adding an architecture specific byte type rather than using u8 everywhere so Zig can target architectures with non-8-bit bytes?
+
+1544883573
+MajorLag
+Even if an architecture has a different byte size `u8` is explicit about what the programmer actually wants so in theory it will still work, it'll just waste some bits somewhere. I don't think LLVM supports or has any plans to support an architecture that defines a byte as something other than 8 bits anyway. I think there was an issue regarding adding a `c_char` type:
+
+1544893192
+zachcarter
+Good afternoon - I have a C enumeration and then a union that uses it - so a tagged union if you will -
+
+1544893217
+zachcarter
+I'm trying to work with this in zig - and I'm failing miserably
+
+1544893262
+zachcarter
+the error I'm running into, is when I'm comparing the `type` field on the union, with one of the enum values - `if (ev.type == sfml.sfEvtClosed)`
+
+1544893274
+zachcarter
+`integer value 0 cannot be implicitly casted to type 'sfEventType'`
+
+1544893339
+zachcarter
+I tried doing `if (@enumToInt(ev.type) == sfml.sfEvtClosed)` - however that causes my application to crash
+
+1544894088
+zachcarter
+that actually had nothing to do with my crash
+
+1544902433
+emekoi
+is there a way to return a slice to an array without allocating the memory for the slice or the array?
+
+1544902510
+j`ey
+where would the array live in memory?
+
+1544903109
+emekoi
+you make a good point.
+
+1544903132
+emekoi
+i'll just pass an array and the actual length instead.
+
+1544903799
+emekoi
+can anyone tell me why my program crashes with "access of inactive union field" when i switch over the union fields?
+
+1544907393
+zachcarter
+ttps://github.com/ziglang/zig/issues/1481
+
+1544907401
+zachcarter
+
+
+1544907416
+zachcarter
+sorry - somehow I deleted the h from the original message
+
+1544913158
+daurnimator
+MajorLag: could almost use NtAllocateVirtualMemory instead of VirtualAlloc
+

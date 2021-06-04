@@ -1,0 +1,284 @@
+1520813852
+jacobdufault
+andrewrk: I fixed the issue where there was no output
+
+1520813861
+jacobdufault
+now everything is unresolved, not sure why
+
+1520827851
+GitHub191
+[zig] andrewrk pushed 1 new commit to master:
+
+1520827851
+GitHub191
+zig/master 49c3922 Andrew Kelley: fix incorrect setEvalBranchQuota compile error...
+
+1520847103
+hoppetosse
+andrewrk: is there a way for the compiler to output the code / memory dump with all the compile time evaluations applied?
+
+1520847547
+GitHub49
+[zig] andrewrk pushed 1 new commit to master:
+
+1520847548
+GitHub49
+zig/master 1bf2810 Andrew Kelley: fix comptime slicing not preserving comptime mutability...
+
+1520849518
+andrewrk
+hoppetosse: can you elaborate? Are you trying to debug something?
+
+1520849931
+hoppetosse
+The equivalent of outputting c source with all macros applied
+
+1520849954
+hoppetosse
+Not yet, but I imagine I will
+
+1520850594
+hoppetosse
+or maybe closer to outputting the template expansions in c++
+
+1520850795
+hoppetosse
+I'm writing a text editor and eventually I'd like to be able to inspect comptime values while editing
+
+1520850856
+hoppetosse
+I'm trying to plan how I'd do it and I thought that would be a very convenient way of having it
+
+1520850915
+hoppetosse
+you could make a build, save the results as a zig file + data (or some sort of literal repr of the data in the source file)
+
+1520850922
+hoppetosse
+and then it's just parsing
+
+1520853909
+andrewrk
+hoppetosse, aha, ok you shall have that ability, but I think there's an even better way
+
+1520853918
+hoppetosse
+There probably is =)
+
+1520853960
+andrewrk
+the current plan is to have zig act as a server, providing the ability for tools such as editors to subscribe to updates
+
+1520853980
+hoppetosse
+There's a bunch of other thoughts there - I eventually want to add a repl so another way would be to be able to query the comptime state
+
+1520854003
+hoppetosse
+A zig server is pretty awesome XD
+
+1520854028
+hoppetosse
+The thing I miss most is a little squiggle under the code when I forget a gosh darned semicolon
+
+1520854081
+andrewrk
+indeed
+
+1520854665
+MajorLag
+Interestingly, since I've stopped working with an IDE I find I don't really miss that at all. Guess I'm weird like that.
+
+1520854710
+andrewrk
+MajorLag, I fixed comptime slice of slice and comptime slice of pointer dropping mutability. was there still another bug beyond that?
+
+1520854886
+MajorLag
+Yeah, I saw. Thanks for that. Unfortunately yes, there's still something with, I think, memorizing values it shouldn't. So far my tests to reproduce it in simpler code have failed but I only put about half an hour into it. I rewrote the function to avoid calling the iterator and just do things itself and that works fine, but I kept the old code for testing. Also noticed this this morning: try is ignored at comptime
+
+1520854886
+MajorLag
+wrap.
+
+1520854940
+MajorLag
+`error: expected type '[]const u8', found '@typeOf(Iterator_consumeBOM).ReturnType.ErrorSet'
+
+1520854941
+MajorLag
+_ = try iterSrc.consumeBOM();`
+
+1520854967
+andrewrk
+what's the fn signature of consumeBOM() ?
+
+1520855036
+MajorLag
+`pub fn consumeBOM(self: &Iterator) !u3`
+
+1520855062
+andrewrk
+and you get that compile error when consumeBOM returns an error?
+
+1520855127
+andrewrk
+the problem with inferred error sets at compile time is that the analysis doesn't find all the possible errors. it either finds the value that it returns, or it finds the one error that it returns
+
+1520855210
+MajorLag
+yeah, in this case I believe it is throwing an error for the iterator position being wrong for consuming a BOM, which I'm thinking is because the pos has been memorized accross instances.
+
+1520855330
+MajorLag
+...actually that can't be true because the error is that it's expecting []const u8, so it must be being thrown farther down.
+
+1520855462
+MajorLag
+...except it is. replacing try with a catch @compileError reveals: error: UnicodeIteratorInvalidBOMPosForConsume
+
+1520855509
+andrewrk
+MajorLag, 6db9be89 makes it so that if a function has any parameters whose type would allow mutating state (such as a non-const pointer), then it won't try to memoize it
+
+1520855618
+MajorLag
+consumeBOM only takes a self: &Iterator, which has a member `pos`, and it only throws that error if pos > 0 when you run consumeBOM. So it's memorizing it for some reaosn.
+
+1520855630
+andrewrk
+hmm I just thought of something else. let me try something.
+
+1520855687
+MajorLag
+I'm really curious why it is expecting []const u8 from a !u3 if I use try though... that I don't get.
+
+1520855713
+andrewrk
+that seems like a bug, at the very least for being a confusing compile error
+
+1520855858
+andrewrk
+MajorLag, I think one of the problems you're hitting is this:
+
+1520855863
+andrewrk
+I'll type up an issue
+
+1520855949
+MajorLag
+Maybe, though it should be using different instances of the struct. I'll be off to work in a few, I think that `try` problem at least I can write a trivial test case for.
+
+1520855991
+andrewrk
+ok great. I'll get that and this fixed and then we can see where we're at
+
+1520856014
+andrewrk
+hopefully I can get you through this comptime gauntlet into happy land
+
+1520858546
+GitHub105
+[zig] andrewrk pushed 1 new commit to master:
+
+1520858547
+GitHub105
+zig/master 5834ff0 Andrew Kelley: don't memoize comptime fn calls that access comptime mutable state...
+
+1520858558
+andrewrk
+MajorLag, ^ I think this might have fixed a lot of issues for you
+
+1520861046
+MajorLag
+Sounds right. Let me check it out
+
+1520861252
+MajorLag
+Huh, no, that doesn't seem to have done it.
+
+1520861263
+andrewrk
+it's still getting memoized?
+
+1520861283
+MajorLag
+it looks like that's the case, I'm still getting the same error as before.
+
+1520861322
+MajorLag
+I'll see if I can narrow down the conditions.
+
+1520867767
+MajorLag
+Every time I think I know what the problem is, a test case stubbornly refuses to fail.
+
+1520867850
+andrewrk
+sorry, I know it's frustrating
+
+1520867885
+andrewrk
+the small test cases are really nice, but I also don't mind looking at a bigger one
+
+1520869069
+MajorLag
+I've got it pretty small now. I think I'm almost there. It looks like it has to do with passing references vs values. In runtime code you can't pass structs by value, but it looks like it works differently at comptime?
+
+1520869471
+MajorLag
+Oh yeah, this is definitely it. Should have a pretty minimal test in a minute.
+
+1520870046
+andrewrk
+exciting
+
+1520870056
+andrewrk
+sounds related to #733
+
+1520870066
+andrewrk
+which is blocking on the Pointer Reform issue
+
+1520870087
+andrewrk
+I think Pointer Reform is going to be the first thing I do after releasing 0.2.0
+
+1520870383
+MajorLag
+#828
+
+1520870394
+MajorLag
+I'm excited about pointer reform.
+
+1520873816
+GitHub193
+[zig] andrewrk pushed 1 new commit to master:
+
+1520873816
+GitHub193
+zig/master bcce777 Andrew Kelley: some return types disqualify comptime fn call caching...
+
+1520873817
+andrewrk
+MajorLag, ^
+
+1520875440
+MajorLag
+Yep, that seems to have done it. Thanks.
+
+1520875548
+andrewrk
+now it's just the try / error set thing, yes?
+
+1520875597
+MajorLag
+oh right, I forgot to make a test case for that. It isn't stopping my current code from working, it was just making it harder to debug. I'll get on that in a bit.
+
+1520875624
+andrewrk
+ok great, glad to hear you are unblocked
+

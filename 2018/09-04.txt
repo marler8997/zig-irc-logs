@@ -1,0 +1,432 @@
+1536019668
+scientes
+the only reason it can't be in the set at the same time is because we are using EPOLLONESHOT
+
+1536019684
+scientes
+in which you have to re-arm the epollfd
+
+1536019720
+andrewrk
+that's necessary so that only one thread from the pool receives the coroutine handle
+
+1536019745
+andrewrk
+that's where the multiplexing happens
+
+1536019950
+scientes
+so co-routines introduce that limitation
+
+1536020018
+andrewrk
+what's the limitation? what alternative are you comparing it to?
+
+1536020035
+scientes
+you can only do one event at a time for one fd
+
+1536020062
+scientes
+oh, i guess that is the case anyways
+
+1536020066
+scientes
+because of the way fds work
+
+1536020118
+scientes
+yeah this co-routine stuff is really complicated
+
+1536020139
+scientes
+i can think about threads, but havn't quite wrapped my mind around co-routines
+
+1536020198
+andrewrk
+it gets complicated to implement, but once the pieces are in place, the API is easy to reason about
+
+1536020271
+andrewrk
+I want to make it more explicit where the coroutine frame memory goes though
+
+1536020285
+scientes
+I'm still more confortable with a go threading model, where everything feels like a thread
+
+1536020298
+andrewrk
+it's suboptimal
+
+1536020870
+scientes
+There is a leak where the `coroutine_handle` is never resumed, because it is no longer in the epoll set.
+
+1536020973
+andrewrk
+in order for it to leave the epoll set it would have to get resumed, or the code removing it will cancel the coroutine
+
+1536021765
+scientes
+I don't think you have it figured out either
+
+1536021815
+scientes
+but i won't understand it until i understand await fully
+
+1536021889
+unique_id
+..
+
+1536021900
+scientes
+unique_id,
+
+1536022488
+scientes
+i'm not there either
+
+1536022566
+unique_id
+well I hope you guys figure it out. Maybe I'll save some of these chats to understand coroutines better myself :)
+
+1536022601
+andrewrk
+I would recommend the docs instead:
+
+1536022624
+scientes
+yeah my lack of knowledge is distracting
+
+1536022687
+scientes
+
+
+1536022693
+scientes
+>  This class is not thread safe.
+
+1536022738
+andrewrk
+
+
+1536022740
+andrewrk
+this is thread safe
+
+1536022757
+andrewrk
+the docs on each functions tells if it is thread safe
+
+1536028424
+andrewrk
+hmm should we remove @maxValue? since it can be implemented in userland
+
+1536028585
+MajorLag
+Makes sense to me.
+
+1536029313
+andrewrk
+MajorLag, I think your second test on 906 is a bug
+
+1536029331
+MajorLag
+And here I was pretty convinced it wouldn't be.
+
+1536029390
+MajorLag
+Because a lot of the things I blamed on 906 went away when I started tagging functions as `comptime` at the callsite.
+
+1536029535
+andrewrk
+yeah it fixes it if you put `comptime isSliceType(FieldType)`
+
+1536029544
+andrewrk
+but it should work without that
+
+1536029610
+MajorLag
+Interesting. I've taken to tagging all trait.zig calls comptime at the callsite due to issues like this. If this is a bug and it gets fixed maybe I can stop doing that. It'd make it a little nicer.
+
+1536029642
+andrewrk
+also related is
+
+1536029698
+MajorLag
+yeah, that'd probably help. Even when I wrap the entire function body in a comptime block it isn't enough.
+
+1536029827
+andrewrk
+I think I see the problem
+
+1536029832
+andrewrk
+this is a really good test case
+
+1536029839
+andrewrk
+ok so count is a comptime var right
+
+1536029883
+andrewrk
+this means that every store to count must be a comptime known value, and every load from count must be to a comptime value
+
+1536029922
+andrewrk
+however the expression `isSliceType(FieldType)` is a runtime known value
+
+1536029966
+andrewrk
+and so when we do `if (isSliceType(FieldType)) count += 1`, there's a load and store with a comptime value
+
+1536029979
+andrewrk
+this is unsound, so there should be a compile error for it, but there is not
+
+1536030034
+andrewrk
+in other words we need to do count += 1 at comptime, but we're actually doing it at runtime. that should be impossible
+
+1536030053
+andrewrk
+it actually fixes the test case if you remove `comptime` from `var count = usize(0)`
+
+1536030197
+MajorLag
+I didn't think type was ever a thing that actually existed at runtime.
+
+1536030254
+andrewrk
+it's not - FieldType is a comptime value
+
+1536030260
+andrewrk
+but isSliceType returns a bool
+
+1536030967
+MajorLag
+Which is effectively a constant. But if I understand what you're saying, then because optimization hasn't happend yet any code that is conditionally run based on that value still exists and is evaluated?
+
+1536030999
+MajorLag
+At least, that's the problem in the first test case?
+
+1536031076
+andrewrk
+correct
+
+1536031192
+andrewrk
+imagine that every block of code is colored red for comptime or blue for runtime. count += 1 must happen in a red block, but it's happening in a blue block
+
+1536031233
+andrewrk
+but if you remove `comptime` from `comptime var count ...` then it can happen in a red or blue block
+
+1536031253
+andrewrk
+`inline` on a `for` turns the `for` from blue to red
+
+1536032094
+MajorLag
+Ultimately it was the same issue then, which is my failure to understand that the return of an fn(type) is not necessarily red, even if `type` must be, which is why count is marked comptime. It just happened that I also stumbled on a legit bug.
+
+1536032258
+andrewrk
+here's a simple example of that kidn of function:  var global: usize = 0; fn foo(comptime T: type) { global += @sizeOf(T); }
+
+1536032284
+andrewrk
+throw a correct return type and `return global` in there
+
+1536037534
+andrewrk
+MajorLag, I think I changed my mind about whether this is a bug
+
+1536072182
+zyzzy
+Hey! I'm playing around with zig and have a problem to start with:
+
+1536072208
+andrewrk
+zyzzy, looks like you need to add --library c to your build command
+
+1536072218
+andrewrk
+since you are depending on the c allocator
+
+1536072240
+zyzzy
+Ah, I missed that. Thanks, that works.
+
+1536072254
+andrewrk
+I think we can make that automatic in the future, or at least a direct error that tells you what you need to do
+
+1536087837
+MajorLag
+andrewrk, if I understand your reponse in #906 correctly, then the fact that isSliceType returns a runtime value causes both branches to be analyzed, and because `count` is a comptime var `count += 1` takes effect when it is analyzed. If I replace `isSliceType` with `false`, however, I get the expected result of 0 since `false` is known to be constant during the analysis. If I replace the guts of `isSliceType` with `return false` the origi
+
+1536087837
+MajorLag
+al behavior returns because the result of `isSliceType`, though known at compile time, is not known during the analysis of `countSliceMembers`. Is this a correct understanding?
+
+1536087976
+andrewrk
+MajorLag, the first part is correct
+
+1536087999
+andrewrk
+if you replace the guts of `isSliceType` with `return false` I don't think that changes anything
+
+1536088018
+MajorLag
+Right, it behaves identically to the original test.
+
+1536088019
+andrewrk
+because at the callsite of isSliceType, the result is a runtime value
+
+1536088044
+andrewrk
+I'm going to experiment with a new compile error that would take effect for 906 and see if it breaks anything in std
+
+1536089489
+andrewrk
+I'll turn my idea into a proposa
+
+1536089885
+andrewrk
+
+
+1536089926
+andrewrk
+MajorLag, this is similar to the concept of modifying global data at comptime
+
+1536089955
+andrewrk
+which would be an argument in favor of making it an error
+
+1536089986
+andrewrk
+ultimately, I think that if making it a compile error does not break any valid use cases, then I'm in favor of it
+
+1536090611
+unique_id
+I need to get myself a lock-free reader writer queue, single-producer, single-consumer. C or Zig. Or I could try converting a C++ one!
+
+1536090627
+unique_id
+or just create a c interface for it..
+
+1536090674
+andrewrk
+fixed size element buffer?
+
+1536090684
+unique_id
+I think so
+
+1536090712
+andrewrk
+lock free programming is incredibly difficult
+
+1536090729
+unique_id
+yeah that's why I'm going to rely on other peoples solutions :)
+
+1536090749
+andrewrk
+there's still a verification problem for other people's solutions though
+
+1536090762
+unique_id
+it's for communicating between a 'control' thread and a 'render' (audio) thread
+
+1536090775
+unique_id
+web audio API, which I'm porting to Zig. Using webkit/labsound code.
+
+1536090798
+unique_id
+libsoundio at the bottom :)
+
+1536090809
+andrewrk
+not to discourage you - I'm just observing that you're about to do something difficult
+
+1536090845
+unique_id
+using a queue isn't difficult. here's one:
+
+1536090860
+unique_id
+this one is will known
+
+1536090862
+andrewrk
+I think the bug fix I just pushed is going to make comptime programming in zig a lot easier for people
+
+1536090864
+unique_id
+but c++ :(
+
+1536090873
+andrewrk
+it would be pretty straightforward to translate that
+
+1536090879
+andrewrk
+by hand, I mean
+
+1536090913
+unique_id
+yeah I think I'll try that
+
+1536097716
+andrewrk
+llvm 7.0.0 got delayed by a week so here's the new zig 0.3.0 schedule:
+
+1536098871
+andrewrk
+anyone know a blake2b single file C implementation?
+
+1536099146
+andrewrk
+nvm I found the reference impls
+
+1536101444
+wink_
+andrewrk: why is memdupe not named memdup, were you trying to trick someone?
+
+1536101491
+andrewrk
+it's named after strdup
+
+1536101509
+andrewrk
+that's subject to change before 1.0.0
+
+1536101530
+wink_
+which isn't named strdupe, correct?
+
+1536101670
+wink_
+Anyway, would you accept a rename now if I create a PR?
+
+1536101794
+wink_
+I count 30 lines with dupe in it
+
+1536103547
+andrewrk
+let's wait and do a big batch of renames at once
+
+1536103566
+andrewrk
+I'm not sure that dupe will be the final name, or whether it will be std.mem.dupe
+

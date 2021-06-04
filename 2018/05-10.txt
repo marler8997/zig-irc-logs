@@ -1,0 +1,404 @@
+1525911881
+GitHub162
+[zig] andrewrk pushed 1 new commit to master:
+
+1525911881
+GitHub162
+zig/master bf21747 Andrew Kelley: translate-c: fix typedef duplicate definition of variable...
+
+1525911889
+andrewrk
+bb010g, ^ sqlite .h file issue fixed
+
+1525911931
+bb010g
+andrewrk: Cool! I'll test it out in a bit.
+
+1525913814
+bb010g
+andrewrk: Ok, looking at the output a bit more, I'm not quite sure whether to comment this on the current issue or make a new one—if you look at <sqlite3.h>, you'll see that sqlite3_bind_blob is a normal function, but in <sqlite3ext.h>, after the import of "sqlite3.h", it's redefined via a preprocessor macro to sqlite3_api->bind_blob.
+
+1525913830
+bb010g
+The output of `zig translate-c /usr/include/sqlite3ext.h` has only the line `pub extern fn sqlite3_bind_blob(…) c_int;`, not a constant pointing at sqlite3_api.
+
+1525913901
+bb010g
+I'll work out a MWE.
+
+1525914050
+andrewrk
+translation of macros is fundamentally limited
+
+1525914061
+andrewrk
+but let's see if this is an example where we can do something sane
+
+1525914081
+andrewrk
+zig has a custom C parser for handling macros
+
+1525914356
+achambe
+Hmm, might be good to add a manual escape hatch somehow to override odd cases
+
+1525914622
+bb010g
+typedef struct { int (*foo)(); } api_routines;
+
+1525914633
+bb010g
+extern const api_routines *api;
+
+1525914634
+bb010g
+#define api_foo api->foo
+
+1525914641
+bb010g
+Stick those lines in a header file, translate it, and you don't have api_foo
+
+1525914678
+achambe
+actually, making a wrapper header is a good enough escape hatch, ignore what i said before
+
+1525915035
+achambe
+bb010g: building anything in particular with sqlite?
+
+1525915053
+bb010g
+Working on making an extension for it.
+
+1525915154
+bb010g
+I'd like to be able to do the whole thing in Zig, as opposed to having to also write some C. (The current setup still involves autogenerating some C, but you'd be able to write an extension without manually touching C.)
+
+1525915204
+andrewrk
+achambe, generally, lazy analysis is the escape hatch
+
+1525915228
+andrewrk
+in this recent case it did not protect against duplicate variable declaration, but that makes sense
+
+1525915267
+achambe
+a way to stress test some of zig would be to tell sqlite to use that allocator
+
+1525915311
+andrewrk
+bb010g, would you mind opening an issue for this? I think this is a macro that we can translate
+
+1525915337
+achambe
+bb010g: oh thats cool - I think hybrid C/zig programs would be interesting. I'm looking at making a backup tool and I use sqlite for the metadata
+
+1525915417
+bb010g
+Ok. Think I'll probably just manually touch up the translation of the current headers in the meantime, and if I do raw modules correctly, I could have a wrapper sit on top and be parameterized by what raw bindings you're using.
+
+1525915459
+bb010g
+(Are there plans for first-class namespaces at some point, or are you keeping those for just files and @import?)
+
+1525915503
+MajorLag
+empty structs are pretty much the same as a namespace. In fact, I generate "namespaces" with them in several things.
+
+1525915607
+andrewrk
+^ agreed. I'm considering even removing the "namspace" type and having files implicitly be empty structs
+
+1525915640
+andrewrk
+or... maybe even actual structs. And you can put fields in them
+
+1525915715
+andrewrk
+then a file is equivalent to an anonymous struct
+
+1525915857
+achambe
+interesting
+
+1525916058
+MajorLag
+`const int = @import("interpolation.zig").ForType(f64);` generates an `interpolation` namespace with everything working on f64 internally. It does this by taking type T and returning an empty struct that has everything in it defined in T. `pub fn ForType(comptime T: type) type
+
+1525916058
+MajorLag
+return struct
+
+1525916058
+MajorLag
+
+
+1525916058
+MajorLag
+if(T != f32 and T != f64) @compileError("interpolation only supports float types.");
+
+1525916058
+MajorLag
+{
+
+1525916058
+MajorLag
+{
+
+1525916058
+MajorLag
+pub const Interpolation = fn(T, T, T) T;
+
+1525916059
+MajorLag
+pub const BaseFunction = fn(T) T;
+
+1525916059
+MajorLag
+
+
+1525916060
+MajorLag
+fn scale(x: T, s: T, e: T) T
+
+1525916060
+MajorLag
+{
+
+1525916061
+MajorLag
+return s + (e - s) * x;
+
+1525916061
+MajorLag
+}`
+
+1525916062
+MajorLag
+yikes, sorry
+
+1525916155
+MajorLag
+in fact, there are actually functions within that empty struct that themselves return empty structs based on the input type
+
+1525916206
+MajorLag
+under some circumstances, you can get crazy with code reuse using comptime in zig
+
+1525916212
+bb010g
+Oh, wow, got a core dump while figuring out the proper output for that issue
+
+1525916246
+andrewrk
+tiehuis, on what OS did you run into trouble with BufferedAtomicFile?
+
+1525916448
+bb010g
+andrewrk: I think part of this issue is that there's no current way in Zig to express a ccc function pointer. This example Zig doesn't actually put a bar decl in the generated header:
+
+1525916469
+bb010g
+`extern fn bar(foo: fn() c_int) c_int { return foo(); }`
+
+1525916481
+andrewrk
+`extern` in the fn proto means C calling convention
+
+1525916489
+bb010g
+Oh, export, I'm dumb
+
+1525916508
+bb010g
+Got that right 5 lines up
+
+1525916555
+bb010g
+`export fn bar(foo: extern fn() c_int) c_int { … }` core dumps with "TOTO implement get_c_type for more types", which is what I think these structs would need
+
+1525916609
+bb010g
+<sqlite3ext.h> follows the form `export const api_routines = extern struct { pub foo: extern fn() c_int, };`
+
+1525916945
+bb010g
+andrewrk: Issue is up:
+
+1525917225
+bb010g
+I like the idea of not having namespaces and only having structs; it's a lot cleaner
+
+1525918647
+andrewrk
+bb010g, thanks
+
+1525918706
+GitHub22
+[zig] andrewrk pushed 1 new commit to master:
+
+1525918707
+GitHub22
+zig/master 4438c5e Andrew Kelley: Merge branch 'rework-parser'
+
+1525927241
+GitHub32
+[zig] andrewrk pushed 1 new commit to master:
+
+1525927241
+GitHub32
+zig/master c3ddf50 Andrew Kelley: zig fmt: fix not writing results
+
+1525932204
+bb010g
+If I wanted to go about fixing #1002, would I need to touch the self-hosted compiler?
+
+1525932478
+bb010g
+The compiler stages are confusing me in general.
+
+1525948023
+GitHub101
+[zig] tiehuis pushed 1 new commit to master:
+
+1525948024
+GitHub101
+zig/master efa39c5 Marc Tiehuis: Fix bigint shift-right partial shift
+
+1525960134
+andrewrk
+bb010g, nope, that's all in src/*
+
+1525960222
+andrewrk
+bb010g, try this: make install && bin/zig build --build-file ../build.zig test-translate-c
+
+1525960228
+andrewrk
+this will run only the translate-c tests
+
+1525960234
+andrewrk
+then you can add your test case and watch it fgail
+
+1525960242
+andrewrk
+then edit src/translate-c.cpp to fix it
+
+1525965982
+andrewrk
+bb010g, oops, I forgot to mention the file name - you can add your test case to the top of test/translate_c.zig
+
+1525975891
+koomi
+hey, I'm doing @cInclude("linux/kvm.h") and a bunch of defines are missing
+
+1525975940
+koomi
+--verbose-cimport isn't really helping in figuring out why
+
+1525975983
+koomi
+any tips how to debug this further?
+
+1525976704
+andrewrk
+hi koomi - macros are inherently problematic to translate since zig must use heuristics to determine how they are intended to be used
+
+1525976721
+andrewrk
+however, maybe you have found a case that we could add a reasonable translation for
+
+1525976755
+andrewrk
+my suggestion would be to find an example of the #define that zig is unable to translate and open a GitHub isuse and then let's look at it and see if we can come up with translation rules
+
+1525983185
+koomi
+andrewrk: do non-trivial macros work at all?
+
+1525983215
+koomi
+e.g.:
+
+1525983218
+koomi
+#define FOO 1
+
+1525983225
+koomi
+#define BAR FOO<<1
+
+1525983240
+koomi
+if I try to include that BAR isn't defined
+
+1525983304
+koomi
+hm, #define BAR 1<<1 doesn't work either
+
+1525983511
+andrewrk
+koomi, you can see examples of what kind of macro translations are currently supported here:
+
+1525983588
+andrewrk
+we don't have any binary operator parsing in macros yet
+
+1525983606
+koomi
+I see
+
+1525983625
+koomi
+I thought you used clang for header parsing and everything would magically just work
+
+1525983628
+koomi
+too bad
+
+1525985172
+achambe
+koomi: it does use clang - but macros are a complication
+
+1525988511
+andrewrk
+koomi, imagine trying to translate this macro:   #define IF if (
+
+1525988519
+andrewrk
+IF x) { return; }
+
+1525988527
+andrewrk
+(for C programmers to save typing '(')
+
+1525988554
+andrewrk
+that concept just doesn't translate into zig, quite intentionally
+
+1525989585
+MajorLag
+Just spitballing, but what if it translated whatever macros it could in one pass, then ran the preprocessor over whatever is left and translated the results? Sure, zig couldn't use those untranslated macros, but there's probably good reason for that and at least any code in the C files should still work.
+
+1525990166
+andrewrk
+MajorLag, clang already does this for us
+
+1525990189
+andrewrk
+what we're talking about is just looking at a bare macro with no context, and trying to turn that into a zig declaration that has the same meaning
+
+1525990736
+koomi
+yeah, considering macros can contain any arbitrary stuff it's obviously a problem
+
+1525990754
+koomi
+I was thinking only about simplish constants
+
+1525992127
+andrewrk
+certainly we can add more macro support than currently exists
+

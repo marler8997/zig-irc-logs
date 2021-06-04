@@ -1,0 +1,288 @@
+1519369784
+grinz
+const struct_type = @typeOf(Point); @compileLog(@typeId(struct_type));
+
+1519369821
+grinz
+this code outputs "TypeId.Type". Is there a way to "dereference" struct_type so it will act as if I passed Point directly?
+
+1519372121
+andrewrk
+grinz, const struct_type = Point;
+
+1519372125
+andrewrk
+is that what you want?
+
+1519372660
+grinz
+
+
+1519372667
+grinz
+I cannot understand that difference
+
+1519373083
+grinz
+Oh I got it. I was confused by return type of typeOf being "type"
+
+1519373920
+grinz
+
+
+1519373951
+grinz
+What is the right way to return comptime value from a function?
+
+1519374548
+GitHub102
+[zig] tiehuis opened pull request #784: Add utf8 string view (master...utf8-string-view)
+
+1519375272
+tiehuis
+grinz: do the following: `comptime const info = comptime get_type_info(Point);`
+
+1519375342
+tiehuis
+you don't need to explicitly specify the comptime on that variable either
+
+1519375357
+grinz
+thanks
+
+1519375357
+tiehuis
+so `const info = comptime get_type_info(Point);` will suffice
+
+1519375463
+tiehuis
+i usually find you can do most everything you need by either calling a function with comptime or specifying a function argument as comptime
+
+1519375469
+grinz
+why compiler ignores comptime specifier on return type? Or compiler automatically converts comptime value to runtime value unless you specify comptime on call site?
+
+1519375531
+tiehuis
+i'm not sure the internals on that sorry
+
+1519375584
+grinz
+You can also write struct { t: (comptime type) } with the same result
+
+1519375602
+grinz
+Feels like a bug / missing check
+
+1519375763
+tiehuis
+i think all function calls are runtime by default now unless explicitly specified with comptime
+
+1519375791
+tiehuis
+this issue seems to suggest that while proposing for a way to prefer comptime evaluation where possible:
+
+1519377400
+grinz
+@memberCount(type) => no value count available for type 'type'
+
+1519377444
+tiehuis
+what is the type in this case?
+
+1519377446
+grinz
+But it has fields in some cases like (&u32).Child
+
+1519377480
+grinz
+Where can I get all possible fields of type metaobject?
+
+1519377483
+grinz
+like Child
+
+1519377508
+tiehuis
+oh i see, let me see if i can find a list
+
+1519377857
+tiehuis
+couldn't find a specific list but there are some uses here:
+
+1519377904
+tiehuis
+see also this issue which would make this information a little less opaque of implemented:
+
+1519379890
+grinz
+I want to make a function which return type depends on argument type. I implemented it is this way: fn return_type_test(comptime Type: type) map_type(Type) { ... }
+
+1519379948
+grinz
+Does Zig have something like automatic return type inference so I can replace map_type(Type) with something like 'auto'?
+
+1519381048
+MajorLag_
+Theoretically "var" should work as a return type, but that isn't handled currently. A workaround is to return "type", and then return a new empty struct type containing your data: return struct { var data = "Test"; };
+
+1519381190
+MajorLag_
+If your comptime Type is the same as your return type though, you can just do this: fn return_type_test(comptime Type: type) Type { ... }
+
+1519381216
+MajorLag_
+which you probably already know, but in case you didn't.
+
+1519381511
+grinz
+so you are defining struct with no fields but with global variable in struct scope?
+
+1519382512
+grinz
+
+
+1519382541
+grinz
+My best attempt. Any ideas how to get rid of double function evaluation?
+
+1519383004
+MajorLag_
+No, you'll have the same issue you have with the function you're calling inside your test function. You'd have to wrap it up in an empty struct and return it that way again. Or, since you know the two values types it could return you could use a union I suppose.
+
+1519383249
+grinz
+can i use comptime string as field name when defining struct?
+
+1519397927
+GitHub113
+[zig] bnoordhuis opened pull request #785: allow implicit cast from `S` to `?&const S` (master...fix731)
+
+1519405345
+MajorLag_
+grinz, I don't think there's any way to do that today. I've wondered about doing that sort of thing myself.
+
+1519405464
+andrewrk
+MajorLag_, I'll add return type inference
+
+1519405472
+andrewrk
+do we have an issue yet?
+
+1519405501
+andrewrk
+
+
+1519407849
+MajorLag_
+related:
+
+1519413982
+MajorLag_
+`.&` was an interesting suggestion. It looks weird, but it does have a certain logic to it, is unambiguous, clearly visible, and doesn't introduce any new symbols. I like it overall.
+
+1519414154
+MajorLag_
+andrewrk, for block `[]` types, has t been considered to add a .size pseudofield? Like .len, but that gives @sizeOf(@typeOf(blockVar))*blockVar.len?
+
+1519414241
+MajorLag_
+Because although that expression makes sense on the face of it, I believe it would be incorrect in the case of the new `[ ... ]null` types, since .len would not include the terminator.
+
+1519414258
+andrewrk
+I accepted josh's updated proposal
+
+1519414267
+andrewrk
+MajorLag_, hmm that's an interesting question
+
+1519414288
+andrewrk
+I can't think of when I would use the size instead of the length in practice
+
+1519414315
+MajorLag_
+In an allocator implementation?
+
+1519414373
+andrewrk
+wouldn't you request exactly N bytes, and then get a []T?
+
+1519414386
+andrewrk
+where does a null terminated pointer come into play?
+
+1519414395
+andrewrk
+s/bytes/items/
+
+1519414416
+MajorLag_
+I don't know, just kinda thinking out loud. I even took the wrong type in that expression.
+
+1519414435
+andrewrk
+I think in practice the null thing will be clear and clean
+
+1519414451
+andrewrk
+based on having written all the OS abstraction code
+
+1519414738
+MajorLag_
+You'd have a better idea than I would, for sure. I haven't written any Zig yet that cares about C interfaces other than the handful of calls I make to SDL. Though I have some projects I'd like to use it for in the near future that would be interfacing with kernel APIs and probably a bunch of other C-oriented interfaces.
+
+1519414760
+andrewrk
+I think most application developers could ignore the null terminated pointer types
+
+1519414783
+andrewrk
+and if for some reason you have a null terminated pointer type, it implicitly casts to the other ones
+
+1519415308
+MajorLag_
+Ok, well, thinking it through it's a pretty easy to comprehend rule: null terminates the block, it is not a part of it. So if it comes up and I have to fill a buffer with null terminated strings from a list of strings, the code would be consistent regardless of the kind of block in the source string list and I'd have to insert the nulls during the copy.
+
+1519415332
+andrewrk
+exactly
+
+1519415472
+andrewrk
+a null terminated pointer type is an assertion that there is a null/0 there. so you would make a []T of len N + 1, and then do something like this to get []null T:   ([]null T)(slice[0..slice.len - 1])
+
+1519415502
+andrewrk
+there would be a runtime safety check here (when not in release mode)
+
+1519427729
+grinz
+What is the point of having dedicated []null T pointer syntax? Interop with C?
+
+1519427832
+grinz
+It's rather limited. Let's say I want to write fast lexer. Null-terminated string are quite handy in this particular case but one terminated zero is not enought to get best perfomance.
+
+1519427924
+grinz
+When SIMD comes into play, you want something like 15 trailing zeroes. And this is where new type become completely useless.
+
+1519428141
+grinz
+But sometimes having these bytes readable is enough (i.e. guarantee that slice end is at least 15 bytes away from page boundary)
+
+1519429234
+grinz
+
+
+1519429244
+grinz
+Any ideas how to implement that without helper function?
+
+1519429674
+grinz
+[]null T is of no use if you want to interact with WinAPI which uses UTF-8 (2 trailing zero bytes)
+

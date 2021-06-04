@@ -1,0 +1,512 @@
+1537414510
+nornagon
+i'm trying to build zig from source on macOS, and I'm getting an error when installing llvm@7 with brew
+
+1537414520
+nornagon
+Error: No available formula with the name "llvm@7"
+
+1537414529
+nornagon
+is there a tap I'm missing, perhaps?
+
+1537414628
+nornagon
+aha, fixed it with `brew upgrade --devel llvm`
+
+1537414767
+andrewrk
+nornagon, oh interesting! did that have to build it from source?
+
+1537414786
+nornagon
+yep, brew is currently building llvm locally
+
+1537414806
+nornagon
+shall i PR an update to README.md?
+
+1537414850
+nornagon
+(it might make sense to use a git submodule and always build llvm from source, that way you can isolate the zig build from whatever llvm might be on the system)
+
+1537414889
+andrewrk
+nornagon, what happened is that, just today, we upgraded from depending on llvm 6 to the llvm 7 that just released
+
+1537414902
+nornagon
+oh heh :) i'm on the bleeding edge!
+
+1537414907
+andrewrk
+so it will be a couple days until brew gets a binary.
+
+1537414924
+nornagon
+ah, so the llvm@7 instructions will work fine in a couple of days
+
+1537414933
+andrewrk
+yes
+
+1537414961
+nornagon
+so much for an easy first PR then :P
+
+1537414974
+andrewrk
+nornagon, apologies, you joined in a tricky window
+
+1537414991
+nornagon
+it's no problem, i upgrade electron's chromium dependency for my day job
+
+1537414999
+nornagon
+i eat C++ compiler errors for breakfast
+
+1537415095
+nornagon
+also hi! i just watched your recurse center talk from a little while back :)
+
+1537415111
+nornagon
+interested in experimenting with zig, no real goals yet
+
+1537415666
+andrewrk
+nornagon, nice to meet you. I look forward to seeing the code that you write
+
+1537415677
+andrewrk
+feel free to ask for code review or paste a link to show a demo
+
+1537446758
+unique_id
+std.os.File's read marks EINVAL as unreachable, which I guess is because EINVAL is a logic error that you're just supposed to fix. However, it might be something that needs to be handled when O_DIRECT is used. From postgresql channel:
+
+1537448437
+unique_id
+Don't worry though, I'm only using O_DIRECT for my website's key value store. Not the game ! This API is way too awful for shipping software with it.
+
+1537448856
+unique_id
+(the linux API)
+
+1537449827
+scientes
+unique_id, O_DIRECT is a linux-specific API, so you should use std.os.linux.read() directly
+
+1537449978
+scientes
+unique_id, and there is no way to open a file with O_DIRECT using the generic interfaces anyways
+
+1537450000
+unique_id
+file.openHandle(fd)
+
+1537450022
+unique_id
+File*
+
+1537450047
+scientes
+yeah, but you are using a raw std.os.linux.open() call
+
+1537450054
+scientes
+(or something in C)
+
+1537450179
+unique_id
+doesn't matter, openHandle + read is broken on linux
+
+1537450200
+scientes
+yeah i was thinking about it, and maybe we should add an "unreachable" value
+
+1537450231
+unique_id
+what? Currently it's switch(...) EINVAL => unreachable, which is the problemo
+
+1537450242
+scientes
+cause the cost of a switch statement is negligible (because of current optimizations it is often free,
+
+1537450256
+scientes
+that way only the value is undefined, instead of the whole program
+
+1537450380
+scientes
+like you could get EFAULT if you do a ptrcast, there is all sorts of undefined behavior in program, I don't think zig should be expected to fill every one of them.
+
+1537450407
+scientes
+but it could handle the situation more gracefully
+
+1537450475
+scientes
+that's my personal opinion
+
+1537450484
+unique_id
+EINVAL can be returned from read, no way around that. A program could make sure the file is a certain size before it reads to avoid the EINVAL, but that's a race condition.
+
+1537450633
+scientes
+so, if the file isn't opened with O_DIRECT then read will just return a short read. Oh, what about when at the very end of the file.....
+
+1537450673
+unique_id
+but no, I can understand not wanting to dirty a cross platform interface with something linux+O_DIRECT specific.
+
+1537450742
+scientes
+anyways I have to go to work.
+
+1537450774
+unique_id
+but, then it probably shouldn't have openHandle(fd) if it's not going to handle the errors
+
+1537451420
+andrewrk
+what's this about read returning EINVAL? do we have an incorrect `unreachable`?
+
+1537451476
+andrewrk
+here's what I see in `man 2 read`: fd is attached to an object which is unsuitable for reading; or the file was opened with the O_DIRECT flag, and either the address specified in buf,  the value specified in count, or the file offset is not suitably aligned.
+
+1537451487
+andrewrk
+or: fd was created via a call to timerfd_create(2) and the wrong size buffer was given to read(); see timerfd_create(2) for further information.
+
+1537451541
+andrewrk
+my logic is that proper programs will prevent the possibility of these things from happening at compile time, and so the std lib asserts if it gets this error code
+
+1537451563
+andrewrk
+a better way to phrase it is that it asserts it will not get this error code
+
+1537451646
+andrewrk
+my reasoning is that e.g. error.Invalid does not make sense in this case. the programmer should be able to guarantee they are using the read api correctly, and in exchange the error set has one less possibility in it
+
+1537451773
+unique_id
+andrewrk: It's not possible to prevent EINVAL at compile time when using O_DIRECT because EINVAL being returned depends on the file being read.
+
+1537451811
+unique_id
+It was a big surprise to me
+
+1537451825
+andrewrk
+oh, well if the API is bad, that's different
+
+1537451914
+andrewrk
+unique_id, so when you get EINVAL in this case, you don't actually end up reading the bytes right?
+
+1537451934
+andrewrk
+can't you detect that the count value is not suitably aligned before you call read?
+
+1537451975
+andrewrk
+also #musl is a great place for questions like this
+
+1537451999
+andrewrk
+by all means ask them here, but I often go to #musl for questions like these because they're knowledgable and friendly
+
+1537452055
+unique_id
+andrewrk: The count value can be perfect, you'll still get an EINVAL if the file size is wrong.
+
+1537452078
+andrewrk
+and then what do you do if you get EINVAL?
+
+1537452099
+unique_id
+The program would abort or something, having detected that its file has been messed with
+
+1537452105
+andrewrk
+I see
+
+1537452179
+unique_id
+Maybe the program could lock the file or something to make sure it controls the size of the file, and then it can use read correctly without getting EINVAL
+
+1537452256
+andrewrk
+I guess the bottom line is, are you willing or not willing to accept undefined behavior if something messes with the file behind your programs back
+
+1537452257
+MajorLag
+unique_id, andrewrk: `const buffer: [1]u8 = []u8{8}; const sliceA: []u8 = &buffer;` is this really valid? It reads to me as 'assign sliceA as a pointer to the slice called buffer', which is to say not the data buffer points to, but the slice data structure?
+
+1537452313
+andrewrk
+and if not willing (perfectly reasonable) then my recommendation for now would be to side-step some of the cross platform abstractions in std (even std.os.posixRead), calling std.os.linux.read directly and dealing with the errno codes yourself
+
+1537452351
+andrewrk
+I think for most stuff though we want the unreachable on EINVAL
+
+1537452372
+andrewrk
+if we were going to handle O_DIRECT, we'd probably have something like std.os.posixReadDirect and it would simply handle the error codes differently
+
+1537452400
+andrewrk
+certainly openHandle should be documented that the fd cannot be O_DIRECT
+
+1537452461
+andrewrk
+MajorLag, without running it through the compiler, it looks like it should be error: mutable slice to constant data
+
+1537452594
+andrewrk
+how it works is that the `const` on buffer applies directly to the bytes of the array, since it's not a pointer, it's actual data right there. so those bytes are constant
+
+1537452600
+MajorLag
+oh wait, I'm just not reading it correctly. buffer is an array, not a slice.
+
+1537452651
+andrewrk
+yeah. I think it is a little too subtle syntactically array vs slice
+
+1537452661
+andrewrk
+semantically I think it works fine
+
+1537452676
+andrewrk
+but array vs slice are a lot different but they look very similar
+
+1537452676
+MajorLag
+but *[N]T => []T is implicit? I wasn't aware of that, but it makes sense.
+
+1537452684
+andrewrk
+yeah, that came with pointer reform
+
+1537452816
+MajorLag
+someone proposed an alternative array syntax I think, but nobody was really thrilled about it. It shouldn't be a problem as long as I pay better attention.
+
+1537453001
+unique_id
+andrewrk: This was the right channel, I was reporting an issue not asking for help.
+
+1537453128
+andrewrk
+unique_id, my apologies, I just woke up, everything makes sense now.
+
+1537453154
+MajorLag
+I wonder if 1565 has the same cause as 1076?
+
+1537453191
+andrewrk
+MajorLag, I'm in the middle of fixing #1076. it's not as bad as I thought. it's just a problem with string literal caching
+
+1537453234
+andrewrk
+so I think they're different, since 1565 has no string literals
+
+1537453912
+unique_id
+andrewrk: I don't know if you get notified on these, but I added a comment to my most recent bug report. It's interesting :)
+
+1537453954
+andrewrk
+don't worry, I get an email notification for every comment in the entire ziglang org
+
+1537454005
+andrewrk
+yeah this is really strange. I'm going to look at this as soon as I finish up 1076
+
+1537455499
+andrewrk
+just had a bug in c++ because I accidentally named a local variable the same as a parameter
+
+1537455544
+andrewrk
+I got used to that not happening because of zig coding
+
+1537456174
+andrewrk
+1076 is fixed
+
+1537461957
+wink_
+andrewrk: I've found @truncate doesn't work consistently with u0 and commented on #1564,
+
+1537461969
+wink_
+I'm wondering if I should I create separate issues for these types of things?
+
+1537466453
+Barabas
+I get 786 errors when trying to build master currently.
+
+1537466459
+Barabas
+Using Visual Studio 2017
+
+1537466732
+Barabas
+It starts off with
+
+1537466733
+Barabas
+'WasmGlobalType': is not a member of 'llvm::wasm'
+
+1537466889
+andrewrk
+Barabas, master branch now depends on llvm 7
+
+1537466963
+Barabas_
+Ah
+
+1537467040
+andrewrk
+
+
+1537467048
+andrewrk
+there's a new tarball with llvm/clang binaries here if you want it
+
+1537467092
+andrewrk
+or you can follow instructions to build those from source:
+
+1537467377
+Barabas_
+Thanks, I'll fix it.
+
+1537467447
+unique_id
+andrewrk, I think you misunderstood my bug report? Take a look at my most recent comment.
+
+1537467496
+Barabas_
+Seems to be building now :)
+
+1537467498
+andrewrk
+unique_id, the first example in your new comment is now an error
+
+1537467513
+andrewrk
+error: expected type '[]u8', found '*const [1]u8'
+
+1537467640
+andrewrk
+unique_id, you might be hitting that unfortunate caching issue
+
+1537467668
+andrewrk
+to be clear: the issue with the URL
+
+1537467706
+unique_id
+im using git pull
+
+1537467820
+unique_id
+trying a make clean and recompile now
+
+1537468001
+unique_id
+Didn't work. I don't know. Hands in the air.
+
+1537468085
+unique_id
+oh
+
+1537468100
+unique_id
+the install path changed
+
+1537468139
+unique_id
+(that's my fault)
+
+1537468800
+wink_
+Josh Wolfe suggested I create a bug for @truncate (
+
+1537476381
+andrewrk
+the stream today is in 15 minutes and it will be on compile time code execution:
+
+1537476406
+andrewrk
+I'm pretty sure everything I'll talk about and demo is already in the docs, so if you don't watch it you won't miss much
+
+1537477016
+wink_
+I'm trying to build the lastest zig with llvm 7.0.0 and I'm getting a compile error from translate_c.cpp:18 where it includes <clang/Frontend/ASTUnit.h>
+
+1537477291
+wink_
+The error is: SmallVector.h:313:11 error: "void* memcpy(void*, const void*, size_t)" writing to an object type "struct std::pair<void*, long unsigned int>" with no trivial copy-assignment; ...
+
+1537477348
+wink_
+I'm on Arch Linux and I compiled llvm 7.0.0 from sources using gcc. Should I use clang?
+
+1537479766
+unique_id
+wink_: I believe that you also have to compile clang before you compile zig. That's what I did.
+
+1537479808
+unique_id
+I mean, from that I got the newest clang headers which you need
+
+1537479937
+unique_id
+compile everything with the same compiler
+
+1537480441
+wink_
+unique_id: I did but obviously did something wrong :)
+
+1537481334
+wink_
+So I recompiled with clang and it compiled, but now I've got a linker error:
+
+1537481339
+wink_
+home/wink/prgs/ziglang/zig/build/../deps/lld/ELF/InputFiles.cpp:138: undefined reference to `llvm::DWARFContext::getLineTableForUnit(llvm::DWARFUnit*, std::function<void (llvm::Error)>)'
+
+1537481639
+cgag
+getting a billion undefined reference errors while building llvm 7 during "Linking CXX shared library ../../lib/libLTO.so", anyone dealt with this or anything similar while building llvm?
+
+1537486801
+andrewrk
+if you're on linux and having trouble building from source you can use the binary static builds while waiting for your distro to catch up
+
+1537486972
+cgag
+missed any previous messages but once i switched to using ninja nad building in release mode it worked, definitely ran out of ram linking when not building in release mode, don't know if ninja was a factor at all
+
+1537487779
+andrewrk
+I 100% recommend building clang and llvm in release mode
+
+1537487787
+andrewrk
+zig is unusable for general use if llvm/clang are in debug mode
+

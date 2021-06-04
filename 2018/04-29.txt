@@ -1,0 +1,544 @@
+1524969845
+GitHub199
+[zig] andrewrk pushed 1 new commit to master:
+
+1524969846
+GitHub199
+zig/master 0bb054e Andrew Kelley: Merge pull request #930 from zig-lang/float-printing...
+
+1524969849
+GitHub160
+[zig] andrewrk closed pull request #930: Finish and fix float printing (master...float-printing)
+
+1524969943
+andrewrk
+whew. that was tricky
+
+1524985346
+andrewrk
+got kernel threads working on windows, mac, and linux
+
+1524997613
+Dodo
+alexnask: , did you have the comptime Iterators working?
+
+1524997631
+alexnask
+@Dodo Nah sorry I didn't end up getting too much work done yesterday
+
+1524997644
+alexnask
+I'm finishing up a couple of things for typeInfo then I'll take a look :)
+
+1524997664
+Dodo
+oh okey haha, np
+
+1524997696
+alexnask
+I think it will be pretty difficult to achieve but I'll see what the roadblocks are
+
+1524997766
+Dodo
+why'd be difficult? if you for example know at compiletime you have a Range of 0 to 10, you should be able to do anything with it,
+
+1524997793
+alexnask
+Right, any valid zig code that doesn't call syscalls
+
+1524997794
+Dodo
+because you know that the first item will be 0, then 1 etc...
+
+1524997830
+alexnask
+The issue is pointer casting, because the comptime implementation does not keep stuff in memory with the same layout as runtime
+
+1524997833
+Dodo
+mh, not sure how the ArrayList works with allocation, that might be the only issue
+
+1524997875
+alexnask
+For example, say you have a struct with 2 fields, in comptime you will create an array of 2 ConstExprValues which are basically tagged unions with some data inside
+
+1524997891
+alexnask
+You can't then just cast from a pointer to that struct to a pointer to u8
+
+1524997917
+alexnask
+I mean, there are probably ways to make it work but it's more involved than it sounds :P
+
+1524997931
+Dodo
+mhh haha, fair enough
+
+1524997941
+alexnask
+I'll take a look for sure though
+
+1524997992
+alexnask
+At worst we could probably detect comptime and change the iterface decl for comptime code or smth.
+
+1524998027
+alexnask
+But I think you need a ptrCast no matter what
+
+1524998042
+alexnask
+Even if the whole small buffer/heap allocation thing is patched out at comptime
+
+1524998096
+Dodo
+var array = [N]Item undefined; <-- is this legal?
+
+1524998102
+Dodo
+N is a comptime usize
+
+1524998109
+alexnask
+var array: [N]Item = undefined
+
+1524998114
+Dodo
+oh okey
+
+1524998164
+Dodo
+it'd be sound to just write into it?
+
+1524998189
+Dodo
+I dont want to fill it with 0's, Im just gonna loop, and set each index to what I desire
+
+1524998267
+alexnask
+Yes
+
+1524998306
+alexnask
+There are no issues writing and/or reading, it's just that it's filled with "random" data in the beginning.
+
+1524998361
+Dodo
+oh okey :)
+
+1524998375
+Dodo
+mhhhh I should probably make 'collect_array' return an ![N]Item
+
+1524998725
+alexnask
+@Dodo that array would have to be heap allocated
+
+1524998823
+Dodo
+why?
+
+1524998872
+alexnask
+I mean, if you initialize it in collect_array it will live in its stack frame
+
+1524998885
+alexnask
+Or rather if you declare/define it in collect_array
+
+1524998885
+Hejsil
+You can return [N]T
+
+1524998890
+Hejsil
+By value
+
+1524998898
+alexnask
+Oh right sorry mb
+
+1524998904
+alexnask
+![N]Item should work too then right?
+
+1524998910
+Hejsil
+Ye
+
+1524998938
+Hejsil
+Though [1000]T is probably a bit to much :)
+
+1524998947
+Hejsil
+Though, if the copy is elided it's fine
+
+1524998989
+Dodo
+
+
+1524999000
+Dodo
+I maybe should deinit the array tho
+
+1524999012
+Dodo
+if iterations != N
+
+1524999030
+Hejsil
+That's fine
+
+1524999036
+Hejsil
+Deinit the array?
+
+1524999070
+Dodo
+destroy the items it holds
+
+1524999077
+Hejsil
+Aah
+
+1524999078
+Hejsil
+right
+
+1524999082
+Hejsil
+Ye, probably
+
+1524999085
+alexnask
+If the items need to be deinited, yes
+
+1524999112
+alexnask
+You probably need some metaprogramming magic to check if they have a deinit(&Self) fn and call that
+
+1524999121
+alexnask
+(If you want to do it generically)
+
+1524999163
+Hejsil
+But then again. I don't see any allocation
+
+1524999166
+Dodo
+or have a drop function that does that for me
+
+1524999177
+Dodo
+a generic drop
+
+1524999183
+Hejsil
+Soo self could still own the items
+
+1524999185
+Hejsil
+on error
+
+1524999202
+Dodo
+anyway, that peace of code is more pleasant to read that this:
+
+1524999229
+Dodo
+which does exactly the same, but it's just awkward there xD
+
+1524999256
+alexnask
+Rust macros wird me out
+
+1524999263
+alexnask
+weird*
+
+1524999379
+Dodo
+once pass by value is implemented, collect_array can be much more simple: 'var written = self.collect_slice(array[0..]); if written == N {return array} if written < N {return CollectError.Underflow} else {return CollectError.Overflow}'
+
+1524999503
+alexnask
+Why do you need pass by value for this?
+
+1524999529
+alexnask
+You should be fine to pass the slice byref, no?
+
+1524999564
+Dodo
+but collect_slice uses .map(),
+
+1524999585
+Dodo
+and when using .map(), the Items are passed in by value into the function
+
+1524999682
+alexnask
+Ah, right, collect_slice is the issue, gotcha
+
+1524999745
+alexnask
+That's a pretty clever way to write it btw.
+
+1524999845
+Dodo
+the nice parts of abstractions :)
+
+1525000118
+alexnask
+I have 41 '.special = ConstValSpecialStatic;' in my PR lol
+
+1525000187
+Dodo
+oh look, you can even collect into multiple arrays:
+
+1525000196
+Dodo
+using .take() \o/
+
+1525019396
+GitHub107
+[zig] andrewrk closed pull request #963: Atomic stack and queue (master...atomic-stack-and-queue)
+
+1525019396
+GitHub35
+[zig] andrewrk pushed 1 new commit to master:
+
+1525019396
+GitHub35
+zig/master f37e79e Andrew Kelley: Merge pull request #963 from zig-lang/atomic-stack-and-queue...
+
+1525023616
+andrewrk
+alexnask, alright! today's the day - pointer reform
+
+1525027279
+Dodo
+is there a function that copies one slice into another?
+
+1525027289
+Dodo
+or method,
+
+1525027309
+MajorLag
+std.mem.copy?
+
+1525027453
+Dodo
+oh yeah
+
+1525027469
+Dodo
+why isn't that memcpy? ;o
+
+1525027501
+Hejsil
+Well, it's in the mem part of std
+
+1525027508
+Hejsil
+That kinda implies it's memcpy
+
+1525027536
+Hejsil
+You would probably always call it through the mem namespace: mem.copy
+
+1525027555
+Dodo
+I mean in the implementation, it's a manual loop
+
+1525027585
+Hejsil
+The loop is safer, and if done correctly, the compiler should optimize the loop into @memcpy
+
+1525027711
+Dodo
+oh whoa
+
+1525030785
+Dodo
+alexnask, there also should be a library that does parallel iteration ^-^
+
+1525030807
+Dodo
+where it makes sense ofcourse, but there's a few things
+
+1525031175
+Dodo
+how do I compile a lib btw? lib\zig\std\special\bootstrap_lib.zig:6:5: error: expected 3 arguments, found 2     @export("_DllMainCRTStartup", _DllMainCRTStartup);
+
+1525031261
+andrewrk
+Dodo, what command are you running?
+
+1525031285
+Dodo
+..\zig-0.2.0\zig.exe build-lib .\src\main.zig
+
+1525031289
+andrewrk
+oh I see the problem
+
+1525031303
+andrewrk
+I'll fix it but you'll have to upgrade from 0.2.0 to master to get the fix
+
+1525031337
+Dodo
+I do have a build.zig, first it did everything with a binairy, but I replaced it with staticLibrary
+
+1525031357
+Dodo
+ohh, I'll git clone haha
+
+1525031362
+GitHub178
+[zig] andrewrk pushed 1 new commit to master:
+
+1525031362
+GitHub178
+zig/master b709591 Andrew Kelley: zig fmt: respect comments before statements
+
+1525031476
+GitHub184
+[zig] andrewrk pushed 1 new commit to master:
+
+1525031476
+GitHub184
+zig/master 5e5eceb Andrew Kelley: fix bootstrap_lib for windows
+
+1525031492
+MajorLag
+Dodo, you can get automatically built master from
+
+1525031506
+andrewrk
+argh, I need to stop pushing to master
+
+1525031513
+GitHub117
+[zig] andrewrk pushed 1 new commit to master:
+
+1525031514
+GitHub117
+zig/master a0e9f1e Andrew Kelley: fix bootstrap_lib for windows, take 2
+
+1525031593
+Dodo
+do you need to login for a download?
+
+1525031670
+Dodo
+and on the one from ziglang.org I get a 403 forbidden o.O
+
+1525031765
+andrewrk
+oh no I think I accidentally deleted it
+
+1525031788
+andrewrk
+Dodo, wait, you're on windows right?
+
+1525031803
+Dodo
+yess
+
+1525031831
+andrewrk
+so what you want to do is wait for
+
+1525031839
+andrewrk
+then you can get a .zip file of the build for windows
+
+1525031985
+Dodo
+you can watch it compiling live ;o!
+
+1525033473
+GitHub1
+[zig] andrewrk pushed 1 new commit to master:
+
+1525033473
+GitHub1
+zig/master ad4ee47 Andrew Kelley: zig fmt: preserve comments before global variables
+
+1525034064
+Dodo
+yay it compiles
+
+1525035464
+GitHub88
+[zig] thejoshwolfe pushed 3 new commits to master:
+
+1525035465
+GitHub88
+zig/master 8c567d8 Josh Wolfe: Merge pull request #954 from BraedonWooding/patch-2...
+
+1525035465
+GitHub88
+zig/master 07af655 Braedon: Changed to use shifting and masking
+
+1525035465
+GitHub88
+zig/master f6cbe9a Braedon: Utf8 Encode
+
+1525035465
+GitHub136
+[zig] thejoshwolfe closed pull request #954: Utf8 Encoding from Codepoint to Bytes (master...patch-2)
+
+1525037365
+GitHub32
+[zig] thejoshwolfe pushed 1 new commit to master:
+
+1525037365
+GitHub32
+zig/master 2387292 Josh Wolfe: move some checks around in utf8Encode logic to be more zig idiomatic
+
+1525037855
+GitHub27
+[zig] andrewrk pushed 1 new commit to master:
+
+1525037855
+GitHub27
+zig/master c03b901 Andrew Kelley: zig fmt: preserve same-line comment after statement
+
+1525039669
+GitHub2
+[zig] thejoshwolfe pushed 1 new commit to master:
+
+1525039669
+GitHub2
+zig/master 9543c0a Josh Wolfe: use explicit error sets for utf8Decode functions...
+
+1525040575
+GitHub113
+[zig] andrewrk pushed 1 new commit to master:
+
+1525040575
+GitHub113
+zig/master 3fa0bed Andrew Kelley: zig fmt: array literal with 1 item on 1 line
+
+1525044234
+GitHub134
+[zig] andrewrk pushed 1 new commit to master:
+
+1525044234
+GitHub134
+zig/master 3235eb0 Andrew Kelley: zig fmt: preserve same line comment after struct field
+
+1525046183
+GitHub158
+[zig] andrewrk pushed 1 new commit to master:
+
+1525046183
+GitHub158
+zig/master c53209a Andrew Kelley: zig fmt: comments before var decl in struct
+

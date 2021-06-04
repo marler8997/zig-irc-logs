@@ -1,0 +1,528 @@
+1526948212
+donpdonp
+andrewrk: thx for the comments and for tolerating my low-sleep-inspired frustration
+
+1526948224
+donpdonp
+i noticed json.zig in master branch so now im using master for this project :)
+
+1526948389
+donpdonp
+got a casting err that isnt entirely clear, looks up "Casting" docs section: TODO: explain implicit vs explicit casting. hehe
+
+1526948419
+donpdonp
+i dont mind the bleeding edge.
+
+1526948555
+darithorn
+what's the error?
+
+1526948907
+donpdonp
+error: integer value 0 cannot be implicitly casted to type 'CURLcode'
+
+1526948909
+donpdonp
+if(res == c.CURLE_OK) {
+
+1526948911
+donpdonp
+^
+
+1526948920
+donpdonp
+c.CURLcode(c.CURLE_OK) is working.
+
+1526948946
+donpdonp
+which is kind of funny in that its the opposite of a C cast (int)45L where the parens go around the type
+
+1526948996
+donpdonp
+zig 0.2.0 was happy with the bare c.CURLE_OK
+
+1526949012
+darithorn
+yeah it's a bit easier to parse since it looks like a function call
+
+1526949070
+donpdonp
+of course now that var res is of type c.CUREcode, I cant warn "{}", res cause it doesnt know what to do with that type
+
+1526949104
+darithorn
+you could always cast it back to an i32 or whatever type fits best
+
+1526949195
+donpdonp
+error: enum to integer cast to 'i32' instead of its tag type, 'c_int'
+
+1526949197
+donpdonp
+warn("curl ERR {} {}\n", i32(res), std.cstr.toSliceConst(err_cstr));
+
+1526949208
+donpdonp
+ok so c_int, I think to myself
+
+1526949241
+donpdonp
+oh i was going to show an error, but I forgot to put a c_int() in a second location.
+
+1526949245
+donpdonp
+well it looks happy now :)
+
+1526952056
+donpdonp
+pub fn openWriteNoClobber(allocator: &mem.Allocator, path: []const u8, file_mode: os.FileMode)
+
+1526952081
+donpdonp
+what is file_mode in that case? usually the mode implies read/write/overwrite but the function name is already specifying that
+
+1526952378
+donpdonp
+oh its the unix file perms. std.os.default_file_mode
+
+1526952410
+donpdonp
+if (std.os.File.openWriteNoClobber(allocator, filename, std.os.default_file_mode)) |file| {
+
+1526952412
+donpdonp
+file.write("");
+
+1526952423
+donpdonp
+here's a new one -> error: expected type '&File', found '&const File'
+
+1526952482
+darithorn
+try |*file|
+
+1526952543
+donpdonp
+that did it. thx
+
+1526953100
+donpdonp
+var json_parser = std.json.JsonParser.init(allocator, true);
+
+1526953109
+donpdonp
+error: 'JsonParser' is private
+
+1526953123
+donpdonp
+any ideas how to use the new json.zig?
+
+1526953140
+andrewrk
+donpdonp, try looking at the tests in that file
+
+1526953189
+darithorn
+i recently was messing with the json api in the std lib and everything is private
+
+1526953213
+darithorn
+i modified the json.zig file where it's stored in my system to make JsonParser public
+
+1526953220
+donpdonp
+andrewrk: the test's first line is var p = JsonParser.init(std.debug.global_allocator, false);
+
+1526953230
+donpdonp
+which seems like what im gdoing
+
+1526953499
+darithorn
+also there's a bug (or maybe just a different standard?) where the root node is an array that contains objects in it
+
+1526953512
+darithorn
+you get 'error: InvalidValueBegin'
+
+1526953540
+donpdonp
+o^O
+
+1526953606
+darithorn
+it needs at least two objects in the array to fail "[{},{}]"
+
+1526953872
+donpdonp
+ok. my .json files are all {} root
+
+1526953978
+donpdonp
+is there a convenient way to print a ValueTree
+
+1526954295
+donpdonp
+warn("json value {}\n", value_tree.root.dump()); => error: compiler bug: var args can't handle void.
+
+1526954332
+darithorn
+dump already prints it for you
+
+1526954336
+darithorn
+value_tree.root.dump()
+
+1526954390
+donpdonp
+interesting....
+
+1526954568
+donpdonp
+value_tree.root.Object is a HashMap([]const u8,Value...
+
+1526954589
+donpdonp
+how do I access a key? Object['key'] isnt it
+
+1526954624
+darithorn
+if (obj.get("key")) |value| {}
+
+1526954630
+donpdonp
+thx
+
+1526957322
+donpdonp
+how do i instance some u8 data
+
+1526957339
+donpdonp
+var json_str: []u8 = (....) (lets say 2048 bytes)
+
+1526957364
+darithorn
+you can initialize it to zero by doing []u8{0} ** 2048
+
+1526957374
+darithorn
+that would make it 2048 elements large
+
+1526957456
+donpdonp
+error: expected type '[]u8', found '[1]u8'
+
+1526957458
+donpdonp
+var json_str: []u8 = []u8{0};
+
+1526957470
+donpdonp
+(similar error with ** 2048)
+
+1526957485
+darithorn
+oh, yeah, you need to make the type of json_str be [2048]u8
+
+1526957504
+donpdonp
+hmm ok. i thought the point of []u8 was it could point to an array of any length
+
+1526957548
+donpdonp
+var json_str: [2048]u8 = []u8{0} ** 2048;
+
+1526957550
+donpdonp
+file.read(json_str);
+
+1526957560
+donpdonp
+file.read: error: expected type '[]u8', found '[2048]u8'
+
+1526957740
+donpdonp
+i would really have thought []u8{1} would be a type []u8 of length 1 instead of [1]u8. hmmm
+
+1526957811
+darithorn
+you should be able to turn it into a slice so you can work with read
+
+1526957817
+darithorn
+file.read(json_str[0..]);
+
+1526957886
+donpdonp
+file.read(json_str[0..]); =>  error: expression value is ignored
+
+1526957909
+darithorn
+read returns what was read, you can't ignore it implicitly
+
+1526957926
+darithorn
+either set it to a variable or do _ = file.read(json_str[0..]);
+
+1526957927
+donpdonp
+oh thta value. i thought it was talking about the parameter value
+
+1526957949
+donpdonp
+'expression return value is ignored' is a bug i should file :)
+
+1526957955
+darithorn
+yeah, the errors need to be reworked so they're more clear
+
+1526958069
+donpdonp
+warn("some json {}\n", json_str); => some json {
+
+1526958071
+donpdonp
+"url": "
+
+1526958073
+donpdonp
+}
+
+1526958119
+donpdonp
+try json_parser.parse(json_str); => error.InvalidTopLevelTrailing
+
+1526958141
+donpdonp
+looks valid to meeeeee....
+
+1526958393
+darithorn
+i think it may be because of the trailing zeros in that json_str buffer you create
+
+1526958444
+darithorn
+an easy way that I know of to dynamically read the entire contents of a file is to use std.io.readFileAlloc
+
+1526958660
+donpdonp
+hmmm
+
+1526958663
+donpdonp
+so close
+
+1526958694
+donpdonp
+var json_file = std.io.readFileAlloc(allocator, filename);
+
+1526958695
+donpdonp
+var value_tree = try json_parser.parse(json_file);
+
+1526958711
+donpdonp
+error: expected type '[]const u8', found '@typeOf(readFileAlloc).ReturnType.ErrorSet![]u8'
+
+1526958713
+donpdonp
+var value_tree = try json_parser.parse(json_file);
+
+1526958736
+donpdonp
+ah the readFilealloc has to be 'unwound'
+
+1526958768
+darithorn
+yeah you need to put `try` in front of it
+
+1526958799
+donpdonp
+whoho! got past the parsing part.
+
+1526958880
+donpdonp
+if (root.Object.get("url")) |url| {
+
+1526958882
+donpdonp
+warn("settings url {}\n", url.value);
+
+1526958890
+donpdonp
+settings url Value@28c7c8
+
+1526958901
+donpdonp
+why am I getting a value obkect instead of... the value? (a url string)
+
+1526958939
+tiehuis
+the value is a dynamic json type, you need url.value.String
+
+1526958955
+tiehuis
+see
+
+1526958996
+tiehuis
+i think we can make the lookup structure a bit nicer in the future but for now it requires a bit more work
+
+1526959137
+donpdonp
+ok it looks like file.json is making it all the way into a zig data structure. whoho.
+
+1526959355
+donpdonp
+is there a variable for the zig version?
+
+1526959505
+tiehuis
+no
+
+1526959535
+donpdonp
+just when something seems straight forward... warn("{}", builtin.os); -> error: Unable to format type 'Os'
+
+1526959550
+tiehuis
+do @tagName(builtin.os)
+
+1526959582
+donpdonp
+thx
+
+1526959970
+GitHub96
+[zig] tiehuis pushed 1 new commit to master:
+
+1526959970
+GitHub96
+zig/master 698c52e Marc Tiehuis: Make StreamingJsonParser public
+
+1526960015
+donpdonp
+also JsonParser ^
+
+1526960088
+GitHub37
+[zig] tiehuis pushed 1 new commit to master:
+
+1526960088
+GitHub37
+zig/master 4f4afe1 Marc Tiehuis: Make JsonParser public
+
+1526960134
+donpdonp
+tiehuis++
+
+1526961057
+tiehuis
+quick test of json performance since i never tested before:
+
+1526961069
+tiehuis
+the streaming parser is about 200Mb/s throughput for me on an i5-6500
+
+1526961091
+tiehuis
+
+
+1526962789
+donpdonp
+ug. confused again with uniontypes
+
+1526962810
+donpdonp
+var value_tree: std.json.ValueTree =  json_parser.parse("{}"); => error: expected type 'ValueTree', found '@typeOf(JsonParser_parse).ReturnType.ErrorSet!ValueTree'
+
+1526962822
+donpdonp
+that makes sense, its a uniontype return
+
+1526962845
+donpdonp
+so I add 'try parse' which should return the ValueTree to the variable, or return the error for the enclosing function
+
+1526962863
+donpdonp
+var value_tree: std.json.ValueTree = try json_parser.parse("{}"); => error: expected type 'void', found '@typeOf(JsonParser_parse).ReturnType.ErrorSet'
+
+1526962876
+donpdonp
+instead I get expected type void.
+
+1526962943
+donpdonp
+ohh the enclosing function's return type was void and not !void. fixed.
+
+1526964972
+andrewrk
+donpdonp, there are some improvements to compile errors to be made
+
+1526970732
+donpdonp
+warn("client json {}\n", @typeOf(json)); =>  error: parameter of type 'type' requires comptime
+
+1526971154
+andrewrk
+donpdonp, use @typeName:
+
+1526971257
+donpdonp
+/home/donp/code/zig/zigdeck/src/main.zig:16:55: error: expected type 'type', found 'Value'
+
+1526971259
+donpdonp
+warn("client activitypub ID {} {}\n", @typeName(json), (??json.Object.get("id")).value.String);
+
+1526971284
+andrewrk
+@typeName(@typeOf(json))
+
+1526971297
+donpdonp
+o^O
+
+1526971349
+donpdonp
+
+
+1526971508
+andrewrk
+you can also use @compileLog to look at comptime values
+
+1526971523
+andrewrk
+@compileLog(@typeOf(json))
+
+1526971536
+donpdonp
+nod.
+
+1526971544
+donpdonp
+well i learned some things today.
+
+1526971566
+donpdonp
+does zig interface with .cpp as well as C?
+
+1526971572
+andrewrk
+no
+
+1526971604
+andrewrk
+I'm headed to bed. I'll be around tomorrow. good night!
+
+1526971618
+donpdonp
+may the zig be with you.
+
+1527003648
+andrewrk
+donpdonp, I'm available now  if you ran into any more issues
+

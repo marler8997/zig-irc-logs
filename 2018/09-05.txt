@@ -1,0 +1,420 @@
+1536129019
+kristate
+back in office 15:30 JST
+
+1536139764
+kristate
+andrewrk: I'm excited about caching!
+
+1536149125
+unique_id
+andrewrk: Do you know anything about game audio? As far as I know, when it comes to open source solutions OpenAL was pretty much the only thing awailable. Then browsers wanted to provide 3D audio and so a nice spec was born. Browsers implemented this and some people extracted it out for non-browser use (LabSound), so now there's two solutions for open source game audio.
+
+1536149244
+unique_id
+There is SoLoud, which seems really nice, however its author had a two year break from the project after getting some constructive criticism from a game developer (according to his blog). I'm guessing that criticism was SoLoud lacking a graph based design which the browser spec has.
+
+1536149281
+unique_id
+So anyway, that's why I'm converting Webkit's code/LabSound to Zig, but my game and anyone else that wants to use it
+
+1536149291
+unique_id
+for* my game, sigh
+
+1536149508
+kristate
+unique_id: sounds cool!
+
+1536149518
+kristate
+unique_id: where are you located?
+
+1536149586
+unique_id
+I'm back in Iceland now (where I'm from).
+
+1536150130
+unique_id
+I'm forgetting Godot! They've written their own stuff
+
+1536154902
+andrewrk
+unique_id, my plan was to implement my own mixer and stuff for my next game
+
+1536154912
+andrewrk
+I haven't done that before though so I'm not sure I have any advice
+
+1536154934
+unique_id
+"It is a goal of this specification to include the capabilities found in modern game audio engines as well as some of the mixing, processing, and filtering tasks that are found in modern desktop audio production applications."
+
+1536154966
+unique_id
+Sounds like a good starting point :)
+
+1536155001
+unique_id
+from the Web Audio API spec
+
+1536162954
+unique_id
+I'm so opinionated, I've changed the design a lot already during porting
+
+1536163267
+unique_id
+though I just mean to favor perf and explicitness over flexibility, we'll see how it goes. Ok enough about my stuff.
+
+1536166325
+MajorLag
+andrewrk, I'm curious what's so difficult about making @ptrCast work at comptime.  I am admitedly ignorant of compiler internals.
+
+1536166372
+andrewrk
+it's not inherently difficult, but the way it's currently designed makes it difficult
+
+1536166399
+andrewrk
+comptime values are a tagged union, and a comptime pointer value points to other comptime values
+
+1536166419
+andrewrk
+if you pointer cast, it doesn't, like, mangle the bytes or anything. it just has a mismatching type and value
+
+1536166433
+andrewrk
+so code has to be modified to detect this mismatch and handle it appropriately
+
+1536166443
+andrewrk
+e.g. in the example I posted, the underlying data is still an array of u8's
+
+1536166469
+andrewrk
+so the code that looks at a field has to, instead of expecting the comptime value tagged union to be a packed struct, do a memory interpretation
+
+1536166510
+andrewrk
+hm I don't think I'm explaining it well. maybe this will help:
+
+1536166521
+andrewrk
+see how a comptime ptr points to other comptime values
+
+1536166551
+andrewrk
+if you do a comptime ptr cast then most code will just look at the wrong value here:
+
+1536166562
+andrewrk
+I'm working on fixing this though
+
+1536166568
+andrewrk
+or at least adding a TODO compile error
+
+1536168602
+MajorLag
+seems to me that if you eliminated ConstPtrValue and integrated pointer types into ConstExprValue, then a comptime pointer would just be a new ConstExprValue with its own type information. Of course, I say that without looking at how any of this is acutally used.
+
+1536168689
+andrewrk
+I think you didn't see this line:
+
+1536168939
+MajorLag
+Oh, I think I see. You can't just point to the data because the data isn't just the bytes of the value.
+
+1536169112
+andrewrk
+exactly
+
+1536169146
+andrewrk
+I figured out a way that we can have TODO compile errors for all this stuff for now, and then incrementally add support for comptime byte reinterpration of various things
+
+1536170236
+MajorLag
+That seems like it'd be kind of fragile.
+
+1536170254
+andrewrk
+it's strictly better than status quo
+
+1536170265
+andrewrk
+what are now segfaults and assertion failures become compile errors
+
+1536170305
+andrewrk
+and then we can make progress on supporting various kinds of comptime byte reinterpretation, so then compile errors gradually turn into working test cases
+
+1536170311
+andrewrk
+at no point does the compiler get worse
+
+1536171654
+MajorLag
+Yeah, that makes sense and all, I just mean that it seems like it might be better to rethink the approach to comptime values entirely so that pointers and pointer casting work in a more natural fashion. Having to special case all possible conversions seems cumbersome.
+
+1536172375
+andrewrk
+stage2 is an opportunity to do that
+
+1536172492
+kristate
+☆
+
+1536172505
+MajorLag
+fair enough
+
+1536172564
+andrewrk
+also there's not really code duplication. the problem is just this complicated
+
+1536172584
+andrewrk
+e.g. you have to write "serialize to/from bytes" code for every type that supports it
+
+1536172591
+andrewrk
+it shares code with @bitCast
+
+1536172662
+andrewrk
+representing the data as annotated bytes rather than meaningful data is more convoluted, and probably slower
+
+1536172675
+andrewrk
+so I don't think it will work different in stage2
+
+1536172702
+andrewrk
+although the ergonomics of it and fragility will be mitigated in other ways
+
+1536173034
+MajorLag
+On a different topic, zig theoretically allows for `@IntType(false, @maxValue(u32))`. This is of course a ridiculous type to use, but if it is supported then how could something like `TypeInfo` reasonably represent it?
+
+1536173093
+andrewrk
+MajorLag, looks like it should be u23, just like the type of alignment:
+
+1536173125
+andrewrk
+or maybe zig should choose something a bit more conservative, such as u16 for those types
+
+1536173166
+andrewrk
+oh, wait alignment is u29
+
+1536173182
+MajorLag
+it certinaly seems to fall into YAGNI territory.
+
+1536173211
+andrewrk
+eventually we're going to need to write a zig language specification, and it should probably have a good reason for choosing the max other than "this is llvm's max"
+
+1536173218
+andrewrk
+or maybe not. I'll open an issue
+
+1536173238
+MajorLag
+still, I wouldn't say it is reasonable to have typeInfo contain 65535-bit integer fields.
+
+1536173325
+andrewrk
+I don't follow. wouldn't it just have this:  bit_count: u23
+
+1536173345
+MajorLag
+what about something like .max_value?
+
+1536173400
+MajorLag
+I mean, that can just be done in a function, but then there's enum_value and other things...
+
+1536173402
+andrewrk
+fn maxInt(comptime T: type) T { ... }
+
+1536173417
+MajorLag
+perhaps typeInfo doesn't need to have a fixed structure, and it's fields can changed based on the type it describes.
+
+1536173437
+andrewrk
+why do we need to make typeInfo more complicated?
+
+1536173469
+MajorLag
+"more complete" is what I'm aiming for.
+
+1536173519
+MajorLag
+I guess it really doesn't need to be.
+
+1536173527
+andrewrk
+type info should be the stuff you can't get another way
+
+1536173566
+andrewrk
+max int value is a property that can be computed based on bit width and signed-ness, so type info should just have bit width and signed-ness
+
+1536173792
+MajorLag
+I think I'm still thinking that ultimatly it would be used with @reify, in which case people might want to create a type with a maxValue less than its bit_count allows for saftey check purposes, but @reify is probably too complicated to make it into the language anyway.
+
+1536173993
+andrewrk
+I've been thinking about a similar feature about integer types that have value ranges distinct from the bit width
+
+1536174005
+andrewrk
+it would need to be integrated into the type system
+
+1536174014
+andrewrk
+and in this case yes, it would be a property of type info
+
+1536174064
+andrewrk
+yeah and as you pointed out this would require type info struct to be generic
+
+1536174293
+MajorLag
+There's also the matter of multiple mechanisms to get the same information. Type.bit_count vs @typeInfo..bits, for instance. My understanding was that we'd want to introduce std.meta and unify over typeInfo.
+
+1536174498
+andrewrk
+that's still the plan
+
+1536174503
+andrewrk
+there's a wip branch I think
+
+1536184764
+unique_id
+There's nothing like going through C arithmetic code and not knowing what's supposed to overflow and what isn't :) I'm convering date algorithms...there's probably lots of intentional overflow! I blame C of course.
+
+1536184961
+unique_id
+it's actually c++ code which is why im porting it
+
+1536185026
+andrewrk
+you can always play it safe and put % on all the ops
+
+1536185055
+unique_id
+yep
+
+1536190511
+martinium
+so I just found out about this lang and am trying to set up the precompiled binaries on my system. Is there a a specific environment variable I need to set that points to zigs lib directory?
+
+1536191069
+andrewrk
+martinium, you should be able to unarchive the binaries, and then run zig directly from that directory
+
+1536191095
+andrewrk
+1. extract all 2. run zig
+
+1536191192
+martinium
+I linked the binary to my usr/local/bin directory for access throughout system
+
+1536191213
+martinium
+let me test directly from folder to see if it makes a difference
+
+1536191293
+martinium
+was actually trying to run this
+
+1536191295
+martinium
+
+
+1536191349
+martinium
+when I type make I get this error zig build-exe src/binary-trees.zig --output build/binary-trees --release-fast --library c
+
+1536191349
+martinium
+make:
+
+1536191349
+martinium
+Unable to find zig lib directory. Reinstall Zig or use --zig-install-prefix.
+
+1536191351
+andrewrk
+martinium, I'll make a note to have zig additionally check realpath for the std lib files
+
+1536191465
+martinium
+cool
+
+1536191471
+martinium
+I just found out about this lang
+
+1536191475
+martinium
+looks very promising
+
+1536191492
+martinium
+do you work on windows primarily?
+
+1536191583
+martinium
+If I were to use --zig-install-prefix what would that look like?
+
+1536191593
+martinium
+--zig-install-prefix=directory
+
+1536191861
+andrewrk
+my home os is linux
+
+1536191873
+martinium
+good
+
+1536191878
+andrewrk
+I don't think you need to resort to --zig-install-prefix
+
+1536191892
+martinium
+tried running it from base directory
+
+1536191898
+martinium
+still isn't checking the relative path
+
+1536191906
+martinium
+for the lib folders content
+
+1536191933
+andrewrk
+it's doing readlink("/proc/self/exe") to find out the search path for lib dirs
+
+1536191974
+andrewrk
+I just tested it, and it worked. did you do something other than tar xvf and then run it?
+
+1536191994
+martinium
+if I point the compiler to a directory with a few .zig files I want to build them all will it build them all in sequence or must you specify individually
+

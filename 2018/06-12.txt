@@ -1,0 +1,1492 @@
+1528775059
+donpdonp
+warn("pipeok %d\n", pipeok); => error: Unused arguments (pipe_ok is a c_int)
+
+1528775071
+donpdonp
+not sure how to make zig happy here
+
+1528775193
+donpdonp
+whoops, brain was in another langauge. %d should be {}. grin.
+
+1528775380
+donpdonp
+whoops, brain was in another langauge. %d should be {}. grin.
+
+1528775407
+donpdonp
+(ignore that repeat ":)
+
+1528783087
+GitHub87
+[zig] andrewrk closed pull request #1084: Dir Open, Next, Close; DeleteDir for Windows (master...DirOpenWin)
+
+1528783087
+GitHub43
+zig/master 3dd9af9 Andrew Kelley: implement std.os.Dir for windows...
+
+1528783087
+GitHub43
+[zig] andrewrk pushed 1 new commit to master:
+
+1528784339
+GitHub86
+[zig] andrewrk pushed 1 new commit to master:
+
+1528784339
+GitHub86
+zig/master 7580e39 Andrew Kelley: zig fmt
+
+1528804198
+donpdonp
+fn do() { var thing = Thing{...} }
+
+1528804229
+donpdonp
+fn do() { var thing = Thing{...}; list.append(thing) }
+
+1528804253
+donpdonp
+assuming list is outside do(), is that wrong? will the memory for Thing{} get trashed once do() exits?
+
+1528804964
+Hejsil
+donpdonp, that depends on how the list stores thing
+
+1528804995
+donpdonp
+its a std.ArrayList
+
+1528804998
+Hejsil
+If your list is ArrayList(Thing), then the array list copies your thing, and there is no prob
+
+1528805021
+Hejsil
+If your list is ArrayList(*const Thing) then it copies a pointer to thing, and you have a problem
+
+1528805043
+donpdonp
+interesting.
+
+1528805050
+donpdonp
+var actors: std.ArrayList(Actor)
+
+1528805083
+Hejsil
+Well, you are storing Actor, and not *Actor, so your list owns that memory
+
+1528805180
+donpdonp
+im getting weird behavior, but im also doing werid things - putting the &actor into pthread_create's void*
+
+1528805203
+donpdonp
+inside do it looks good (gdb) p actor
+
+1528805205
+donpdonp
+$3 = (struct Actor *) 0x7fffffffd1a0
+
+1528805207
+donpdonp
+(gdb) p *actor
+
+1528805209
+donpdonp
+$4 = {thread = 140737108252416, read_fd = 5, payload = {ptr = 0x2372a3 <global_allocator_mem+523> "
+
+1528805218
+donpdonp
+has an address and value, but in the thread its 0'ed out
+
+1528805225
+donpdonp
+net.go actor Actor@7fffffffd1a0
+
+1528805226
+donpdonp
+net.go id 0 payload -=  =-
+
+1528805252
+donpdonp
+the ptr is the same but thread(called id) is 0, and inbetween -= =- should be the URL
+
+1528805345
+Hejsil
+A snipped of code would give me a better idea of the problem :)
+
+1528805370
+Hejsil
+Though, dangling pointers could come from anywhere, so idk if you can give a small snippet
+
+1528805409
+Hejsil
+andrewrk, are hard links suppose to be treated as different files by the Zig compiler?
+
+1528805520
+Hejsil
+Aka, hard links that point to the same inode
+
+1528805899
+donpdonp
+thx for the feedback. im away from my laptop for a bit
+
+1528805911
+donpdonp
+standing in line at an airport
+
+1528806414
+donpdonp
+
+
+1528806502
+donpdonp
+sorry for the sloppy state of the code. line 51 calls pthread_create with the data field set to the actor variable
+
+1528806538
+donpdonp
+
+
+1528806555
+donpdonp
+the destination is line 33 and somewhere inbetween the struct gets zeroed.
+
+1528806730
+bheads_
+sigh....  zig errror:  TODO for loop on var args
+
+1528806759
+donpdonp
+heh. patches welcome i bet :)
+
+1528806811
+bheads_
+lol I really need to get my head around the compiler internals, probably faster to rewrite this function as a while loop :)
+
+1528807329
+donpdonp
+Hejsil: the tip about the copy operation led me to the fix. i was passing the ptr to the struct before the append()
+
+1528807354
+donpdonp
+now i do list.at(last) and I get the right copy in memory. thx.
+
+1528807417
+Hejsil
+Ooh, nice
+
+1528807495
+donpdonp
+wel i spoke too soon, still seeing some weirdness, but i have more tools to use now :)
+
+1528809222
+donpdonp
+before pthread_create: payload []const u8@7ffe827d5f20 x30x
+
+1528809240
+donpdonp
+after (in receiver function): payload -= []const u8@7ffe827d5f20 x0x =-
+
+1528809257
+donpdonp
+thats from a field in the struct that gets passed.
+
+1528809271
+donpdonp
+first its len30, then len0. same address. sigh.
+
+1528809321
+donpdonp
+the struct from the arraylist matches before/after as well. actor_copy Actor@7ffe827d5f10 net.go actor Actor@7ffe827d5f10 (receiver)
+
+1528809356
+donpdonp
+i suppose i should try and shrink this down toa test case.
+
+1528809975
+bheads_
+Do varargs seal a function signature?
+
+1528810190
+bheads_
+I have a function:  pub fn put(self: *Self, args: ...) !void { ...}    then:  try a.put(u8('e'));  try a.put([]u8{"llo"});    I get the error:    error: expected type 'u8', found '[3]u8'
+
+1528810379
+bheads_
+lol nm []u8{"llo"} is not valid!
+
+1528810983
+donpdonp
+the simple case of my struct memory prob seems to work fine.
+
+1528811277
+Hejsil
+Do you append more actors while in your thread?
+
+1528811321
+Hejsil
+Or, in general. Do you append after taking a pointer to an item in the list?
+
+1528811428
+donpdonp
+nope.
+
+1528811529
+Hejsil
+Well, that was my best guess
+
+1528812200
+bodie_
+andrewrk, very nice doc! :D I notice there's a new notation with the angle brackets which has interface-like semantics.  have you thought about generalizing this feature?
+
+1528813104
+very-mediocre
+bodie_ i see coroutine docs were added
+
+1528813187
+very-mediocre
+reminds me I'd like to toy with generator style streams
+
+1528813310
+bheads__
+is there a way to do varargs of a given type?   args: T ...  ? or should I just check them at comptime and fail if not the right type?
+
+1528814126
+very-mediocre
+don't think so
+
+1528814575
+clownpriest
+someone should post an issue proposal about that. seems like something that would be a really useful addition
+
+1528814619
+clownpriest
+though i think there are plans to get rid of varargs entirely? idk why, they're great
+
+1528814623
+clownpriest
+tho i could be wrong
+
+1528814736
+very-mediocre
+Could be wrong but from what I gather, they may be replaced with Tuples
+
+1528815086
+byronh__
+Either way, i guess I will just check the type at comptime.  Almost have this appender done.
+
+1528815102
+very-mediocre
+
+
+1528815104
+very-mediocre
+here it is
+
+1528815122
+clownpriest
+is "///" supposed to start a doc comment? i dont see mention of it in the documentation, but some of the standard library seems to follow this convention
+
+1528815305
+byronh__
+Thanks, cant wait for tuples
+
+1528815322
+very-mediocre
+Yeah I like where this is going
+
+1528815468
+clownpriest
+we need a good interface/trait/concept system for this to be really tight, i think. tho i also think that has the potential to bloat the language too much
+
+1528815480
+very-mediocre
+Was just thinking the same thing, I think interfaces are inevitable
+
+1528815493
+clownpriest
+yeah
+
+1528815503
+very-mediocre
+Was reading the proposal for tuple args would use "var" as the type
+
+1528815508
+very-mediocre
+feels a bit loose
+
+1528815509
+clownpriest
+same lol
+
+1528815533
+clownpriest
+can i "+" all these vars? who knows!
+
+1528815567
+very-mediocre
+even Rust's "innovative" thing, traits, boils down to interfaces
+
+1528815574
+clownpriest
+yeah
+
+1528815597
+very-mediocre
+I read on github that Golang style implicit interfaces were rejected though
+
+1528815628
+clownpriest
+from personal experience, it's not ideal
+
+1528815635
+jjido
+Traits are interfaces with generic methods no?
+
+1528815692
+bheads__
+I would have thought it would be  args: tuple
+
+1528815712
+bheads__
+se need to build a good std.meta then we can just use duck typing
+
+1528815779
+clownpriest
+just need to make sure alexandrescu stays out of it
+
+1528815794
+bheads__
+should have functions like   isArrayOf(comptime arry: type, comptime T: type) bool { .. is arry an array of Ts
+
+1528815879
+very-mediocre
+jjido: lots of subtleties but it's like you can provide an implementation for anything in order to make it match the trait
+
+1528815909
+very-mediocre
+sort of like interfaces, but you add the part where a struct conforms to the trait almost like a mixin
+
+1528815922
+bheads__
+I think we should skip interfaces and use concepts or duck typing
+
+1528815929
+very-mediocre
+instead of defining the struct like "mystruct implements mytrait"
+
+1528815949
+very-mediocre
+doesn't runtime duck typing carry an overhead?
+
+1528815956
+bheads__
+comptime duck typing
+
+1528815976
+clownpriest
+bheads__ how would you express that something satisfies an interface with isarrayof()?
+
+1528815990
+clownpriest
+does the type itself carry that information?
+
+1528816041
+clownpriest
+unless T is a trait, and arry implements it somewhere
+
+1528816054
+very-mediocre
+I could be way off base, but I feel like the least painful solution would be what TypeScript does with anonymous objects
+
+1528816061
+clownpriest
+i'd rather not check all the possible types that could potentially satify the behavior i need it to accept
+
+1528816078
+bheads__
+pub fn isAllocator(T: type) bool {  ... meta.hasFunction(T, "alloc", fn (self: *Allocator, byte_count: usize, alignment: u29) Error![]u8)); .. all the allocator functions
+
+1528816085
+bheads__
+then in your code
+
+1528816103
+bheads__
+comptime if (!isAllocator(T)) unreachable
+
+1528816111
+clownpriest
+hmm
+
+1528816115
+clownpriest
+nice
+
+1528816117
+bheads__
+so the check is a comptime bool function
+
+1528816140
+clownpriest
+and it's all userland?
+
+1528816144
+bheads__
+yes
+
+1528816149
+clownpriest
+that is pretty sweet
+
+1528816158
+bheads__
+yep, thats what I like about it
+
+1528816170
+bheads__
+we only need things like typeInfo
+
+1528816198
+bheads__
+and the stdlib has a good meta package that makes writting them easier
+
+1528816208
+bheads__
+but you dont need std.meta, you can roll your own
+
+1528816213
+clownpriest
+right
+
+1528816221
+clownpriest
+you working on a std.meta right now?
+
+1528816251
+bheads__
+I have bits of one in a project, but I am going to start my own utils git repo where I put some common code
+
+1528816267
+clownpriest
+cool
+
+1528816272
+bheads__
+I am still trying to get a hang of typeInfo and friends
+
+1528816283
+bheads__
+but running into comptime bugs
+
+1528816344
+very-mediocre
+Typescript style tuples with union types: pub fn whatever(len: usize, tuple: *[x: usize, y: f32] | *[x: usize, y: *SomeStruct, z: f64])
+
+1528816353
+very-mediocre
+the compiler could infer the return type
+
+1528816358
+very-mediocre
+so you wouldn't have to type all of that out
+
+1528816392
+very-mediocre
+er remove the pointer, assume tuples are value types
+
+1528816439
+very-mediocre
+if you return various types of tuples they could be inferred
+
+1528816483
+very-mediocre
+I think I need coffee, I'm not impressed with myself :)
+
+1528816493
+very-mediocre
+that can go wrong in so many ways
+
+1528816502
+bheads__
+lol
+
+1528816594
+bheads__
+If you know the types to return, then its just a struct
+
+1528816609
+very-mediocre
+yeah but it's a bit boilerplate-y
+
+1528816625
+bheads__
+pub fn frog(t: tuple) tuple {  return .{1, 2}; }
+
+1528816680
+bheads__
+fn chewit() (struct{ x: i32, y: u32}) { return .{.x = -32, .y = 0}; }
+
+1528816703
+bheads__
+need to be able to inline a struct in a function signature
+
+1528816771
+very-mediocre
+that's decent
+
+1528816774
+bheads__
+the name could be chewit.return or  @TypeInfo(@typeOf(chewit)).Fn.return_type
+
+1528816810
+very-mediocre
+andrewrk points out in the github issue that multiple types of tuples could be returned
+
+1528816827
+very-mediocre
+so structs wouldn't work, that's why I got into implicit union types
+
+1528816829
+bheads__
+or just meta.returnType(chewit)
+
+1528816849
+bheads__
+thats where tuple comes in
+
+1528816878
+very-mediocre
+right
+
+1528816879
+bheads__
+you dont know whats packed in it
+
+1528816894
+very-mediocre
+this brings us back to the "var" or "tuple" typ
+
+1528816898
+very-mediocre
+being a bit loose
+
+1528816931
+bheads__
+right, I think andrew was say all vars are now at least a tuple of 1
+
+1528816960
+very-mediocre
+hm
+
+1528816975
+very-mediocre
+but say a function can return 2 kinds of tuples with different signatures
+
+1528817013
+very-mediocre
+surely some static analysis could be done by inferring the return type as a union type
+
+1528817020
+very-mediocre
+rather than keeping it as a loose "tuple"
+
+1528817061
+very-mediocre
+the problem arises when you try to assign the result of a function like that
+
+1528817081
+bheads__
+right, tuples will be tricky
+
+1528817085
+very-mediocre
+like `var whatever = function_with_2_return_types()`
+
+1528817095
+very-mediocre
+this only works if you have implicit union types
+
+1528817102
+bheads__
+also I think var == tuple will lead to lots of code that rejects var as a tuple
+
+1528817107
+very-mediocre
+so whatever would be of type [type1 | type2]
+
+1528817127
+very-mediocre
+how so?
+
+1528817167
+bheads__
+right now var is a single argument, so all of that code now needs to support it as an array of 0 or more arguments
+
+1528817192
+very-mediocre
+right
+
+1528817198
+bheads__
+so if you want 1 var type you have to check the type and reject it if not
+
+1528817219
+bheads__
+I think var should stay and tuple added as a type
+
+1528817231
+very-mediocre
+yeah, i think so
+
+1528817251
+very-mediocre
+but then that feels a bit loose
+
+1528817261
+bheads__
+plus there is code that does  fn fishbones(x: var) @typeOf(x) { ... }
+
+1528817275
+bheads__
+how does that translate that x is now a tuple?
+
+1528817291
+very-mediocre
+implicit union type of all possible returned tuples :)
+
+1528817293
+very-mediocre
+or
+
+1528817301
+very-mediocre
+interface that all returned tuples must conform to
+
+1528817338
+very-mediocre
+meaning if the function returns type1 or type2
+
+1528817345
+very-mediocre
+x is of type {type1|type2}
+
+1528817347
+very-mediocre
+or
+
+1528817347
+bheads__
+right but now   fn abs(x: var) @typeOf(x) {  if (x < 0) return -x; else return x; }
+
+1528817354
+very-mediocre
+otherwise we're in interface territory
+
+1528817369
+bheads__
+that code is simple and readable
+
+1528817383
+very-mediocre
+true
+
+1528817390
+bheads__
+but if x is now a tuple... what happens?
+
+1528817419
+very-mediocre
+good point
+
+1528817426
+very-mediocre
+keeping simplicity is gonna be challenging
+
+1528817458
+very-mediocre
+not to sound like a broken record, but this brings me back to interfaces
+
+1528817468
+very-mediocre
+because what i described above with the implicit union types... yikes
+
+1528817479
+very-mediocre
+with an interface that function would still be clear
+
+1528817489
+bheads__
+maybe the compiler could see that x is not used as a tuple and not make it a tuple, but thats to much like magic
+
+1528817506
+bheads__
+you can do that same with duck typing
+
+1528817531
+bheads__
+comptime if (!meta.isNumberType(@typeOf(x)) unreachable;
+
+1528817536
+bheads__
+in the function
+
+1528817538
+very-mediocre
+true
+
+1528817547
+very-mediocre
+it's cool but feels a bit boilerplatey
+
+1528817558
+very-mediocre
+because when you're doing `isNumberType`
+
+1528817563
+very-mediocre
+is that not really just an interface?
+
+1528817575
+very-mediocre
+what you're saying is the type has to conform to a certain contract
+
+1528817576
+bheads__
+no its a comptime function
+
+1528817587
+very-mediocre
+i mean effectively an interface, not literally
+
+1528817590
+very-mediocre
+like equivalent
+
+1528817621
+bheads__
+I would think more of a constraint
+
+1528817635
+very-mediocre
+that meta statement is verifying that the type can have abs() done on it
+
+1528817649
+very-mediocre
+(at compile time, which is the cool part)
+
+1528817654
+bheads__
+right
+
+1528817656
+very-mediocre
+but i wonder if it's not just simpler to say
+
+1528817667
+bheads__
+I would love to move that into the function signature, or the argument
+
+1528817673
+very-mediocre
+fn abs(x: Numerical) Numerical {  if (x < 0) return -x; else return x; }
+
+1528817682
+very-mediocre
+feels more readable
+
+1528817686
+very-mediocre
+hm, I see
+
+1528817693
+bheads__
+but thats a type
+
+1528817702
+very-mediocre
+it's an interface
+
+1528817708
+very-mediocre
+it would accept any type that implements that interface
+
+1528817720
+bheads__
+abs(x: var) @typeOf(x)  if(meta.isNumber(x)) { ... }
+
+1528817723
+very-mediocre
+call it INumerical if you're from the C++ world
+
+1528817738
+very-mediocre
+hm, that's pretty nice
+
+1528817767
+very-mediocre
+but will there be something like "isNumber" for every situation?
+
+1528817767
+bheads__
+thats how D solved this problem
+
+1528817787
+very-mediocre
+what if you need a more complex constraint
+
+1528817817
+very-mediocre
+just to be clear, I'm not knocking the idea, just playing devil's advocate
+
+1528817841
+bheads__
+no, but you can write your own
+
+1528817847
+very-mediocre
+i think compile time features are very exciting
+
+1528817857
+bheads__
+just write a function that tests the T
+
+1528817859
+bheads__
+then use that
+
+1528817869
+bheads__
+meta is just the building blocks
+
+1528817871
+clownpriest
+maybe we just blow everything up and become haskell?
+
+1528817873
+very-mediocre
+isn't that more convoluted than writing an interface?
+
+1528817875
+clownpriest
+i'll show myself out....
+
+1528817877
+bheads__
+nope
+
+1528817878
+very-mediocre
+lol
+
+1528817885
+bheads__
+ban clowns
+
+1528817887
+bheads__
+lol
+
+1528817902
+clownpriest
+lol
+
+1528817919
+very-mediocre
+ok zig is finished i guess
+
+1528817933
+very-mediocre
+andrewrk had a good run
+
+1528817986
+bheads__
+fn isMyDuck(comptime T: type) bool {    return meta.hasFn(T, "quack", fn () void) && meta.hasFn(T, "eatCrackers", fn(i32) !void); }
+
+1528818024
+bheads__
+it might not be a clean as a java interface but they are simple to write
+
+1528818045
+bheads__
+you can even check if the struct has or doesn't have member
+
+1528818073
+bheads__
+return !meta.hasFn(T, "bark", fn() void) ...
+
+1528818084
+bheads__
+cant do that in java
+
+1528818216
+bheads__
+besides zig doesnt have inheritence (thank thor!) so interfaces dont mean as much
+
+1528818614
+very-mediocre
+My mediocre brain can't keep up, I forgot how this solves the assignment problem
+
+1528818630
+bheads__
+lol whats the assignment problem?
+
+1528818647
+very-mediocre
+var something = function_that_returns_n_types_of_things();
+
+1528818655
+very-mediocre
+what's the type of `something`?
+
+1528818659
+bheads__
+ahhh  tuple unpacking
+
+1528818668
+bheads__
+yeah thats tricky
+
+1528818689
+bheads__
+so var x = fn1(); // x is now a tuple
+
+1528818710
+very-mediocre
+yeah but is "tuple" sufficient as a type?
+
+1528818720
+very-mediocre
+it could be anything
+
+1528818725
+bheads__
+var x: i32, var y: i3, z) = fn1(); // unpack the tuple
+
+1528818742
+bheads__
+probably will be an annonmus struct
+
+1528818744
+very-mediocre
+what if various tuple signatures can be returned
+
+1528818763
+bheads__
+then its going to need an allocator!
+
+1528818772
+very-mediocre
+the tuple deconstruction idea is cool, I was thrilled when they added that to JavaScript
+
+1528818773
+bheads__
+also you cant unpack like that then
+
+1528818784
+very-mediocre
+yeah
+
+1528818789
+bheads__
+you can only upack if the compiler knows the tuple signatre
+
+1528818812
+very-mediocre
+not sure what that means for ergonomics
+
+1528818817
+bheads__
+which is why I think returning an inline struct type makes more sense
+
+1528818851
+bheads__
+not to different then returning a []T right, you will need to process the array
+
+1528818863
+bheads__
+a tuple is like a []var array
+
+1528818877
+bheads__
+just each element may change
+
+1528818884
+very-mediocre
+[]T works thanks to compile time
+
+1528818891
+bheads__
+right
+
+1528818905
+very-mediocre
+i'm still iffy on `tuple` or `var`
+
+1528818906
+bheads__
+[]UnionOfAllTypes
+
+1528818934
+very-mediocre
+Back to the dreaded implicit, inferred union of all return types :)
+
+1528818983
+very-mediocre
+i think with tuples, we have to face the music
+
+1528818988
+bheads__
+that may only need to exists for runtime tuples
+
+1528818993
+very-mediocre
+it's not a dynamic language in the end
+
+1528819003
+bheads__
+if the tuple is known at comptime then it can be a struct
+
+1528819010
+very-mediocre
+yes we are aligned regarding comptime
+
+1528819020
+bheads__
+:)
+
+1528819077
+bheads__
+but runtime tuples will suck anyways since you will need to allocate the storage for them
+
+1528819089
+very-mediocre
+true
+
+1528819107
+very-mediocre
+the thing is when i think of tuples, i think of that python experience
+
+1528819116
+very-mediocre
+or the javascript experience with anonymous objects
+
+1528819121
+very-mediocre
+this cannot be that
+
+1528819126
+bheads__
+yeah, its simple when you have a gc
+
+1528819150
+very-mediocre
+so it begs the question, why not just define a union containing a bunch of structs
+
+1528819188
+bheads__
+you can make a simple tuple right now, make an array of a union of all types you want to support
+
+1528819196
+bheads__
+you can also return multiple types
+
+1528819199
+bheads__
+just make a struct
+
+1528819213
+very-mediocre
+yep, so then what do tuples do
+
+1528819214
+bheads__
+tuples really are just a QOL
+
+1528819224
+bheads__
+reduce code written
+
+1528819226
+very-mediocre
+agreed but then it feels like instead of adding a new concept
+
+1528819229
+bheads__
+simpler interfaces
+
+1528819238
+very-mediocre
+something could be done to improve the ergonomics of what's already there
+
+1528819259
+bheads__
+tuples may only exists as a replacement for varargs
+
+1528819260
+very-mediocre
+a terrible example, but an example nonetheless: those inferred union param/return types
+
+1528819296
+bheads__
+right, maybe all tuples have to be known at compile time
+
+1528819300
+bheads__
+then its simple
+
+1528819307
+bheads__
+you can cant add or remove from a tuple
+
+1528819310
+bheads__
+its sealed
+
+1528819323
+very-mediocre
+👍
+
+1528819344
+bheads__
+might be andrews plan all along
+
+1528819357
+very-mediocre
+I'm sure he will find a good solution
+
+1528819363
+very-mediocre
+for me these are just fleeting thoughts
+
+1528819367
+bheads__
+lol
+
+1528819384
+bheads__
+maybe:   var x = tuple{1 , 2, 3};
+
+1528819404
+bheads__
+var y = tuple{ x.!, 4}; // y is now 1, 2, 3, 4
+
+1528819417
+very-mediocre
+that's kind of JavaScripty
+
+1528819421
+very-mediocre
+er, in the good way, i mean
+
+1528819421
+bheads__
+some way to expand a tuple into another tuple
+
+1528819442
+bheads__
+then var z = y[0..2]; // 1, 2
+
+1528819448
+bheads__
+slice the tuple down
+
+1528819462
+bheads__
+the tuple type is still know in comptime
+
+1528819507
+bheads__
+okay, I gotta go.  later all
+
+1528819511
+LucidTortoise
+Just watched the talk. Now I am excited.
+
+1528819524
+very-mediocre
+cya bheads__
+
+1528819673
+LucidTortoise
+So, is Rust still an interesting option for people jumping on to Zig?
+
+1528819765
+andrewrk
+Hejsil, I haven't considered how hard links should work. How it works now is that the resolved, absolute path of a file is the unique identifier of a source file for importing
+
+1528819806
+andrewrk
+which means that hard links and soft links alike count as different source files according to the importing system
+
+1528819931
+andrewrk
+bodie_, do you have a specific proposal? regarding angle bracket syntax
+
+1528820329
+andrewrk
+LucidTortoise, hope you liked it. I'd definitely recommend trying Rust
+
+1528820951
+clownpriest
+andrewrk, are "///" comments for docs? it's not mentioned in the current documentation, but show up in the stdlib
+
+1528820967
+andrewrk
+clownpriest, yes
+
+1528820978
+andrewrk
+I will add that to the docs today
+
+1528820980
+clownpriest
+is there a documentation generator currently implemented?
+
+1528820985
+andrewrk
+not yet
+
+1528820989
+clownpriest
+kewl
+
+1528821728
+bodie_
+andrewrk, no, just curious about your thoughts / whether you're thinking of adding something like traits
+
+1528821737
+bodie_
+or compile-time interfaces or whatever
+
+1528821796
+bodie_
+I guess that's what the new comptime stuff is for
+
+1528821813
+andrewrk
+angle brackets are unrelated to that - I just needed something that was not ambiguous with parenthesis because those are used for the function call syntax
+
+1528821895
+andrewrk
+there is an open issue for traits or whatever, and it's this:
+
+1528821915
+andrewrk
+if we can get away with
+
+1528821926
+andrewrk
+but I'll do a proof of concept GUI in zig before making that decision
+
+1528825376
+GitHub119
+[zig] isaachier opened pull request #1100: Add test.h and foo.h to gitignore (master...gitignore-test-and-foo-headers)
+
+1528830584
+GitHub143
+[zig] andrewrk pushed 1 new commit to master:
+
+1528830584
+GitHub143
+zig/master 2594132 Andrew Kelley: fix ability to call mutating methods on zero size structs...
+
+1528830940
+GitHub37
+zig/master fdd9cf0 Andrew Kelley: better debugging for CI failures of std.atomic
+
+1528830940
+GitHub37
+[zig] andrewrk pushed 1 new commit to master:
+
+1528831335
+GitHub188
+[zig] andrewrk closed pull request #1100: Add test.h and foo.h to gitignore (master...gitignore-test-and-foo-headers)
+
+1528831337
+GitHub86
+[zig] andrewrk pushed 1 new commit to master:
+
+1528831337
+GitHub86
+zig/master 13d3255 Andrew Kelley: docgen: don't leave garbage .h files lying around...
+
+1528831949
+GitHub41
+[zig] andrewrk closed pull request #1056: WIP: Add snapcraft.yaml (master...snapcraft)
+
+1528837163
+GitHub86
+[zig] isaachier opened pull request #1101: Fix types in AST switch statements (master...ast-switch-fixes)
+
+1528842027
+bheads
+First pass at a meta.zig:
+
+1528842066
+bheads
+Having an issue with tests the function at line 223
+
+1528842096
+bheads
+When I include the last test of the file and run zig test there is no output
+
+1528842099
+bheads
+not even an error
+
+1528842127
+andrewrk
+that sounds like a zig bug
+
+1528842145
+bheads
+okay I will get a reduced set and post a bug
+
+1528842281
+bheads
+so when I isolate the code it works...
+
+1528842337
+bheads
+nm git is messing with me
+
+1528842568
+bheads
+posted:
+
+1528842599
+andrewrk
+thanks
+
+1528846115
+clownpriest
+bheads__, is there a way to check function signatures using this sort of thing?
+
+1528846127
+clownpriest
+i dont see it currently implemented, but in principle
+
+1528846771
+byronh__
+Yeah you can, just neess more work
+
+1528846796
+GitHub151
+[zig] andrewrk pushed 1 new commit to master:
+
+1528846796
+GitHub151
+zig/master 86adc1e Andrew Kelley: add docs and missing test case for merging error sets...
+
+1528846812
+byronh__
+Check out @typeInfo in the docs
+
+1528846848
+andrewrk
+added docs for || operator:
+
+1528846852
+andrewrk
+oops
+
+1528846855
+andrewrk
+
+
+1528846897
+clownpriest
+byronh__, wow that's cool
+
+1528846953
+clownpriest
+seems like this totally obviates the need for language semantics concerning traits
+
+1528846984
+clownpriest
+though i guess the tradeoff is verbosity?
+
+1528847013
+andrewrk
+I'm not following along in the discussion fully, but in general zig is willing to have more verbosity in exchange for fewer language features
+
+1528847054
+andrewrk
+provided that the verbosity does not lead to footguns or other kinds of bad habits
+
+1528847071
+clownpriest
+andrewrk, basically just use @typeinfo to design a general purpose library that takes care of everything interfaces would do
+
+1528847097
+clownpriest
+have libraries explicitly ensure their contracts with that library
+
+1528847218
+bheads
+So far a I found a few bugs, but also it seems like typeInfo turns function args and returns into vars
+
+1528847244
+andrewrk
+bheads, really, it should distinguish between generic functions and non-generic functions
+
+1528847265
+bheads
+not all of them, but its turned alloc in fn(*Allocator, var, var) var
+
+1528847280
+bheads
+which is hard to validate
+
+1528847284
+andrewrk
+it's a generic function. we had to stop evaluating the parameters at arg[1]
+
+1528847325
+bheads
+yeah, I get it, just makes duck typing hard to detect
+
+1528847367
+bheads
+makes me wonder if @compiles would help
+
+1528847390
+andrewrk
+I'm very skeptical that @compiles is a good idea
+
+1528847423
+bheads
+yeah, I just dont know how to solve type checking generics
+
+1528847491
+bheads
+I would like to take a type T and check that its can be used as an Allocator
+
+1528847517
+bheads
+or an Iterator, or some other traits concept
+
+1528847570
+bheads
+clownpriest, if you have an idea of a traits check for function args let me know and I can add it
+
+1528847598
+clownpriest
+will do
+
+1528847747
+clownpriest
+is there a way to implement methods on primitive types?
+
+1528847787
+andrewrk
+no
+
+1528847792
+clownpriest
+word
+

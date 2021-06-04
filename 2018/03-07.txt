@@ -1,0 +1,1036 @@
+1520382032
+jacobdufault
+Are the ':' between variable names and types used to resolve parsing ambiguities? Playing with go a little, it is very nice to just type 'a int' instead of 'a: int'
+
+1520382043
+jacobdufault
+I'm also hit pretty frequently by the fact that funcs do not have a ':' before the type, but variables do
+
+1520382058
+jacobdufault
+just feels a bit inconsistent
+
+1520384722
+andrewrk
+jacobdufault, no, the ':' is not necessary according to syntax
+
+1520384737
+andrewrk
+sorry, I mean it's not necessary to have unambiguous grammar
+
+1520384758
+andrewrk
+you mean  functions do not have a ':' before the return type?
+
+1520386580
+jacobdufault
+yea, ie, fn(a: i32, b: i32) i32 {}
+
+1520386589
+jacobdufault
+and also `var a: i32 = 0`
+
+1520386605
+jacobdufault
+versus `fn(a i32, b i32) i32 {}`, `var a i32 = 0;`
+
+1520386618
+jacobdufault
+dropping the `:` makes it much, much more pleasant to type
+
+1520386697
+jacobdufault
+(I'm also a huge fan of the proposal to drop the () from if/while/etc, though the required `.` is a bit unusual)
+
+1520386735
+MajorLag
+for the record, I am against both of those things on readability grounds.
+
+1520386782
+andrewrk
+I think most people prefer the : and bringing -> back
+
+1520386944
+GitHub196
+[zig] andrewrk pushed 1 new commit to master:
+
+1520386944
+GitHub196
+zig/master 6b5cfd9 Andrew Kelley: turn assertion into compile error for using var as return type...
+
+1520386986
+jacobdufault
+Well, the reason not having `:` is nice is because you don't have to hit a keyboard combo as often. I understand the readability concerns, but I wonder if that is something that will fade as you get used to reading code in the other style.
+
+1520387123
+MajorLag
+Because of type inference, I don't find it comes up that often. Actually I end up typing `var a = i32(0);` more often even though it's a whole extra character.
+
+1520387124
+andrewrk
+being easier to type has not been something that zig optimizes for. in general zig is happy to trade ease of writing code quickly in exchange for less bugs, lower maintenance cost, easier for a person to quickly read understand a piece of code they have not seen before
+
+1520391017
+jacobdufault
+yea, that is nice. I'm just not sure `:` is mkaing it easier to understand code. But enough bike-shedding, andrewrk: how hard would it be to add a mode to the zig compiler where it dumps a fully typed AST to say, json? ideally the compiler would not emit code and bail after AST creation
+
+1520391048
+jacobdufault
+the ast would also need to have locations back to source code
+
+1520391066
+jacobdufault
+if that's somewhat feasible, then I can write a backend for cquery, which will give things like cross references, goto definition, call hierarchy, etc
+
+1520391078
+andrewrk
+that would be great
+
+1520391104
+jacobdufault
+Depending on how fast ast creation is, I may also be able to do code completion - though that is harder and tbd
+
+1520391111
+andrewrk
+real quick on the syntax: I'm open to all these ideas. the problem is that it's difficult to please everyone. everybody has their own preferences about what looks good. so I try to make sure the semantics are helpful, and then not worry too much about the coat of paint on top
+
+1520391128
+jacobdufault
+a BFDL is always good :)
+
+1520391178
+andrewrk
+I'm excited about a zig cquery backend
+
+1520391183
+andrewrk
+there's 2 approaches we could take to this
+
+1520391208
+andrewrk
+1. add support for this to the c++ compiler, which already has type information
+
+1520391234
+andrewrk
+2. work on this in the self hosted compiler, which currently only is able to build an AST, and does not understand all the syntax yet
+
+1520391253
+andrewrk
+(2) is obviously the long term best solution, so the question is, should we do (1) right now?
+
+1520391265
+andrewrk
+or just double down on efforts on (2)
+
+1520391295
+GitHub50
+[zig] andrewrk pushed 1 new commit to master:
+
+1520391295
+GitHub50
+zig/master d96dd5b Andrew Kelley: fix missing compile error for returning error from void async function...
+
+1520391312
+jacobdufault
+yep, so I'm curious how hard it would be to do (1)
+
+1520391330
+andrewrk
+I think it would be pretty straightforward
+
+1520391400
+andrewrk
+here's what we would have to change: 1. add code to append types that are created into a list. 2. after analysis, iterate over this list and render the types to json. all the information is available at this point
+
+1520391426
+andrewrk
+oh, we want an AST with types
+
+1520391437
+andrewrk
+how does cquery handle templates?
+
+1520391452
+andrewrk
+or rather, how would you want to handle functions in zig with comptime parameters?
+
+1520391453
+jacobdufault
+unique identifier is good enough, so long as function calls can be associated with that unique identifier
+
+1520391483
+jacobdufault
+templates are a bit messy, but they mostly work. if you have template specializations things break
+
+1520391509
+andrewrk
+zig does not have overloading, so I think there is no equivalent of template specialization
+
+1520391521
+jacobdufault
+if the template is truly untyped, iirc there isn't a whole lot to do (though cquery may find a specialization and use definitions from that - another contributor has worked on template indexing)
+
+1520391537
+andrewrk
+but what I mean is that if you have this:  fn foo(comptime T: type) void { var a: T = undefined; // @typeOf(a) could be anything
+
+1520391540
+jacobdufault
+well, comptime function generation is a bit like template specialization
+
+1520391555
+andrewrk
+what we could do is have each AST node have a
+
+1520391586
+andrewrk
+if that list is size 1, then you know the node is always that type
+
+1520391587
+jacobdufault
+if you emit a reference to that T, cquery will handle it fine. so multiple types have references to the same location
+
+1520391605
+jacobdufault
+might be a bit wonky, I'm not sure what the best behavior is
+
+1520391679
+andrewrk
+it used to be that nodes had types in them, but it made less sense with compile time function execution and generics
+
+1520391711
+andrewrk
+we could still try to emit data that would be useful to cquery
+
+1520391780
+jacobdufault
+can you post some example json for what you think the output would look like? that'd probably be easiest for me to tell if it will be workable
+
+1520391801
+jacobdufault
+I haven't looked too closely at zig compiler internals (yet) :)
+
+1520392381
+andrewrk
+jacobdufault, something like
+
+1520392457
+jacobdufault
+btw, cquery works quite well on zig compiler,
+
+1520392479
+andrewrk
+nice!
+
+1520392498
+andrewrk
+wow, I should be using this
+
+1520392518
+andrewrk
+what editor is that?
+
+1520392524
+jacobdufault
+vim integration isn't great since it is challenging to extend the UI
+
+1520392526
+jacobdufault
+vscode
+
+1520392547
+jacobdufault
+there are plugins for vscode, emacs, vim, atom, kakoune
+
+1520392927
+jacobdufault
+re the json, it'd be simpler if the typeKind was inline, but otherwise looks good. If you're concerned about size cquery sometimes serializes things as trings, ie, positions are "100,30" instead of { "line": 100, "column": 30 }
+
+1520392965
+andrewrk
+those adjustments sound fine to me. you think the function body can be utilized?
+
+1520392981
+jacobdufault
+ideally the type declarations also include location
+
+1520392995
+andrewrk
+ah yes we have location for most type declarations (except primitive types)
+
+1520393013
+jacobdufault
+no location is fine, just jump to definition/etc will not work for them
+
+1520393044
+jacobdufault
+cquery would also need function call locations to do the more interesting things like call hierarchy
+
+1520393071
+andrewrk
+one of the "instruction"s in the body would have a kind/id that would be a function call
+
+1520393128
+jacobdufault
+then that sgtm
+
+1520393145
+jacobdufault
+writing an indexer should be pretty straight-forward
+
+1520393149
+andrewrk
+neat
+
+1520393149
+jacobdufault
+(from cquery's side)
+
+1520393179
+jacobdufault
+one thing that might be useful for performance: only dumping nodes from a specific file
+
+1520393197
+jacobdufault
+ie, if only foo.zig changed, we don't need everything from std
+
+1520393202
+andrewrk
+that makes sense
+
+1520393465
+jacobdufault
+btw, any idea on timeline for when this could be added to zig compiler?
+
+1520395830
+andrewrk
+jacobdufault, estimating a timeline. that's tricky :)
+
+1520395845
+andrewrk
+I will work toward it in the self hosted compiler
+
+1520397858
+andrewrk
+jacobdufault, what you can do is file an issue and I will schedule it in a milestone
+
+1520397872
+andrewrk
+and then you can see what other issues are in the earlier milestones
+
+1520397902
+jacobdufault
+okay, I'm gonna play around with adding it myself :)
+
+1520397932
+jacobdufault
+I haven't hacked on a compiler itself since college, so it'll be fun, hehe
+
+1520397978
+andrewrk
+fun :)
+
+1520397985
+andrewrk
+feel free to ask for guidance around the source code
+
+1520398035
+jacobdufault
+sure, any thoughts on how to integrate into the compiler?
+
+1520398041
+jacobdufault
+ie, zig json, or zig build-exe --json, etc
+
+1520398082
+andrewrk
+a new command would probably be easiest. the closest command to look at would be build-obj
+
+1520398120
+andrewrk
+you could set a flag on the CodeGen struct in main.cpp, and then in codegen.cpp::do_code_gen you could check for the flag, and instead of outputting machine code with llvm, output the json
+
+1520398157
+jacobdufault
+I wonder if I should do it as a flag to support the various build* commands
+
+1520398173
+jacobdufault
+ie, `zig build --emit-json`, `zig build-exe --emit-json`, etc
+
+1520398192
+andrewrk
+pros: that would allow you to do it simultaneously with a build. cons: not clear how it would work to only output data for 1 file
+
+1520398227
+jacobdufault
+`zig build --emit-json [file]`?
+
+1520398249
+jacobdufault
+Well, for the time being I can do a command. easy to change later
+
+1520398253
+andrewrk
+how it will eventually work - but we're far from this point - is it would be a --emit-json flag, and there would be a --watch parameter, and the compiler would watch source files for changes, keeping the json as well as the output binary up to date, with minimal work
+
+1520398283
+jacobdufault
+fyi: cquery assumes it will invoke the compiler
+
+1520398464
+andrewrk
+noted
+
+1520398668
+tiehuis
+made some pull requests to add zig support to some line-counting tools:
+
+1520398673
+tiehuis
+
+
+1520398679
+tiehuis
+
+
+1520398705
+tiehuis
+here is a run on the main `zig` repository out of interest:
+
+1520398740
+andrewrk
+neat!
+
+1520398760
+andrewrk
+tiehuis, I wonder what that looks like if you exclude deps/
+
+1520398768
+tiehuis
+i'll do a run now
+
+1520398874
+tiehuis
+should be a fairly clean repo:
+
+1520398938
+andrewrk
+plain text: 666
+
+1520398971
+tiehuis
+i have some misc txt files lying around
+
+1520398983
+tiehuis
+let me do a complete clean quick
+
+1520399028
+andrewrk
+tiehuis, sorry, I was just making a joke that 666 is a funny number
+
+1520399049
+tiehuis
+ah
+
+1520399058
+andrewrk
+
+
+1520403576
+jacobdufault
+are some of the types in the ast unused, ie, NodeTypeFnDecl?
+
+1520403582
+jacobdufault
+andrewrk: ^
+
+1520403700
+andrewrk
+jacobdufault, it's used - the AstNode struct has a union of all that stuff
+
+1520403801
+jacobdufault
+I'm only seeing usage in the parser and switch statements that resolve to unreachable
+
+1520403828
+andrewrk
+huh now that you mention it
+
+1520403830
+andrewrk
+weird
+
+1520403831
+jacobdufault
+AstNodeLabel seems unused too
+
+1520403836
+andrewrk
+oh yeah Label got deleted
+
+1520403915
+jacobdufault
+
+
+1520403923
+jacobdufault
+quite a few may be unusued
+
+1520403958
+andrewrk
+good find
+
+1520403993
+andrewrk
+hmm we definitely still have null literals
+
+1520404027
+andrewrk
+I think those ones are empty so we don't access any fields
+
+1520404038
+jacobdufault
+grepping doesn't reveal it either
+
+1520404056
+jacobdufault
+ah, right
+
+1520404088
+andrewrk
+that's a pretty nice tool
+
+1520404099
+jacobdufault
+yea, I got frustrated with how bad c++ tooling was
+
+1520404149
+jacobdufault
+actually most dev tooling isn't very good :/
+
+1520404157
+jacobdufault
+oh well
+
+1520404174
+jacobdufault
+cquery isn't perfect either
+
+1520404185
+andrewrk
+c/c++ don't make it easy
+
+1520404188
+jacobdufault
+but hopefully a step in the right direction :)
+
+1520404196
+jacobdufault
+yea, cquery relies heavily on libclang
+
+1520404214
+jacobdufault
+the main innovation of cquery is that it is fast
+
+1520404219
+jacobdufault
+much, much, much faster than anything else
+
+1520404426
+andrewrk
+speed is a wonderful feature
+
+1520404548
+jacobdufault
+just curious, did you grab buffer.hpp from a different/older project? it seems to be written in much more so of a c-style
+
+1520404589
+andrewrk
+almost all of zig is in a C style
+
+1520404607
+andrewrk
+if it weren't for llvm/clang we wouldn't even link against libstdc++
+
+1520404611
+jacobdufault
+I mean, compared to ZigList
+
+1520404617
+andrewrk
+ah
+
+1520404619
+jacobdufault
+the code is very readable, btw
+
+1520404624
+andrewrk
+thanks :)
+
+1520404650
+jacobdufault
+AstNodeWhileExpr and friends have `Buf *name` style variables - are these variable declarations expressed elsewhere in the ast?
+
+1520404672
+jacobdufault
+ie, how do I figure out the type of `name`
+
+1520404704
+andrewrk
+the name is non-null if the while is unwrapping a nullable, like this:
+
+1520404711
+andrewrk
+while (foo()) |value| {  }
+
+1520404716
+andrewrk
+name would be "value"
+
+1520404732
+andrewrk
+so if @typeOf(foo()) is ?T then @typeOf(value) is T
+
+1520404769
+andrewrk
+after a compilation, every function will have a list of basic blocks and IrInstructions in theme
+
+1520404799
+andrewrk
+one idea is  that you could iterate over these, looking for IrInstructionIdDeclVar
+
+1520404829
+andrewrk
+if you find  one whose source_node is NodeTypeWhileExpr then you've found your type
+
+1520404896
+jacobdufault
+hmm, currently I was playing around with iterating the ast similar to `ast_render.cpp`, but as I'm looking more closely type information might not be available
+
+1520404924
+andrewrk
+it's not available, because 1 AstNode might have N types, after generic instantiation
+
+1520404973
+andrewrk
+I think this is called mono-morphisation
+
+1520405007
+jacobdufault
+ah, fun fun
+
+1520405028
+andrewrk
+but you do have a mapping of IrInstructions back to AstNode
+
+1520405097
+andrewrk
+so you'd kinda like hover over a generic function, and cquery might have to say: this variable is one of these types: [x, y, z]
+
+1520405123
+andrewrk
+I mean, however you want to represent it, that's what the data is
+
+1520405266
+jacobdufault
+heh, at the moment cquery would just pick one
+
+1520405278
+jacobdufault
+since it isn't a common case for C++, but that could be improved
+
+1520405943
+jacobdufault
+it seems like there are quite a few instances where `AstNode` can only be one type; have you considered making an `AstNode<T>` class which only stores an instance of that type?
+
+1520406042
+jacobdufault
+(I can see a good argument against fwiw in the sense that it doesn't quite follow c)
+
+1520406126
+andrewrk
+I think instead of that pattern it would follow the IrInstruction pattern, with the `base` field
+
+1520406133
+andrewrk
+poor man's OOP
+
+1520406144
+andrewrk
+that's how it works in the self hosted parser
+
+1520406159
+andrewrk
+
+
+1520406393
+jacobdufault
+ah, indeed, that is cleaner
+
+1520407151
+jacobdufault
+How can I get the globally unique name for the function, ie, the name used in the object file? USR in C++
+
+1520407346
+andrewrk
+I believe that is FnTableEntry::symbol_name
+
+1520407370
+jacobdufault
+Okay, how does that compare to llvm_name?
+
+1520407378
+jacobdufault
+FnTableEntry::llvm_name
+
+1520407410
+andrewrk
+I'll describe status quo, with the understanding that maybe status quo should be changed:
+
+1520407417
+andrewrk
+the logic is in codegen.cpp::fn_llvm_value
+
+1520407473
+andrewrk
+it tries to use symbol_name. if it's an external function or an exported function, it's guaranteed to be unique otherwise we would have gotten a compile error
+
+1520407515
+andrewrk
+next we mangle the name by adding ".%d" where %d is a number that increases until we find a name that does not conflict with something we're trying to export, or an external function name
+
+1520407532
+andrewrk
+(that mangling happens only if necessary)
+
+1520407565
+andrewrk
+finally we add the function to the llvm module, where llvm may further mangle a name, if it conflicts with another non-exported, non-extern function
+
+1520407587
+andrewrk
+then we ask llvm what name it chose, and that's `llvm_name`. so `llvm_name` is the actual thing that goes into the object file
+
+1520407641
+andrewrk
+and we only find out about llvm_name after codegen completes, so you'd have to read the value
+
+1520407663
+andrewrk
+I think symbol_name should be ok though, unless you're doing something with the object file. symbol_name is what the user wants the symbol to be
+
+1520407670
+andrewrk
+but it might not be unique
+
+1520407707
+andrewrk
+if you need a unique ID for the function that is not user-visible, use the pointer address
+
+1520407767
+jacobdufault
+the unique ID needs to be stable across invocations
+
+1520407923
+andrewrk
+I see
+
+1520407971
+andrewrk
+I've been thinking about having the concept of a canonical "path" to a given declaration from the root source file
+
+1520407980
+andrewrk
+something like `std.os.path.join`
+
+1520408028
+jacobdufault
+that'd probably do the trick
+
+1520408040
+andrewrk
+stable across invocations is an interesting problem
+
+1520408063
+andrewrk
+how about: file path + symbol_name ?
+
+1520408096
+jacobdufault
+clang does mangling, which includes file path if the symbol is local to only that file
+
+1520408112
+jacobdufault
+but since c++ has forward decls public symbols do not include the file
+
+1520408134
+jacobdufault
+I think the logic is pretty complicated. It results in huge strings
+
+1520408186
+jacobdufault
+the constraint is that if the two symbols refer to the same object, they need to have the same identifier; if file path + symbol_name accomplishes that then sg, but does zig have any sort of forward decls?
+
+1520408195
+andrewrk
+aha, in that case file path +  symbol_name is correct for most functions. you could check if a function is exported and in this case omit file path
+
+1520408243
+andrewrk
+no forward decls. all zig functions are known to the compiler at compile time. top level declarations are order-independent
+
+1520408433
+jacobdufault
+:)
+
+1520415614
+GitHub195
+[zig] Hejsil pushed 1 new commit to master:
+
+1520415615
+GitHub195
+zig/master bb80daf Jimmi Holst Christensen: Ast Render no longer outputs erroneous semicolon...
+
+1520432381
+IntoxicatedHippo
+Does zig have some kind of introspection for structs? I want to make something to parse JSON in to structs using the structs member names/types, similar to this:
+
+1520433024
+Hejsil
+It has some compile time reflection
+
+1520433054
+Hejsil
+I've seen people using the comptime reflection to print all members of a struct, so it might be possible to make a json parser
+
+1520433561
+MajorLag
+I've done that. I can post a paste of my code for playing around with it.
+
+1520433979
+IntoxicatedHippo
+This seems to provide everything I need, thanks.
+
+1520434940
+MajorLag
+Well, if anyone else is interested:
+
+1520435493
+hoppetosse
+MajorLag: that's pretty nifty
+
+1520436576
+MajorLag
+Thanks. I'm planning to use something like that eventually to do automatic generation of serialize/deserialize functions for structs. That has the potential to save a lot of tedium.
+
+1520436703
+MajorLag
+andrewrk: looking over this old introspection code, it occurs to me that it might make more sense to have a single builtin @TypeInfo or something that returns a struct representing all this information.
+
+1520441003
+andrewrk
+MajorLag, I think you're right
+
+1520441025
+andrewrk
+Hejsil, nice semicolon fix :)
+
+1520447682
+MajorLag
+andrewrk: translate-c uses @"" for anonymous structs in unions, but if there are 2 anonymous structs in a union this results in a collision.
+
+1520447715
+andrewrk
+MajorLag, I think it's a mistake to use the empty string as an identifier. I think that's an oversight
+
+1520447733
+andrewrk
+we should translate anonymous structs to anonymous structs
+
+1520447758
+andrewrk
+I think this is because we didn't use to have anonymous structs, and now it can be improved
+
+1520447879
+MajorLag
+how would that look in a case like this?
+
+1520447932
+andrewrk
+oh, this is that thing where in C you can omit field access?
+
+1520447988
+andrewrk
+sorry, I misunderstood earlier. I think we have no option but to assign field names here
+
+1520448053
+MajorLag
+original C looks something like this:
+
+1520448175
+andrewrk
+correct translation should look like:
+
+1520448258
+MajorLag
+that would complicate accessing the members, you'd have to look at what translate-c generated to see which member ended up in which dummy
+
+1520448308
+andrewrk
+what do you mean? they're just normal fields with the names DUMMYSTRUCTNAME and DUMMYSTRUCTNAME1, right?
+
+1520448351
+andrewrk
+isn't that how you would have to access these in C too?
+
+1520448400
+MajorLag
+in the original C, I could `theStruct.lMinimum` directly. IIRC, in zig I'd have to `theStruct.DUMMYUNIONNAME.DUMMYSTRUCTNAME.lMinimum`.
+
+1520448417
+andrewrk
+I see
+
+1520448429
+andrewrk
+I don't think we will have that namespace flattening feature
+
+1520448455
+MajorLag
+yeah, and for any other case I'm not sure it's even desirable. But here...
+
+1520448484
+andrewrk
+here it's a weird interaction with an awkward API. you can use a helper function to make it nicer if you want
+
+1520448503
+MajorLag
+it'd be hacky, but maybe allow `_` as an identifier in extern unions to mean "this is anonymous and it's members share my namespace"
+
+1520448519
+andrewrk
+I'm reluctant to add that just to workaround this one situation
+
+1520448597
+MajorLag
+I don't blame you, but this kind of thing is rather common in C apis I'm afraid. Would this work the same way for @cImport? because in that case not matching the documented interface is more of an issue I think.
+
+1520448703
+andrewrk
+
+
+1520448761
+andrewrk
+that feature wasn't even added to C until C11
+
+1520448780
+MajorLag
+really? Is my memory that faulty?
+
+1520448794
+andrewrk
+I'm basing this assertion on
+
+1520449304
+MajorLag
+Oh, I see. Misunderstanding. It isn't an union, its a union of anonymous structs. This works in gcc with std=c89:
+
+1520449328
+andrewrk
+it's a gnu extension though
+
+1520449360
+andrewrk
+I mean, we don't have to get pedantic. I think the argument is less about what is a C standard and more about the tradeoff of making zig more complicated in exchange for handling this use case better
+
+1520449679
+MajorLag
+Ok, well, I stand corrected on the standard. GCC with -pedantic confirms your assertion. Either my memory is faulty, or the stuff I'm remembering just relied on GNU extensions. It might not be as big a problem as I originaly thought.
+
+1520450634
+MajorLag
+Is there a known workaround for the "depends on itself" false positive?
+
+1520450644
+andrewrk
+I can take a look at that right now
+
+1520450676
+andrewrk
+#624 right?
+
+1520450865
+MajorLag
+yeah, that one. though I think I may have found a different case, not sure if it is related.
+
+1520451248
+MajorLag
+The identifier being errored on is an extern function type, which takes a struct which has a member that is a union of a struct that has a member that's pointer type of the original type.
+
+1520451288
+andrewrk
+so there's no comptime function invocations?
+
+1520451295
+andrewrk
+that might be easier to solve than #624
+
+1520451310
+MajorLag
+I'll give you some code to work with, just a sec
+
+1520451448
+GitHub73
+[zig] andrewrk pushed 1 new commit to master:
+
+1520451448
+GitHub73
+zig/master 790aaea Andrew Kelley: add compile error for using @tagName on extern union...
+
+1520451731
+MajorLag
+
+
+1520451856
+andrewrk
+this should be straigtforward to solve. working on it
+
+1520454871
+andrewrk
+MajorLag, this is actually kinda tricky. there's a design flaw in the compiler (not the language). still working on it
+
+1520454944
+MajorLag
+Ok. I'm not in a hurry.
+
+1520454985
+rain1
+hi
+
+1520455106
+andrewrk
+hi rain1
+
+1520455145
+rain1
+why did you do the sigils like %% and @
+
+1520455176
+andrewrk
+there is no longer any %%
+
+1520455206
+andrewrk
+here is some information about those updates:
+
+1520455372
+andrewrk
+@ tells the code reader: this function is provided by the compiler
+
+1520455398
+andrewrk
+as an alternative to
+

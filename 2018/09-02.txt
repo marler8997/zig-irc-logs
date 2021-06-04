@@ -1,0 +1,500 @@
+1535864182
+tyler569
+I am working on some network code, and the way you take a dhcp address on linux and open a socket to it is to cast a char * (h_addr) to a struct in_addr *, but doing this in zig is causing pointer alignment problems, anyone know how I can convince the compiler that this is ok?
+
+1535864208
+tyler569
+I tried @bitCast, but it doesn't seem to like casting from an 8 bit value to a 32 bit value, since it's not taking the addresses as far as I can tell
+
+1535864330
+scientes
+x86 doesn't have alignment problems
+
+1535864348
+tyler569
+right, but I get a compile error
+
+1535864362
+tyler569
+"error: cast increases pointer alignment"
+
+1535864379
+scientes
+ahh yeah there needs to be a way to get around that
+
+1535864419
+scientes
+use @alignCast()
+
+1535864427
+scientes
+
+
+1535864500
+tyler569
+aha, that seemed to do the trick!
+
+1535864513
+scientes
+you could also use @memcpy, but that doesn't accept any type yet, open a bug to bother andrewrk about it
+
+1535864547
+scientes
+any memcpy would avoid undefined behavior
+
+1535864567
+tyler569
+what do you mean by it doesn't accept any type?
+
+1535864593
+scientes
+
+
+1535864598
+scientes
+you have to cast to [*]u8
+
+1535864600
+tyler569
+oh, I see, that it's just [*]const u8
+
+1535864620
+scientes
+andrew said he was considering changing that however, and i think its a good idea
+
+1535864632
+tyler569
+ah ok
+
+1535864660
+scientes
+welcome to zig! hope you stay and contribute
+
+1535864734
+tyler569
+thanks!  I've been watching for a while, but this is the first major thing I've done, really enjoying it so far
+
+1535867750
+kristate
+scientes: what's going on here?
+
+1535867791
+kristate
+scientes: is that test case failing, or is it a valid case?
+
+1535867917
+kristate
+scientes: it's failing -- lowercase: 0febabe
+
+1535867924
+kristate
+it should be double width...
+
+1535867964
+scientes
+<kristate> it should be double width...
+
+1535867965
+scientes
+yep
+
+1535867990
+kristate
+scientes: this is bigger than just printing strings -- it should be the same for all hexbytes
+
+1535868014
+scientes
+I just was using it to print the value of a promise and notice the bug
+
+1535868047
+kristate
+hmm, not only that \x0E prints 0
+
+1535868050
+kristate
+rather
+
+1535868054
+kristate
+\x0E prints E
+
+1535868132
+kristate
+scientes: okay, I have a patch
+
+1535868143
+kristate
+I will add you as a co-author and setup a PR
+
+1535868143
+scientes
+you can push it directly to my pull request
+
+1535868153
+scientes
+if you have commit access
+
+1535868168
+scientes
+i guess you are not a member however
+
+1535870565
+kristate
+scientes:
+
+1535870768
+kristate
+scientes: we are already using futexes where available
+
+1535870817
+scientes
+oh, the event stuff said no syscalls
+
+1535870845
+kristate
+do a grep on the repo
+
+1535870849
+scientes
+yeah i just did
+
+1535870860
+kristate
+
+
+1535870952
+kristate
+what we are generally aiming for is for co-routines to be implementation independent from the event loop
+
+1535870963
+kristate
+rather, we can use coroutines to build the event loop
+
+1535870979
+scientes
+yeah i just read inaccurate comments
+
+1535870987
+scientes
+if it uses Loop it makes syscalls
+
+1535871011
+scientes
+should have used grep
+
+1535871086
+kristate
+yeah, good idea to grep the stdlib
+
+1535871131
+kristate
+i'm glad that andy outlined the problem so well
+
+1535871213
+scientes
+can you fallow my proposal, its kinda complicated?
+
+1535871266
+kristate
+this one?
+
+1535871283
+scientes
+yeah
+
+1535871287
+kristate
+reading
+
+1535871356
+kristate
+co routines are backed by llvm intrinsics
+
+1535871363
+kristate
+so the keywords are easier to implement
+
+1535871368
+scientes
+yes i've read that
+
+1535871381
+scientes
+but cancel is not an llvm intrinsic, destroy is
+
+1535871422
+scientes
+and doing .scheduleCancellation() is difficult
+
+1535871540
+kristate
+ir_render_cancel -> get_coro_destroy_fn_val -> llvm.coro.destroy
+
+1535871557
+kristate
+cancel keyword is connected to the llvm.coro.destroy intrinsic
+
+1535871565
+scientes
+no, ir_render_suspend calls destroy
+
+1535871577
+scientes
+if the is_cancelled_bit is set
+
+1535871586
+scientes
+which gets set by ir_render_cancel
+
+1535871621
+kristate
+I don't see a ir_render_suspend ?
+
+1535871729
+scientes
+oh ir_gen suspend
+
+1535871731
+scientes
+
+
+1535871805
+kristate
+hmm, we should try to keep coros as simple as possible
+
+1535871838
+scientes
+we could drop cancel, and replace it with destroy
+
+1535871958
+scientes
+yeah that is the clean way to do it
+
+1535871977
+kristate
+I think we should make a diagram outlining each process
+
+1535871985
+kristate
+there are only so many states --
+
+1535872014
+scientes
+my proposal is entirely user-space
+
+1535872029
+scientes
+if we replace cancel with destroy...
+
+1535872132
+kristate
+scientes: yeah, I don't know if we should have co-routines be half compiler half user-space
+
+1535872139
+kristate
+it's kind of like a bridge without guardrails
+
+1535872159
+scientes
+yeah i don't like cancel
+
+1535872169
+kristate
+obviously
+
+1535872174
+kristate
+rather
+
+1535872190
+kristate
+obviously co-routines will be used in userspace to create loops, etc.
+
+1535872194
+scientes
+and getting rid of cancel brings promise back to alignment 4
+
+1535872208
+kristate
+what is it at right now? 8?
+
+1535872210
+scientes
+yeah
+
+1535872228
+scientes
+
+
+1535872233
+kristate
+I thought that using lower 8 bits was nifty
+
+1535872236
+kristate
+rather lower 3
+
+1535872238
+scientes
+3
+
+1535872250
+scientes
+yeah i use the low bit in my rb.zig
+
+1535872423
+scientes
+back, my graphics driver crashed ---i need a new video card
+
+1535872431
+scientes
+last line i got:
+
+1535872433
+scientes
+<scientes> yeah i use the low bit in my rb.zig
+
+1535873487
+kristate
+back
+
+1535873518
+kristate
+scientes: remember to sleep
+
+1535900223
+scientes
+kristate, back
+
+1535900232
+kristate
+hey
+
+1535900668
+scientes
+all this complicated stuff with co-routines is why I was proposing the go threading model
+
+1535900679
+scientes
+but we want to be like c, so we can build that on top
+
+1535900832
+scientes
+futex is quite complicated to do right:
+
+1535903499
+tyler569
+ls
+
+1535903505
+tyler569
+ach oops
+
+1535905549
+kristate
+andrewrk: what are your thoughts on the current co-routine situation ?
+
+1535905566
+kristate
+I've been trying to map it out in some ASCII art
+
+1535906422
+scientes
+Mutexs should be done right so they can be shared (in shared memory) between 32-bit and 64-bit processes and even on heterogeneous systems
+
+1535906432
+scientes
+which would be an improovement over glibc
+
+1535908896
+kristate
+andrewrk: scientes:
+
+1535909843
+scientes
+i have to look at the source more
+
+1535909925
+scientes
+IrBasicBlock *canceled_block = ir_create_basic_block(irb, parent_scope, "IsCanceled");
+
+1535909927
+scientes
+what does that do?
+
+1535909949
+scientes
+IrInstruction *destroy_ourselves = ir_build_phi(irb, parent_scope, node, 2, incoming_blocks, incoming_values);
+
+1535909973
+scientes
+yeah the co-routine destroys itsself, despite the docs saying,
+
+1535909973
+scientes
+The ‘llvm.coro.destroy’ intrinsic destroys a
+
+1535910262
+scientes
+i guess that just means the co-routine can't do anything after llvm.coro.destroy is called---the docs should be updated
+
+1535910282
+scientes
+(if that is the case)
+
+1535910316
+scientes
+this bears the question: Does llvm.coro.destroy use the stack?
+
+1535910472
+kristate
+hmm
+
+1535910476
+kristate
+check-out this pdf
+
+1535910483
+kristate
+
+
+1535910869
+scientes
+yeah i think we are using llvm.coro.destroy wrong
+
+1535910900
+scientes
+but it might be necessary for NM scheduling, so we could ask that it be supported
+
+1535911175
+scientes
+this might be why optimizations are not working with co-routines
+
+1535911552
+scientes
+wtf::lock look beautiful except for being written in C++
+
+1535911638
+scientes
+its so complicated thought that re-implementing it would be time-consuming, making it temping to wrap it in a C API
+
+1535911678
+scientes
+we are going to be tempted to bring in c/C++ code to zig for regular expressions to, I think that needs to be discussed
+
+1535912480
+scientes
+oh WTF::Lock doesn't use robust mutexes anyways, so they can't be shared accross processes
+
+1535914475
+scientes
+kristate, ParkingLot is like go's netpoller threading model, but for locks
+
+1535925463
+andrewrk
+MajorLag,
+
+1535925465
+andrewrk
+I'm about to merge this
+

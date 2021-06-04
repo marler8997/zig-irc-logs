@@ -1,0 +1,552 @@
+1529368979
+vegecode
+I'm trying to use Zig on an msp430 and I am really close I believe. The zig build system is emitting asm and I am then using the TI provided msp-gcc to compile and link it.
+
+1529369014
+vegecode
+@memset((*volatile [1]u8)(&__bssstart), 0, @ptrToInt(&__bssend) - @ptrToInt(&__bssstart));
+
+1529369025
+vegecode
+The assembly contains a reference to memset, which makes sense as I call memset like this:
+
+1529369031
+vegecode
+This code is basically exactly pulled from andrewrk's clashos repo
+
+1529369091
+vegecode
+TI is saying that memset is undefined, which makes sense as I'm calling gcc with -nostdlib and have not provided an implementation of my own.
+
+1529369138
+vegecode
+My point of confusion comes from reading in the documentation for zig that Zig doesn't rely on libc, which provides memset usually, I think?
+
+1529369143
+vegecode
+Is there a flag or something to make zig include all calls to compiler functions in the asm file?
+
+1529369187
+vegecode
+Or are some of the functions still relying on libc implementations for now
+
+1529369229
+vegecode
+Also, I'm not really sure what the polite way is to ask for help. Hopefully people here enjoy problems to solve like me so this enter the room and dump it tactic is ok...
+
+1529369290
+vegecode
+linked in after assembly
+
+1529369295
+vegecode
+When I say include all calls in the assembly, I mean all code compiled into the assembly file, with no other object file expected to be linked in.
+
+1529369321
+MajorLag1
+I was under the impression that @memset was an llvm intrinsic.
+
+1529369483
+vegecode
+That makes sense, but llvm doesn't ship with a bunch of object files for all the possible targets I don't think. How do you get a hold of the compiled output then?
+
+1529369504
+vegecode
+Maybe the msp430 backend just doesn't have it?
+
+1529369627
+vegecode
+Well I found a stackoverflow post where some person is saying that llvm reduces the intrinsics to a libc call usually but that it is dependent on the target.
+
+1529370172
+vegecode
+It looks like mem.set from "std" does what I'm looking for I think.
+
+1529370239
+MajorLag1
+Probably. IIRC it is just `for(bytes) |*b| { b.* = value; }` but I wonder if that won't get optimized into the @memset llvm intrinsic.
+
+1529370496
+vegecode
+It looks like it's not, but when using it I'm not sure how to make the slice(?) length be resolved by the linker. It's telling me it needs a constant expression
+
+1529370506
+vegecode
+mem.set(u8,(*volatile [(@ptrToInt(&__bssend) - @ptrToInt(&__bssstart))]u8)(&__bssstart),0);
+
+1529370528
+vegecode
+Am I understanding what it's asking for at least?
+
+1529370565
+vegecode
+Because there is no size parameter, I thought that what was in the brackets dictated the size
+
+1529370700
+MajorLag1
+assuming you're somewhere near the latest master, I think what you've done here is provided it a pointer to an array instead of a slice. I'm still parsing it.
+
+1529370845
+MajorLag1
+I think this is what you intended:
+
+1529370846
+MajorLag1
+const len = @ptrToInt(&__bssend) - @ptrToInt(&__bssstart);
+
+1529370846
+MajorLag1
+var bss_ptr = ([*]volatile u8)(&__bssstart);
+
+1529370847
+MajorLag1
+mem.set(u8, bss_slice, 0);
+
+1529370847
+MajorLag1
+var bss_slice = bss_ptr[0..len];
+
+1529370912
+MajorLag1
+though I'm pretty sure bss_ptr has to use @ptrCast: var bss_ptr = @ptrCast([*]volatile u8, &__bssstart);
+
+1529370949
+MajorLag1
+Lots of syntax changes recently, so depending on what build version you're running things may be a little different.
+
+1529371063
+vegecode
+The first one said invalid pointer cast.
+
+1529371082
+vegecode
+Trying next
+
+1529371136
+vegecode
+Second one compiled but it wouldn't allow the volatile
+
+1529371175
+MajorLag1
+I'm afraid I wouldn't know why.
+
+1529371840
+vegecode
+Any idea how to even get a variable into the bss section? I tried a global variable initialized with "undefined" but no go.
+
+1529371948
+MajorLag1
+Never had to do that myself, but this maybe:
+
+1529373212
+vegecode
+Thanks for your help, all I had to do was explicitly initialize it to zero. I think now I'm struggling with understanding linker provided variables. Goodnight.
+
+1529373262
+MajorLag1
+No problem.
+
+1529398268
+Hejsil
+andrewrk, Is this suppose to work?
+
+1529405038
+GitHub69
+[zig] alexnask closed pull request #1116: WIP: Remove @ptrCast and replace it with @elemCast (master...elemCast)
+
+1529419881
+GitHub4
+[zig] alexnask opened pull request #1136: @typeInfo now uses optional types instead of @typeOf(undefined) (master...typeinfo_improvements)
+
+1529422837
+GitHub91
+[zig] andrewrk closed pull request #1134: remove "cast harder" casting syntax; add new casting builtins (master...no-explicit-casting)
+
+1529422839
+GitHub124
+[zig] andrewrk pushed 1 new commit to master:
+
+1529422839
+GitHub124
+zig/master 9f23243 Andrew Kelley: Merge pull request #1134 from ziglang/no-explicit-casting...
+
+1529423003
+andrewrk
+Hejsil, yes, that looks like a bug
+
+1529423027
+andrewrk
+oops, actually I think that is working as designed
+
+1529423086
+andrewrk
+err, it should print 255, not 1
+
+1529423207
+GitHub137
+[zig] andrewrk closed pull request #1136: @typeInfo now uses optional types instead of @typeOf(undefined) (master...typeinfo_improvements)
+
+1529423207
+GitHub65
+[zig] andrewrk pushed 3 new commits to master:
+
+1529423207
+GitHub65
+zig/master 811539f Alexandros Naskos: Added missing ?type in docs.
+
+1529423207
+GitHub65
+zig/master 85422d7 Andrew Kelley: Merge pull request #1136 from alexnask/typeinfo_improvements...
+
+1529423207
+GitHub65
+zig/master 1392313 Alexandros Naskos: @typeInfo now uses optional types instead of @typeOf(undefined)
+
+1529425829
+alexnask
+Huh, didn't realize you could use type fields of comptime arguments in type expressions
+
+1529425853
+alexnask
+Well, I did, but never thought of it in a comptime self parameter context, this is pretty awesome
+
+1529425884
+alexnask
+That means you can have type-safe APIs over type erased values in comptime contexts
+
+1529426189
+andrewrk
+:)
+
+1529426329
+alexnask
+Btw, the reason I used a raw u8 pointer there is that I'm pretty sure it is impossible to use generics
+
+1529426362
+alexnask
+Since we need an array/slice of FnDefs at some point and we don't know what the types of the functrions actually are
+
+1529426365
+alexnask
+If you get what I mean :P
+
+1529426409
+andrewrk
+yeah it makes sense
+
+1529426543
+Hejsil
+alexnask, ye type erased comptime code is pretty useful.
+
+1529426628
+andrewrk
+Hejsil, thanks for the example - I read the llvm langref more carefully, and I'm going to adjust
+
+1529426648
+Hejsil
+Righto
+
+1529426669
+Hejsil
+Was not sure, since we defined @floatToInt as safe but with lose of precision
+
+1529426689
+andrewrk
+based on a more careful reading of llvm langref, I believe we are seeing a "poison value"
+
+1529426704
+andrewrk
+which is not undefined behavior, but nonsense data that makes any operations with other data become nonsense data
+
+1529426726
+andrewrk
+but zig treats llvm poison values the same as undefined behavior
+
+1529426741
+Hejsil
+Probably for the best too
+
+1529426755
+andrewrk
+right because a poison value is almost certainly a user bug
+
+1529426761
+andrewrk
+let's catch it right away
+
+1529427169
+andrewrk
+alexnask, I'm kind of worried that @reify might be too powerful
+
+1529427180
+andrewrk
+it could be used to write convoluted code
+
+1529427254
+alexnask
+I can see how it could be used in confusing ways
+
+1529427299
+alexnask
+Imo it is fine as long as you don't get to generate arbitrary code/ASTs
+
+1529427365
+alexnask
+Although generating methods may seem too powerful, implementing it this way still means that the method code is accessible and is not simply a mixined string (like e.g. in Dlang)
+
+1529427423
+andrewrk
+that's true
+
+1529427452
+andrewrk
+Hejsil, here's a fun little puzzle: come up with the LLVM IR code for the @floatToInt safety, to detect if the value fit in the integer
+
+1529427537
+andrewrk
+one idea:  fptoui with an i53 (whatever has the same number bits as the mantissa), and do a bounds check on the destination integer type range
+
+1529427578
+andrewrk
+another idea: fptoui the actual result, then uitofp back, and make sure the float difference < 1.0
+
+1529427721
+andrewrk
+yet another idea: we could make @floatToInt not accept a DestType parameter. it always gives a i24, i53, or i113
+
+1529427726
+andrewrk
+and it's always safe
+
+1529427741
+andrewrk
+but you'll probably have to @intCast the result to get the int type you want
+
+1529427801
+andrewrk
+oh wait, this is flawed. max value of a f32 is way bigger than max value of a u24
+
+1529428008
+alexnask
+Right, I don't think there is any way to guarantee that the float fits into an int at compile time
+
+1529428892
+alexnask
+Does using an @OpaqueType() to represent the Self type in TypeInfos before reification sound horrificly hackish to you, btw? :P
+
+1529428944
+andrewrk
+hmm I'd have to see the details
+
+1529429007
+alexnask
+I'll write a quick little script, but basically the idea is that we can't refer to the type we are generating, when we need to in lots of cases
+
+1529429785
+alexnask
+Here is a simple example of how it could be used:
+
+1529429802
+alexnask
+This just uses @reify to generate a linked list type
+
+1529430001
+andrewrk
+I see
+
+1529430004
+andrewrk
+let me think about this
+
+1529430044
+andrewrk
+I do think that's a reasonable way to work around the problem
+
+1529430198
+andrewrk
+brainstorming here, another way to do this would be to make your own opaque type, and then @reify accepts an opaque type to apply the type info
+
+1529430254
+andrewrk
+I think your way is better
+
+1529435775
+andi3
+Hello, I want to implement a compression (LZW) in zig for which I need to store indices into a dictionary. The indices have to be 10bit uints (not 16bit) to make the compression work.
+
+1529435799
+andrewrk
+hi andi3
+
+1529435800
+andi3
+Is there any way to have an array of 10bit uints arranged in memory in perfect packing ?
+
+1529435829
+andi3
+this is an edge case but as edge cases matter I thought I might as well ask what the zig approach to this is
+
+1529435875
+andrewrk
+although we have packed structs, we don't currently have the concept of packed arrays
+
+1529435981
+andrewrk
+you could have an array of 80 bit integers
+
+1529436034
+andrewrk
+const u80 = @IntType(false, 80);  var array: [wanted_int_count / 8]u80 = undefined;
+
+1529436067
+andrewrk
+then do a little bit of math when loading/storing
+
+1529436082
+andrewrk
+this might not be better than 16 bit ints though
+
+1529436091
+andrewrk
+we could talk about a proposal for packed arrays
+
+1529436118
+andi3
+ok currently in cpp I go through bit by bit and stuff it into a byte vector which is not very nice to read
+
+1529436159
+andi3
+I like your approach because the math is a bit easier/ less error prone but its certainly not perfect software/ has some overhead most of the time for up to 79 empty bits
+
+1529436196
+MajorLag1
+I've also come across a problem or two where packed arrays would be useful.
+
+1529436253
+andrewrk
+assuming a definition of "perfect" is "every input gets the correct output", I don't think there's a problem with the ability to represent a perfect solution
+
+1529436266
+andrewrk
+sounds like we're talking about ergonomics and optimality
+
+1529437331
+andi3
+yes
+
+1529437437
+andrewrk
+I think that a packed array feature would help ergonomics but not optimality. zig would be hiding the bit shifting you would otherwise be doing explicitly
+
+1529437504
+andrewrk
+for example say you have a packed struct which is volatile, if you did bit shifting manually, you could submit 2 u4's to the MMIO with 1 store, whereas if they were bit fields, you would be doing 2 stores
+
+1529437797
+andi3
+okay so your point is that ergonomics might actually hurt optimality ?
+
+1529437879
+MajorLag1
+The same is true of packed structs though.
+
+1529437948
+andrewrk
+andi3, yes, although if it prevents bugs in practice, that can be a worthwhile tradeoff
+
+1529438117
+andi3
+afaik from a c background packed arrays do not exist because taking the address of a member would not be legal ? could zig solve this in some way/ I guess yes otherwise you would have said otherwise immediately ?
+
+1529438176
+MajorLag1
+On the other hand, writing userland functions to read/write packed bit streams is pretty straight-forward compared to dealing with packed structs in the same way.
+
+1529438177
+andrewrk
+it could work - in zig when you take the address of a packed struct field, the type of the pointer has metadata, and it cannot be passed to functions which expect normal, non-packed, aligned pointers
+
+1529438224
+andrewrk
+similarly with packed arrays, when you index them or take the address of an element, the pointer would have this metadata
+
+1529438226
+andi3
+okay that sounds nice
+
+1529439393
+andi3
+thanks for the answers, looking forward to seeing zig evolve
+
+1529440413
+GitHub39
+[zig] andrewrk pushed 2 new commits to master:
+
+1529440414
+GitHub39
+zig/master c780427 Andrew Kelley: `@floatToInt` now has safety-checked undefined behavior...
+
+1529440414
+GitHub39
+zig/master 0b92d68 Andrew Kelley: update langref
+
+1529440465
+andrewrk
+alright Hejsil now your example gives "integer part of floating point value out of bounds" and crashes with a stack trace
+
+1529441668
+andrewrk
+ahh, down to 0 open pull requests
+
+1529441685
+alexnask
+@andrewrk Is there any way to cast a generic fn to a specific specialization?
+
+1529441709
+alexnask
+Say you have 'foo(var)usize' and want to get a pointer to 'foo(u8)usize'
+
+1529441789
+andrewrk
+no, other than declaring the specialization and forwarding the args to the generic fn
+
+1529443345
+GitHub90
+[zig] andrewrk pushed 1 new commit to master:
+
+1529443345
+GitHub90
+zig/master ee525c9 Andrew Kelley: langref: organize docs for inline loops and add note about when to use it
+
+1529443810
+alexnask
+This is another potential problem for method generation for @reify, even if you use an opaque type as a tag type there is no way you can define a function specialized for the type that will be reified
+
+1529443857
+alexnask
+Unless the compiler accepts a FnDef ptr to a generic function that is then specialized on the fly but I don't think that is elegant
+
+1529443944
+andrewrk
+I see
+
+1529446294
+alexnask
+I'll start writing some basic @reify stuff just to see what I can achieve, I'll update it to the proposal that is approved, if it is.
+
+1529450268
+GitHub141
+[zig] andrewrk pushed 1 new commit to master:
+
+1529450268
+GitHub141
+zig/master 42db807 Andrew Kelley: remove redundant implicit casting code...
+
+1529451405
+GitHub143
+[zig] andrewrk pushed 1 new commit to master:
+
+1529451406
+GitHub143
+zig/master 7c99c30 Andrew Kelley: fix calling method with comptime pass-by-non-copyign-value self arg...
+

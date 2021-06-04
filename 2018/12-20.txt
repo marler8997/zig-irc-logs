@@ -1,0 +1,372 @@
+1545264905
+unique_id
+Let's say that I'm creating a library. I point build.zig to src/index.zig. index.zig has "pub const X = @import("X.zig")". Inside X.zig there's an exported function (pub export fn foo() void {}). However, because the symbol X inside index.zig is never used, then X.zig is never visited, and foo never makes it into the library.
+
+1545264934
+unique_id
+Isn't that a bit strange?
+
+1545264937
+andrewrk
+yes it is
+
+1545264952
+andrewrk
+the current workaround is: comptime { _ = @import("X.zig"); }
+
+1545264965
+unique_id
+ok
+
+1545264987
+andrewrk
+but you are not alone in thinking that it is awkward
+
+1545265110
+andrewrk
+a problem we have to solve to fix it, is to decide whether or not it's a feature that you can conditionally @import something at comptime
+
+1545265138
+andrewrk
+right now it's a feature
+
+1545265202
+andrewrk
+so zig can't follow that @import("X.zig") for the same reason that it can't follow both of these imports in the same build:  const x = if (builtin.os == builtin.Os.linux) @import("linux.zig") else @import("other.zig");
+
+1545265236
+unique_id
+I see
+
+1545266418
+MajorLag
+andrewrk, can I get a clue about this compiler assert: "unreachable: /deps/zig/src/ir.cpp:ir_analyze_container_field_ptr:14618"
+
+1545266809
+unique_id
+Imports have a dual purpose in that they not only let you make use of the file you imported, but they also specify that it's part of the project. If the files belonging to a project were instead declared differently, perhaps declaratively in some way, then knowledge of which files are included in a project would be known at an earlier time in the compilation process, perhaps aiding any future attempts are distributed compilation (if
+
+1545266810
+unique_id
+that ever becomes a thing). Also, declarative knowledge of files would reduce funny business (really odd import paths hidden away in some file).
+
+1545266843
+daurnimator
+andrewrk: I have a different idea
+
+1545266855
+daurnimator
+andrewrk: what if 'extern' only applies on a per-import basis
+
+1545266863
+daurnimator
+i.e. it is "extern" to the file
+
+1545266916
+daurnimator
+if another module wants include its exports, then it has to: `extern @import("foo.zig").*` or similar
+
+1545269886
+MajorLag
+andrewrk: looks like it has something to do with async<> and the new Allocator. does async<allocator> call (alloc|realloc|free)Fn by chance?
+
+1545270096
+MajorLag
+hmmm... nope. adding functions with those names back to the interface didn't help
+
+1545270950
+MajorLag
+Ah, ok. It's a combination of two things: async<allocator> expects allocator to be a pointer, and the new interface is passed as a copyable struct of pointers, as well as it explicitly looks for the (alloc|realloc|free)Fn functions. I can work around this for now. As I recall, passing an allocator to async is being phased out anyway.
+
+1545271610
+MajorLag
+hmmm... maybe I can't work around it. It seems upset about the fns technically being bound fns.
+
+1545271796
+MajorLag
+well, I'm giving up on that for tonight.
+
+1545275031
+daurnimator
+MajorLag: yeah after copy ellision is done then async shouldn't need an allocator
+
+1545275052
+daurnimator
+MajorLag: though the exact changes needed for that
+
+1545275096
+MajorLag
+well, as long as we can accept that any test that analyzes async<allocator> will fail until then...
+
+1545275107
+MajorLag
+otherwise I'm blocked on this
+
+1545275128
+MajorLag
+well, assuming I can't figure out some workaround
+
+1545287379
+andrewrk
+I recommend avoiding coroutines until the rewrite
+
+1545288039
+emekoi
+how hard would it be to get `@returnAddress` to work like `__builtin_return_address`?
+
+1545310201
+knebulae
+andrewrk: it appears that an assumption is made that if you are importing C code, that that C code
+
+1545311722
+MajorLag
+is there no way to specify an exact match for --test-filter?
+
+1545316817
+MajorLag
+> error: expected type 'AllocatorInterface(AbstractAllocator)', found 'AllocatorInterface(AbstractAllocator)'
+
+1545316838
+MajorLag
+It would seem fate is against reforming interfaces in std
+
+1545316874
+MajorLag
+the best part is that it points to the exact same place for both definitions
+
+1545317190
+MajorLag
+wait, no, one of them is pointing to a different copy of std for some reason. Mystery solved.
+
+1545317236
+MajorLag
+actually, the same copy of standard but via a different import path
+
+1545317244
+MajorLag
+is that a known issue?
+
+1545317300
+kristate
+MajorLag: do you have a gist somewhere that we can look at?
+
+1545318227
+MajorLag
+of the import thing? No, but I'm sure I could create one in a few minutes.
+
+1545318368
+MajorLag
+side note: it looks like there are several tests in standard that are not run by the default testing regime, because they fail for reasons having nothing to do with my changes. I'll make a note of each and an issue for all of them.
+
+1545328503
+andrewrk
+knebulae, that's a really tricky problem
+
+1545328615
+andrewrk
+emekoi, you want the level parameter? it's exposed by LLVM. want to open an issue so we can discuss it?
+
+1545328643
+knebulae
+andrewrk: I may have solved it (for now).
+
+1545328665
+andrewrk
+knebulae, I do want to support the use case of linking against C code with no libc
+
+1545328677
+knebulae
+right
+
+1545328703
+andrewrk
+I think as a workaround right now you can use `zig build-obj` and `zig build-exe` separately
+
+1545329061
+MajorLag
+so one of the errors I ran into actually is tested by CI. it only seems to error on my machine. `std/special/compiler_rt/index.zig` tests "test_umoddi3" and "test_udivsi3" can't inline `extendXfYf2` or `truncXfYf2`
+
+1545329346
+andrewrk
+MajorLag, hmm this is triggering a vague memory of me running into this issue
+
+1545329388
+andrewrk
+I think it's ok to remove the `inline` keyword
+
+1545329450
+andrewrk
+
+
+1545329477
+andrewrk
+I think that the endgame for `inline` in zig is that we'll do it in the frontend
+
+1545329505
+j`ey
+why?
+
+1545329543
+andrewrk
+right now the error for failing to inline is the only compile error that we have to look at the LLVM IR post-optimization to see if it worked
+
+1545329567
+andrewrk
+it's brittle. plus doing the inlining in the frontend gives zig more information, if we do advanced control flow analysis
+
+1545329569
+j`ey
+so inline is actually 'always_inline'?
+
+1545329573
+andrewrk
+yes
+
+1545329585
+andrewrk
+zig has no "inline hint"
+
+1545330510
+oconnor0
+andrewk, have you seen LLVM not inline functions marked always_inline?
+
+1545332009
+knebulae
+andrewrk: Can you shed some light on line 30 in std/os/index.zig?  Why is a compiler error thrown if the target is not posix?
+
+1545332103
+andrewrk
+knebulae, zig has lazy analysis. any code that is not run on a posix system should not reference that `posix` identifier, and so won't hit that compile error
+
+1545332116
+andrewrk
+but if you, for example, do `posix.write()` on windows, you'll get the compile error
+
+1545332181
+andrewrk
+oconnor0, it happens for example if the function references itself, directly or indirectly, or if you take a function pointer to it. MajorLag is also observing it for an unknown reason
+
+1545332286
+MajorLag
+The VM i'm working with is highly constrained. For instance I have to run tests individually to avoid running out of memory. Could be related.
+
+1545332426
+knebulae
+I was hitting it, that's why I wondered. :/
+
+1545332445
+andrewrk
+knebulae, can you give a link to a paste of the error you're seeing?
+
+1545332456
+andrewrk
+oh, sorry never mind, I thought you were talking about the inline thing
+
+1545332474
+andrewrk
+knebulae, I think we have an open issue for that to give a better compile error note trace of why the symbol is depended on
+
+1545332481
+andrewrk
+although I thought it was already solved
+
+1545332490
+knebulae
+no biggie.  I'll figure it out.
+
+1545332542
+andrewrk
+knebulae, as a workaround, you can try deleting the line that declares posix, and see if that compile error is better
+
+1545332583
+knebulae
+My biggest concern right now is that there are two open-source implementations of the UEFI runtime libraries. GNU (GPL) and TianoCore (Intel/Apple/et. al.) (BSD).  If I add some runtime support to std, I'll need to do it twice via an overlay layer.
+
+1545332654
+andrewrk
+when your uefi application is executed on actual hardware, is the runtime library provided by the hardware? or is it statically compiled into your executable?
+
+1545333121
+knebulae
+andrewrk: the runtime is linked into the executable.
+
+1545333159
+knebulae
+but it is not in any way a traditional c runtime
+
+1545333160
+andrewrk
+I just looked at the UEFI spec and it is a 2,575 page PDF
+
+1545333170
+knebulae
+yeah, it's obscene.
+
+1545333198
+andrewrk
+that must be the C code you wanted to link without linking libc?
+
+1545333206
+knebulae
+Yessir
+
+1545333263
+andrewrk
+I think that's a good solution for a proof of concept. uefi runtime library implemented in zig would be neat, if not in std then in a third party package
+
+1545333274
+andrewrk
+I don't know how complicated a uefi runtime library is
+
+1545333307
+knebulae
+it would be minimal to provide the few functions needed by std.  but it is not libc and it is definitely not posix.
+
+1545333319
+andrewrk
+understood
+
+1545333383
+knebulae
+for reference, this is what I use:
+
+1545333448
+oconnor0
+andrewk, interesting, thanks. I haven't seen that in the LLVM I've done, but we're disallowing those kinds of references.
+
+1545337943
+MajorLag
+andrewrk, how can I tag a PR as WIP?
+
+1545337955
+andrewrk
+MajorLag, mention it in the title
+
+1545341626
+MajorLag
+andrewrk: is build.zig magic? Where does it get the Build instance from and, specifically, the allocator?
+
+1545341648
+andrewrk
+MajorLag,
+
+1545341719
+MajorLag
+ok, so not magic, but I missed something
+
+1545342160
+MajorLag
+looks like I probably just have to fix all the tests (and probably self-hosted). Darn, I was hoping to put that off.
+
+1545342300
+MajorLag
+I'd have expected a compile error, but a compiler assert isn't unprecidented in this branch.
+
+1545342644
+andrewrk
+bummer
+
+1545342709
+andrewrk
+I'm streaming some advent of code in 10 minutes
+

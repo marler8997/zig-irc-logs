@@ -1,0 +1,620 @@
+1538354557
+scientes
+does zig default to --march=native?
+
+1538354587
+scientes
+(I noticed this:
+
+1538354625
+andrewrk
+scientes, yes. to disable it, specify the native target explicitly with --target-* args. see also
+
+1538354703
+andrewrk
+however I believe march=native is disabled on windows due to an llvm bug.
+
+1538354750
+andrewrk
+hmm actually it might not be an llvm bug. it might have been an alignment issue which is now fixed. I should try enabling that again.
+
+1538368038
+andrewrk
+welcome back, kristate
+
+1538395430
+very-mediocre
+Might be silly but am I wrong to want to be able to use `comptime var` outside of the function scope?
+
+1538395494
+very-mediocre
+The general use case would be to update something that exists at comptime later.
+
+1538395571
+very-mediocre
+(later = still comptime though)
+
+1538399120
+Hejsil
+very-mediocre, you could pass a pointer to a some comptime only variable
+
+1538399133
+Hejsil
+fn a(comptime something: *u8) void
+
+1538399177
+very-mediocre
+the comptime only variable has to be declared as const though, can't pass a mutable pointer that points to a const, no?
+
+1538399208
+Hejsil
+comptime var i: u8 = 0; a(&i);
+
+1538399211
+Hejsil
+Pretty sure this
+
+1538399212
+Hejsil
+works
+
+1538399229
+very-mediocre
+let me try :]
+
+1538399285
+very-mediocre
+well you can't declare "comptime var" in the global scope
+
+1538399289
+very-mediocre
+it has to be const
+
+1538399299
+very-mediocre
+which implicitly becomes comptime
+
+1538399345
+Hejsil
+Aaah, you want a global comptime var
+
+1538399349
+very-mediocre
+yes
+
+1538399352
+Hejsil
+Well, nope. Not possible
+
+1538399361
+Hejsil
+And I'm sure that would get really messy
+
+1538399380
+very-mediocre
+I agree but it does feel a bit limiting now
+
+1538399392
+Hejsil
+What are you trying to do?
+
+1538399395
+very-mediocre
+comptime stuff isn't always set in stone
+
+1538399406
+very-mediocre
+sometimes you want to provide a library that lets the consumer of the library also do things at comptime
+
+1538399431
+Hejsil
+Sure, but as with normal global state, it is rare that you actually need it
+
+1538399435
+very-mediocre
+Well one experiment I was doing which made me notice this, was some comptime interface shenanigans
+
+1538399468
+very-mediocre
+I found I was doing increasingly complicated things, when it would be much simpler to have a registry at the global scope
+
+1538399479
+Hejsil
+Might be true
+
+1538399517
+very-mediocre
+Might also be that there's some obvious better solution that currently eludes me
+
+1538399569
+very-mediocre
+hm, you're right that it'd get messy to import such a module though
+
+1538399594
+very-mediocre
+I'm unclear on how zig import works, I'm used to TS/JS right now where the entire module gets imported as a closure
+
+1538399628
+very-mediocre
+like if I wrote to some hypothetical comptime var, state would probably be lost upon import :/
+
+1538399692
+Hejsil
+If file_a does @import("std") and file_b does @import("std"), then they'll both share everything from "std". Globals and all
+
+1538399770
+very-mediocre
+I see
+
+1538399822
+very-mediocre
+I'm still toying with half baked ideas here.
+
+1538399833
+very-mediocre
+I have in mind a comptime linked list
+
+1538399851
+very-mediocre
+to serve as a Set structure
+
+1538399894
+very-mediocre
+O(n) is not bad for the use cases I am experimenting with. Alas, it can't be done this way.
+
+1538399971
+MajorLag
+Hopefully we can solve #1291 in the near future and make that sort of thing straight-forward.
+
+1538400063
+very-mediocre
+That'd go a long way
+
+1538400073
+very-mediocre
+I thought I was being clever using a linked list to bypass that altogether
+
+1538400152
+very-mediocre
+I also had a workaround in mind for the lack of programmable types...
+
+1538400186
+very-mediocre
+Resulting in sort of a binary tree union
+
+1538400212
+very-mediocre
+So you could conceivably generate a catch-all type for all implementors of an interface, that you could unbox
+
+1538400276
+Hejsil
+"programmable types"? You mean generating types with comptime?
+
+1538400280
+very-mediocre
+yeah
+
+1538400284
+Hejsil
+Alright
+
+1538400300
+very-mediocre
+What @reify is supposed to be, but I was told that might be too powerful
+
+1538400315
+very-mediocre
+You could conceivably do like, a union with 2 fields
+
+1538400316
+Hejsil
+I have an implementation in mind that could do alot of what reify does
+
+1538400336
+very-mediocre
+1 field = known type
+
+1538400347
+very-mediocre
+2nd field = a nested version of the same union
+
+1538400397
+Hejsil
+I'd love to see if you can get that to work
+
+1538400411
+very-mediocre
+This is all hypothetical, I've yet to try it, but the point was to have a union representing all implementors of an interface so you could pass "Shape" to a function
+
+1538400427
+very-mediocre
+but then you'd still have to unbox in the function body
+
+1538400449
+very-mediocre
+What do you have in mind that can do what reify does?
+
+1538400518
+Hejsil
+Basicly, generate a struct like this: `struct { data: [N]u8, fn get(self: *@This(), comptime field: []const u8) FieldType(field) { <implement here> }`
+
+1538400548
+Hejsil
+And `get` does the lookup into .data at comptime
+
+1538400587
+Hejsil
+So this `reified` struct doesn't work the same as normal types. Instead of `a.b`, you do `a.get("b")
+
+1538400598
+very-mediocre
+That's a pretty neat idea
+
+1538400610
+very-mediocre
+Is it guaranteed that the lookup would occur at comptime?
+
+1538400612
+Hejsil
+Idk what exactly I'd generate "methdos"
+
+1538400653
+Hejsil
+Yes. I can create a table at comptime that maps field names to offsets into data
+
+1538400669
+Hejsil
+Which should be what the compiler do when translating to machine code anyways
+
+1538400687
+very-mediocre
+What would .get compile to?
+
+1538400707
+very-mediocre
+I admit I am a premature optimizer
+
+1538400729
+very-mediocre
+I worry about function calls after everyone told me they were negligible, but it really hurt a raytracer I was writing in C++
+
+1538400736
+Hejsil
+@ptrCast(*FieldType(field), self.data[comptime self.offsetOf(field)];
+
+1538400748
+Hejsil
+Something like this
+
+1538400780
+Hejsil
+I'd love to use compiler explore to see, if it's really the same as normal structs
+
+1538400797
+very-mediocre
+yeah that'd be interesting
+
+1538400800
+Hejsil
+But i'm pretty sure it'll be the same, as long as I generate the same layout
+
+1538400816
+very-mediocre
+admittedly my interest is due to PTSD from slow function calls + academic curiosity
+
+1538400872
+Hejsil
+In Zig, i tend to trust the compiler more in it
+
+1538400878
+Hejsil
+'s choices of inlining
+
+1538400884
+Hejsil
+at least the stage1 compiler
+
+1538400908
+Hejsil
+As, doesn't have to deal with object boundaries
+
+1538400918
+Hejsil
+As it*
+
+1538400940
+very-mediocre
+Leanness became so underrated lately
+
+1538401003
+Hejsil
+Seems that stage2 will do the same in release mode:
+
+1538401097
+very-mediocre
+Promising.
+
+1538401125
+very-mediocre
+I think premature optimization has taken a backseat to "no optimization" nowadays. The former is the lesser evil.
+
+1538401162
+very-mediocre
+tangentially related: I feel disgusting running so many instances of chromium in the background
+
+1538401165
+very-mediocre
+(electron apps)
+
+1538401185
+very-mediocre
+the tiny icon sitting in my taskbar is using 500MB of RAM :|
+
+1538401251
+Hejsil
+Agreed
+
+1538401269
+Hejsil
+Being slow and eating memory is a crime
+
+1538408621
+halosghost
+andrewrk: do you have a list of data structures / types that you'd like to see in the standard library?
+
+1538408689
+andrewrk
+halosghost, no. until we get closer to 1.0.0 std lib is inclusionist (as long as the code comes with tests) because it helps test the language
+
+1538408712
+andrewrk
+closer to 1.0.0 there will be a big std lib audit, and a lot of stuff will be removed (and can be maintained in third party packages)
+
+1538408799
+halosghost
+cool
+
+1538408853
+halosghost
+bunch of things I'd like to try my hand at implementing
+
+1538408880
+halosghost
+hello, aur/zig-static :D
+
+1538413751
+tom1998
+Ey up, just asking a quick question - what exactly counts as 'freestanding'? What can I use / not use from the stdlib?
+
+1538413811
+tom1998
+Can I use the fixedbuffer thread safe allocator if I allocate the actual memory via malloc()?
+
+1538413811
+andrewrk
+tom1998, zig has lazy top level declaration evaluation - so you can use everything that does not depend on an operating system, down to a fine grained variable / function level
+
+1538413844
+andrewrk
+if you try to use something that depends on an operating system in freestanding mode, you'll get a compile error. so you can't get bugs by trying to use something from the std lib
+
+1538413874
+tom1998
+Is there a way to force the compiler to build freestanding even if it normally builds not freestanding?
+
+1538413875
+andrewrk
+so the sort of questions you are interested in are: "does the fixed buffer thread safe allocator depend on any OS API?"
+
+1538413881
+andrewrk
+and the answer is no
+
+1538413915
+tom1998
+i see
+
+1538413936
+andrewrk
+you want to set some global state so that zig thinks the native environment is freestanding?
+
+1538413962
+andrewrk
+are you trying to save keystrokes by avoiding typing `--target-os freestanding --target-arch xyz` ?
+
+1538413967
+andrewrk
+you could use zig build
+
+1538413987
+andrewrk
+and then just set the target to freestanding in the build script
+
+1538414006
+tom1998
+nope, i just didn't know the target-os accepted that, thanks
+
+1538414007
+andrewrk
+this is bitrotted a little, but here's an example:
+
+1538414100
+tom1998
+Brill, thanks!
+
+1538414144
+tom1998
+This is a cool project, been looking for an alternative to rust that doesn't have any of the safety bullshit
+
+1538414237
+andrewrk
+idk, I think rust is pretty compelling
+
+1538414283
+andrewrk
+I've just found it to be unproductive for me. I'm not smart enough to handle all the features interacting together
+
+1538414289
+tom1998
+Oh definitely, can just be annoying when you can confirm something's fine, but the borrow checker won't let you
+
+1538414319
+andrewrk
+I need a language that lets me think less :)
+
+1538414404
+tom1998
+Yeah super cool, i really like the first class types
+
+1538427664
+halosghost
+pretty much everything zig does to remove the preprocessor is wonderful
+
+1538431194
+tom1998
+Heyo
+
+1538431205
+tom1998
+Not sure if anyone's still here, go another question about building freestanding;)
+
+1538431239
+tom1998
+So I'm building for a linux target on ARM, but zig doesn't support arm linux, HOWEVER i was under the impression that I could build freestanding & link to libc to interact with the OS
+
+1538431274
+tom1998
+I'm unsure if i've just misunderstood, I am no compiler guru & I never build anything freestanding
+
+1538431353
+tom1998
+I'm trying to link to libc with --library c, but I'm getting an error as it's saying it can't find libc
+
+1538431374
+tom1998
+I'm currently building with --target-arch x86_64 (as I'm not on my ARM machine yet), and --target-os freestanding
+
+1538432292
+scientes
+tom1998, i have a arm64 patch posted
+
+1538432340
+scientes
+
+
+1538432576
+tom1998
+If I'm honest i just don't understand, I thought freestanding arm64 was already supported, right?
+
+1538432583
+tom1998
+Is that patch to support arm64 on linux?
+
+1538432591
+tom1998
+I'm going off of the table in the readme
+
+1538432605
+andrewrk
+tom1998, your understanding is correct. what's going on here is that you're cross compiling for arm linux right?
+
+1538432607
+scientes
+oh yes that is arm64/linux
+
+1538432610
+andrewrk
+so you need a cross compiled libc
+
+1538432645
+andrewrk
+this is one of the motivations for
+
+1538432661
+tom1998
+No, i'm not cross-compiling currently, i'm testing a freestanding build on x86_64 first to make sure my program isn't using any OS stuff that it shouldn't be
+
+1538432673
+tom1998
+then I'm going to either cross compile or compileon the machine later
+
+1538432893
+andrewrk
+wait, freestanding isn't compatible with libc
+
+1538432901
+andrewrk
+libc depends on an operating system
+
+1538432938
+tom1998
+where did I see that said I could compile for arm as long as I called through the c lib and didn't try to use any zig-specific os calls
+
+1538432972
+andrewrk
+in the readme: "Note that if you use libc or other libraries to interact with the OS, that counts as "freestanding" for the purposes of this table."
+
+1538432972
+tom1998
+i don't actually want to compile a freestanding program in the sense that i can run it bare metal, i just want to run on arm64, scientes's thing looks like it's failing the builds (?)
+
+1538432992
+scientes
+tom1998, its just timing out
+
+1538433004
+andrewrk
+scientes, I'm going to tackle your ARM PR tomorrow
+
+1538433022
+tom1998
+andrewrk how do I link in libc for arm then, or am i misunderstanding the readma
+
+1538433041
+andrewrk
+tom1998, you want `--target-os linux --target-arch (one of the arm architectures)`
+
+1538433045
+tom1998
+it sounds like the readme is saying 'we don't officially support arm/linux, UNLESS you use other libraries to interact with the OS, in which case you're golden'
+
+1538433046
+andrewrk
+and --library c
+
+1538433073
+tom1998
+ohhhhhhhh, so I don't actually want --target-os freestanding even though it says freestanding in the table
+
+1538433094
+andrewrk
+right, your target isn't freestanding, your target is arm. I'll clarify the wording
+
+1538433114
+andrewrk
+tom1998, and then you need an arm libc to link against. you're on x86_64 so that would be a cross compiled libc
+
+1538433131
+andrewrk
+...which is annoying, which is one of the motivations for
+
+1538433135
+tom1998
+I seeeee, I was getting quite confused. so you do support ARM on linux, just not through the stdlib interface
+
+1538433161
+andrewrk
+right. we can codegen for arm just fine - we just don't have OS API in the std lib
+
+1538433193
+andrewrk
+(although there may be some little things to fix up in the compiler, that scientes found and are in his PR)
+
+1538433196
+tom1998
+ahhhhh ok, that fits in with what I understand
+
+1538433251
+tom1998
+alright, i'll mull that over, ta. Night!
+

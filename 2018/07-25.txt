@@ -1,0 +1,1004 @@
+1532482294
+GitHub144
+[zig] andrewrk pushed 2 new commits to master:
+
+1532482295
+GitHub144
+zig/master 02713e8 Andrew Kelley: fix race conditions in self-hosted compiler; add test...
+
+1532482295
+GitHub144
+zig/master adefd1a Andrew Kelley: self-hosted: function calling another function
+
+1532500283
+dbandstra
+andrewrk,
+
+1532500802
+GitHub26
+[zig] andrewrk pushed 1 new commit to master:
+
+1532500803
+GitHub26
+zig/master 95f45cf Andrew Kelley: patch LLD to fix COFF crashing when linking twice in same process...
+
+1532501054
+andrewrk
+dbandstra, wow!
+
+1532507605
+skyfex
+Uhm, do we have to use x.*.foo to access a field in a pointer to a struct now?
+
+1532508073
+skyfex
+Ah, my confusion was related to this:
+
+1532508958
+t5c
+andrewrk: its been a while, but zig is now running on openbsd-current on my machine
+
+1532508972
+t5c
+its a huge patchset and the tests are failing atm
+
+1532508977
+t5c
+but a simple hello world works
+
+1532530153
+MajorLag2
+andrewrk, that reminds me, any idea how we can get some kind of allocator working at comptime? Right now I embed assets using a two-stage process to convert them from BMP to raw data and then insert that with @embedFile, but I could skip a step if I could use an allocator at comptime. Even if it is just FixedBufferAllocator.
+
+1532533348
+andrewrk
+t5c, nice!
+
+1532533382
+andrewrk
+MajorLag1, what's stopping FixedBufferAllocator from working at comptime?
+
+1532533394
+andrewrk
+oh is it the alignment code?
+
+1532533751
+MajorLag1
+I don't recall, pointer casting? been a while since I tried.
+
+1532533768
+andrewrk
+I have an idea, let me try something
+
+1532534197
+MajorLag1
+so FBA specifically fails w/ @ptrToInt: `const addr = @ptrToInt(self.buffer.ptr) + self.end_index;` `error: cannot store runtime value in compile time variable`
+
+1532534234
+andrewrk
+yeah, I think it's the alignment code that chokes at comptime
+
+1532535083
+t5c
+andrewrk: right now I'm stuck at the assertion on line 423 in analyze.cpp. Can you tell me what it is about in general? or when it will trigger?
+
+1532535111
+t5c
+I don't really get when a type can become invalid...
+
+1532535118
+andrewrk
+t5c, sure thing. in addition, if you can trigger it with gdb I can show you what to do to map it back to soucre
+
+1532535224
+t5c
+i can run it with gdb --args $test here, no problem. any particular command that you recommend?
+
+1532535309
+andrewrk
+are you in an interactive shell where I can ask you to run commands? or would it take a long time to try stuff?
+
+1532535332
+t5c
+I got everythin on this machine where I'm typing from
+
+1532535348
+andrewrk
+go up one stack frame, now where are we?
+
+1532535377
+t5c
+from start: gdb --args bin/zig build --build-file ../build.zig test
+
+1532535378
+t5c
+right?
+
+1532535421
+andrewrk
+zig build is going to spawn zig in child processes, which might be the actual failure. if you run the command without gdb, after it asserts, it should print the command that it tried to run that ended up asserting
+
+1532535433
+andrewrk
+and that's what you would run gdb against
+
+1532535465
+t5c
+ok, running with that line
+
+1532535514
+t5c
+breakpoint at the function that will fail?
+
+1532535522
+andrewrk
+just let gdb hit the assert
+
+1532535530
+andrewrk
+then use `up` until you get to the assert, and then go up once more
+
+1532535573
+t5c
+ok,
+
+1532535593
+t5c
+ir.cpp line 18994
+
+1532535601
+andrewrk
+perfect, let me see...
+
+1532535628
+andrewrk
+I already think I know a fix, but let me show you something
+
+1532535685
+andrewrk
+(gdb) p instruction.base.source_node.owner.path[0]
+
+1532535692
+andrewrk
+(gdb) p instruction.base.source_node.line + 1
+
+1532535706
+andrewrk
+that will show you the file and line number that this was analyzing when it hit the assert
+
+1532535743
+t5c
+zig/src-self-hosted/main.zig line 549
+
+1532535902
+andrewrk
+t5c, let me give you a diff to try
+
+1532535938
+t5c
+it will call my openbsd functions, so the error could also be at my new code
+
+1532535948
+andrewrk
+
+
+1532535968
+andrewrk
+I didn't succeed in coming up with a test case, but this should fix it
+
+1532536001
+andrewrk
+an example of a type being invalid, is if one of the fields failed semantic analysis
+
+1532536025
+andrewrk
+const S = struct {a: i32, b: noreturn}; // if you use S somewhere it'll probably be "invalid" at some point during analysis
+
+1532536074
+andrewrk
+in summary, after adding a compile error, zig didn't handle the situation well enough to report the compile error without crashing
+
+1532536116
+t5c
+works so far. now I've got to fix stuff again :)
+
+1532536149
+t5c
+the diff is already 1000+ lines, that'll be fun to put on github
+
+1532536227
+andrewrk
+t5c, I think we need buildbot + openbsd worker to add openbsd support
+
+1532536242
+andrewrk
+if we support something, we absolutely must have CI tests running for that platform
+
+1532536642
+t5c
+andrewrk: makes sense, yes
+
+1532536983
+andrewrk
+amazing, @fieldParentPtr works at comptime
+
+1532536986
+andrewrk
+I think my idea might work
+
+1532537231
+andrewrk
+ah, the problem is going to be @bytesToSlice
+
+1532537591
+MajorLag1
+Well if you manage to get it working, I for one will appreciate it.
+
+1532538191
+winksaville
+andrewrk: I rebased "Add formatted printing of pointers" #1285" on to latest master and Travis CI passed but appveyor failed. Here is the end of the log file,
+
+1532538203
+winksaville
+What should I do next?
+
+1532538279
+winksaville
+Here's a link to the Appveyor build
+
+1532538359
+andrewrk
+winksaville, your code is working fine
+
+1532538385
+andrewrk
+if you remove the log statements I'll start the merging process
+
+1532538446
+winksaville
+Ok, will remove them. Do you want me to squash into a single commit or have 3 commits?
+
+1532538571
+andrewrk
+single is preferred
+
+1532538578
+winksaville
+k
+
+1532538826
+GitHub7
+zig/master 2257660 Andrew Kelley: fix assertion failure when some compile errors happen...
+
+1532538826
+GitHub7
+[zig] andrewrk pushed 1 new commit to master:
+
+1532539401
+andrewrk
+MajorLag1,
+
+1532539416
+andrewrk
+I didn't solve it, but it's certainly a use case that is in scope
+
+1532539417
+andrewrk
+some day
+
+1532540084
+winksaville
+andrewrk: I removed wink_log, rebased and squashed. The std.fmt tests passed locally. I'm now running the full test locally and the CI builds are grinding away.
+
+1532540121
+andrewrk
+winksaville, thanks! I'm looking at the code locally and I'm going to merge it
+
+1532540386
+winksaville
+SG
+
+1532540487
+winksaville
+gentle reminder for
+
+1532541876
+winksaville
+FYI: my local tests of #1285 completed successfully
+
+1532544229
+t5c
+andrewrk: is there a more verbose output option for bin/zig build --build-file ../build.zig test ? I fixed all openbsd quirks (as far as the compiler complains), but now its just exiting with error code 1.
+
+1532544483
+andrewrk
+t5c, hm. it's not supposed to do that. looks like you're on linux?
+
+1532544497
+andrewrk
+err, no you're building natively for openbsd?
+
+1532544582
+andrewrk
+if it exits with error code 1, it should print the command that it tried to run and exited uncleanly
+
+1532544623
+andrewrk
+otherwise it's the actual `zig build` that is doing that, and we should use gdb with a breakpoint on the exit function to see where it's incorrectly exiting from
+
+1532544708
+t5c
+no, I'm not cross building.
+
+1532544770
+t5c
+I'm working on OpenBSD. Will have a look with gdb
+
+1532544872
+t5c
+it also clears my screen. is that intentional?
+
+1532545027
+t5c
+it seems the  build is causing the problem, its happening even without the "test" at the end
+
+1532545083
+t5c
+any hint where I can set that breakpoint?
+
+1532545246
+andrewrk
+t5c, on the exit function
+
+1532545256
+andrewrk
+(gdb) break exit
+
+1532545280
+andrewrk
+there is no screen clearing code in any of zig, so I don't know why that would happen
+
+1532545360
+t5c
+link.cpp line 1039
+
+1532545446
+t5c
+also:  /usr/src/lib/libc/stdlib/exit.c: No such file or directory.
+
+1532545453
+t5c
+what ever that means...
+
+1532545455
+andrewrk
+what commit are you on? master branch link.cpp only has 1024 lines
+
+1532545475
+andrewrk
+that means gdb can't show source code for libc. that's fine
+
+1532545486
+t5c
+oh, sry. yesterday evening but I had to change code in there
+
+1532545509
+andrewrk
+anyway it looks like it's hitting the exit(1) inside the if(zig_lld_link(...)) right?
+
+1532545515
+t5c
+yes
+
+1532545517
+andrewrk
+so it should have printed something to stderr
+
+1532545528
+andrewrk
+see the line above
+
+1532545549
+andrewrk
+in gdb can you print the value of `diag`?
+
+1532545570
+andrewrk
+this is starting to look like an LLD bug
+
+1532545616
+t5c
+no I cant
+
+1532546006
+andrewrk
+t5c, can you try linking manually with LLD?
+
+1532546029
+andrewrk
+I'll give you a command, it will produce some .o files and tell you the link args
+
+1532546035
+andrewrk
+and then we'll call LLD directly with those args
+
+1532546042
+t5c
+sure
+
+1532546100
+andrewrk
+bin/zig build-exe ../std/special/build_runner.zig --pkg-begin @build ../build.zig --pkg-end --verbose-link
+
+1532546129
+andrewrk
+it should output something like: lld --gc-sections -m elf_x86_64 -o build_runner -dynamic-linker /nix/store/84h2zni7h805k0i1ys2bba3dsp1cqnhh-glibc-2.26-131/lib/ld-linux-x86-64.so.2 ./zig-cache/build_runner.o ./zig-cache/builtin.o ./zig-cache/compiler_rt.o
+
+1532546151
+andrewrk
+just run that verbatim (perhaps you need to specify a different path to LLD rather than `lld`)
+
+1532546152
+t5c
+yes it does
+
+1532546186
+andrewrk
+if LLD prints nothing and exits with an error code, then we've found an LLD bug
+
+1532546189
+t5c
+well, that worked
+
+1532546216
+andrewrk
+so you can run ./build_runner now?
+
+1532546225
+t5c
+it errors out though
+
+1532546228
+t5c
+but yes
+
+1532546273
+andrewrk
+I don't see how it's possible - the same logic in LLD that chooses an exit code is the logic that chooses whether that if statement in zig calls exit(1)
+
+1532546297
+andrewrk
+perhaps the LLD versions are different or there are openbsd patches
+
+1532546309
+t5c
+I bet there are patches
+
+1532546347
+andrewrk
+we should get those patches 1) upstreamed and 2) into zig's fork
+
+1532546354
+t5c
+
+
+1532546357
+t5c
+a lot of them
+
+1532546382
+t5c
+lld patches maybe enough though
+
+1532546480
+t5c
+ok, now that build runner is comiled I'd like to do the rest of the tests
+
+1532546502
+t5c
+lld is a problem I will just stamp as openbsd stuff for now
+
+1532546595
+MajorLag1
+well, I suppose one solution to this comptime allocation issue would be to take `var` instead of `std.mem.Allocator`, then I could pass an allocator or just something that provides the same functions. Of course that only works for my own code.
+
+1532546619
+MajorLag1
+But it is the solution you used for async<>.
+
+1532546647
+winksaville
+andrewrk: do not merge #1285 I found a bug:
+
+1532546661
+andrewrk
+MajorLag1, indeed. perhaps this is one of those things that would be addressed by interfaces
+
+1532546759
+MajorLag1
+I was just thinking that. As a comptime-interface/trait/whatever, it would support this sort of thing and you could still pass a runtime-interface struct if you wanted to determine the allocator at runtime.
+
+1532546820
+andrewrk
+let's make sure that we keep this use case in mind when working on the interface design proposals
+
+1532546825
+MajorLag1
+And if we start doing that as a standard implementation pattern in the std lib, might be worth having language-level features around it.
+
+1532546863
+MajorLag1
+I wonder... there still isn't a way to return `var` is there? Even as a type?
+
+1532546905
+andrewrk
+there's an issue open for that
+
+1532546939
+andrewrk
+
+
+1532547003
+MajorLag1
+IIRC there's an open issue for inferred return type, but is it possible to return `var` as a type? I'm not even sure that's necessary or useful, I jsut have a user-level trait implementation idea.
+
+1532547017
+winksaville
+Is it correct that a custom "format" routine in a struct could be an interface?
+
+1532547033
+andrewrk
+MajorLag1, var isn't a type, it's syntax that marks parameters/return type as being inferred
+
+1532547042
+MajorLag1
+right, that makes sense.
+
+1532547062
+andrewrk
+winksaville, I'm not sure how to interpret your question
+
+1532547176
+t5c
+andrewrk:
+
+1532547191
+winksaville
+In structs we can add a "format" routine that right now is "magically" handled in the std/fmt/index (where my bug is) and it would seem that magical code would be necessary if there were interfaces.
+
+1532547235
+MajorLag1
+winksaville: current implementation is such that if I can call `YoutType.format(...)` then it will work, so... yes? You could pass some kind of runtime-interface struct with a `format` fn to std.fmt.format, so like `warn("{}\n", my_type_instance.formatter);` should work... I think?
+
+1532547308
+andrewrk
+t5c, this looks like LLD not being able to link against libLLVM and libclang
+
+1532547310
+MajorLag1
+Which is actually pretty useful, come to think of it, if you want to do internationalization.
+
+1532547353
+andrewrk
+t5c, something to try: throw a `-lstdc++` on that build line at the bottom
+
+1532547379
+andrewrk
+sorry, `--library stdc++`
+
+1532547405
+MajorLag1
+As I recall i also had issues with silently failing llvm when I was missing --library c.
+
+1532547436
+andrewrk
+t5c, aha, look at this:
+
+1532547450
+andrewrk
+looks like we have OS-specific logic for adding stdc++ to the linker line
+
+1532547459
+andrewrk
+so we probably need openbsd logic here
+
+1532547491
+andrewrk
+I would try it manually first by modifying that build-exe line at the bottom of your paste, followed by getting it to work in build.zig
+
+1532547534
+t5c
+ha, I missed that completely. will try the line
+
+1532547550
+andrewrk
+you could try that linux logic, it might work
+
+1532547557
+andrewrk
+c++ -print-file-name=libstdc++.a
+
+1532547584
+t5c
+yep that works
+
+1532547594
+andrewrk
+brilliant. so we can modify build.zig to say "if linux or openbsd"
+
+1532547614
+andrewrk
+t5c, what did you do to get LLD to produce error messages when it wasn't before?
+
+1532547644
+andrewrk
+oh, it was printing a bunch of empty lines for no reason that tricked you into thinking it cleared the screen?
+
+1532547645
+t5c
+it did. just rewrote the output, because for some reason it clears my screen
+
+1532547648
+andrewrk
+I have no idea why it does that
+
+1532547652
+t5c
+yeah...
+
+1532547680
+andrewrk
+I hate it when the bug is in my dependency's code base
+
+1532547686
+andrewrk
+if it's my own bug I can just fix it
+
+1532547750
+andrewrk
+maybe zig should parse LLD output
+
+1532547756
+andrewrk
+and ignore blank lines
+
+1532548319
+t5c
+hm, it doesn't help. still the same errors
+
+1532548356
+t5c
+does it need a particular stdc++ version?
+
+1532548439
+andrewrk
+t5c, all of them the same? it didn't resolve any of them?
+
+1532548507
+andrewrk
+I think the "size mismatch, relink your program" is a problem between using the system linker to create zig_cpp.a and then trying to use it when linking with LLD
+
+1532548540
+t5c
+can I tell zig which linker to use?
+
+1532548547
+t5c
+oh well, I can tell cmake
+
+1532548553
+andrewrk
+oops, I mean system compiler, not system linker.
+
+1532548573
+andrewrk
+ok, so a workaround would be using clang - the same version as zig is linking against - to build stage1
+
+1532548613
+andrewrk
+and if that has linker errors, then we have to build libllvm and libclang from source using that same clang instead of the system compiler
+
+1532548631
+andrewrk
+does that make sense?
+
+1532548638
+t5c
+I have clang 6.0.0 and 6.0.1 in /usr/bin/clang and /usr/local/bin/clang
+
+1532548638
+andrewrk
+basically C++ compilers aren't compatible with each other
+
+1532548674
+t5c
+LLD 6.0.0
+
+1532548677
+andrewrk
+you're saying that clang
+
+1532548681
+t5c
+yes
+
+1532548685
+andrewrk
+hmmmm
+
+1532548686
+t5c
+on openbsd and freebsd it is
+
+1532548687
+andrewrk
+but patched
+
+1532548699
+andrewrk
+this is a conundrum
+
+1532548762
+andrewrk
+wait what is the difference between the /usr/local/bin and /usr/bin versions?
+
+1532548804
+andrewrk
+we need the same clang/llvm/lld to be used for everything, no mixing and matching
+
+1532548822
+t5c
+ok, by default its always the one on /usr/bin
+
+1532548876
+t5c
+and I can use lld which is also the same 6.0.0 version
+
+1532548912
+andrewrk
+zig has a fork of lld 6.0.0 that it builds
+
+1532549123
+ofelas
+zig SIGSEGV,
+
+1532549157
+t5c
+are there any changes in there
+
+1532549174
+t5c
+?
+
+1532549182
+andrewrk
+ofelas, I get "OK\nAll tests passed." in master branch
+
+1532549209
+andrewrk
+oh, sorry just read the "uncomment line"
+
+1532549221
+andrewrk
+got the SEGV
+
+1532549256
+ofelas
+good, then i'm not alone...
+
+1532549635
+hooo
+am I understanding this correctly that ziglang is purposefully considering any tab character to be a compiler error?
+
+1532549876
+hooo
+ok i found the issue:
+
+1532549893
+andrewrk
+hooo, if you'd like to discuss this, please do it here:
+
+1532549972
+andrewrk
+ofelas, I figured it out. it's a missing compile error
+
+1532549979
+andrewrk
+you have to use `inline for`
+
+1532550074
+ofelas
+yes, thanks, do you want an issue?
+
+1532550091
+andrewrk
+I'll take it from here
+
+1532550096
+andrewrk
+thanks
+
+1532550098
+ofelas
+great
+
+1532551418
+MajorLag1
+andrewrk, did a bunch of u# and i# types get added by default recently?
+
+1532552025
+andrewrk
+MajorLag1, I implemented this proposal:
+
+1532552129
+MajorLag1
+ah, ok. So @IntType shouldn't come up as often anymore. Hopefully I can get Npp's UDL to cooperate
+
+1532552173
+andrewrk
+ahh
+
+1532552191
+andrewrk
+I didn't update the vim syntax either
+
+1532552273
+hooo
+does anybody know how to define an anonymous struct? I try it here but no success:
+
+1532552284
+MajorLag1
+Would it be crazy to allow arbitrary float types too, I wonder? We already go so far as to have f16 and f128. Obviously many of them would be useless, or even meaningless like f1...
+
+1532552372
+andrewrk
+hooo, I highly recommend master branch rather than 0.2.0
+
+1532552387
+andrewrk
+at this point 0.2.0 is 847 commits behind
+
+1532552399
+andrewrk
+I think I might remove the Try It Online link until 0.3.0 is released
+
+1532552443
+andrewrk
+MajorLag1, the difference here is that LLVM recognizes f32, f64, f128, and a couple more, but not arbitrary ones, and LLVM recognizes all int types
+
+1532552487
+andrewrk
+plus, YAGNI
+
+1532552493
+MajorLag1
+true
+
+1532552516
+MajorLag1
+it scratches the part of my brain that likes symetry though.
+
+1532552531
+hooo
+I downloaded the master branch release build but it probably is broken because I noticed that it's still the same as the zip that I downloaded from july 12
+
+1532552663
+andrewrk
+hooo, anonymous structs work but aren't that useful because the struct literal syntax requires the struct name
+
+1532552683
+hooo
+this one:
+
+1532552713
+andrewrk
+here's a proposal that will make anonymous enums useful:
+
+1532552732
+andrewrk
+I don't think I wrote it up yet, but one can imagine the corresponding proposal for structs
+
+1532552804
+andrewrk
+here's the latest as of right now
+
+1532553008
+GitHub165
+[zig] andrewrk pushed 1 new commit to master:
+
+1532553009
+GitHub165
+zig/master 8419546 Andrew Kelley: add compile error for non-inline for loop on comptime type
+
+1532553502
+andrewrk
+ofelas, here's your issue fixed ^
+
+1532553514
+andrewrk
+we could potentially infer that the loop must be inlined
+
+1532553520
+andrewrk
+but i'll save that for another day
+
+1532553732
+ofelas
+cheers
+
+1532554911
+ofelas
+
+
+1532554949
+andrewrk
+wow. yep
+
+1532556961
+MajorLag1
+interesting note:`var x: u1024 = 0;`  is valid according to the compiler but LLVM complains. `LLVM ERROR: Unsupported library call operation!`
+
+1532556993
+MajorLag1
+well, it complains if you try to do things with it anyway, like print it.
+
+1532557018
+GitHub89
+[zig] andrewrk pushed 1 new commit to master:
+
+1532557018
+GitHub89
+zig/master fd575fe Andrew Kelley: add compile error for missing parameter name of generic function
+
+1532557020
+andrewrk
+ofelas, fixed ^
+
+1532557041
+andrewrk
+MajorLag1, yeah. I think this is a limitation of LLVM. it should generate a library call that we can implement. I'll send a code patch to LLVM at some point to implement this
+
+1532557235
+ofelas
+thanks, again
+
+1532558771
+MajorLag1
+darn. sadly, even if you use `var` to try and implement comptime allocation, weird things happen in any code called at comptime that tries to manipulate pointers and slices. For instance, I have a utility function to create a struct instance initialized to 0s in my BMP lib, which works fine at runtime and throws an "out of bounds slice" error at comptime. The struct it is initializing is identical in both cases.
+
+1532558881
+andrewrk
+are you doing &slice[0]?
+
+1532558885
+andrewrk
+try slice.ptr instead
+
+1532558918
+andrewrk
+&slice[0] asserts that there is a 0th element whereas slice.ptr does not
+
+1532561948
+MajorLag1
+I don't think so, but let me see what happens if I change it a bit.
+
+1532562933
+MajorLag1
+`return @ptrCast([*]u8, aligned)[0..@sizeOf(PtrType.Child)];` works fine at runtime, but at comptime the compiler seems to think that it can only slice as [0..1]
+
+1532562977
+andrewrk
+hmmm
+
+1532562982
+andrewrk
+this is starting to sound like a bug
+
+1532563003
+MajorLag1
+it is a single object, but that object is 152 bytes.
+
+1532563113
+MajorLag1
+I'll see if I can minimize it for a test case.
+

@@ -1,0 +1,1220 @@
+1528944237
+GitHub141
+[zig] andrewrk opened pull request #1109: allow passing by non-copying value (master...pass-by-non-copying-value)
+
+1528953311
+dbandstra
+why is there no u1 type?
+
+1528953744
+alexnask
+@dbandstra I thought there was.. You can do 'const u1 = @IntType(false, 1)' though
+
+1528953841
+alexnask
+Do < 8 bit types in a packed struct behave like bitfields btw? Haven't really tested out
+
+1528954177
+andrewrk
+alexnask, yes they do and bools are 1 bit in a packed struct
+
+1528954206
+andrewrk
+
+
+1528954208
+alexnask
+Rgiht, makes sense, much more elegant than having a language construct
+
+1528954288
+alexnask
+I'll work on some @typeInfo bug fixes and improvements
+
+1528954325
+alexnask
+I may take a stab at removing @typeId too
+
+1528954369
+andrewrk
+alexnask, I think we should treat generic functions differently than normal functions
+
+1528954380
+andrewrk
+people keep trying to look at the types of generic function args, and it doesn't make sense
+
+1528954395
+alexnask
+Right, I was pretty surprised at how zig treated them interanlly myself
+
+1528954397
+andrewrk
+I'm not sure we want to reveal the fn(var, var) -> var thing that the compiler uses internally
+
+1528954419
+alexnask
+Hmm
+
+1528954508
+alexnask
+We should still expose the arg types up until the first type erased arg right?
+
+1528954545
+andrewrk
+is there a reason to?
+
+1528954605
+alexnask
+One example I can think of is checking to see wether a method takes a *const Self (or Self now, I guess) first parameter
+
+1528954618
+andrewrk
+yeah alright. maybe status quo is not so bad
+
+1528954621
+alexnask
+If we give no arg type info at all for generic fucntions
+
+1528954631
+alexnask
+I mean, I do think it's an issue for sure
+
+1528954653
+alexnask
+I'm just not 100% on what the correct way to approach it is
+
+1528954685
+alexnask
+My original plan was to use a ?type field in the FnArg
+
+1528954710
+alexnask
+And null would mean we have no type information, aka this is a type erased argument
+
+1528954737
+alexnask
+(which is what I do but with @typeOf(undefined) atm)
+
+1528954818
+alexnask
+I think the surprise factor is that everything after the first generic argument is type erased
+
+1528954840
+alexnask
+Not so much that the generic argument itself has no type, I guess
+
+1528955061
+alexnask
+I think the sanest solution would be to change compiler internals to keep argument types and the return type if we know it and only type erase the generic arguments, but I do get this would be a huge amount of work
+
+1528955522
+andrewrk
+that would introduce the concept of testing if something compiles
+
+1528955557
+andrewrk
+it would make Pavel Vozenilek so very, very happy
+
+1528955574
+andrewrk
+I don't think it's a good idea
+
+1528955633
+andrewrk
+type expressions are evaluated with the previous args in scope, so after the first `var` we can't know the types anymore, by definition
+
+1528955758
+alexnask
+I don't get why this is the case, I guess I
+
+1528955765
+alexnask
+I'll have to dig in the source code*
+
+1528955856
+andrewrk
+so you can do @typeOf(prev_arg)
+
+1528956023
+alexnask
+Right, I get why we would evaluate type expressions with the previous args in scope
+
+1528956060
+alexnask
+But if we do get a generic argument followed by, say, a u8 argument, why would we be unable to resolve u8 when it does not depend on any previous argument?
+
+1528956234
+alexnask
+I guess this would require testing wether a type expression depends on the previous arguments which would be a bit of a mess
+
+1528956408
+andrewrk
+I guess we can support this if it makes sense
+
+1528956434
+andrewrk
+I don't know why zig users are so obsessed with metaprogramming :)
+
+1528956463
+alexnask
+Mmm that sweet sweet comptime just makes everyone wanna do it :P
+
+1528959613
+alexnask
+Did the way C include paths are inferred change? I'm getting some weird errors on cImports
+
+1528960801
+alexnask
+@andrewrk ?type still fails btw, optionals need a di_type atm.
+
+1528961897
+GitHub42
+[zig] alexnask opened pull request #1110: Enabled optional types of zero bit types with no LLVM DI type. (master...optional_type)
+
+1528962004
+alexnask
+Turns out this would probably have worked without pointer reform :P
+
+1528967742
+alexnask
+Turns out this would probably have worked without pointer reform :P
+
+1528967745
+alexnask
+woop
+
+1528968694
+very-mediocre
+The latest change with passing a struct as a function param seems a bit magical
+
+1528968717
+very-mediocre
+shouldn't it be explicit whether a copy or pointer is used?
+
+1528968797
+very-mediocre
+Say it quietly ends up being a pointer and the object gets modified elsewhere...
+
+1528969018
+very-mediocre
+If you're ok with that you'd make it a pointer, if you're not OK with it, you'd attempt to pass by value, so it seems a bit counterintuitive
+
+1528969021
+very-mediocre
+correct me if i'm wrong
+
+1528969340
+alexnask
+There isn't any way to pass aggregate types by value/copy, even know
+
+1528969351
+alexnask
+now*
+
+1528969424
+very-mediocre
+I'm aware but I'm saying: shouldn't there be?
+
+1528969453
+alexnask
+Well, you can explicitly copy your object then pass it in I guess
+
+1528969454
+very-mediocre
+because if you intentionally decide not to pass a pointer, and it ends up being a pointer anyway, that feels a bit magical
+
+1528969458
+alexnask
+I do agree it's a bit weird
+
+1528969626
+alexnask
+@very-mediocre I don't personally think it's too much magic, it's just another way of thinking about by-value arguments
+
+1528969651
+alexnask
+What you get is an immutable 'view' to the value
+
+1528969668
+alexnask
+Whatever way is faster (by copy for small structs, by reference for bigger ones)
+
+1528969715
+very-mediocre
+yeah i get it, just kind of mulling it over wrt. user experience (as a user of course, I don't want to create a peanut gallery dynamic)
+
+1528969746
+alexnask
+If you need to guarantee a copy is passed, it is still apparent at the call site instead of the func declaration
+
+1528969773
+alexnask
+I'm not 100% sold on it either, I guess we have to see how it plays out in real code
+
+1528969824
+alexnask
+I do think it's what you want to do 90% of the time though, think of all the const refs in C++ code
+
+1528969882
+very-mediocre
+true
+
+1528969887
+alexnask
+And the issue there is that you may have a small struct (say <= 64 bits) so you use by value semantics but if you add a couple of fields you then need to switch up to const refs everywhere
+
+1528970019
+alexnask
+(128 bits is probably more realistic but you get the idea)
+
+1528970026
+very-mediocre
+yeah
+
+1528970187
+alexnask
+The syntax will be confusing to people coming from C and C++ though (which will probably think we are all bad systems programmers since it appears we pass everything around by value :P)
+
+1528970955
+very-mediocre
+lol.
+
+1528971029
+very-mediocre
+I feel OCD about micromanaging this and passing pointers explicitly when needed
+
+1528971146
+very-mediocre
+maybe I'm not zen enough
+
+1528971195
+alexnask
+I can't think of any usecase where explicitely requiring a pointer is needed
+
+1528971224
+very-mediocre
+I know, it's just OCD
+
+1528971233
+alexnask
+Unless you need to forward the pointer and have it escape the function scope, but that would be a compiler error with escape analysis
+
+1528971241
+alexnask
+:p
+
+1528971261
+very-mediocre
+like if it's a large struct I feel I want to pass a pointer
+
+1528971267
+very-mediocre
+if I don't that feels wrong
+
+1528971270
+alexnask
+2998 commits, who will get the #3000
+
+1528971332
+alexnask
+I'm rooting for my PR :P
+
+1528971479
+alexnask
+Pretty excited for noalias by default though, will zig be the only language to beat Fortran in perf? :D
+
+1528971558
+very-mediocre
+everything about zig is exciting
+
+1528971565
+very-mediocre
+that's why i'm hanging out here :)
+
+1528971596
+very-mediocre
+I was waiting for something like zig for a while now
+
+1528971655
+very-mediocre
+in its current state you can already tell it's going to be a winner
+
+1528971656
+alexnask
+Are you mainly excited about the metaprogramming aspects or the "modern C" aspects?
+
+1528971666
+very-mediocre
+for me it's modern C"
+
+1528971673
+alexnask
+I think we should have a survey, seems like many metaprogramming junkies hang out in here :P
+
+1528971690
+very-mediocre
+but also getting as close as possible to Rust's safety by default
+
+1528971702
+very-mediocre
+without compromising usability
+
+1528971712
+very-mediocre
+that's something that C sorely needs
+
+1528971721
+alexnask
+Right, the only aspect that is kind of disappointing to me is the lack of some "automatic" memory/resource handling
+
+1528971734
+very-mediocre
+lack of GC is a big draw for me actually
+
+1528971751
+alexnask
+I dont necessarily mean GC, I do agree with that
+
+1528971755
+very-mediocre
+99% of modern languages use GC
+
+1528971755
+alexnask
+Like some kind of RAII
+
+1528971767
+very-mediocre
+yeah, actually I could go for a bit of OOP
+
+1528971773
+very-mediocre
+at the risk of sounding crazy
+
+1528971781
+very-mediocre
+just a biiiit more
+
+1528971818
+alexnask
+Pls no inheritance :p
+
+1528971849
+alexnask
+Most OO features can be implmented with some metaprogramming
+
+1528971849
+very-mediocre
+I know composition is superior
+
+1528971860
+alexnask
+This is an interface implementation, for example:
+
+1528971868
+very-mediocre
+But when I read std/io.zig something feels missing
+
+1528971911
+very-mediocre
+it's streams wrapping streams wrapping streams
+
+1528971950
+alexnask
+Right, I don't like the idiomatic interface model the standard library uses
+
+1528971957
+very-mediocre
+that compile time interface implementation is cool but I'm too nooby to grasp it at the moment, I've not gone into zig compile time in any depth yet
+
+1528971976
+very-mediocre
+It's doing composition instead of inheritance
+
+1528971980
+alexnask
+The test block is the important part ^^
+
+1528971994
+very-mediocre
+like iirc FileStream has a general IOStream as a property
+
+1528972059
+very-mediocre
+and iirc the `init` function maps the inner stream to the outer api
+
+1528972062
+alexnask
+Yes, this is the biggest weakness in my opinion too, the implementation type has to include the  interface type
+
+1528972114
+alexnask
+Instead of wrapping the implementation object + vtable pointer into the interface and writing the implementation types in complete isolation
+
+1528972118
+very-mediocre
+It almost feels like `goto` sometimes tracking down each inner "interface" property
+
+1528972122
+very-mediocre
+hard to read
+
+1528972140
+very-mediocre
+yeah, I've heard traits are on the table
+
+1528972149
+alexnask
+This was the main motivation behind my interface implementation
+
+1528972162
+alexnask
+(it's basically traits in userspace)
+
+1528972182
+very-mediocre
+yeah, looks good as a proof of concept
+
+1528972186
+alexnask
+I don't mind having them as a language feature but I do think its kind of a shamew
+
+1528972242
+alexnask
+The metaprogramming features are so strong you can basically write it in userspace, and that is more flexible imho (each library can use its own model while being compatible with types written in other libraries/by the user)
+
+1528972276
+very-mediocre
+Getting C++ wild west flashbacks
+
+1528972311
+very-mediocre
+I'm pretty sure this situation will improve in zig
+
+1528972316
+very-mediocre
+I don't think it's set in stone
+
+1528972326
+alexnask
+Right, we are really early in development
+
+1528972376
+very-mediocre
+
+
+1528972444
+very-mediocre
+re: metaprogramming - I have very mixed feelings about it
+
+1528972451
+very-mediocre
+at some point it degrades into the wild west
+
+1528972478
+very-mediocre
+not quite metaprogramming but a similar degradation = javascript ecosystem
+
+1528972498
+very-mediocre
+lots of hodge podge solutions
+
+1528972511
+very-mediocre
+every library uses a different convention
+
+1528972559
+very-mediocre
+I dread the idea of every zig library rolling its own OOP
+
+1528972670
+alexnask
+Hmm
+
+1528972690
+alexnask
+Right, I think there should be reasonable defaults provided in the standard library
+
+1528972756
+alexnask
+It's just a pet peeve of mine that language features should not be used when you can accomplish the same thing (or something reasonably close and useful) using the features already available
+
+1528972781
+very-mediocre
+well it's a balance
+
+1528972783
+alexnask
+Ofc this is subjective
+
+1528972812
+very-mediocre
+fortunately zig has a strong vision that will ignore the peanut gallery (=me) if needed
+
+1528972827
+very-mediocre
+i'm glad it's not designed by committee
+
+1528972876
+very-mediocre
+andrewrk has proven himself, the language is at 0.2.x and is already getting hyped
+
+1528972891
+alexnask
+I completely agree, andrewrk is doing a great job imho, if he just accepted every issue we would have a zig++ situation by now for sure :P
+
+1528972916
+very-mediocre
+It's good he doesn't feel bad about saying "no"
+
+1528973050
+very-mediocre
+If I discuss the language here my goal is just to provide unfiltered ideas
+
+1528973060
+alexnask
+Tbh the language feels pretty complete, we just need ergonomics imporvements
+
+1528973065
+very-mediocre
+I have no expectation that anything I say will be taken on board
+
+1528973083
+very-mediocre
+yeah
+
+1528973117
+alexnask
+And a couple of features like tuples (since varargs are going to be removed) and some sane closure/lambda system
+
+1528973165
+very-mediocre
+tuples feel loose to me
+
+1528973176
+very-mediocre
+feels like they break the type system
+
+1528973196
+very-mediocre
+var my_thing = function_that_can_return_2_types_of_tuples()
+
+1528973201
+very-mediocre
+what is my_thing's type?
+
+1528973215
+very-mediocre
+had a chat about that here the other day
+
+1528973240
+alexnask
+Well, this is an "issue" with any type, not just tuples right?
+
+1528973248
+alexnask
+If the function is generic, that is
+
+1528973253
+very-mediocre
+it's an issue with multiple return types
+
+1528973262
+very-mediocre
+oh at comptime it's not an issue
+
+1528973268
+very-mediocre
+since you have to provide T as a param
+
+1528973279
+very-mediocre
+the problem is tuples have runtime polymorphism
+
+1528973284
+alexnask
+Waat
+
+1528973302
+very-mediocre
+a generic function is called with T
+
+1528973303
+alexnask
+I thought the tuples would basically be record types/anonymous structs
+
+1528973307
+very-mediocre
+so you know it returns T
+
+1528973323
+very-mediocre
+polymorphism is the correct word but I think you took it in an OOP context
+
+1528973359
+very-mediocre
+consider: fn whatever(T: type): T
+
+1528973369
+alexnask
+Right
+
+1528973370
+very-mediocre
+var my_var = whatever(u8)
+
+1528973373
+very-mediocre
+you know my_var is u8
+
+1528973376
+alexnask
+Sure
+
+1528973396
+very-mediocre
+but if whatever returns a tuple
+
+1528973403
+very-mediocre
+maybe it has 2 fields, maybe 5
+
+1528973404
+very-mediocre
+who knows
+
+1528973421
+alexnask
+I don't think that's how the tuple proposal works
+
+1528973425
+very-mediocre
+var my_var = fn whatever() -> return tuple with unknown fields
+
+1528973442
+alexnask
+The tuple fields must be known at compile time
+
+1528973472
+very-mediocre
+sure but I read a comment that the same function could return several types of tuples
+
+1528973517
+alexnask
+That can only happen based on the comptime parameters you pass to the function
+
+1528973531
+very-mediocre
+great then
+
+1528973541
+alexnask
+fn foo(comptime a: var, comptime b: var) some_tuple_type(a, b) { ... }
+
+1528973541
+very-mediocre
+I thought this would be a runtime thing
+
+1528973561
+very-mediocre
+if it's just anonymous structs, then great
+
+1528973571
+alexnask
+No, I'm 90% sure they will just be record types
+
+1528973596
+very-mediocre
+how do you distinguish between that and an anonymous struct
+
+1528973606
+alexnask
+I dont even see how they could be runtime polymorphic without some kind of allocation and runtime type  representation
+
+1528973629
+alexnask
+I mean anonymous struct, idk if record type is correct in this context
+
+1528973631
+very-mediocre
+exactly, that's why I was going over it, but I think I got the wrong impression about the multiple return types
+
+1528973632
+alexnask
+:p
+
+1528973641
+very-mediocre
+that's why I was concerned about it
+
+1528973666
+very-mediocre
+like if that was the case, then if you did var some_var = whatever();
+
+1528973672
+very-mediocre
+the type of var would have to be "tuple"
+
+1528973674
+very-mediocre
+which is meaningless
+
+1528973688
+very-mediocre
+but you couldn't infer anything other than it's some random structure
+
+1528973696
+very-mediocre
+i'm glad I misunderstood that comment
+
+1528973700
+alexnask
+Right, I agree that would be horrible :P
+
+1528973788
+alexnask
+The current proposal is basically a way to get rid of varargs and give us some way to make anonymous structs
+
+1528973812
+alexnask
+Although we could keep varargs, fix them at comptime and write tuples in userspace (jk, jk)
+
+1528973846
+very-mediocre
+that's a relief
+
+1528973873
+very-mediocre
+we spent a longgg time talking about returning different kinds of tuples at runtime
+
+1528974069
+very-mediocre
+I thought I missed something, like "why is that on the table"
+
+1528974376
+lqd
+alexnask: I think what you're referring to as "rust traits" are "rust trait objects", the traits are the typeclasses, the trait objects are the "pointer to data and vtable"
+
+1528979939
+bheads__
+alexnask very-mediocre anderwrk, I really just want to use metaprogramming as a why to provide an interface/concepts/traits via duck typing.
+
+1528979970
+bheads__
+I would also like to use it for serializers as well
+
+1528980047
+bheads__
+but I am 100% to other solutions to these problems :)
+
+1528980058
+bheads__
+100% open to other***
+
+1528980486
+bheads__
+Things like streams and interators (ranges) and Allocators should be an interface.  Not digging the composition and function pointers.
+
+1528980557
+bheads__
+just my thoughts, beyond that I really like zig
+
+1528980799
+very-mediocre
+I agree that a lightweight layer of OOP improvements would be awesome
+
+1528980821
+very-mediocre
+whether it's interfaces or traits or something else, I don't know
+
+1528982520
+clownpriest
+is there any plan to introduce attribute tags?
+
+1528982558
+clownpriest
+for example, #[inline(always)] specifier for a function
+
+1528982574
+clownpriest
+so you can avoid doing @inlineCall() on each invocation
+
+1528983164
+Hejsil
+clownpriest, Tags are being discussed here
+
+1528983172
+clownpriest
+thanks!
+
+1528983196
+Hejsil
+Though, I don't think tags will inform the compiler on anything
+
+1528983206
+Hejsil
+So you inline tag would probably not make sense
+
+1528983242
+Hejsil
+These tags are strictly userlevel
+
+1528983255
+clownpriest
+gotcha
+
+1528983276
+Hejsil
+'inline' would probably be a call convention
+
+1528983290
+Hejsil
+I think i discussed something simular with andrew before
+
+1528983306
+Hejsil
+But! Is that even nessesary
+
+1528983323
+clownpriest
+what do you mean by call convention?
+
+1528983342
+Hejsil
+Like we have: extern fn a() void {}
+
+1528983350
+Hejsil
+We would have: inline fn a() void {}
+
+1528983353
+clownpriest
+ahh
+
+1528983358
+clownpriest
+cool
+
+1528983359
+Hejsil
+I think that was the idea
+
+1528983366
+Hejsil
+though I don't quite remember
+
+1528983372
+Hejsil
+Don't quote me!
+
+1528983390
+clownpriest
+wouldn't that risk bloating the keyword set?
+
+1528983413
+clownpriest
+there are a lot of calling conventions i could imaging tagging onto a function
+
+1528983425
+clownpriest
+which might not warrant a dedicated keyword
+
+1528983447
+Hejsil
+It was also discussed to have the syntax be: fn<builtin.CC.Extern> a() void {}
+
+1528983511
+clownpriest
+seems heavy
+
+1528983519
+Hejsil
+As for "always inline". I think the opinion is, that when someone can prove that this is actually necessary, then it'll be added
+
+1528983536
+clownpriest
+sounds good
+
+1528983545
+Hejsil
+Zig compiles differently from C, which allows for better inlining
+
+1528983651
+Hejsil
+Also
+
+1528983662
+Hejsil
+This would allow: fn<.Extern> a() void {}
+
+1528983670
+Hejsil
+Less heavy :)
+
+1528984086
+bheads__
+That is a good approach, cause someone cause and write a gcc based zig compiler and have other supported calling conventions
+
+1528984102
+bheads__
+someone could***  man I need more coffee
+
+1528984473
+clownpriest
+you know that feeling where you've had so much coffee that your heart's racing, but you're still completely sleepy and exhausted? feels like this is going to be one of those days for me
+
+1528984514
+clownpriest
+also, did andrewrk do a live coding stream this morning?
+
+1528984548
+bheads__
+dont think so, nothing on his twitter
+
+1528987706
+andrewrk
+very-mediocre,  > what is my_thing's type?
+
+1528987743
+andrewrk
+here's an example tuple type from the proposal:   tuple { i32, f32 }
+
+1528987787
+andrewrk
+it's essentially a struct with no field names.  tuples have comptime known length and types, and runtime known values, same as structs
+
+1528987832
+very-mediocre
+👍
+
+1528987836
+very-mediocre
+alexnask explained it to me earlier
+
+1528987878
+very-mediocre
+when we were talking about tuples a couple of days ago I was hung up on "how could this work" with the assumption it was at runtime, not comptime known
+
+1528987883
+very-mediocre
+very reassured with the actual proposal :)
+
+1528987983
+andrewrk
+clownpriest, we already have inline for functions and it guarantees inlining. we also have @inlineCall to guarantee inlining at a callsite and @noInlineCall to guarantee not inlining at a callsite
+
+1528988156
+bheads__
+you can inline at the impl side of a function?
+
+1528988178
+andrewrk
+yes
+
+1528988188
+bheads__
+nice, guess its just missing in docs
+
+1528988242
+bheads__
+ah found it "FnDef = option("inline" | "export") FnProto Block"
+
+1528988261
+GitHub75
+[zig] andrewrk pushed 1 new commit to master:
+
+1528988261
+GitHub75
+zig/master 4ec09ac Alexandros Naskos: Enabled optional types of zero bit types with no LLVM DI type. (#1110)...
+
+1528988265
+GitHub194
+[zig] andrewrk closed pull request #1110: Enabled optional types of zero bit types with no LLVM DI type. (master...optional_type)
+
+1528988394
+GitHub59
+[zig] andrewrk closed pull request #1105: Add i128 compiler-rt div/mul support (master...i128-compiler-rt)
+
+1528988395
+GitHub30
+zig/master 2219cc0 Andrew Kelley: Merge pull request #1105 from ziglang/i128-compiler-rt...
+
+1528988395
+GitHub30
+[zig] andrewrk pushed 1 new commit to master:
+
+1528988415
+andrewrk
+bheads__, I should probably documented it somewhere in addition to the grammar rules :)
+
+1528988437
+bheads__
+true, but it is in the docs :)
+
+1528996471
+andrewrk
+oh wow. somebody did work on the mach-o linker in lld trunk
+
+1528996953
+pianofingers
+This might be jumping the gun by a few years, but has there been any discussion on eventually supporting the language server protocol?
+
+1528996985
+pianofingers
+btw I'm extremely pleased to hear about guaranteed inlined functions!
+
+1528997321
+dbandstra2
+alexnask: can you update your interface.zig gist to the latest zig syntax? i'm not familiar with all the changes that happened in the last month. i'd like to check your thing out
+
+1528997356
+andrewrk
+pianofingers,
+
+1529002965
+alexnask
+@dbandstra2 Sure, I'll go ahead and update it and add zero bit implementation support too
+
+1529005165
+alexnask
+unreachable: /mnt/c/dev/zig/src/analyze.cpp:can_mutate_comptime_var_state:4780
+
+1529005167
+alexnask
+fun times :P
+
+1529006074
+MajorLag1
+Am I the only one that feels like a dangling `@tag()`, regardless of pre/postfix, looks strange and un-ziglike? All the other builtin functions look and act like functions, so I feel like `@tag()` should too.
+
+1529006310
+Hejsil
+MajorLag1, agreed. It's not really in the style of the other builtins
+
+1529006850
+alexnask
+@<struct literal> could be an alternative, like @{ .attr=value() }
+
+1529007424
+GitHub73
+[zig] andrewrk pushed 1 new commit to master:
+
+1529007424
+GitHub73
+zig/master 6943cef Andrew Kelley: std.os.path.dirname: return null instead of empty slice...
+
+1529008324
+andrewrk
+I can't even troubleshoot the build failure on my windows laptop because it's rebooting to install updates again
+
+1529008596
+GitHub33
+[zig] andrewrk pushed 1 new commit to master:
+
+1529008596
+GitHub33
+zig/master cdf1e36 Andrew Kelley: fix build on windows, broken by previous commit
+
+1529008884
+MajorLag1
+I still prefer my way (naturally), where it is part of the type: `field: @tag(T, Whatever),`. Though that raises issues about casting and inferrence I suppose.
+
+1529008939
+MajorLag1
+but it also lets you reuse a set of tags over a lot of fields.
+
+1529009144
+MajorLag1
+hmm... actually, I can make that work right now with a comptime generated struct, but the field won't implicitly cast to the base type so accessing it gets a bit getter/setter-y.
+
+1529009163
+MajorLag1
+Yet another way to implement tag functionality in userspace though.
+
+1529009289
+MajorLag1
+andrewrk, are null terminated pointers on the short list? I'm trying to determine if I should pause my current projects and catch up with the language changes or wait until that's in.
+
+1529009377
+bheads_
+MajorLag1, that could be solved with "use" in a struct that brings a field in scope, ie: struct { wrapped_thing: T, use wrapped_thing; ... };
+
+1529009547
+andrewrk
+MajorLag1, the non-bugs are roughly sorted here:
+
+1529010333
+MajorLag1
+When I first read that 'remove explicit casting' proposal I had a pretty negative reaction to it, but it's grown on me. Could we also use it to specify behavior like `var x = @intClamp(u8, some_u16)`? Saves some code in a relatively common case without being harder to read.
+
+1529010443
+andrewrk
+that sounds like @truncate
+
+1529010470
+andrewrk
+I don't understand your question - what's the proposed change?
+
+1529010518
+andrewrk
+so the idea of that proposal is that you wouldn't be able to do u8(some_u16) - you would have to use either @truncate or @intShorten
+
+1529011796
+GitHub76
+[zig] bnoordhuis opened pull request #1112: add cross compilation regression test (master...wasm-smoke-test)
+
+1529013161
+MajorLag1
+andrewrk, you're right, it is @truncate, I wasn't thinking it through.
+
+1529013192
+MajorLag1
+No wait, @truncate always truncates the significant bits.
+
+1529013379
+MajorLag1
+So @truncate(u8, u16(0xFF00)) == 0x00, but my thought with @intClamp was that @intClamp(u8, u16(0xFF00)) == 0xFF and @intClamp(i8(-1)) == 0x00. But really, if that sort of thing happens a lot it should probably be done in an inline fn, so nevermind.
+
+1529013430
+andrewrk
+I think that would be @truncate(u8, value >> 8)
+
+1529013444
+andrewrk
+potentially wrapped in a userland function
+
+1529013459
+MajorLag1
+yeah, that works
+
+1529013474
+MajorLag1
+point is, I wasn't thinking it through.
+
+1529013879
+alexnask
+@dbandstra2
+
+1529013887
+alexnask
+This is the updated interface gist
+
+1529013919
+alexnask
+With extra zero bit implementation type support and using a 'SelfType' type instead of 'usize' in the vtable declaration
+
+1529013949
+alexnask
+And a non owning storage policy
+
+1529014400
+GitHub179
+[zig] andrewrk pushed 1 new commit to master:
+
+1529014400
+GitHub179
+zig/master f0697c2 Andrew Kelley: langref: docs for error return traces...
+
+1529014468
+andrewrk
+error return trace docs up:
+

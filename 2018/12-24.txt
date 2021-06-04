@@ -1,0 +1,396 @@
+1545615234
+daurnimator
+has anyone looked into compiling zig to eBPF?
+
+1545615249
+daurnimator
+I saw it in the support table
+
+1545615258
+daurnimator
+so not sure how used it is
+
+1545615312
+daurnimator
+And theres a related question: is it possible to get compiled output from a zig program itself?
+
+1545615378
+daurnimator
+e.g. Could you implement: const bpf = @compile("bpf", somefunction);
+
+1545615753
+knebulae
+andrewrk: any thoughts or comments here:
+
+1545615853
+andrewrk
+knebulae, std.mem.len(u8, ptr) or std.cstr.len(ptr)
+
+1545615858
+daurnimator
+knebulae: why do you have a []T vs a [*]T anyway?
+
+1545615872
+daurnimator
+(at comptime, why would you not know the length?)
+
+1545615887
+knebulae
+andrewrk: almost forgot ->
+
+1545615916
+andrewrk
+your ToWChar input param would probably be a comptime utf8: []const u8
+
+1545615935
+andrewrk
+I recommend u16 instead of c_ushort in this case
+
+1545615937
+knebulae
+that was the idea
+
+1545615971
+andrewrk
+but you have [*], not []
+
+1545615986
+andrewrk
+if you did my thing you could just do `instr.len`
+
+1545615992
+knebulae
+right
+
+1545615998
+knebulae
+but then I get complaints
+
+1545616009
+andrewrk
+what complaints?
+
+1545616011
+daurnimator
+from who?
+
+1545616012
+knebulae
+found [16]u8, expected []u8
+
+1545616018
+andrewrk
+you need []const u8
+
+1545616037
+knebulae
+ok
+
+1545616051
+andrewrk
+right now arrays are allowed to cast to const slices. the rules are planned to get updated after
+
+1545616061
+knebulae
+I'm trying to write c in zig.  Not a good idea.
+
+1545616084
+andrewrk
+I mean, it'll work, but your footguns will be showing
+
+1545616137
+andrewrk
+also don't you want to actually decode the utf8 and re-encode it to utf16le? we have functions for that
+
+1545616187
+andrewrk
+and then one more thing. we don't have this yet:
+
+1545616208
+knebulae
+I suppose ultimately that was the goal.  Right now, I just need a way to dump values here and there.
+
+1545616209
+andrewrk
+so here's the workaround. put your data that you're going to return, inside a struct, as a global variable
+
+1545616233
+andrewrk
+right now your data is `outstr` which ends up being stack memory
+
+1545616250
+knebulae
+right.  best to allocate in .bss.
+
+1545616264
+knebulae
+or .text
+
+1545616265
+andrewrk
+workaround: const S = struct { var outstr = ...; }; then reference S.outstr
+
+1545616300
+andrewrk
+you'll get a unique outstr per instantiation of the ToWChar function, which will be different for every value of instr
+
+1545616328
+andrewrk
+a little wasteful of compiler resources, but that'll get improved in future versions of zig
+
+1545616341
+knebulae
+gotcha
+
+1545616391
+andrewrk
+you do have the option to explicitly specify the link section, if you find that to be necessary, but I suspect the default will be fine
+
+1545621281
+daurnimator
+andrewrk: will you be working on zig over christmas?
+
+1545621314
+andrewrk
+I'm spending christmas day with my significant other, but other than that I'm planning on getting some work done
+
+1545621432
+daurnimator
+k :)
+
+1545621460
+daurnimator
+andrewrk: thoughts on import scoping suggestion above?
+
+1545621496
+andrewrk
+daurnimator, ohh! I didn't understand your question at first.
+
+1545621510
+andrewrk
+I did something similar here:
+
+1545621516
+andrewrk
+here I use a build.zig script
+
+1545621521
+andrewrk
+combined with @embedFile
+
+1545621556
+andrewrk
+I had to force zig to look at the bytes at runtime, however, due to missing comptime features, but I did make some progress on that in 218a4d4b30f32
+
+1545621615
+andrewrk
+invoking the compiler automatically to create artifacts is an interesting idea, which I would be open to considering in a proposal
+
+1545621928
+andrewrk
+knebulae, thanks for making the PR!
+
+1545621960
+knebulae
+Dude, this shouldn't be such a PITA.  Lol.
+
+1545622012
+knebulae
+My git workflow zen is poor.  Very poor.
+
+1545622052
+daurnimator
+andrewrk: oh you're responding to my bpf question above. I meant my import question from a couple of days ago
+
+1545622322
+daurnimator
+made an issue for the invoke-other-target though. (#1856)
+
+1545622381
+andrewrk
+daurnimator, I'm sorry for missing your question on IRC. can you make an issue for that too?
+
+1545622399
+daurnimator
+andrewrk: it's not well formed enough in my head to be an issue yet I think
+
+1545622407
+andrewrk
+can you repeat the question?
+
+1545622459
+daurnimator
+andrewrk: the idea is that when you @import() a file,
+
+1545622472
+daurnimator
+and that extern does
+
+1545622509
+andrewrk
+extern? the C calling convention?
+
+1545622515
+andrewrk
+isn't that what pub does?
+
+1545622521
+daurnimator
+uh yeah pub
+
+1545622558
+daurnimator
+maybe I misunderstand things.... at the moment zig code ends up full of `_ = @import("foo")` which gets exports of the foo module into your program
+
+1545622634
+andrewrk
+can you describe the use case you're trying to improve?
+
+1545622692
+daurnimator
+2018-12-20 00:15:52     andrewrk        the current workaround is: comptime { _ = @import("X.zig"); }
+
+1545622739
+andrewrk
+I understand that is relevant, but it's a useful exercise for both of us if you describe the use case explicitly
+
+1545622758
+daurnimator
+2018-12-20 00:15:04     unique_id       Let's say that I'm creating a library. I point build.zig to src/index.zig. index.zig has "pub const X = @import("X.zig")". Inside X.zig there's an exported function (pub export fn foo() void {}). However, because the symbol X inside index.zig is never used, then X.zig is never visited, and foo never makes it into the library.
+
+1545622930
+daurnimator
+I'm thinking of some sort of syntax like `pub @import("X.zig").*` which re-exports all the fields of the import
+
+1545622961
+daurnimator
+I have an assumption here that any `pub` functions in the entry point end up as symbols in the build artifact.
+
+1545623560
+daurnimator
+^ any and only
+
+1545625813
+unique_id
+daurnimator: "which re-exports all the fields of the import " - as in 'pub use @import("file.zig")' ?
+
+1545654438
+knebulae
+If anyone has any thoughts on why this comptime is not working, I'm all ears:
+
+1545654589
+knebulae
+and for andrewrk, the compiler throws an error with []u16, because it is expecting []c_ushort.  They should be interchangeable.
+
+1545657926
+knebulae
+this specifically is driving me up a wall, I just don't understand semantically what it wants: error: expected type '?[*]const c_ushort', found '*[]const c_ushort'
+
+1545658101
+knebulae
+btw my footgun loaded c-in-zig code worked :/
+
+1545659591
+unique_id
+knebulae: "?[*]const c_ushort" is a maybe null pointer to an unknown number of c shorts. "*[]const c_ushort" is a pointer to a slice, which is basically a struct that stores a pointer and a length
+
+1545659613
+unique_id
+Very, very different types
+
+1545659686
+mgxm
+andrewrk: All tests passed
+
+1545660064
+unique_id
+knebulae: If ?[*]const c_ushort came from automatic translation of a C header, then it was picked to be conservative, maybe it should instead be "*const c_ushort". or "?*const c_ushort". This use case of using imported c headers will be improved in the future as I understand it.
+
+1545660091
+unique_id
+Right now you'll have to do casting
+
+1545660156
+unique_id
+Or use zig translate-c and fix the header yourself
+
+1545662242
+knebulae
+unique_id: thank you very much, and it was the concept of slices that I wasn't taking into account (although I am not unfamiliar with the concept), coupled with the, as you said, conservative c header translation.
+
+1545678233
+andrewrk
+mgxm, amazing
+
+1545678366
+andrewrk
+mgxm, PR in its current state would be great, and/or then the next step will be adding freebsd to the test matrix here:
+
+1545679330
+andrewrk
+knebulae, your PR overall looks good. there are some minor tweaks I'd like to make. Would you prefer feedback that you implement yourself, or for me to just fix it up real quick in a branch before merging? I'm happy to do either
+
+1545679785
+knebulae
+I'd just say let you fix it up.  Then I can see kind of what you envision.  Then my next PR will be better.  And sorry for making the PR muddy.  I actually had git problems and had to hand copy my changes over that resulted in a few mistakes.  I have my workflow down now.
+
+1545679807
+andrewrk
+great! thanks for taking the time to submit a patch
+
+1545680148
+andrewrk
+knebulae, a couple questions for you:
+
+1545681810
+andrewrk
+knebulae, I did some reading of gnu efilib - I think there are some extern things that are the actual interface with the UEFI system
+
+1545681849
+andrewrk
+I think the gnu efi lib and the edk-II are both calling the same extern functions and using the same extern variables under the hood
+
+1545682112
+andrewrk
+anyway I think this is a good start, and i'm going to merge your patch
+
+1545682145
+andrewrk
+there is a lot of potential here for the zig standard library to provide the EFI lib, eliminating a dependency on the  gnu one or the intel one
+
+1545682201
+andrewrk
+it's really not that much code
+
+1545682997
+knebulae
+andrewrk: agreed
+
+1545683078
+knebulae
+andrewrk: the only thing that would have been a show stopper at the end of the day would have been the insistence on including libc with imported c code.
+
+1545683337
+andrewrk
+copy elision update: starting to pass behavioral tests. 379 lines of behavior tests are now passing, 8145 lines to go
+
+1545683360
+andrewrk
+(probably more are passing but I'm traversing linearally and fixing issues as they come up)
+
+1545688907
+andrewrk
+504 done, 8015 to go
+
+1545690139
+wilsonk
+I assume that means tests?
+
+1545690150
+wilsonk
+for the copy-elision stuff?
+
+1545690333
+andrewrk
+lines of test code, yeah
+

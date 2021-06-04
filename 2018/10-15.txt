@@ -1,0 +1,644 @@
+1539561669
+wirelyre
+and I guess LTO would be handled by producing a single artifact from all Zig code
+
+1539561689
+wirelyre
+man, writing a linker is hard
+
+1539564298
+andrewrk
+daurnimator, c pointers are represented as optional pointers, with the optional syntax
+
+1539564330
+andrewrk
+
+
+1539564370
+andrewrk
+daurnimator, there's no concept of "truthyness". the only thing allowed in if conditions is boolean values, which can be either true or false
+
+1539564387
+andrewrk
+so I guess you could say, truthyness is defined like this: true is true, and false is false
+
+1539564455
+daurnimator
+andrewrk: okay, so `if (thing_that_returns_null())` is a compile error?
+
+1539564500
+andrewrk
+
+
+1539564524
+andrewrk
+if there's a |x| payload in the then body, it's different syntactically, and it expects an optional value
+
+1539564541
+andrewrk
+likewile if there's an |e| payload in the else body, it's different syntactically, and it expects an error union value
+
+1539564550
+andrewrk
+*likewise.
+
+1539564560
+andrewrk
+same goes for while
+
+1539564623
+jfondren
+the classic = vs. == bug is also defeated by assignment evaluating to void
+
+1539564679
+daurnimator
+okay, thanks
+
+1539564685
+andrewrk
+right. more generally, it's intentionally difficult for typos to be syntactically & semantically meaningful
+
+1539564699
+daurnimator
+new question: how does zig work with setjmp/longjmp? does it rely on unwinding?
+
+1539564715
+andrewrk
+it works the same way C does
+
+1539564739
+andrewrk
+and it's recommended to not use setjmp/longjmp
+
+1539564742
+daurnimator
+and interoperates with C happily?
+
+1539564771
+daurnimator
+e.g. can I have a stack that does: C (setjmp) -> Zig -> C (longjmp)
+
+1539564792
+andrewrk
+yes, but why would you do that?
+
+1539564805
+daurnimator
+andrewrk: e.g. writing a postgres extension, or a lua library.
+
+1539564837
+andrewrk
+sounds like a recipe for lots of annoying bugs
+
+1539564919
+daurnimator
+It's the nicest way to handle errors I've ever seen for C :P I write quite a few Lua libraries. Would be a bit of a deal breaker if I couldn't write them with Zig. See
+
+1539565000
+daurnimator
+andrewrk: I would have guessed from the presence of zig's `defer` that I would need to annotate a potentially longjmp-ing call with something?
+
+1539565008
+andrewrk
+yeah I mean if the API you're using requires it, I suppose you're stuck using it
+
+1539565070
+andrewrk
+you expect longjmp to execute defers if it gets triggered in C code?
+
+1539565116
+andrewrk
+defer just makes the expression get evaluated on scope exit. long jump side-steps scope exit, so it skips defers
+
+1539565135
+andrewrk
+you can't use defer if longjmp is going to cause control flow to exit scope
+
+1539565264
+daurnimator
+andrewrk: that was my thought! hence the original question: "does it (zig) rely on unwinding?"
+
+1539565289
+daurnimator
+is the answer "only in the presense of 'defer'"?
+
+1539565315
+daurnimator
+does any other syntax/etc rely on it? or implicitly use defer?
+
+1539565324
+andrewrk
+no zig does not rely on unwinding. defer just generates the expression on scope exit
+
+1539565418
+daurnimator
+andrewrk: I'd sort of expect some sort of function annotation to say "this function may longjmp". and then the compiler would warn if that flag it not propagated for all functions in the stack. and it would warn/error if you used 'defer' inside of one of those functions
+
+1539565447
+andrewrk
+that sounds like a reasonable annotation to add
+
+1539565456
+daurnimator
+andrewrk: uh, to me 'scope exit'
+
+1539570158
+andrewrk
+daurnimator, what's the issue?
+
+1539570170
+andrewrk
+the annotation feature?
+
+1539570175
+daurnimator
+andrewrk: feature request for may-longjmp annotation
+
+1539570175
+andrewrk
+yes, go for it
+
+1539570650
+daurnimator
+
+
+1539571402
+andrewrk
+thanks
+
+1539572237
+joebobjoe
+"(Of course, even in Zig foo() could deadlock and prevent bar() from being called, but that can happen in any Turing-complete language.)" <- doesn't the language have to support parallelism to deadlock?
+
+1539572246
+joebobjoe
+how can
+
+1539573218
+andrewrk
+joebobjoe, while (true) {}
+
+1539573954
+joebobjoe
+andrewrk, oh, I thought deadlock meant contention of shared resources
+
+1539574032
+geemili
+New here, is there a stdlib function that compares the contents of two ArrayLists?
+
+1539574062
+geemili
+Or, is there a way to compare two structs with `==`?
+
+1539615827
+halosghost
+is there any plan for zig to offer saturation-on-overflow rather than {w,t}rap-on-overflow?
+
+1539615841
+andrewrk
+only in the std lib
+
+1539615847
+halosghost
+mm
+
+1539615865
+halosghost
+and, presumably, promotion-on-overflow is not planned?
+
+1539615890
+andrewrk
+how does that work?
+
+1539615932
+halosghost
+for example, if the result of adding two 32 bit integers would overflow 32 bits, both are promoted to 64 bits and then the calculation is completed, returning the correct answer
+
+1539615959
+halosghost
+noting that different operators would require different widths to guarantee the proper result being possible
+
+1539615981
+halosghost
+and that with arbitrarily-sized, fixed-width integers, keeping yourself bound to powers-of-two is not necessary
+
+1539616011
+andrewrk
+that will probably be in the std lib too
+
+1539616016
+halosghost
+interesting
+
+1539616022
+andrewrk
+you don't need to promote all the way to 64 bits for addition
+
+1539616024
+andrewrk
+only 1 bit
+
+1539616029
+halosghost
+andrewrk: that's true
+
+1539616035
+andrewrk
+u32 + u32 can be safely stored in a u33
+
+1539616046
+halosghost
+andrewrk: except in the worst case, promoting only 1 bit could allow for another promotion being needed on the next addition
+
+1539616047
+andrewrk
+which can implicitly cast to a u64
+
+1539616053
+halosghost
+true
+
+1539616069
+andrewrk
+there's no difference to the processor, just to the optimizer / type safety
+
+1539616097
+halosghost
+I guess what I'm getting at is that, if other overflow-resolution strategies are implemented, having separate operators for each strategy is going to become frustrating
+
+1539616133
+halosghost
+knowing zig, I might suggest an @function that can set the overflow strategy
+
+1539616139
+halosghost
+(per-scope)
+
+1539616144
+andrewrk
+I don't think you're describing a realistic problem
+
+1539616155
+andrewrk
+let's talk about it when you're actually hitting this problem in a project
+
+1539616160
+halosghost
+hehe
+
+1539616162
+halosghost
+fair enough
+
+1539616178
+halosghost
+can you point me to how to do saturating arithmetic in the std lib?
+
+1539616201
+andrewrk
+I don't think we have any implementations currently. it's a short & fun exercise to write the functions yourself
+
+1539616206
+halosghost
+ahh, I see
+
+1539616543
+halosghost
+fernuff
+
+1539616749
+halosghost
+(having flexible, per-scope overflow strategies has been something I've wanted in C for a long time; sorry if it came across as bikeshedding)
+
+1539620743
+jfondren
+what type would a+b have, when a and b are i32 and + allows promotion on overflow?
+
+1539620892
+halosghost
+iirc, overflow on addition can safely be represented in a one-bit wider type
+
+1539620896
+halosghost
+so, i33
+
+1539620948
+jfondren
+so every single addition with overflow will add a bit to the type?
+
+1539620983
+halosghost
+oh
+
+1539620986
+halosghost
+I see what you mean
+
+1539620989
+halosghost
+mm
+
+1539620994
+halosghost
+not clear
+
+1539620996
+halosghost
+it might not have to
+
+1539621005
+halosghost
+it might be able to only return the promoted type when overflow actually occurs
+
+1539621010
+halosghost
+which would, of course, be the preference
+
+1539621039
+jfondren
+so i32!i33
+
+1539621193
+halosghost
+I suppose
+
+1539621201
+andrewrk
+you can't do `x += 1` if you want promotion on overflow
+
+1539621211
+jfondren
+I imagine you'd do some math, end up with an i32!i33!i34!i35!i36 , and then pause to handle any overflow, and continue on with a single type
+
+1539621222
+andrewrk
+jfondren, what is this syntax?
+
+1539621250
+andrewrk
+I'm considering renaming comptime_int to be just `int` and allowing it to have runtime values in this way
+
+1539621271
+jfondren
+I'm thinking of the error!i32 syntax.
+
+1539621278
+andrewrk
+but i32 is not an error
+
+1539621315
+halosghost
+similarly, overflow on multiplication can be safely represented in bits * 2
+
+1539621324
+andrewrk
+anyway the compiler would keep track of the min/max values of each int. and then you could implicitly cast the int to a fixed width int if it fits. or you might have to use @intCast, or std.math.cast
+
+1539621336
+halosghost
+so, i32* would return an i32 or an i64 on overflow
+
+1539621370
+andrewrk
+it can't have a different type depending on the runtime value of the multiplication
+
+1539621373
+andrewrk
+types are all comptime known
+
+1539621391
+halosghost
+mmm
+
+1539621393
+halosghost
+fair enough
+
+1539621402
+halosghost
+in that case, it would have to promote ahead of time
+
+1539621426
+halosghost
+which is less than ideal
+
+1539621435
+halosghost
+incidentally, part of this idea comes from the Mill processor
+
+1539621465
+halosghost
+which supports promotion-on-overflow arithmetic instructions
+
+1539627246
+andrewrk
+Hejsil, nice work
+
+1539627296
+Hejsil
+Now I'm thinking about the best course of action for tuples
+
+1539627432
+andrewrk
+I'm stuck in my implementation of #1652 :(
+
+1539627439
+andrewrk
+not happy with the code so far, I think I have to start over
+
+1539627494
+andrewrk
+I hate it when your yak won't sit still while you try to shave it
+
+1539627540
+halosghost
+lol
+
+1539627602
+andrewrk
+Hejsil, my suggestion would be to add tuples first, get tests passing, and only then try to remove var args
+
+1539627621
+Hejsil
+Agree, that seems like a good idea
+
+1539627630
+andrewrk
+tuples relate to my work in #1652
+
+1539627656
+andrewrk
+it will make tuple initialization and parameter passing never require a memcpy
+
+1539627678
+halosghost
+ooh
+
+1539627679
+Hejsil
+Right now, tuples + anonymouse initializers (#683 and #685) seems like the way to go, but Im still not 100% on it yet
+
+1539627719
+andrewrk
+and if we have syntax such as:  `var a, var b = tuple_init_syntax` it will never even construct a tuple; it would just directly initialize a and b even though it used a tuple
+
+1539627810
+Hejsil
+Right now, I'm woundering how @inlineCall and the likes will work with tuples
+
+1539627812
+andrewrk
+also with #1652 once it's done, and we have anonymous initializers, we will probably remove non-anonymous initialization syntax
+
+1539627826
+andrewrk
+@inlineCall will accept exactly 2 args. the function reference, and a tuple of args
+
+1539627849
+andrewrk
+also introduce @call which is a normal call that takes the same 2 args
+
+1539627853
+Hejsil
+But what about `fn a(comptime b: type) void`
+
+1539627874
+Hejsil
+You can't have comptime values in structs that are runtime known
+
+1539627880
+andrewrk
+I see what you are thinking about
+
+1539627939
+andrewrk
+a tuple literal can have mixed comptime/ non comptime values
+
+1539627991
+Hejsil
+Hmm. Well i guess that could make sense
+
+1539628032
+Hejsil
+I was also woundering if something like `fn a(b: u8, c: []const u8) void ... a(.{.b = 2, .c = ""});`
+
+1539628036
+andrewrk
+it's not clear in my mind yet how exactly to do this either
+
+1539628039
+Hejsil
+would be interesting
+
+1539628069
+Hejsil
+Aka, an anonymus struct literal could be passed as agrument to a function, if the names and types match
+
+1539628070
+andrewrk
+yes this anonymous struct literal is related to tuples
+
+1539628077
+andrewrk
+ah I see
+
+1539628080
+andrewrk
+I like the idea
+
+1539628139
+Hejsil
+I wonna discuss this with the peoples of Zig, but idk if I should make a new issue (anonymous literals) that covers everything, or post on (#683 and #685)
+
+1539628152
+andrewrk
+up to you
+
+1539628160
+andrewrk
+eventually we'll get something nailed down and close all the issues
+
+1539628205
+andrewrk
+I really need to get this copy elision branch done... but my code is such garbage right now, I need to re think it
+
+1539628243
+Hejsil
+Alright, I'll think about it a little more and then put out my thoughts. I'm off for now
+
+1539628248
+andrewrk
+later
+
+1539628249
+Hejsil
+And gl with the copy elision
+
+1539628418
+bheads
+h man, big features comming! Loving it all
+
+1539641238
+tom1998
+Hey!
+
+1539641243
+tom1998
+Any way to deal with arrays of types?
+
+1539641267
+andrewrk
+tom1998, yes, you can deal with them in comptime code
+
+1539641286
+tom1998
+Is there any way to store multiple pointers to different types in the same array?
+
+1539641317
+tom1998
+Currently I have a [][*]u8, and i'm trying to loop through and ptrCast, but can't because it says I'm using a runtime value
+
+1539641351
+andrewrk
+did you `inline` the loop so that the loop values can be comptime?
+
+1539641362
+andrewrk
+or put the whole thing inside a comptime block
+
+1539641364
+tom1998
+ahhhhh hang on
+
+1539641375
+tom1998
+let me try that!
+
+1539641393
+tom1998
+Also, are there any plans to be able to declare structs with fields named by const strings?
+
+1539641436
+tom1998
+'cause this can be combined with stuff like @memberName to produce code that you just can't produce in other typesystems, which would be really cool
+
+1539641503
+andrewrk
+you could accomplish this already using @field
+
+1539641517
+andrewrk
+oh you're trying to construct a type, not initialize a struct
+
+1539641542
+andrewrk
+the discussion about this is
+
+1539641563
+tom1998
+Awesome, thanks
+
+1539641570
+tom1998
+Inline for works, this is very cool
+

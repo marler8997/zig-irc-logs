@@ -1,0 +1,796 @@
+1545179570
+andrewrk
+daurnimator, agreed - writing drivers and utilities in zig is a supported use case
+
+1545179611
+andrewrk
+but that's not ruled out by some of the standard library depending on kernel32.dll
+
+1545179631
+andrewrk
+even so - I also agree with you that, when possible, it would be better to depend on ntdll rather than kernel32
+
+1545179645
+andrewrk
+to be honest I wasn't aware of the hierarchy until now
+
+1545179655
+andrewrk
+so all the system32 dependencies should be revisited
+
+1545179692
+andrewrk
+oops, I meant kernel32
+
+1545179732
+daurnimator
+andrewrk: IMO it's similar to the choice on (e.g.) linux to use libc or not
+
+1545179745
+andrewrk
+that makes sense
+
+1545179775
+daurnimator
+andrewrk: for implementing e.g. zig's "open a file" function, do we want to use libc's fopen? or libc's open()? or the syscall?
+
+1545179795
+daurnimator
+I see scenarios where I might want any of those options...
+
+1545179825
+andrewrk
+on windows? let's use NtOpenFile
+
+1545179859
+daurnimator
+you mean NtCreateFile ? :)
+
+1545179885
+andrewrk
+I'll have to read the docs more carefully. I was looking at
+
+1545179969
+daurnimator
+NtOpenFile vs NtCreateFile is a different function instead of posix's `O_CREAT` option.
+
+1545180010
+daurnimator
+except NtCreateFile has a the FILE_OPEN flag. which is like the inverse of O_CREAT. so there's no reason to use NtOpenFile
+
+1545180110
+andrewrk
+daurnimator, in answer to your question: when linking libc, use libc's open. otherwise use the syscall. I don't see any reason for the standard library to depend on fopen
+
+1545180146
+daurnimator
+andrewrk: because sometimes you need to pass a FILE* to an external library
+
+1545180163
+andrewrk
+then the user can do fdopen, and do that
+
+1545180260
+knebulae
+Well, I've mostly implemented what I wanted to but it has brought me to an interesting impasse.  Namely, bootstrap.zig.  It seems hardcoded for certain entrypoints, so I'm not sure the best way to propagate a custom entry point from the command line through to this point.  For UEFI, the linker flags were straightforward, but I can see many instances where a non-standard entrypoint is provided, and not just with UEFI/Windows.
+
+1545180291
+daurnimator
+andrewrk: true. but now imagine the reverse from a callback: what if a library calls into zig with a FILE* argument and says "please write your data here"
+
+1545180327
+andrewrk
+daurnimator, then the zig code can use the appropriate libc API and do it
+
+1545180335
+daurnimator
+andrewrk: fair.
+
+1545180392
+daurnimator
+I was more thinking that you'd have a "wrap File* in zig OutputStream" function.
+
+1545180412
+andrewrk
+you could still do that, and it would work fine
+
+1545180438
+daurnimator
+yep. should be easy to create a OutStream.writeFn that used c.fwrite
+
+1545180440
+andrewrk
+knebulae, I think we can work this out in a reasonable way. let me switch mental contexts here to your situation
+
+1545180507
+knebulae
+no rush man.
+
+1545180554
+andrewrk
+so what's the custom entry point? is there no standard for UEFI?
+
+1545180582
+andrewrk
+I think what we can do is adjust the logic for bootstrap.zig for when the target OS is UEFI
+
+1545180765
+daurnimator
+andrewrk: how does "use libc" get set in zig?
+
+1545180802
+daurnimator
+(and how does it relate to targets?)
+
+1545180803
+andrewrk
+@import("builtin").link_libc is set to `true` or `false` depending on whether you link against libc
+
+1545180829
+andrewrk
+for macos and freebsd it's always true
+
+1545180836
+daurnimator
+andrewrk: how does that work when you might be just compiling zig to a .o file?
+
+1545180860
+andrewrk
+you have to tell zig whether you plan to link libc or not
+
+1545180959
+daurnimator
+andrewrk: how do you do that?
+
+1545180963
+andrewrk
+--library c
+
+1545180997
+daurnimator
+okay
+
+1545181020
+daurnimator
+so we'd do similar for `--library kernel32` ?
+
+1545181151
+andrewrk
+libc is special - for other libraries such as kernel32 you can implicitly link against them by calling `extern "kernel32"` functions
+
+1545181179
+daurnimator
+andrewrk: why is libc special in a way that kernel32 isn't?
+
+1545181180
+andrewrk
+based on a little bit of digging just now, I'm not sure we need any dependencies on kernel32
+
+1545181200
+andrewrk
+because libc requires startup files.
+
+1545181216
+andrewrk
+for example we have to link against crt1.o
+
+1545181225
+andrewrk
+and it requires special system detection
+
+1545181232
+daurnimator
+andrewrk: kernel32 provides the stable+documented APIs for windows. only
+
+1545181281
+daurnimator
+andrewrk: sort of like freebsd I guess? it
+
+1545181298
+andrewrk
+where are you getting that information?
+
+1545181312
+daurnimator
+which information?
+
+1545181321
+andrewrk
+that ntdll functions are unstable
+
+1545181333
+andrewrk
+for example this seems to be a stable, documented API:
+
+1545181479
+daurnimator
+andrewrk: e.g. try and find docs on NtCreateUserProcess
+
+1545181582
+andrewrk
+that's a good example. first of all I notice that the wine implementation has code, rather than simply forwarding the call to NtDll
+
+1545181653
+andrewrk
+...for CreateProcessW, that is
+
+1545181991
+daurnimator
+andrewrk: IIRC you also need kernel32 to do thing like write/read from a cmd.exe terminaal
+
+1545182037
+daurnimator
+anyway, I don't think this is really worth your time right now
+
+1545182051
+daurnimator
+back to copy ellision with you ;)
+
+1545182195
+knebulae
+andrewrk: EfiMain
+
+1545182299
+andrewrk
+knebulae, ok, so when the Codegen::zig_target OS is uefi, then we look for EfiMain in the root source file. if we find it, then don't enable bootstrap.zig. this enables a custom EfiMain. but if we don't find it, then we do include bootstrap. and then in bootstrap, we add EfiMain and conditionally export it if builtin.os == builtin.Os.uefi
+
+1545182321
+andrewrk
+you can see similar logic here:
+
+1545182331
+knebulae
+andrewrk: gotcha
+
+1545182400
+andrewrk
+knebulae, does the normal main prototype make sense for uefi? if so we can have bootstrap then call the main function like normal. otherwise you can come up with the correct prototype for a uefi main that goes into the root source file that bootstrap.zig will call into
+
+1545182529
+knebulae
+andrewrk: prototype is non-standard: EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE image_handle, IN EFI_SYSTEM_TABLE* system_table).  I've also seen EfiMain, which may be what the gnu equivalents use.
+
+1545182597
+andrewrk
+knebulae, in this case it might just make sense to have zig give a compile error when UefiMain is not exported from the root source file
+
+1545182604
+andrewrk
+when the target os is uefi
+
+1545182702
+knebulae
+ok
+
+1545187819
+emekoi
+daurnimator, is NtosKrnl part of the native api along with ntdll?
+
+1545189271
+daurnimator
+emekoi: I'm not sure I understand your question there. NtosKrnl.exe
+
+1545191049
+knebulae
+emekoi: maybe more appropriate is NtosKrnl is the kernel itself, ntdll is the API surface exposed by that kernel.
+
+1545191161
+knebulae
+emekoi: and every ntXXX function has an analogous zwXXX function which is intended to be called from ring0 code (i.e. driver / kernel code).
+
+1545228247
+IntoxicatedHippo
+Is it possible to generate the branches of a switch statement using an inline loop?
+
+1545228276
+IntoxicatedHippo
+Or just generate code in general I guess.
+
+1545228840
+Hejsil
+IntoxicatedHippo, Chaining ifs is your best bet. There is no way of generating switch cases
+
+1545228908
+IntoxicatedHippo
+I was hoping to generate a function at compile time based on a string.
+
+1545228990
+Hejsil
+Well, chaining ifs is a fine solution.
+
+1545229140
+andrewrk
+Hejsil knows a thing or two about that :)
+
+1545229190
+Hejsil
+Hmmm. I think i've only actually tried generating code for brainfuck programs
+
+1545229221
+andrewrk
+Hejsil, for #1842 you need to add the @import in test/behavior.zig
+
+1545229235
+Hejsil
+Aah, right
+
+1545229245
+andrewrk
+the fix looks correct though
+
+1545229272
+Hejsil
+Ye, only made a PR because I wasn't sure it was
+
+1545229556
+Hejsil
+With the fn ptr fix and my commit on comptime_int support for formatType, the REPL can now use comptime_int and the interfaces :)
+
+1545229639
+andrewrk
+neat!
+
+1545230144
+andrewrk
+Hejsil, I think 260c3d9c broke master
+
+1545230317
+Hejsil
+Hmm, i see
+
+1545230324
+andrewrk
+oh, you fixed this in #1842
+
+1545230373
+Hejsil
+Oooh, yes i think i pushed the test for fn ptr printing by mistake
+
+1545230394
+Hejsil
+Note to self. Avoid working on to many things
+
+1545230402
+Hejsil
+(I thought i stashed correctly)
+
+1545230409
+andrewrk
+no worries
+
+1545230451
+andrewrk
+with the automatic download page updater, mistakes like this are not really painful, since it has the latest successful build
+
+1545232282
+knebulae
+Any thoughts on u16 string literal handling (still beating the uefi horse)?
+
+1545232342
+knebulae
+Shy of this: const message = []c_ushort{ 'h', 'e', 'l', 'l', 'o', ' ', 'f', 'r', 'o', 'm', ' ', 'z', 'i', 'g', '\n', 0 };
+
+1545232370
+andrewrk
+what is that, utf16le?
+
+1545232390
+knebulae
+yes
+
+1545232402
+andrewrk
+knebulae, if we don't already have one, you can make a function that works at compile time, to provide utf16le string literals
+
+1545232414
+knebulae
+ok
+
+1545232471
+andrewrk
+const s = std.unicode.whatever_its_called; and then you can use s("hello from zig\n\x00")
+
+1545232485
+andrewrk
+or if you want null terminated, have it return a [*]u16 and it can do that for you too
+
+1545232518
+knebulae
+I totally dig your language btw.  Exactly what I was looking for.
+
+1545232523
+andrewrk
+thanks
+
+1545232562
+andrewrk
+until
+
+1545232593
+knebulae
+I see.  Makes sense.
+
+1545232610
+andrewrk
+if we had such a function it would be in std.unicode somewhere, and if we don't then the functions in there could be used to implement it
+
+1545232674
+andrewrk
+also consider u16 instead of c_ushort, although I don't think there will ever be a difference for this target
+
+1545232844
+knebulae
+I only used c_ushort because all the string literals used before disabling uefi boot services (and running bare, as they say), will definitely be passed to/from C.  But I agree with your point that for this target it likely won't matter.  It should be noted too that getting this right is important though, as ARM in 64LE mode is shipping with UEFI2 and ACPI support.  So we're not totally platform agnostic.  But in this context, LE ARM will have the same
+
+1545232844
+knebulae
+byte layout with a u16 or a c_ushort.
+
+1545232944
+andrewrk
+knebulae, you added the UEFI os to target.cpp right?
+
+1545232953
+knebulae
+yes
+
+1545232967
+andrewrk
+so here's where you decide how many bits c_ushort is:
+
+1545232988
+andrewrk
+I think you must have seen this because you would have got a compile error if you didn't add a case
+
+1545233054
+knebulae
+I added a fallthrough case above OsWindows
+
+1545233069
+knebulae
+for OsUefi
+
+1545233089
+andrewrk
+that sounds fine. we can add per-architecture logic in the future if necessary
+
+1545233123
+andrewrk
+e.g. if ARM wants to define the sizes differently we can just check target->arch in this function
+
+1545233154
+andrewrk
+anyway, sounds like you know what you're doing :)
+
+1545233207
+knebulae
+There's also the option to directly expose certain LLVM options instead of a blanket "pass this to llvm" arg.  Things like entry point, linker subsystem, executable format. Might be easier in the long run.  People like to build weird things for weird targets.  It should be just as easy with zig as it is with gcc or clang.
+
+1545233286
+andrewrk
+knebulae, yes - the "pass this to llvm" arg is not intended to be used by anyone other than as a workaround
+
+1545233297
+knebulae
+understood
+
+1545233313
+andrewrk
+so if you have to use it, please make sure there is an open zig issue explaining why you're forced to do it
+
+1545233330
+knebulae
+I see.
+
+1545233371
+andrewrk
+for entry point you can use a linker script
+
+1545233392
+andrewrk
+the other stuff you mentioned is planned
+
+1545233407
+knebulae
+Honestly, if the llvm options had been more open, I likely could've accomplished what I wanted without modification to the code.  Specifying the entry point, object format, stack alignment, stack size (which is hardcoded, but I've seen the comment), etc. would have allowed me to coerce zig to produce the output I wanted.
+
+1545233441
+knebulae
+And understood on the linker script as well.
+
+1545233447
+andrewrk
+I agree with you
+
+1545233496
+andrewrk
+I'm happy that we're gaining this UEFI os target though
+
+1545233535
+knebulae
+If you want a full stack in zig, it had to be done.
+
+1545233624
+andrewrk
+at this stage in zig (0.3.0) the project is largely use-case driven. so I really appreciate people who bring new use cases and push forward on the issues that block that use case
+
+1545233777
+knebulae
+Just trying to do my part. Lol.
+
+1545234429
+knebulae
+andrewrk: I know this should be easy, but I'm looking for you to maybe short-circuit this for me.  It appears that you start making decisions about entrypoint/main in gen_root_source() in codegen.cpp.  Is that a correct assumption or do I need to backtrack further?
+
+1545234493
+andrewrk
+knebulae, yes that's right. I apologize for the logic being a bit messy
+
+1545234524
+andrewrk
+if you grep for those flags there are a couple other places that might be relevant. for example look at add_fn_export in analyze.cpp
+
+1545234569
+knebulae
+right.  I'm trying to modify the code while not being an expert.  It's a fine line to walk.  I'd prefer my PR to be mostly silent.  Ninja-like.
+
+1545234618
+knebulae
+I'm mostly kidding of course.  I just don't want to break anything.
+
+1545234626
+andrewrk
+much appreciated :)
+
+1545235764
+knebulae
+andrewrk: what is the intended handling of Zen?  Should it have an entrypoint? It was reporting OsUknown, so I added an enum, then I had second thoughts about side-effects or other regressions.  I don't want to break other people's builds.
+
+1545235804
+andrewrk
+knebulae, don't worry about that one too much, that's aiwakura's OS
+
+1545235844
+andrewrk
+I'm pretty sure we have an OsZen enum item for it
+
+1545235849
+andrewrk
+in target.hpp
+
+1545235893
+andrewrk
+I don't think I understand your question
+
+1545235982
+knebulae
+My question actually was related to build handling.  The way it is setup, zen returns OsUnknown, which then returns OsFreestanding, which causes only the panic function to be generated in gen_root_source()
+
+1545236061
+knebulae
+So, by changing the return from OsFreestanding to OsZen, but not modifying codegen.cpp to handle that case, I broke aiwakura's build.
+
+1545236093
+knebulae
+I think I answered my own question.  Sorry for thinking out loud.
+
+1545240492
+knebulae
+andrewrk: what is your setup for debugging on Windows? I'm trying to build a debug build, but that conflicts with the LLVM libraries, which are not debug builds (which I can remedy, of course).
+
+1545240510
+andrewrk
+knebulae, I have a separate debug build of llvm
+
+1545240527
+knebulae
+that's what I figured
+
+1545242037
+andrewrk
+knebulae, on linux you can have a release build of llvm and debug build of zig, but I was unable to figure out how to do that on windows
+
+1545243009
+andrewrk
+hmm. ran into a bit of a snag with copy elision that would be solved with null terminated pointers
+
+1545243038
+andrewrk
+I'll see how much work that would be to implement and if it would conflict too much with my branch
+
+1545246933
+mgxm
+andrewrk: zig-cache folder is created on osx too?
+
+1545246957
+andrewrk
+mgxm, yes. osx is one of the main motivations for zig-cache in fact
+
+1545246968
+andrewrk
+because we need the .o files sitting around for stack traces to work
+
+1545247024
+mgxm
+oh
+
+1545247213
+mgxm
+so, I think I'm making a big mess here :)
+
+1545247230
+mgxm
+
+
+1545247295
+mgxm
+I wasn't able to compile on freebsd because of this
+
+1545247300
+andrewrk
+mgxm, zig-cache is independent from the cache feature you linked to
+
+1545247341
+andrewrk
+this code is talking about a global cache, and macos is made an exception because we always link system libc on that system. freebsd needs a similar exception
+
+1545247370
+mgxm
+yeah, I did that
+
+1545247378
+andrewrk
+maybe it would be good to create a function in target.cpp such as "target_requires_libc_for_syscalls"
+
+1545247652
+mgxm
+so, zig-cache is broken for other reasons
+
+1545247663
+mgxm
+sure, I'll check that
+
+1545247943
+andrewrk
+mgxm, I'm happy to help if you elaborate on the problem
+
+1545248128
+andrewrk
+if it helps - the local zig-cache directory is never read from; only written to
+
+1545248151
+andrewrk
+other than e.g. passing arguments to the linker, with object files located in there
+
+1545248426
+mgxm
+andrewrk: thank you, I'll try to do that reading the code first
+
+1545248437
+mgxm
+doing that I can get more understanding of the code
+
+1545248453
+mgxm
+but you be sure that I'll come back here to ask for help :)
+
+1545248500
+mgxm
+yeah, It's helps a lot... I was confusing wit the other cache
+
+1545248559
+andrewrk
+I tried to get rid of it, but ended up needing it for macos stack traces
+
+1545248572
+andrewrk
+in the commit history there are actually a couple commits where it's gone, and then I had to bring it back
+
+1545248732
+mgxm
+and how it works on linux?
+
+1545248759
+andrewrk
+zig-cache works the same on all targets, for consistency
+
+1545248890
+andrewrk
+the other motivation for having it is so that it can leave the test binary around after `zig test` so you can e.g. run it with a debugger
+
+1545250111
+mgxm
+oh, I got
+
+1545257353
+mgxm
+would you like to configure the st.ht builds?
+
+1545257382
+mgxm
+I'm already using it to test my fork
+
+1545257552
+andrewrk
+sure
+
+1545257722
+andrewrk
+mgxm, I believe it's already set up, if you make a pull request that adds a .build.yml
+
+1545257992
+mgxm
+great
+
+1545258007
+mgxm
+I asked on #sr.ht if we can override the builds folder
+
+1545258021
+mgxm
+and if they are willing to accept a patch to that
+
+1545258624
+andrewrk
+I don't consider it a blocker to using the service in zig
+
+1545259100
+oconnor0
+andrewk, are you "moving" zig to sr.ht?
+
+1545259131
+andrewrk
+yes but the important thing is why
+
+1545259232
+andrewrk
+jokes aside I don't think the UI is project-focused enough for it to be used as zig's source and wiki. but we're using it for mailing lists, and soon for some of the CI
+
+1545259317
+andrewrk
+it would need something close to feature parity with github before I'd consider moving the bug tracker
+
+1545259327
+oconnor0
+(I don't understand those jokes...) Cool, I'd like to see a GitHub alternative take off. And charging seems a better way to ensure you aren't the product.
+
+1545259369
+j`ey
+I thought sr.ht was free?
+
+1545259383
+andrewrk
+I pay $1/month
+
+1545259466
+j`ey
+for what?
+
+1545259504
+andrewrk
+oops, $2/month
+
+1545259549
+andrewrk
+
+
+1545259597
+andrewrk
+> Your data is never stored in a third-party cloud.
+
+1545259599
+andrewrk
+that's pretty neat
+
+1545259626
+j`ey
+interesting, I thought it was free
+
+1545259649
+andrewrk
+the beta is free
+
+1545262602
+daurnimator
+knebulae: heh. looks like some Microsoft dev was playing around with uefi too...
+

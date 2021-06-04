@@ -1,0 +1,396 @@
+1531496656
+andrewrk
+this was the answer to the puzzle at the end of the stream yesterday:
+
+1531499827
+GitHub55
+[zig] andrewrk pushed 1 new commit to master:
+
+1531499827
+GitHub55
+zig/master 5354d1f Andrew Kelley: allow == for comparing optional pointers...
+
+1531502446
+Bas_
+Did you ever think about being able to do a for loop over multiple slices and stuff?
+
+1531502470
+Bas_
+like
+
+1531502484
+Bas_
+for (array1, array2) |value1, value2| {
+
+1531502494
+Bas_
+etc.
+
+1531502526
+andrewrk
+I think a userland solution for that is reasonable
+
+1531502563
+andrewrk
+var it = chain(array1, array2); while (it.next()) |value1| { ... }
+
+1531502604
+andrewrk
+oh your example is for simultaneous iteration
+
+1531502621
+andrewrk
+for (array1) |value1, i| { const value2 = array2[i]; ... }
+
+1531502624
+andrewrk
+I think this is reasonable
+
+1531503185
+unique_id
+Is "_ = foo();" how you avoid return values?
+
+1531503197
+andrewrk
+yes, that's how you discard return values at the callsite
+
+1531503374
+winksaville
+andrewrk, have u looked into bug 1225 I reported yesterday, if not I'd like to look into it to try to learn about the compiler?
+
+1531503393
+andrewrk
+I have not yet - go for it
+
+1531503400
+andrewrk
+happy to answer questions
+
+1531503619
+winksaville
+txs
+
+1531503751
+Bas_
+Yeah that's what I did for now. It's ok.
+
+1531506011
+GitHub140
+[zig] andrewrk pushed 2 new commits to master:
+
+1531506012
+GitHub140
+zig/master 171f33b Andrew Kelley: ir: remove unnecessary and probably buggy code
+
+1531506012
+GitHub140
+zig/master 860d3da Andrew Kelley: ir: remove dead code
+
+1531508551
+winksaville
+andrewrk, regarding bug 1225, I was wrong, the compiler isn't crashing its the program. The only question is should the compiler have caught my error?
+
+1531508745
+andrewrk
+winksaville, I think @errorName should not allow an error!void argument
+
+1531508752
+andrewrk
+so this would be a compile error
+
+1531508791
+winksaville
+SG, I'll update the bug.
+
+1531508800
+andrewrk
+this is probably a remnant from when we used to have `error.Ok`, which is now an anti-pattern
+
+1531508886
+GitHub197
+[zig] andrewrk pushed 1 new commit to master:
+
+1531508886
+GitHub197
+zig/master c87102c Andrew Kelley: ir_get_ref: delete unnecessary and probably buggy code
+
+1531510533
+winksaville
+andrewrk, I've taken a quick look and I see that @errorName is added to Codegen::builtin_fn_table in src/codegen.cpp but there is only param_count and no type information.
+
+1531510655
+andrewrk
+winksaville, here's a clue: ir.cpp:16187
+
+1531510706
+andrewrk
+woah wtf it implicit casts to its own type?
+
+1531510748
+andrewrk
+that's a mistake. it should be implicit casting to ira->codegen->builtin_types.entry_global_error_set
+
+1531510782
+andrewrk
+I believe that should solve the problem. that + a new test case at the top of test/compile_errors.zig
+
+1531510984
+winksaville
+hmm, 16187 is in ir_analyze_instruction_compile_err which seems to imply its already found an error, or is my source old?
+
+1531511095
+andrewrk
+ir.cpp:16187 in c87102c304
+
+1531511194
+winksaville
+k, I need to update I'm acient from yesterday :)
+
+1531511266
+winksaville
+now 16187 is: static TypeTableEntry *ir_analyze_instruction_err_name(IrAnalyze *ira, IrInstructionErrName *instruction) {
+
+1531511284
+andrewrk
+yep that is the clue
+
+1531511296
+andrewrk
+this line is wrong:     IrInstruction *casted_value = ir_implicit_cast(ira, value, value->value.type);
+
+1531511379
+winksaville
+ok, so first off type information is code not data?
+
+1531511464
+andrewrk
+I don't understand the question
+
+1531511485
+andrewrk
+the IR code deals in values, which have types
+
+1531511495
+andrewrk
+the parameter to @errorName is a value, which has a type
+
+1531511550
+Bas_
+wew
+
+1531511555
+Bas_
+ArrayList is broken.
+
+1531511622
+Bas_
+I'll... have to figure out how to do a pull request I guess.
+
+1531511642
+winksaville
+I was expecting type info "data" to be created when create_builtin_fn was called, but just my bias, np.
+
+1531511867
+andrewrk
+Bas_, uh oh. what's the synopsis?
+
+1531511909
+Bas_
+insert does the copy wrong
+
+1531511922
+andrewrk
+what, we have ArrayList.insert?
+
+1531511933
+Bas_
+yes
+
+1531511943
+Bas_
+line 84
+
+1531511952
+andrewrk
+oh look at that
+
+1531511952
+MajorLag2
+and insertSlice
+
+1531512029
+andrewrk
+ah here it is
+
+1531512136
+andrewrk
+oh, it's using, essentially, memcpy where the slices are not allowed to overlap
+
+1531512145
+andrewrk
+this problem
+
+1531512153
+Bas_
+Yeah and I see the insertSlice is just as broken
+
+1531512174
+andrewrk
+this is related to
+
+1531512199
+andrewrk
+idea being that we would have some kind of runtime safety notice that the slice parameters overlapped
+
+1531512213
+andrewrk
+so at least the bug would have been easier to track down
+
+1531512248
+Bas_
+It's fairly easy to check.
+
+1531512380
+andrewrk
+
+
+1531512414
+andrewrk
+also
+
+1531512469
+winksaville
+Is there debug logging support in the compiler?
+
+1531512472
+Bas_
+The thing is... memcpy does work if the slices overlap, as long as the source is larger than the destination. ^^
+
+1531512509
+Bas_
+although I think you're supposed to use memmove.
+
+1531512558
+winksaville
+yes, memmove on overlaped data
+
+1531512597
+andrewrk
+winksaville, this?
+
+1531512606
+winksaville
+txs
+
+1531512759
+winksaville
+that's adding logging to the .zig sources, correct. I want to add logging to .cpp code and print contents of structures.
+
+1531512801
+andrewrk
+I've been using gdb breakpoints for that
+
+1531512819
+andrewrk
+there's always fprintf
+
+1531513187
+winksaville
+my gdb skills are minimal so not what I turn to first, but maybe I need to up my game there. Also, I added some fprintf to ir_analyze_instruction_err_name and see that its called 5 times, so I need to educate myself on the compiler flow to get my bearings. Any docs on the internals?
+
+1531513208
+andrewrk
+nope
+
+1531513217
+winksaville
+k
+
+1531514091
+winksaville
+Is there a .cpp style guide and maybe a vi ftplugin you use?
+
+1531514283
+andrewrk
+there is no style guide, and I use the default vim cpp ft plugin
+
+1531514591
+winksaville
+sg
+
+1531515021
+Bas_
+ok, I have a question
+
+1531515066
+Bas_
+Is the realloc on an allocator supposed to keep the data intact or does it just return an undefined slice of memory?
+
+1531515157
+andrewrk
+it keeps the data intact
+
+1531515217
+andrewrk
+if you're looking at the implementation of std.mem.Allocator, it sets the new bytes to undefined
+
+1531515225
+Bas_
+ok, cause that's not what the documentation says.
+
+1531515225
+andrewrk
+this allows the compiler to set the bytes to 0xaa in debug mode
+
+1531515241
+andrewrk
+where are you looking?
+
+1531515253
+Bas_
+reallocFn
+
+1531515255
+Bas_
+line 26
+
+1531515298
+andrewrk
+I agree that is unclear. "newly allocated memory" is intended to mean the new bytes, not the old bytes that are preserved. I'll clarify
+
+1531515305
+Bas_
+Ah ok
+
+1531515320
+Bas_
+So the implementation is supposed to do the copy if nessecary?
+
+1531515360
+andrewrk
+correct
+
+1531515416
+Bas_
+Yeah I guess there's no other option. And if you don't need that behaviour you can just do free and alloc.
+
+1531515638
+andrewrk
+Bas_, how's this?
+
+1531515657
+Bas_
+Yeah, that's clear.
+
+1531516236
+GitHub90
+[zig] BarabasGitHub opened pull request #1232: Fix array list insert (master...fix-array-list-insert)
+
+1531516823
+GitHub174
+[zig] BarabasGitHub opened pull request #1233: Replace loop in ensureCapacity with a std.mem.max for the new capacity. (master...remove-weird-loop-in-array-list)
+
+1531523682
+GitHub169
+[zig] eduardosm opened pull request #1234: codegen: Store returned value if type is 'handle_is_ptr' and function… (master...extern-return-small-struct)
+

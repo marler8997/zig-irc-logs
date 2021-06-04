@@ -1,0 +1,1768 @@
+1524442416
+hryx
+I just tried to compile something with `zig build-exe` and got "unreachable" and SIGABRT. Is that an internal compiler error I should report somehow?
+
+1524442522
+MajorLag
+compiler asserts are always bugs, but are you sure it wasn't an unreachable in comptime code? Issues can be reported github:
+
+1524442589
+hryx
+I have no expressions with the `comptime` keyword, but I'm not sure
+
+1524442602
+andrewrk
+I think it's a bug
+
+1524442607
+MajorLag
+the standard library does, but if you ran into one it's probably still a big
+
+1524442609
+MajorLag
+*bug
+
+1524442612
+andrewrk
+zig_unreachable() in the c++ code prints "unreachable" and then aborts
+
+1524442627
+hryx
+sounds like what I saw
+
+1524442713
+hryx
+I can open an issue with a link to a gist if that's the best way to report
+
+1524442947
+andrewrk
+that would be appreciated
+
+1524442975
+hryx
+I think I've narrowed it down to a pub fn defined inside an enum type
+
+1524442997
+hryx
+will make an issue shortly
+
+1524443847
+achambe
+btw andrewrk
+
+1524443892
+achambe
+actually wait, theres a better file somewhere
+
+1524443918
+andrewrk
+nice
+
+1524443975
+achambe
+convincing openbsd people to use zig might be a challenge - just sell bounds checking as a new mitigation :D
+
+1524443982
+andrewrk
+ha!
+
+1524443997
+andrewrk
+does openbsd have a stable syscall interface?
+
+1524444005
+andrewrk
+as opposed to darwin where we have to make calls through libSystem
+
+1524444008
+achambe
+stablish
+
+1524444021
+andrewrk
+so we could cross compile static binaries
+
+1524444031
+achambe
+that works
+
+1524444052
+achambe
+they just don't guarantee stability for every 6 month release.
+
+1524444066
+achambe
+even though in practice go went 18 months with no problems
+
+1524444124
+andrewrk
+hmmm, that's much shorter turnover compared to linux
+
+1524444131
+andrewrk
+is libc the recommended syscall API?
+
+1524444160
+achambe
+not sure tbh. I know they actually prefer people to use the system allocator though
+
+1524444178
+achambe
+because it has randomisation and other system wide settings
+
+1524444194
+andrewrk
+and that is exposed through libc?
+
+1524444199
+achambe
+yeah
+
+1524444240
+achambe
+just malloc or w.e.
+
+1524444265
+achambe
+but doing syscalls yourself works
+
+1524444272
+achambe
+its what myrddin is doing currently
+
+1524444612
+andrewrk
+MajorLag, for #931 are you providing --libc-lib-dir?
+
+1524444634
+MajorLag
+I think I did try that, one sec
+
+1524444943
+GitHub29
+[zig] andrewrk pushed 1 new commit to master:
+
+1524444944
+GitHub29
+zig/master 1c41f1c Andrew Kelley: better error reporting for missing libc on windows...
+
+1524444944
+andrewrk
+let me know if that doesn't solve the problem
+
+1524445003
+MajorLag
+I don't think it will, but I'll give it a try when it finishes building. Here's my commandline: zig build-exe test.zig --msvc-lib-dir E:\Experimental\VC\BuildTools\lib\x64\ --kernel32-lib-dir E:\Experimental\VC\BuildTools\umlib\x64\ --libc-lib-dir E:\Experimental\VC\BuildTools\ucrtlib\x64\ && test.exe
+
+1524445034
+MajorLag
+process monitor appears to confirm that all libraries were found, but it still exits 1
+
+1524445047
+andrewrk
+I'll try running this on windows
+
+1524445113
+MajorLag
+looks like it writes the object files just before exiting.
+
+1524445122
+andrewrk
+no error message?
+
+1524445127
+MajorLag
+nope
+
+1524445145
+MajorLag
+my only clue that it fails is not running the exe after
+
+1524445157
+MajorLag
+checking errorlevel confirms it exits 1
+
+1524445256
+hryx
+Here are those compiler issues (I actually stumbled on a compiler segfault as well):
+
+1524445258
+hryx
+
+
+1524445262
+hryx
+
+
+1524445268
+andrewrk
+thanks!
+
+1524445286
+hryx
+noo proob!
+
+1524445291
+andrewrk
+hryx, ah, one more thing -
+
+1524445309
+andrewrk
+once you are hitting compile errors, and you want to get some fixes, you're going to need the latest code
+
+1524445323
+andrewrk
+there have already been a lot of bug fixes since 0.2.0
+
+1524445328
+MajorLag
+return switch (*self.x) {
+
+1524445362
+hryx
+Good call -- luckily I had no problem compiling Zig on linux so I can use that going forward
+
+1524445384
+andrewrk
+you can also use the CI builds of master branch for linux and windows, but sadly we don't have them available for macos yet
+
+1524445447
+hryx
+I tried looking for the CI artifacts before but totally failed. Where would I find them?
+
+1524445484
+MajorLag
+
+
+1524445485
+hryx
+@MajorLag if I understand, my code would be invalid anyway (dereferencing something which is not a pointer in the line you posted) but I assume the compiler should error instead of crash
+
+1524445489
+MajorLag
+
+
+1524445505
+hryx
+Wonderful, thanks for the links
+
+1524445529
+MajorLag
+You're correct, it should. I thought for a minute you were misinterpreting a program segfault as a compiler issue, but I can confirm it does crash the compiler
+
+1524445604
+hryx
+Cool cool. Related, if I remove the * the compiler complains: "error: unable to infer expression type"
+
+1524445614
+hryx
+pointing to the `switch` keyword
+
+1524445649
+hryx
+Curious what I'm doing wrong there
+
+1524445674
+andrewrk
+there's an issue for this somewhere. fix it by casting one of the values to a type
+
+1524445696
+andrewrk
+
+
+1524445700
+hryx
+Ok, great
+
+1524445795
+GitHub109
+[zig] andrewrk pushed 1 new commit to master:
+
+1524445795
+GitHub109
+zig/master 25dff91 Andrew Kelley: fix windows build broken by previous commit...
+
+1524445812
+andrewrk
+MajorLag, I'm trying to reproduce your issue
+
+1524446031
+MajorLag
+sorry I can't make it easier. You'd need to not have VS installed as far as I can tell.
+
+1524446568
+andrewrk
+I think get_windows_sdk is succeeding for you
+
+1524446611
+andrewrk
+when it should be failing because sdk->version10.length is 0
+
+1524446895
+MajorLag
+when I pass it all the paths, it doesn't look like it's looking for the SDK registry entries, which is what I'd expect.
+
+1524447158
+andrewrk
+it's also looking for --libc-include-dir and not finding it, and so then calling get_windows_sdk, which is succeeding, but then version10.len is 0
+
+1524447296
+MajorLag
+providing --libc-include-dir doesn't seem to change anything in process monitor
+
+1524447400
+andrewrk
+it exits with -1 status?
+
+1524447418
+MajorLag
+it exists with 1, yeah
+
+1524447440
+MajorLag
+zig build-exe test.zig --msvc-lib-dir E:\Experimental\VC\BuildTools\lib\x64\ --kernel32-lib-dir E:\Experimental\VC\BuildTools\umlib\x64\ --libc-lib-dir E:\Experimental\VC\BuildTools\ucrtlib\x64\ --libc-include-dir E:\Experimental\VC\BuildTools\ucrt && test.exe
+
+1524447448
+MajorLag
+echo %ERRORLEVEL%
+
+1524447449
+MajorLag
+1
+
+1524447470
+andrewrk
+I get that, but I also get linker errors before that
+
+1524447502
+MajorLag
+I'm not. I've updated to the latest artifact.
+
+1524447870
+andrewrk
+MajorLag, I disabled all the functions in os.cpp that find the paths of things so that they all return ErrorFileNotFound
+
+1524447881
+andrewrk
+and I manually specify all the cli args just like you do above
+
+1524447889
+MajorLag
+huh
+
+1524447890
+andrewrk
+and it works, with %ERRORLEVEL% 0
+
+1524447912
+MajorLag
+is there anything it looks for outside of the SDK?
+
+1524447917
+andrewrk
+the linker error was when I specified VC\Lib instead of VC\Lib\amd64
+
+1524447955
+andrewrk
+my command line: bin\zig.exe build-exe test.zig --library c --libc-include-dir "C:\Program Files (x86)\Windows Kits\10\Include\10.0.10240.0\ucrt" --msvc-lib-dir "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\Lib\amd64" --libc-lib-dir "C:\Program Files (x86)\Windows Kits\10\Lib\10.0.10240.0\ucrt\x64" --kernel32-lib-dir "C:\Program Files (x86)\Windows Kits\8.1\Lib\winv6.3\um\x64"
+
+1524447983
+MajorLag
+oh, interesting.
+
+1524447991
+MajorLag
+I didn't have --library c
+
+1524448002
+MajorLag
+adding it produces some dll errors, but that's reasonable.
+
+1524448027
+MajorLag
+and those errors are from running the exe, so that makes sense
+
+1524448091
+GitHub78
+[zig] andrewrk pushed 1 new commit to master:
+
+1524448092
+GitHub78
+zig/master 75328e3 Andrew Kelley: exit(1) instead of abort() for file not found
+
+1524448185
+MajorLag
+and the dll errors are for missing debug dlls, so --release-fast produces a working exe.  Thanks andrewrk.
+
+1524448193
+andrewrk
+np
+
+1524449037
+Braedon
+How do you check if a float is infinity?
+
+1524449042
+Braedon
+In zig that is
+
+1524449084
+Braedon
+Found it haha xD
+
+1524453743
+achambe
+andrewrk: one of the problems when your language isn't self hosted, you spend all your time working in C++
+
+1524453764
+achambe
+the problem when your language is self hosted, you spend all your time making it nicer for writing compilers by accident :P
+
+1524454447
+achambe
+I'm super curious how a zig lua bindings set, and a zig sqlite bindings set would look
+
+1524454530
+achambe
+e.g. if comptime reflection would let you generate a binding
+
+1524454532
+achambe
+etc
+
+1524455250
+GitHub124
+[zig] andrewrk pushed 1 new commit to master:
+
+1524455250
+GitHub124
+zig/master 8503eff Andrew Kelley: add compile error for invalid deref on switch target...
+
+1524455344
+andrewrk
+hryx, sorry about the compiler bug. fixed now ^
+
+1524455351
+MajorLag
+speaking of bugs
+
+1524455451
+andrewrk
+yes, MajorLag?
+
+1524455460
+hryx
+nice fast fix andrewrk! Finally, I can continue to dereference things which aren't pointers in peace
+
+1524455478
+andrewrk
+haha
+
+1524455482
+MajorLag
+Sorry, taking longer to type up the issue than I thought it would.
+
+1524455517
+MajorLag
+#948
+
+1524455584
+andrewrk
+I'm gonna save this for a weekday evening and try to make some more progress on concurrency and stuff
+
+1524455615
+MajorLag
+ok. I'm going to go to bed and try real hard to stay awake at work tomorrow.
+
+1524455676
+andrewrk
+I'm with you on that
+
+1524456334
+MajorLag
+fyi: occurs using << operator too, not just the intrinsic.
+
+1524456441
+MajorLag
+for instance: `var x: u64 = ~u64(0) << 16` produces an undefined result.
+
+1524456474
+MajorLag
+but separate it into two lines and it works.
+
+1524457818
+andrewrk
+I figured out why writing a lock-free doubly linked list is hard
+
+1524457835
+andrewrk
+because it's not a solved problem yet
+
+1524457842
+andrewrk
+I don't think there are even any research papers that do it
+
+1524459312
+relatingdata
+
+
+1524459376
+relatingdata
+
+
+1524459461
+relatingdata
+
+
+1524459759
+relatingdata
+there was a major improvement to atomic locking that was talked about at the brisbane sunday coders club I think its was william from redhat, but my memory might not be quiet accurate!
+
+1524460533
+andrewrk
+I found the paper by Maged Michael
+
+1524460944
+andrewrk
+ugh, this paper wants you to stuff 2 usizes and a u2 into a usize
+
+1524460977
+andrewrk
+this doesn't solve the problem at all
+
+1524461130
+tiehuis
+pretty sure i've solved all the float printing issues in release modes now
+
+1524461154
+andrewrk
+wow
+
+1524461166
+tiehuis
+just needed a single float-mode change in hpNormalize in errol
+
+1524461172
+andrewrk
+I have a windows laptop in front of me, want me to look into the appveyor failure?
+
+1524461180
+andrewrk
+or was that it?
+
+1524461181
+tiehuis
+that'd be helpful, thanks
+
+1524461208
+tiehuis
+i was in the middle of setting up a windows vm but build tools are slow to install
+
+1524461237
+tiehuis
+i  believe the issue is different for the windows failure, but may as well wait for appveyor to finish this current build to confirm
+
+1524461302
+andrewrk
+oh wow it's in compiler-rt
+
+1524461308
+andrewrk
+line 45 of udivmod.zig
+
+1524461336
+tiehuis
+that is unexpected
+
+1524461352
+andrewrk
+from line 325 of errol/index.zig
+
+1524461406
+andrewrk
+const lf = u64((low / pow19...
+
+1524461457
+andrewrk
+val is 1.5231400000000000e+29
+
+1524461495
+andrewrk
+which is one of the test cases
+
+1524461581
+andrewrk
+looking at this compiler-rt code, it's quite puzzling, because we're in an if statement that checked that d[low] == 0, and then we divide by it - so it's like we know we're dividing by zero ? weird
+
+1524461589
+andrewrk
+let me double check compiler-rt from llvm
+
+1524461619
+andrewrk
+yeah, same thing
+
+1524461666
+tiehuis
+looks seemingly impossible to hit that
+
+1524461673
+tiehuis
+DoubleInt
+
+1524461716
+andrewrk
+it's because the errol code does a u128 divided by a u128
+
+1524461769
+andrewrk
+let me make sure u128(1e19) is working
+
+1524461935
+andrewrk
+yeah that part is fine
+
+1524465516
+GitHub168
+[zig] andrewchambers closed pull request #941: Openbsd ci (master...openbsd_ci)
+
+1524481440
+Braedon
+Wow I just found an inverse square algorithm that has an accuracy of 7.023769248702945e-10.  For the record doom has  1.886557159257603e-6 for the same set of numbers
+
+1524481460
+Braedon
+And it only runs 8% slower
+
+1524488107
+alexnask
+Thank god for translate-c :P
+
+1524497975
+Dodo
+is this a good implementation of a 'Once' Iterator, 'Repeat' Iterator, and a 'Take' Iterator?
+
+1524498037
+Dodo
+where Once will only..iterate once, Repeat repeats forever, and Take takes the first n items
+
+1524498292
+alexnask
+@Dodo, Once looks ok, although you could have a consumed: bool + item: T instead of an item: ?T if you want to be able to make it resetable at some point
+
+1524498341
+alexnask
+Take looks good
+
+1524498352
+alexnask
+I don't see why repeat stores item as ?T instead of T
+
+1524498358
+alexnask
+But apart from that, looks fine
+
+1524498577
+Dodo
+oh, uhm
+
+1524498580
+Dodo
+let me fix that
+
+1524498647
+Dodo
+mh, what function should be nice to have as well?
+
+1524498667
+Dodo
+skip() and nth() maybe
+
+1524498718
+Dodo
+nth(n) is actually just skip(n).next()
+
+1524498821
+Dodo
+and fold() ...
+
+1524499624
+GitHub175
+[zig] andrewrk pushed 1 new commit to master:
+
+1524499624
+GitHub175
+zig/master 89a4c37 Andrew Kelley: fix bigint twos complement implementation...
+
+1524502476
+Dodo
+alexnask, look, chaining Iterators kind of works now:
+
+1524502573
+Dodo
+which is nice :)
+
+1524502655
+Dodo
+plus, if you now make you're own Iterator, you should be able to call all those functions
+
+1524502848
+alexnask
+Right, I thought of doing it that way the other day we were discussing about it but I wanted to directly return the &Iterator (which is not possible)
+
+1524502862
+alexnask
+This is fine though, you just get the .it field when needed :)
+
+1524503113
+Dodo
+yeah hahaha
+
+1524503196
+alexnask
+Have you thought about how you are going to handle bidirectional iterators btw?
+
+1524503238
+Dodo
+bidirectional?
+
+1524503239
+Dodo
+mhh
+
+1524503250
+Dodo
+maybe another function just like .next()
+
+1524503255
+Dodo
+but .next_back()
+
+1524503271
+Dodo
+and have a .rev() function on Iterator or something?
+
+1524503342
+Dodo
+or have a similar idea like Iterator, but then with DoubleEnded Iterator,
+
+1524503354
+alexnask
+Right, you could have an optional prevFn etc.
+
+1524503363
+Dodo
+and have all structs have another field, .it_rev maybe?
+
+1524503374
+alexnask
+I think that's cleaner
+
+1524503398
+Dodo
+but omg how large is the file going to be?
+
+1524503402
+alexnask
+Evvey double ended/bidirectional iterator is an iterator though
+
+1524503415
+Dodo
+yeahhh
+
+1524503424
+Dodo
+do we have some kind of inheritance?
+
+1524503439
+alexnask
+Nope, zig just has plain structs
+
+1524503446
+alexnask
+You can fake it like we faked interfaces
+
+1524503471
+alexnask
+So I think you could do some thing where all iterators that are bidirectional only have a bidirectional iterator field
+
+1524503502
+alexnask
+But that field can either be casted directly to an Iterator or have a method that turns it into an Iterator
+
+1524503535
+Dodo
+mhh
+
+1524503542
+alexnask
+Basically, if you have a 'const A = struct { field1: usize};'
+
+1524503556
+alexnask
+and 'const B = struct { field1: usize, field2: []u8, };
+
+1524503579
+alexnask
+Every &B can be turned into an &A
+
+1524503593
+andrewrk
+not true
+
+1524503603
+andrewrk
+you'll need to have A be a field of B or vice versa
+
+1524503604
+alexnask
+really?
+
+1524503616
+alexnask
+Sure, I was going to say it's better to be explicit
+
+1524503624
+andrewrk
+zig reserves the right to re-order struct fields
+
+1524503630
+alexnask
+Aaah, right
+
+1524503633
+andrewrk
+and add secret fields for debugging purposes
+
+1524503672
+andrewrk
+I'm planning on having debug mode purposefully re-order fields so that one does not accidentally rely on this behavior
+
+1524503680
+Dodo
+can we enforce that a type has a method at compile time?
+
+1524503691
+alexnask
+Yes, I can see how C people would fall into that
+
+1524503711
+alexnask
+@Dodo I don't think so
+
+1524503715
+andrewrk
+Dodo, you can call it. if it doesn't exist, you'll get a compile error
+
+1524503768
+andrewrk
+it's planned for @reflect to tell you about member functions of structs
+
+1524503772
+andrewrk
+that's not implemented yet
+
+1524503788
+Dodo
+so in Iterator, there is this function 'next_fn' , and on each struct we say something like ' .it = Iter {.next_fn = next}'
+
+1524503797
+alexnask
+@andrewrk I was actually about to get started on @reflect
+
+1524503800
+andrewrk
+oh neat
+
+1524503807
+Dodo
+what if we also add a 'next_back_fn',
+
+1524503808
+alexnask
+Although I guess it's going to take me a long time to finish
+
+1524503827
+Dodo
+does that have to be filled in for all types that have an Iter field?
+
+1524503832
+alexnask
+(Or rather, the @reify part)
+
+1524503837
+Dodo
+or can you just leave it empty?
+
+1524503863
+alexnask
+You can make it nullable
+
+1524503886
+alexnask
+And fill it in with null in structs that don't provide it
+
+1524503888
+alexnask
+But
+
+1524503890
+Dodo
+but that costs something at runtime?..
+
+1524503896
+alexnask
+I would suggest you make a new DoubleEndedIterator
+
+1524503901
+alexnask
+That has an Iterator field
+
+1524503907
+alexnask
++ the extra fn pointers
+
+1524503912
+alexnask
+@Dodo No, its zero cost
+
+1524503917
+Dodo
+mh yeah
+
+1524503918
+alexnask
+Because a fn is a pointer
+
+1524503924
+Dodo
+well, here we go :3
+
+1524503959
+andrewrk
+here's an example of one way to do something similar:
+
+1524504000
+Dodo
+I should make this into 2 files
+
+1524504018
+Dodo
+actually 3, one for Iterator, one for DoubleEndedIterator, and one for main
+
+1524504023
+alexnask
+@andrewrk Does LLVM actually shuffle struct fields in practice or do you plan on adding optimizations in the zig IR?
+
+1524504042
+alexnask
+I mean, optimizations that rely on rearranging the field order
+
+1524504075
+andrewrk
+alexnask,
+
+1524504075
+alexnask
+@Dodo You can also use test blocks instead of a main function if you the package is intended to be a library :)
+
+1524504126
+Dodo
+mh yeah
+
+1524504128
+andrewrk
+LLVM supports packed and C ABI for structs. so zig would be doing something on top of that
+
+1524504142
+Dodo
+how does importhing files work?
+
+1524504155
+alexnask
+Ok, good to know, I've never targetted LLVM before, I usually just dump C :P
+
+1524504174
+Dodo
+becouse DoubleEndedIterator needs Iterator, but some structs in Iterator.zig also need DoubleEndedIterator
+
+1524504185
+Dodo
+*importing
+
+1524504209
+alexnask
+I don't think cyclical imports are an issue but I could be wrong
+
+1524504247
+andrewrk
+top level declarations are order independent and we have lazy evaluation
+
+1524504270
+Dodo
+how do I import everything from a file?
+
+1524504276
+andrewrk
+so we have deterministic builds, and as long as there is no actual circular dependency, such as a struct embedded in itself, everything is fine
+
+1524504284
+alexnask
+const namespace = @import("some_relative_file.zig");
+
+1524504312
+Dodo
+but then all the functions and structs must be prefixed with 'namespace' ?
+
+1524504324
+alexnask
+Or you can 'use @import("...")'
+
+1524504326
+andrewrk
+correct
+
+1524504414
+andrewrk
+consider that what would previously be your "namespace" in C, you can make an actual namespace in zig. so for example if you're opengl, and all your functions are prefixed with gl, such as glSwapBuffer
+
+1524504429
+andrewrk
+const gl = @import("gl.zig");  gl.swapBuffer()
+
+1524504480
+Dodo
+can you also import ALL things ?
+
+1524504490
+Dodo
+so you just could call swapBuffer() for example?
+
+1524504501
+andrewrk
+yes, with alexnask's example above
+
+1524504531
+andrewrk
+this comes with an inherent penalty on compilation speed, and the code reader's ability to discover where a symbol comes from
+
+1524504548
+andrewrk
+code reader being a human
+
+1524504571
+Dodo
+so in main.zig I would say 'use @import("Iterator.zig");' ?
+
+1524504595
+alexnask
+Yup, then all pub symbols are available in the global namespace
+
+1524504602
+alexnask
+Or w/e we're supposed to call it
+
+1524504607
+Dodo
+all pub symbols
+
+1524504618
+Dodo
+guess I didn't make them public...
+
+1524504632
+alexnask
+Time to copy paste a bunch of "pub" :P
+
+1524504651
+andrewrk
+:%s/^fn\>/pub /g
+
+1524504652
+andrewrk
+done
+
+1524504654
+Dodo
+do returned structs also need to be pub?
+
+1524504694
+alexnask
+you mean as in 'pub fn foo() type {  return struct { ... }; }'
+
+1524504725
+alexnask
+You only need to pub any fn or variable you want to expose through @import
+
+1524504744
+alexnask
+The pub is not an attribute of the struct, it's just the visibility of the symbol
+
+1524504789
+Dodo
+oh yeah
+
+1524504795
+Dodo
+wohoo it builds again
+
+1524504799
+alexnask
+:D
+
+1524505045
+Dodo
+mh, DoubleEndedIterator can have a field like this 'const Self = Iterator(T)', right?
+
+1524505083
+alexnask
+sure, using 'Self' is pretty misleading though, I would expect Self == DoubleEndedIterator(T)
+
+1524505259
+Dodo
+fair enough
+
+1524505814
+Dodo
+okey this is verry verbose assert(zipped.next() == Tuple(usize, usize) {.t1 = 6, .t2 = 0})
+
+1524505834
+Dodo
+build-in tuples would be greate ^^
+
+1524506061
+andrewrk
+I've decided on removing var args and adding built in tuples
+
+1524506104
+Dodo
+\o/
+
+1524506839
+Dodo
+how do I assert on something that is ?T, to test if it's some value?
+
+1524506845
+SimonNa
+Instead of templated functions with variable arguments, one would then have one compile-time type variable that can then be instantiated with any length and types? That sounds clean then
+
+1524506867
+Dodo
+so like assert(maybe == ?10) or whatever
+
+1524506947
+andrewrk
+SimonNa, the length and types would be compile time known and the values of each thing would be runtime known
+
+1524506972
+andrewrk
+std.debug.warn("int: {} string: {}\n", [an_int, a_string]);
+
+1524507013
+SimonNa
+yeah, I assume it would instantiate a function for every different tuple
+
+1524507070
+SimonNa
+surely, in each instantiated function, the exact type of the tuple is then known (number of entries, fixed type for each entry)
+
+1524507102
+alexnask
+Yes
+
+1524507111
+alexnask
+All this is known with varargs atm too
+
+1524507381
+alexnask
+@andrewrk Would you be opposed with @reflect being renamed to @typeInfo?
+
+1524508530
+andrewrk
+alexnask, sounds fine to me. at the end of the day the name of the function is trivial to change and independent from the hard problem of implementing it
+
+1524508591
+alexnask
+Good, @typeInfo it is, I think it's clearer than @reflect, @reflect sounds like it should work on any definition
+
+1524508750
+MajorLag
+oh good, you've already fixed the comtime shifting bug. that'll save me a bit of hassle.
+
+1524508789
+andrewrk
+MajorLag, trying to stay awake at work @_@
+
+1524508799
+Dodo
+error: no member named 'next_back' in struct 'Iterator(usize)'
+
+1524508824
+Dodo
+ugh, guess my current idea doesnt quite work
+
+1524508918
+andrewrk
+Dodo, the use case you're working on sounds interesting, but I think there are a few other use cases I'm focusing on first in the roadmap
+
+1524508928
+andrewrk
+so you might be working against the grain a little bit
+
+1524508948
+Dodo
+ah yeah
+
+1524508994
+Dodo
+well, I'm really not familiar with Zig yet, and this seemed a challenging thing to do
+
+1524509000
+andrewrk
+you know? like maybe we go ahead and support some kind of trait or interface in 0.4.0, and then what you're doing has a clear answer
+
+1524509025
+Dodo
+so Im trying to understand how it all works and such
+
+1524509036
+andrewrk
+fair enough
+
+1524509060
+Dodo
+and I've never implemented Iterators from scratch, so that's also something I wanted to do
+
+1524509076
+Dodo
+but trait/interface like support would be really cool!
+
+1524509096
+andrewrk
+yeah. I just want to make sure that it does not overcomplicated the language
+
+1524509106
+andrewrk
+simplicity is kinda the only thing we have going vs rust
+
+1524509205
+Dodo
+in a way interfaces could make things easier, also for things like equality testing
+
+1524509679
+MajorLag
+One thing about doing interfaces the way zig does now: it is obvious how it works. I think I like that more than I dislike the extra verbosity.
+
+1524509725
+alexnask
+The idiomatic way to make interfaces requires that the definition of the implementation type includes a field of the interface type
+
+1524509745
+alexnask
+This is a downside imho, but it can be worked around as is (with some more metaprogramming)
+
+1524509763
+alexnask
+See
+
+1524509810
+alexnask
+(Basically, the interface here is a pair of pointers, one to the implementation object and one to a automatically comptime-generated vtable)
+
+1524509876
+Dodo
+but here's the thing, handwritten vtables and metaprogramming might be more clear,
+
+1524509888
+Dodo
+but it's also hard if you've never done it, like me
+
+1524509906
+alexnask
+I know, I'm not saying people should be doing it as is :P
+
+1524509935
+alexnask
+Ideally, you would just have a vtable_gen call that generates a vtable from the description (tuples of name, function type)
+
+1524509974
+alexnask
+Then your interface type is a pointer to that vtable type
+
+1524509989
+alexnask
++ whatever way you chose to store your objects (or just a pointer)
+
+1524510059
+alexnask
+That way of doing this allows you both to write new types with no interface field that work seamlessly with existing interfaces
+
+1524510080
+alexnask
+And to write new interfaces that work seamlessly with existing types
+
+1524510102
+Dodo
+but doing it by hand maybe makes you think more on how to do things, so thats a good thing I guess?
+
+1524510154
+alexnask
+Sure, you still write your interface by hand, you just let the compiler make a vtable for every type of object that uses your interface ;)
+
+1524510227
+alexnask
+Anyway, it's a design decision for sure, I'm just saying the way I've seen interfaces defined in zig is not unique and you can actually get some extra advantages doing it other ways
+
+1524510601
+Dodo
+
+
+1524510702
+MajorLag
+Well, let's lay out the issues we're trying to solve in the current implemetnation. From my perspective, the only one that's been an issue is that sometimes I make a copy of an interface instead of taking a pointer to it. In my own code I now prefix interface members with _ and have a interfaceName() fn return a pointer to it. I suppose having to name the interface component when passing it could also be counted as an issue, but I don't th
+
+1524510702
+MajorLag
+nk it is a big one: `square_actor.actor().addAction(repeat_action.action());`. What else?
+
+1524510725
+alexnask
+you should probably do 'const Iter = Iterator(T);' then define an 'it: Iter,' field
+
+1524510800
+alexnask
+@MajorLag Well for one implementing your interfaces this way would completely remove the need to grab a field from your implementation type
+
+1524510831
+alexnask
+Instead, you would initialize an interface object with 'Interface.init(whatever_value_implements_my_interface)'
+
+1524510832
+MajorLag
+Implementing them what way?
+
+1524510844
+alexnask
+
+
+1524510908
+alexnask
+Basically, an interface type would be a pointer to a vtable + whatever storage policy you decide on for your objects
+
+1524510911
+Dodo
+what does this '@reify' (feature??) do?
+
+1524510949
+alexnask
+For example, you could have a small buffer in your interface type and copy objects in there, or store them on the heap if they are bigger than the buffer
+
+1524510962
+alexnask
+In this example, I store a usize I get from @ptrToInt
+
+1524510992
+alexnask
+@Dodo @reify would allow you to describe a type in a struct (constructed at comptime) and get  an actual type back
+
+1524511013
+Dodo
+describe a type?
+
+1524511015
+alexnask
+@typeInfo/@reflect (currently writing that) would return that description struct from a type
+
+1524511048
+MajorLag
+I don't really see how `Iterator(usize).from(iter)` is better than `iter.iterator()` or even the current standard `iter.iterator` though.
+
+1524511073
+alexnask
+
+
+1524511115
+alexnask
+@Dodo take a look at that issue, it explains it pretty well
+
+1524511144
+alexnask
+@MajorLag it's not about the syntax, the key point is that the implementation type is completely detached from the interface
+
+1524511176
+alexnask
+RepeatIterator(T) does not need to know about Iterator(T)
+
+1524511257
+alexnask
+You could take a package written by another person that provides a struct with a 'fn next() usize'
+
+1524511265
+alexnask
+And that struct could be passed to Iterator(usize).init
+
+1524511348
+alexnask
+fn next(&Self) usize **
+
+1524511404
+Dodo
+one thing I wondered is, keeping a 'it: Iterator(sometype)' is some overhead, right?
+
+1524511448
+alexnask
+In every implementation type you mean?
+
+1524511459
+Dodo
+well yeah
+
+1524511461
+alexnask
+Yes, it is some overhead although I wouldn't worry about it
+
+1524511471
+Dodo
+now each struct has to have it
+
+1524511497
+alexnask
+What you could do is store an it: &Iterator(sometype) in every struct
+
+1524511518
+alexnask
+And initialize it with a pointer to a comptime Iterator(sometype)
+
+1524511560
+alexnask
+That should make the compiler generate a vtable in the binary, then you keep the reference to that static vtable at runtime instead of packing the whole vtable in every implementation type
+
+1524511631
+Dodo
+this is somewhat magic to be honestly :3
+
+1524511634
+alexnask
+I'm not 100% it would work but you can try it, the change is pretty trevial
+
+1524511649
+alexnask
+every it: Iterator(...) becomes it: &Iterator(...)
+
+1524511668
+alexnask
+and every .it = Iterator(...) { ... } becomes .it = &comptime Iterator(...)  { ... }
+
+1524511702
+alexnask
+even better, it: &const Iterator(...)
+
+1524511722
+alexnask
+@Dodo This is basically what C++ does for virtual methods
+
+1524511841
+Dodo
+\Zig\itertools\src\main.zig:93:22: error: type '&&const Iterator(usize)' does not support field access <--- changing 'it: Iter' to 'it: &const Iter'
+
+1524511927
+alexnask
+I assume this happens someplace you take a pointer to an it field then call a function on it?
+
+1524511954
+MajorLag
+is Iterator() returning a type, as its naming convention suggests?
+
+1524511988
+alexnask
+Yes, it returns a vtable type in Dodo's case
+
+1524512013
+Dodo
+var once = &Once(usize).init(10).it; <-- thats where I create it
+
+1524512059
+MajorLag
+You can't take a pointer to a type. What you end up with is a type that is a pointer to the type. `const Type = usize; const PType = &Type;` => &Type == &usize
+
+1524512091
+alexnask
+it is of type '&const Iterator(usize)'
+
+1524512112
+alexnask
+Woops
+
+1524512144
+MajorLag
+This ambiguity is one of the things meant to be addressed in pointer reform
+
+1524512210
+alexnask
+@MajorLag That's what I was trying to do with my suggestion, &const Iterator(usize) is supposed to be "const pointer to the iterator(usize) vtable" type
+
+1524512225
+alexnask
+Not a pointer to the iterator(usize) type, if that makes sense
+
+1524512303
+MajorLag
+So you mean for .it to hold a type? Not be an instance of a type?
+
+1524512368
+alexnask
+no, .it is supposed to be an instance of type 'const pointer to Iterator(usize)'
+
+1524512404
+MajorLag
+Makes sense, but you need to point it at an instance then.
+
+1524512459
+alexnask
+Right
+
+1524512500
+alexnask
+Can you not initialize an Iterator(T) at comptime then initialize .it to be a pointer to that?
+
+1524512511
+alexnask
+Self { .it = &comptime Iterator(T) { .next_fn = next } }
+
+1524512531
+MajorLag
+I think that would work.
+
+1524512566
+alexnask
+Right, that was my suggestiong to Dodo :p
+
+1524512569
+MajorLag
+So maybe I misunderstood what was going on
+
+1524512607
+alexnask
+I think his code broke because he is taking references to .it and calling functions
+
+1524512624
+alexnask
+Although I thought the dot field access worked no matter the level of indirection
+
+1524512639
+MajorLag
+I'm fairly sure just the one.
+
+1524512666
+alexnask
+Well issue solved then, he's missing a dereference somewhere ;)
+
+1524512745
+Dodo
+you mean like this:
+
+1524512775
+alexnask
+This part looks fine
+
+1524512820
+Dodo
+so how should I create the 'once' Iterator?
+
+1524512822
+alexnask
+I think the issue is in main.zig line 93, now you have to use (*once).next() which is ugly :/
+
+1524512843
+alexnask
+'var once = &Once(usize).init(10).it;
+
+1524512843
+alexnask
+' should work, it's just a &&const Iterator(usize) now
+
+1524512878
+Dodo
+but calling next crashes the whole thing
+
+1524512891
+Dodo
+or should next() take an &const Iterator(T) ?
+
+1524512918
+alexnask
+Iterator(T).next should take self: &const Self
+
+1524512932
+alexnask
+next() should take &const Iter
+
+1524512968
+alexnask
+And I still don't know if it will work after that :p
+
+1524512979
+alexnask
+But I think it should
+
+1524512993
+Dodo
+error: cannot assign to constant
+
+1524513045
+alexnask
+Where from?
+
+1524513132
+alexnask
+Actually this change is a bit more invloved than I thought, you should probably revert
+
+1524513176
+alexnask
+Also, it doesn't make sense since Iterator(...) only has one function
+
+1524513211
+alexnask
+So you aren't actually saving anything (should have though of that in the first place)
+
+1524513229
+alexnask
+If you had 6-7 function pointers in there it would probably make sense
+
+1524513437
+alexnask
+@andrewrk What is a BoundFn?
+
+1524513466
+MajorLag
+I think it is just an fn inside a struct/union/enum namespace
+
+1524513512
+alexnask
+Thanks!
+
+1524513512
+Dodo
+oh Im only defining next(),
+
+1524513522
+Dodo
+things like .map() and .enumerate() dont count?
+
+1524513551
+alexnask
+@Dodo I mean you have one function pointer stored in the Iterator(T)
+
+1524513581
+alexnask
+So the size overhead of an it: Iterator(...) is the same as an it: &Iterator(...)
+
+1524513597
+alexnask
+(1 pointer)
+
+1524513606
+Dodo
+all this trouble hahaha
+
+1524513616
+alexnask
+And you get 1 less indirection so it's actually better :p
+
+1524513619
+alexnask
+Yup my bad
+
+1524513621
+alexnask
+:D
+
+1524513627
+Dodo
+mine as well
+
+1524513636
+Dodo
+anyway, I need to go!
+
+1524513666
+Dodo
+thanks for all the explanation and help! :D
+
+1524513694
+Dodo
+byye, have a good evening!
+
+1524513697
+alexnask
+No problem, have a nice day/evening/whatever time it is in <insert timezone>
+
+1524513735
+Dodo
+The Netherlands,
+
+1524513752
+Dodo
+22:02 atm
+
+1524513769
+alexnask
+Well, have a good evening then ;)
+
+1524513778
+Dodo
+what zone are you in?
+
+1524513807
+alexnask
+UTC+2
+
+1524513811
+alexnask
+I live in Greece :)
+
+1524513837
+Dodo
+oh, also evening
+
+1524513849
+Dodo
+have a nice evening!
+
+1524514234
+andrewrk
+alexnask, it's @typeOf(struct_instance.method)
+
+1524514631
+alexnask
+@andrewrk Gotcha, so @typeOf(StructType.method) is Fn right?
+
+1524514642
+andrewrk
+correct
+
+1524521333
+GitHub199
+[zig] andrewrk pushed 1 new commit to master:
+
+1524521334
+GitHub199
+zig/master 15bf0c1 Andrew Kelley: fix interaction between defer and labeled break...
+
+1524524584
+achambe
+something I was thinking about, how errdefer vs crashing introduces lots of new untested code paths into code
+
+1524524622
+achambe
+and tactics for making them tested.
+
+1524524641
+achambe
+best I have come up with fault injection and simulations
+
+1524524811
+achambe
+
+

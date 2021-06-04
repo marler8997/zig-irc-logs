@@ -1,0 +1,732 @@
+1516758832
+MajorLag_
+The regular array initialization syntax seems fine to me. Initializing a mutable slice at compile time was a bit odd, in the end I had to that strange label/break construct. I think that could be improved, for instance, it could actually say 'comptime' somewhere.
+
+1516766981
+GitHub28
+[zig] andrewrk pushed 2 new commits to master:
+
+1516766981
+GitHub28
+zig/master b3a6faf Andrew Kelley: replace %defer with errdefer...
+
+1516766981
+GitHub28
+zig/master ad2527d Andrew Kelley: clean up readme
+
+1516767201
+GitHub197
+[zig] andrewrk pushed 1 new commit to master:
+
+1516767201
+GitHub197
+zig/master b71a56c Andrew Kelley: cleanups that I meant to put in the previous commit
+
+1516804965
+MajorLag_
+Is there code somewhere that demonstrates usage of @setDebugSaftey? I have a situation where some math divides by zero with floats and would prefer to just disable it for those two lines.
+
+1516805331
+MajorLag_
+Nevermind, I worked it out.
+
+1516805334
+lqd
+MajorLag_: maybe something like @setDebugSafety(this, false);
+
+1516806069
+MajorLag_
+yeah, that's what I'd worked out. Enclosing those two lines in a block and throwing that at the top seems to have done it.
+
+1516808777
+MajorLag_
+I don't understand the reasoning behind having to cast enum types. If I explicitly declare enum(usize), I later have to cast it to usize explictly. If I need to then use that value as a u16, I'd then have to double cast it? It seems to me that if I explicitly declare an enum as a type the casting should be implicit.
+
+1516808807
+andrewrk
+MajorLag_, maybe we can get rid of the double cast
+
+1516808823
+andrewrk
+well, here's the deal
+
+1516808834
+andrewrk
+casting from an enum to its integer tag type is a safe operation, guaranteed to work
+
+1516808858
+andrewrk
+casting from an integer type to a smaller one can cause overflow
+
+1516808879
+andrewrk
+I want that to be clear
+
+1516809027
+MajorLag_
+I guess I don't see how having to explicitly cast to the type you already specified when you created the enum helps with that. Granted, if I try to use an enum(usize) as a u16 I should have to cast it, but if I use it as a usize (for instnace, as an array index) then I don't see how you're ever telling the programmer something they don't already know.
+
+1516809231
+andrewrk
+you're making the point that if the programmer specifies enum(usize) then the programmer intends to use the type interchangeably with a usize
+
+1516809259
+andrewrk
+that's currently not what zig understands the programmer's intent to be in this case, but let's open that up for discussion
+
+1516809261
+MajorLag_
+yes... though now that i think about it that isn't necessarily true
+
+1516809612
+MajorLag_
+They way this came about is that I'm using an enum to have a set of named constants that are used as array indexes. In this case, the array is bool and tracks key states. I create and initialize the array using @memberCount(). If @memberCount() worked on a struct of constants, I could use that, but I'd have to manually specify the values. It could be that this is a bit more of an edge case than I originally thought.
+
+1516810043
+MajorLag_
+In fact, now that I'm forced to think about it, I could just use a struct of named bools.
+
+1516810399
+MajorLag_
+On that note, is there a way to express "this is just a one-off struct, not a type"?
+
+1516811175
+andrewrk
+MajorLag_, what would that do differently than if it were a type?
+
+1516811306
+andrewrk
+if all the fields are of type void, then the type will have 0 bits and not generate any runtime code
+
+1516811356
+andrewrk
+feel free to share your code, maybe I can make a suggestion, or maybe it will convince me to change zig in some way to handle the use case better
+
+1516811589
+MajorLag_
+The struct in this case does have fields, of type bool. But I only ever need a single instance of it. In C, this could be expressed as:
+
+1516811643
+MajorLag_
+struct { BOOL up, down, left, right; } Keys; or something
+
+1516811651
+andrewrk
+ah. yeah we have anonymous structs
+
+1516811689
+MajorLag_
+Well it isn't anonymous since it has a name, but it isn't a type.
+
+1516811694
+andrewrk
+var keys = (struct {up: bool, down: bool, left: bool, right: bool}) {.up = false, .down = false, .left = false, .right = false};
+
+1516811707
+MajorLag_
+ok, makes sense
+
+1516811932
+MajorLag_
+Though that does mean listing every field twice.
+
+1516812001
+andrewrk
+agreed
+
+1516812065
+andrewrk
+zig optimizes for other goals, sometimes at the cost of verbosity
+
+1516812275
+MajorLag_
+In most cases I appreciate the extra specificity over the verbosity. I'm hoping the few that bother me are ultimately just a matter of finding the best way to work with the language.
+
+1516812703
+andrewrk
+I'm definitely interested in examples of code that is awkward to express in zig
+
+1516812934
+MajorLag_
+var keys: struct {up: bool, down: bool, left: bool, right: bool} = undefined;        is less verbose, but means I should probably initialize it later, which I'd end up doing with a memset and a sizeof. What do you think of adding a way to specify that I want to initialize something by zeroing its memory?
+
+1516812978
+andrewrk
+we used to have that
+
+1516813000
+andrewrk
+
+
+1516813093
+andrewrk
+this is one of those cases where I think explicitly initializing fields is worth the upfront cost.
+
+1516813134
+andrewrk
+the cost of typing a few more keys on the keyboard
+
+1516817070
+MajorLag_
+question: @memset(@intToPtr(&u8, @ptrToInt(&keys)), 0, @sizeOf(@typeOf(keys)));    seems to work, but   @memset(@ptrCast(&u8, &keys), 0, @sizeOf(@typeOf(keys)));   produces  an invalid cast error. Am I missing something obvious?
+
+1516817332
+andrewrk
+MajorLag_, can I see the code that defines keys?
+
+1516817709
+andrewrk
+MajorLag_, with @memset were you getting "out of bounds pointer access"? I just reproduced this, and it's a bug. the bug is not present if keys is a local variable instead of a global
+
+1516817734
+andrewrk
+however, the idiomatic way to do what you are doing works
+
+1516817748
+andrewrk
+
+
+1516817897
+andrewrk
+is it really that bad  though, to explicitly set every field to false?
+
+1516818059
+andrewrk
+I made a bug report for the bug you found:
+
+1516818526
+MajorLag_
+odd, with memset I get "invalid cast from type '&(anonymous struct at ...)' to '&u8'", other attempted variations did produce OOB pointer errors though.
+
+1516818610
+andrewrk
+I suggest the "idiomatic" way from by above code paste, or better yet, use your text editor's fancy tooling to explicitly initialize every field to false
+
+1516818634
+andrewrk
+isn't the key data really an array?
+
+1516818701
+MajorLag_
+it was, but I changed it to a struct because indexing an array with enums was a bit unwieldy.
+
+1516818807
+MajorLag_
+Personally I feel like initializing a struct or array to 0 is a common enough operation that 'zeroes' keyword makes sense, but maybe I'm wrong. I wrote a fuse implementation a while back, there are lot of structs with fields I never use or care about, but that could cause issues if they weren't set to 0.
+
+1516818832
+andrewrk
+maybe you could use a helper function:  fn key(id: KeyId) -> bool { return keys[@TagType(KeyId)(id)]; }
+
+1516820892
+MajorLag_
+Ok, well, here's a thing. I can avoid listing every field twice and get the behavior I wanted by just creating a new file "keys.zig" full of pub vars and importing it. If there's a way to create an arbitrary namespace in Zig that I'm not aware of, I could do that in the same file.
+
+1516820914
+MajorLag_
+Not that that's a big deal
+
+1516821434
+andrewrk
+you can get an arbitrary namespace with an empty struct
+
+1516822369
+MajorLag_
+...so you can. That you could use structs like this wasn't obvious to me. I was under the impression it only worked for constants.
+
+1516826901
+andrewrk
+
+
+1516827189
+l1x
+nice one
+
+1516827208
+lqd
+andrewrk: you did do some Rust right? I think I remember some of your work there :)
+
+1516827221
+andrewrk
+yes
+
+1516827574
+lqd
+nice indeed. very true that there's some work left to do to make unsafe rust safer, thanks for showing concrete examples
+
+1516827581
+andrewrk
+no problem :)
+
+1516827587
+andrewrk
+I fully expect this to be fixed in a later version of rust
+
+1516827592
+andrewrk
+there's no fundamental reason it couldn't happen
+
+1516827613
+andrewrk
+I'm just trying to get some publicity for the zig project
+
+1516827670
+lqd
+I was actually wondering if the validator mode of their interpreter would catch it today
+
+1516827746
+andrewrk
+interesting, I hadn't heard about that
+
+1516827758
+lqd
+oh don't get me wrong I like zig a lot or wouldn't be here :) you're showing true cases needing to be fixed, what more could one want
+
+1516827912
+jfo
+andrewrk: where is the zig syntax highlighting coming from in those coe blocks?
+
+1516827942
+jfo
+swig? prism?
+
+1516827962
+lqd
+(iirc this is the validator approach paper
+
+1516828015
+andrewrk
+jfo, prism. I  wouldn't use it again, but it's how I set up my blog a long time ago
+
+1516828042
+andrewrk
+lqd, nice, I'll have to check this out after work
+
+1516828046
+jfo
+If you're looking to migrant I can really recommend hugo. I want to get zig highlighting into chroma at some point so I can use it there.
+
+1516828060
+jfo
+
+
+1516833517
+itsMontoya
+Hey andrewrk
+
+1516833525
+itsMontoya
+Long time no talk! Sorry I've been MIA for a bit
+
+1516833550
+andrewrk
+hi itsMontoya
+
+1516833583
+itsMontoya
+Does zig have an HTTP listener within the stdlib?
+
+1516833589
+itsMontoya
+I did a quick docu search and didn't find anything
+
+1516833595
+andrewrk
+not yet
+
+1516833612
+itsMontoya
+Ah ok - I'm trying to think of a simple project I can do in zig to get my feet wet
+
+1516833615
+andrewrk
+there's some non-blocking I/O work done in a branch
+
+1516833617
+itsMontoya
+But most of my shit is web services
+
+1516833623
+andrewrk
+a game would be a fun candidate
+
+1516833627
+andrewrk
+or a CLI utility
+
+1516833636
+itsMontoya
+Maybe CLI utility
+
+1516833650
+itsMontoya
+I feel like a game would be too difficult for me as I'm just trying to get the syntax down better
+
+1516833668
+andrewrk
+I also plan to add coroutines soon. that + non blocking I/O will make it attractive to do networking
+
+1516833702
+itsMontoya
+Yes! I like that
+
+1516833712
+itsMontoya
+So you are going the coroutine route instead of the async/await route?
+
+1516833729
+andrewrk
+the two are related
+
+1516833737
+andrewrk
+coroutines are building blocks to implement async/await
+
+1516833752
+itsMontoya
+Ah true, I guess I meant the difference between golang and .net
+
+1516833760
+itsMontoya
+Where golang doesn't have async/await at all
+
+1516833795
+itsMontoya
+Rather, each coroutine gives the illusion of being sequential
+
+1516833807
+itsMontoya
+Without needing async/await to handle the part of waiting
+
+1516833809
+andrewrk
+I see. I want to achieve async/await, if I can do it without compromising zig's goals of: no hidden control flow, no hidden memory allocations, explicit error handling
+
+1516833823
+itsMontoya
+Well I think that the golang model would suite you better then
+
+1516833835
+itsMontoya
+async/await == hidden control flow IMHO
+
+1516833837
+andrewrk
+yes. if we can make it work within the requirements, that would be ideal
+
+1516833851
+itsMontoya
+It's one thing that drives me crazy about Rust
+
+1516833855
+itsMontoya
+The async/await is done with macros
+
+1516833858
+itsMontoya
+so you get these obscure errors
+
+1516833868
+itsMontoya
+It's just not a pleasant experience
+
+1516833873
+andrewrk
+I need to experiment with it
+
+1516833883
+itsMontoya
+I built a toy http handler with tokio
+
+1516833885
+andrewrk
+it's not clear how to proceed with coroutines yet
+
+1516833889
+itsMontoya
+It was not fun lol
+
+1516833900
+itsMontoya
+Even rust veterans were like "That's uncharted territory"
+
+1516833920
+andrewrk
+a straightforward debugging experience is central to zig
+
+1516833937
+itsMontoya
+
+
+1516833943
+itsMontoya
+So you see that handler func?
+
+1516833950
+andrewrk
+yes
+
+1516833968
+itsMontoya
+If we added in disk i/o here, it is technically blocking. But what go does is that the goroutine scheduler puts the goroutine on pause
+
+1516833971
+itsMontoya
+and moves on to another one
+
+1516833974
+andrewrk
+right
+
+1516833984
+itsMontoya
+So instead of doing await, it's a really clean experience for the dev
+
+1516834009
+andrewrk
+it's different behavior though
+
+1516834011
+itsMontoya
+It also makes error handling wonderful because you're not fighting with callbacks
+
+1516834022
+itsMontoya
+How so?
+
+1516834037
+itsMontoya
+Because serving off disk for async http is a big deal
+
+1516834044
+itsMontoya
+and it's a simple use-case which is easy to replicate
+
+1516834050
+itsMontoya
+and for rust it's a big pain in the ass
+
+1516834079
+andrewrk
+hmm, the case I'm thinking of is when you want to simultaneously kick off 2 I/O requests then wait for both of them
+
+1516834097
+andrewrk
+that is modeled nicely with async/await, but takes some work with go's model
+
+1516834241
+jfo
+does async/await imply an event loop or can that construct be used with system threading also?
+
+1516834261
+itsMontoya
+andrewrk: Not too hard, just spin up goroutines. It's actually pretty darn easy
+
+1516834270
+itsMontoya
+Channels makes the communication nicer
+
+1516834283
+itsMontoya
+Does zig have channels? That might be fun to write
+
+1516834436
+andrewrk
+jfo, yes it implies an event loop
+
+1516834499
+andrewrk
+itsMontoya, not natively. but once we have concurrency figured out, for sure the channel model will be a well-supported use case
+
+1516834506
+jfo
+is there an issue about concurrency general somewhere open? just curious, if you happen to know offhand
+
+1516834528
+andrewrk
+
+
+1516834572
+itsMontoya
+andrewrk: Ok cool! I'll see about writing one
+
+1516834622
+andrewrk
+itsMontoya, it's tightly coupled to the concept of an event loop that jfo mentioned
+
+1516834625
+jfo
+ty
+
+1516834701
+itsMontoya
+andrewrk: Technically - wouldn't I be able to work on chans just with boring threads?
+
+1516834708
+itsMontoya
+Spin up two threads, talk between each other
+
+1516834722
+itsMontoya
+Then if/when coroutines happen - it should work
+
+1516834739
+itsMontoya
+
+
+1516834742
+andrewrk
+yes, for example assuming the pthread model, you would have 1 pthread_cond per channel
+
+1516834744
+itsMontoya
+I was going to just port that
+
+1516834772
+itsMontoya
+Oh sorry, private repo :(
+
+1516834809
+itsMontoya
+Long story short, I've written channels already. So porting shouldnt be too bad
+
+1516834837
+itsMontoya
+I love that you have all these int types
+
+1516834840
+itsMontoya
+u2,u3,u4
+
+1516834867
+itsMontoya
+There are times where I just need like 0-7, but I settle for u8 because that's the smallest I have access to
+
+1516834932
+jfo
+Concurrency is so interesting to me and I look forward to learning about it more as it gets implemented. is the `kernel thread` you refer to in issue the same as a pthread? is that the same as forking a process? do you want to support green threads? are channels related to erlang style message passing? so many new things to learn :)
+
+1516834936
+jfo
+++learning
+
+1516834972
+itsMontoya
+jfo: Yes
+
+1516834988
+itsMontoya
+Coroutines would be green threads
+
+1516835004
+itsMontoya
+and he's working on getting that going, but they want to implement it without ruining zig's core values
+
+1516835021
+itsMontoya
+RE channels: Yes, it's for message passing. Similar to erlang
+
+1516835027
+itsMontoya
+Golang also uses channels for communication
+
+1516835039
+itsMontoya
+Hell, I use them on Rust quite a bit as well
+
+1516835049
+itsMontoya
+Shit andrewrk - I think I found the project I want to do
+
+1516835063
+andrewrk
+jfo, yes pthreads are kernel threads
+
+1516835078
+andrewrk
+forking a process is different than a kernel thread
+
+1516835094
+itsMontoya
+Then jfo can write an actor framework on top of the channels :P
+
+1516835097
+andrewrk
+erlang style message passing is equivalent to channels
+
+1516835111
+itsMontoya
+andrewrk: aur/zig 0.1.1-1 (3, 0.01)
+
+1516835117
+itsMontoya
+Is that recent?
+
+1516835134
+andrewrk
+374 commits to master since this release
+
+1516835140
+andrewrk
+I recommend master branch
+
+1516835158
+itsMontoya
+Oh ok, I won't be lazy then. I'll github it
+
+1516835172
+andrewrk
+release 0.2.0 is scheduled for 1 week after llvm 6 comes out, which is currently feb 21
+
+1516835295
+itsMontoya
+I wish I knew more about VScode plugins
+
+1516835309
+itsMontoya
+I'd love to write a zig vscode plugin, linters have made me lazy
+
+1516835319
+andrewrk
+I believe there exists a zig vscode plugin already
+
+1516835326
+jfo
+
+
+1516835528
+jfo
+what is the advantage of having green threads in addition to system threads? does that increase the complexity for dealing with concurrency in user land as opposed to letting the os handle it?
+
+1516835591
+andrewrk
+you can go into a pretty deep rabbit hole trying to answer that question
+
+1516835613
+andrewrk
+my summary of it is: kernel threads are more resource-intensive for the system, whereas coroutines can be cheaper
+
+1516835653
+andrewrk
+with kernel threads you let the OS scheduler decide how to schedule things. with coroutines the application decides how to schedule things
+
+1516835752
+andrewrk
+it kinda doesn't make sense to have more than N kernel threads where N is the number of CPU cores you have
+
+1516835842
+lqd
+the number of threads is also limited
+
+1516836174
+lqd
+ie you can have many many more green threads than system threads
+
+1516836459
+jfo
+will that distinction be made explicit, I wonder? i.e. will I know when I'm asking for a pthread vs a green thread and can a green thread potentially be a system thread without me knowing and does it matter if that's the case
+
+1516836632
+lqd
+to me, it usually is explicitly different yes, as in the green thread is modeled as functions/blocks/goroutines/whatever, and threads not at all
+

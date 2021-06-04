@@ -1,0 +1,2012 @@
+1542326667
+daurnimator
+andrewrk: let me know when you'd like to revisit.
+
+1542326801
+andrewrk
+daurnimator, will do
+
+1542326824
+daurnimator
+does zig have a http library?
+
+1542326840
+andrewrk
+daurnimator, what were you saying about how you solved a blocking function call creating a one-time-use event loop?
+
+1542326847
+andrewrk
+no http lib yet
+
+1542326859
+andrewrk
+that's pending coroutines rewrite, which is pending copy elision
+
+1542326860
+daurnimator
+andrewrk: if we solve the coroutine question I think I'd like to start on a http lib for zig
+
+1542326862
+daurnimator
+:)
+
+1542326874
+daurnimator
+andrewrk: okay I might tell you the story of cqueues :)
+
+1542326877
+andrewrk
+copy elision:
+
+1542326889
+daurnimator
+andrewrk: as you may know, lua has coroutines as a language feature
+
+1542326900
+daurnimator
+the primitive operations are "resume" and "yield".
+
+1542326922
+andrewrk
+same in zig - resume and suspend
+
+1542326932
+daurnimator
+however they require no annotations
+
+1542326943
+andrewrk
+same in zig so far
+
+1542326962
+daurnimator
+function foo() print("A") coroutine.yield() print("B") end
+
+1542326979
+daurnimator
+wouldn't that require an 'async' annotation in zig at the moment?
+
+1542327028
+andrewrk
+what does the coroutine body look like?
+
+1542327039
+daurnimator
+andrewrk: huh?
+
+1542327049
+daurnimator
+andrewrk: if you call foo above from outside of a coroutine, then coroutine.yield() would throw an error: "attempt to yield from outside a coroutine"
+
+1542327070
+andrewrk
+ah, I see, foo
+
+1542327081
+daurnimator
+foo is just a function in this example :)
+
+1542327107
+andrewrk
+in zig: async fn foo() void { print("A"); suspend; print("B"); }
+
+1542327109
+shachaf
+Hmm, how are coroutines implemented? Is it with stack switching or something else?
+
+1542327124
+daurnimator
+instead you would usually call it like so: myco = coroutine.create(function() foo() somethingelse() end); ok, err = coroutine.resume(myco)
+
+1542327128
+andrewrk
+shachaf, it's with LLVM's coroutines IR support. it splits functions up into multiple functions
+
+1542327145
+andrewrk
+however there is a planned rewrite which changes how they are implemented and some of the semantics
+
+1542327195
+shachaf
+Ah, so they all use the regular thread stack, and variables declared in async functions go into a state struct or something?
+
+1542327201
+shachaf
+I guess I should read about how LLVM coroutines work.
+
+1542327222
+daurnimator
+andrewrk: does the above make sense so far?
+
+1542327226
+andrewrk
+shachaf, it's the same as C++ coroutines. they are stackless - imagine the function accepts a hidden first argument which is a struct containing all its stack variables
+
+1542327254
+shachaf
+Right, that sounds like what I'm describing.
+
+1542327300
+shachaf
+Does the planned rewrite work the same way?
+
+1542327310
+daurnimator
+shachaf: I think I'm trying to influence that now :)
+
+1542327334
+andrewrk
+daurnimator, can you do your example without an anonymous function and I'll translate it into zig for you?
+
+1542327343
+shachaf
+I've been wondering lately what the real cost of userspace threads/coroutines with stack switching is over manually managing state for asynchronous operations (or apparently what LLVM does).
+
+1542327399
+shachaf
+I think there's a hidden cost that people often don't appreciate, which is that when you switch stacks all the time, you get a bunch of cache misses for code that uses the stack for some regular computation that doesn't suspend.
+
+1542327400
+andrewrk
+shachaf, it will work mostly the same, except: zig will create the struct for the local variables and do the function splitting rather than llvm; the async keyword will not be used to create a coroutine, and the memory for the coroutine frame is passed to the coro rather than it using an allocator to alloc/free the frame
+
+1542327406
+daurnimator
+andrewrk: function foo() print("A") coroutine.yield(42) print("B") return 84 end; myco = coroutine.create(foo); ok, yielddata = coroutine.resume(myco); ok, moredata = coroutine.resume(myco);
+
+1542327445
+shachaf
+andrewrk: OK, that sounds like an improvement.
+
+1542327502
+andrewrk
+shachaf, what's beautiful about how zig does it though, is that coroutines generally don't yield until they cannot continue due to an I/O operation not being ready yet. if a thread would sit there doing nothing, better to have it switch tasks, right?
+
+1542327538
+shachaf
+By "usespace thread" I mean something very lightweight and cooperative, like coroutines.
+
+1542327567
+shachaf
+(But with some sort of scheduler? I guess that's the difference between coroutines and threads, in my mind.)
+
+1542327620
+shachaf
+I do think stack switching is suboptimal, though. I just don't know how big the effect actually is. People often measure the wrong thing.
+
+1542327625
+andrewrk
+daurnimator, sorry just a moment, working on example code
+
+1542327631
+daurnimator
+shachaf: the difference is that a scheduler goes in the stdlib/external. the coroutine support goes in the language.
+
+1542327677
+daurnimator
+shachaf: i.e. you build a standard scheduler interface/API using the coroutine support in the language.
+
+1542327686
+shachaf
+But a good userspace thread library should probably let you schedule threads yourself.
+
+1542327696
+daurnimator
+shachaf: sure
+
+1542327748
+shachaf
+Anyway I'm interested in the Zig approach -- which is apparently used in C++20 too? I didn't know about that.
+
+1542327750
+andrewrk
+I'm not sure how that would fit in. the current implementation uses, for example, epoll_wait on linux - all threads in the thread pool at the same time - and lets the OS pick one to resume with the I/O task
+
+1542327804
+shachaf
+I think I'm just using confusing words here.
+
+1542327808
+andrewrk
+daurnimator, status quo zig does not have a way to yield a value when suspending - however that is one of the things I am considering changing
+
+1542327864
+shachaf
+I'm treating "OS thread" and "userspace thread" as two different things, with many userspace threads scheduled onto one OS thread.
+
+1542327866
+daurnimator
+andrewrk: k. you can leave that out of your translation for now :)
+
+1542327964
+andrewrk
+daurnimator, what is the `ok` value?
+
+1542328003
+daurnimator
+andrewrk: the resume is implicitly a try/catch
+
+1542328039
+daurnimator
+andrewrk: translating that to zig, resume() would be able to throw errors.
+
+1542328083
+andrewrk
+daurnimator,
+
+1542328094
+shachaf
+I really like that Zig has named-break-with-value. I was looking for a language with that feature recently and I was surprised I didn't find anything.
+
+1542328105
+andrewrk
+shachaf, with the way zig does coroutines, there is no userspace thread
+
+1542328132
+shachaf
+andrewrk: I agree. Well, depending on whether you consider coroutines to be threads.
+
+1542328155
+andrewrk
+I think that "thread" implies stack space for more than one frame
+
+1542328158
+shachaf
+Not in the usual sense of the word at least.
+
+1542328164
+shachaf
+Right.
+
+1542328172
+daurnimator
+andrewrk: oh one thing; create() doesn't kick off the coroutine, it just allocates the room for it
+
+1542328187
+andrewrk
+daurnimator, same, in the zig translation
+
+1542328191
+shachaf
+So if an async function wants to call another async function, does it add extra space for the second function's state struct in its own state struct?
+
+1542328201
+andrewrk
+daurnimator, oops, sorry, not quite true - but it will be possible to do that, let me show you
+
+1542328216
+daurnimator
+andrewrk: yeah I think you put a suspend right at the start to do that?
+
+1542328220
+andrewrk
+yes
+
+1542328220
+shachaf
+Or is that the plan with the new system, I guess I should ask, because it sounds like LLVM does something strange here.
+
+1542328232
+andrewrk
+daurnimator, hang on let me send another code snippet
+
+1542328344
+andrewrk
+shachaf, in status quo (LLVM), you pass an allocator to a coroutine and it uses the allocator to create and destroy the frame. post-rewrite, calling an async function uses the "result location" (which is a copy elision concept) as the frame, which means the frame can be static data, on the heap, or on the stack, depending on the expression. and so yes if it is on the stack, then it would add extra space for the second function's state
+
+1542328345
+andrewrk
+struct in its own
+
+1542328515
+shachaf
+Shouldn't it be irrelevant whether it's on the stack?
+
+1542328649
+shachaf
+I guess I should ask a more general question. If you have two async functions F and G, can F use G, and what does the memory layout for that look like?
+
+1542330796
+daurnimator
+context for channel: I just showed andrewrk what I'm trying to get to with my coroutine suggestions.
+
+1542330955
+shachaf
+Hmm, Zig lets you take the address of an rvalue?
+
+1542330985
+shachaf
+Maybe it doesn't have C-style r/l values
+
+1542331075
+andrewrk
+shachaf, I believe that's related to the copy elision branch I'm working on
+
+1542331147
+andrewrk
+to your other question: F decides where the memory for G is depending on the syntax used to invoke it. It could be on the stack, heap, or it could even be global
+
+1542331281
+shachaf
+Can it be inside F's memory struct?
+
+1542331392
+shachaf
+Does G's memory include a return address or something like that that yields control back to F when G is done?
+
+1542334313
+andrewrk
+shachaf, sorry for the delay. yes it can. let me code up a few examples...
+
+1542334937
+andrewrk
+shachaf,
+
+1542335210
+daurnimator
+andrewrk: hey I'm trying out your fix for
+
+1542335215
+shachaf
+andrewrk: Aha.
+
+1542335224
+shachaf
+This is in the new proposal, it sounds like, not the LLVM implementation?
+
+1542335278
+andrewrk
+shachaf, correct
+
+1542335291
+andrewrk
+daurnimator, can I see your test case?
+
+1542335309
+daurnimator
+andrewrk:
+
+1542335314
+andrewrk
+oh right
+
+1542335321
+benjikun
+It's not possible to use zig with z80 architecture ATM is it
+
+1542335403
+benjikun
+I wonder if that's too obscure to warrant making it compatible
+
+1542335452
+andrewrk
+benjikun, looks like llvm does not support z80 which means zig does not either
+
+1542335471
+benjikun
+oh I see
+
+1542335510
+MajorLag
+I don't think llvm supports any 8bit archs?
+
+1542335529
+MajorLag
+or 16 for that matter.
+
+1542335554
+shachaf
+andrewrk: Does this generate code equivalent to something like const @frame(g) = struct { returnAddr: *fn() noreturn } ?
+
+1542335617
+andrewrk
+oh right, ok so how await works:
+
+1542335660
+andrewrk
+imagine the 2 threaded case, 1 thread races toward return, the other thread races towards await
+
+1542335683
+benjikun
+MajorLag: yeah, ig it doesn't from looking at their features page
+
+1542335723
+andrewrk
+await does a suspend, then @atomicRmw xchg, putting the ptr to coro frame into g's frame in the awaiter field
+
+1542335767
+andrewrk
+return does @atomicRmw xchg, putting 0xffffffff into its own frame in the awaiter field
+
+1542335832
+andrewrk
+if the await got 0xfffffffff then the return won the race; the result is in the result field of g's coro frame. it resumes itself. otherwise the suspend completes, relying on g to resume f
+
+1542335902
+MajorLag
+benjikun: yeah, it's a shame. I'd have liked to try writing a C64 or DOS game in zig. Maybe some day, but probably not.
+
+1542335962
+andrewrk
+if the return got 0x0 (initial value) then the return won the race. suspend itself, knowing the awaiter will look at its result field of the coro frame. otherwise the return gets the awaiter ptr, and resumes the awaiter
+
+1542336038
+shachaf
+OK, I think I've been assuming too much about how this works, I was figuring something much more deterministic.
+
+1542336050
+andrewrk
+it's designed to work in a multi-threaded environment
+
+1542336134
+benjikun
+MajorLag: true, maybe in the future
+
+1542336139
+andrewrk
+sorry let me clarify, I just realized post-rewrite it will be slightly different: `return` puts the result in its own coro frame in the "result" field, begins a suspend,
+
+1542336204
+shachaf
+So "g()" in your example schedules g to run on some thread at some point?
+
+1542336228
+andrewrk
+`await` starts a suspend, does the atomic xchg, then if it got a zero value, it completes the suspend, knowing the `return` will resume it. otherwise, it tail resumes itself, and the first thing it does out of suspend is get the return value from the target's frame
+
+1542336277
+andrewrk
+the way to think about it is that "g()" is responsible for getting to the `return` instruction (which may be implicit at the end of the function if the return type is `void`).
+
+1542336298
+andrewrk
+this means that if g suspends, it must have a plan for how to get resumed
+
+1542336336
+andrewrk
+so one way to do this would be to start a suspend and then put its handle onto a scheduler, yes
+
+1542336351
+andrewrk
+another way would be to suspend, and then put its handle into an epoll set, kqueue, or IOCP
+
+1542336389
+andrewrk
+MajorLag, benjikun, I see some projects that are plugins to llvm to add z80 support. I don't know how far along they are or what the quality is though
+
+1542336418
+benjikun
+interesting
+
+1542336443
+benjikun
+LLVM+SDCC
+
+1542336448
+shachaf
+Oh, I see, g chooses whether to suspend
+
+1542336494
+andrewrk
+shachaf, right. if it does not suspend it will proceed right along to the return statement, and be guaranteed to finish before it is possible to `await` it
+
+1542336548
+shachaf
+I think this makes sense, though in the common case it seems like there wouldn't be any races?
+
+1542336570
+shachaf
+Maybe I'll try it out and look at the generated code to figure it out. :-)
+
+1542336666
+andrewrk
+there could be races because std.event.Loop creates a thread pool, and async I/O functions use it. so if you do multiple things that wait on I/O the OS will choose threads to resume the appropriate coroutines
+
+1542336720
+daurnimator
+andrewrk: any hints re: 1719?
+
+1542336747
+andrewrk
+daurnimator, sorry, I'm having a look at it
+
+1542336969
+andrewrk
+daurnimator, I think I know what's going on. the code is actually working, but then C1 and C2 are marked for normal code generation (in addition to being analyzed in a comptime context), which is impossible because of the ++, so we emit an error
+
+1542336975
+andrewrk
+i'll comment on the issue
+
+1542337085
+oats
+andrewrk: how have you set up your vim in your videos to give you linter info?
+
+1542337096
+andrewrk
+oats, no. I have a very primitive vim setup
+
+1542337106
+oats
+I noticed :)
+
+1542337114
+oats
+are you just using !command then?
+
+1542337206
+andrewrk
+oats, oh, I'm using the zig vim extension which runs zig fmt on save, is that what you're talking about?
+
+1542337222
+oats
+ahhhh, yeah
+
+1542337238
+oats
+I remember reading that in the zig.vim readme
+
+1542337241
+andrewrk
+
+
+1542337255
+oats
+is the stage2 compiler the one that's going to be self-hosting?
+
+1542337259
+andrewrk
+yes
+
+1542337283
+andrewrk
+stage2 is when you compile self-hosted with stage1; stage3 is when you compile self-hosted with stage2. stage3 is what we want to ship
+
+1542337307
+andrewrk
+stage2 can only compile hello world at the moment
+
+1542337479
+oats
+TIL of streaming parsers
+
+1542337483
+oats
+that's a cool concept
+
+1542337566
+daurnimator
+andrewrk: so should I declare the functions only inside a comptime block for now or something?
+
+1542337585
+andrewrk
+daurnimator, I'm going to try and fix it for you in 10 minutes
+
+1542337589
+daurnimator
+ah k
+
+1542337596
+daurnimator
+I thought it sounded like a bigger fix :P
+
+1542337613
+andrewrk
+if it turns out to be bigger I'll give you a workaround
+
+1542337623
+andrewrk
+oh, a workaround is to make the args comptime
+
+1542337659
+daurnimator
+andrewrk: yeah that's what I have in my gist at the moment/
+
+1542337671
+daurnimator
+felt like marking a function as comptime would be better
+
+1542337682
+andrewrk
+related:
+
+1542337697
+andrewrk
+I think marking the args comptime is a better communication of what the function needs
+
+1542337719
+andrewrk
+one of the goals in zig is to make it unnecessary to distinguish what functions are comptime and what are runtime
+
+1542337842
+benjikun
+andrewrk: Would you be open to making a spreadshirt for zig shirts / stuff to go along side your patreon
+
+1542337889
+daurnimator
+andrewrk: I like that.... but as observed, without that flag we only have the arg annotations as a workaround here.
+
+1542337904
+daurnimator
+hopefully the fix is easy :)
+
+1542338001
+benjikun
+Spreadshirt or teespring
+
+1542338540
+andrewrk
+benjikun, I dunno, I think I'll wait until 1.0.0 for that
+
+1542338586
+benjikun
+Fair enough
+
+1542340121
+diltsman
+How would I reference a variable defined in the linker script?
+
+1542340348
+andrewrk
+diltsman, declare an extern variable with the same name, and then look at the
+
+1542342173
+andrewrk
+daurnimator, it's not a quick fix
+
+1542342185
+daurnimator
+aw
+
+1542342192
+andrewrk
+but it remains an open issue
+
+1542342316
+andrewrk
+as soon as I gave up I thought of another idea
+
+1542342958
+diltsman
+andrewrk, I figured out the extern part, but I never would have figured out to look at the address.
+
+1542342987
+andrewrk
+diltsman, does it make sense now that you think about it?
+
+1542343041
+diltsman
+I think so.
+
+1542343279
+diltsman
+How do I convert a begin/end pointer pair to a slice?
+
+1542343323
+andrewrk
+begin[0..end - begin]
+
+1542343364
+andrewrk
+did I not implement subtraction? if so then begin[0..@ptrToInt(end) - @ptrToInt(begin)]
+
+1542343603
+diltsman
+So, given extern const _b:u8; and extern const _e:u8; (both linker constants, I need a slice that covers the range so that I can memcpy from flash to ram.
+
+1542344032
+andrewrk
+diltsman,
+
+1542344041
+andrewrk
+I haven't updated this in a while, but here's what I did
+
+1542344082
+andrewrk
+this code is missing alignment annotations, the variables should have `align(4096)` or whatever on them
+
+1542344089
+andrewrk
+(which is just an optimization)
+
+1542344136
+andrewrk
+I think it makes sense to use @memcpy in this case
+
+1542344228
+andrewrk
+daurnimator, it's actually kinda tricky, because we have to notice that a function has no references in comptime constants that make it into the object
+
+1542344250
+andrewrk
+consider if you pass a function pointer to a comptime arg, then store the value in a struct, which ends up a global const, referenced somewhere
+
+1542344257
+andrewrk
+the function must be generated so that it can be called
+
+1542344290
+andrewrk
+daurnimator,
+
+1542344368
+andrewrk
+here even though we never call norm_zero case, we have to generate it, because we reference the NormalDist global constant, which has it as a field
+
+1542344451
+daurnimator
+andrewrk: when that assignment happens you should mark the function as run-time implementation needed
+
+1542344479
+daurnimator
+I'm not sure I understand the issue
+
+1542344490
+andrewrk
+but that's not necessarily true. if we only used the return value of ZigTableGen at comptime, we wouldn't need to generate a runtime implementation
+
+1542344493
+daurnimator
+though I can see how internal implementation details could make this a easy or hard problem
+
+1542344601
+andrewrk
+anyway, putting it off for now. the comptime arg workaround I think is reasonable
+
+1542344613
+daurnimator
+andrewrk: it does make things very verbose
+
+1542344639
+daurnimator
+#define C2(x,y) C1(x,y) C1(x+1,y) --> fn C2(comptime x:i32,comptime y:i32) [2]u8 { return C1(x,y) ++ C1(x+1,y); }
+
+1542344657
+daurnimator
+not to mention actually needed to know the [2] length instead of it being inferred
+
+1542344769
+andrewrk
+
+
+1542345050
+daurnimator
+andrewrk: I guess the only thing to say is: "keep working on things" :)
+
+1542345067
+daurnimator
+andrewrk: seems like zig isn't
+
+1542345080
+daurnimator
+though I'm very happy with the direction it is going
+
+1542345115
+daurnimator
+hopefully you get some time to play with my coroutine recommendations and integrate them in the next month or two
+
+1542345116
+andrewrk
+that makes sense. despite keeping the language small it turns out to be quite a large project in terms of effort
+
+1542345937
+daurnimator
+andrewrk: at
+
+1542345968
+daurnimator
+--> how can I attach that annotation to a function? "if this function is called at compile time make sure it has at least X quota"
+
+1542346796
+daurnimator
+andrewrk: two related questions: can you declare functions in a comptime block? comptime {  fn C2(x,y) [2]u8 { return C1(x,y) ++ C1(x+1,y); } }
+
+1542346844
+daurnimator
+2. What would it take to make ++ work a run-time? I suppose the issue is you also need an allocator.....
+
+1542347629
+hryx
+You'd certainly need an allocator to use ++ on runtime values, which I'm sure means it wouldn't become a language feature
+
+1542347733
+hryx
+daurnimator: Curious, what would be the expected result of declaring functions in a comptime block? Would they be only available at comptime? Would they only be in scope in that block?
+
+1542347748
+daurnimator
+hryx: yes. they would only be available at comptime
+
+1542347767
+hryx
+I've never tried that. Lemme see...
+
+1542347776
+daurnimator
+hryx: in this case: because they cannot be implemented at runtime due to use of ++.
+
+1542348089
+hryx
+looks like it isn't syntactically valid to define a fn in a comptime block, because fn is only a top-level decl (for now)
+
+1542348189
+daurnimator
+hryx: okay.
+
+1542348221
+hryx
+But I think in the future there will be a way to do what you want. I thought I saw an issue somewhere that implicitly wraps comptime around ++ operators (I can't find it right now)
+
+1542348255
+hryx
+I thiiiink that would help with what you want to accomplish, when it's implemented
+
+1542348304
+hryx
+sorry, operands, not operators
+
+1542348344
+daurnimator
+hryx: the implicit comptime around ++ was
+
+1542348453
+hryx
+that explains why I couldn't find it! :P
+
+1542348691
+daurnimator
+hryx: are you Hejsil on github?
+
+1542348930
+hryx
+nope, I'm hryx on GitHub. And Hejsil = Hejsil here too
+
+1542348985
+daurnimator
+thanks
+
+1542349045
+hio
+how should we work with unicode in zig?
+
+1542349153
+hryx
+hio: with a library, but I dunno if there is one yet. My guy that's stdlib material in the future
+
+1542349203
+hryx
+there's this
+
+1542349279
+daurnimator
+hio: what do you want to do?
+
+1542349289
+hio
+I looked quite a while for the best c libraries that could be used or copied from, Imo these are the only contenders:
+
+1542349315
+daurnimator
+hio: you want to validate utf8?
+
+1542349328
+hio
+I would ideally like to get the same comfortable API surface that I get in c#, all these methods:
+
+1542349346
+hio
+validating utf8 sounds to me like the prerequisite to any and all further utf8 functions
+
+1542349365
+daurnimator
+hio: IMO indexing by codepoints is almost always the wrong thing to be doing
+
+1542349433
+hio
+probably yeah, there has to be a general decision whether you go with a grapheme based approach or a codepoint approach
+
+1542349461
+hio
+imo there should probably be both to be honest, just so you can see the difference and pick and choose exactly what you want
+
+1542349488
+daurnimator
+hio: generally you should be treating strings pretty much as a sholw
+
+1542349527
+daurnimator
+hio: there are very particular algorithms if you want to insert utf8; or wrap utf8; or get the width when printed. none of them require indexing
+
+1542349583
+daurnimator
+however, useful utf8 operations are: validate_utf8(), convert_to_encoding(), convert_from_encoding(), normalize_utf8() with various normalization types as arguments, utf8_cells(), wrap_utf8()
+
+1542349603
+hio
+right well, we can see that other comfortable languages offer all kinds of string operations on the same object. People (and I) have started to expect this level of comfort from new languages. Like String.substring() String.match(regex)
+
+1542349633
+daurnimator
+hio: regex and substring are fine: they can work on bytes though :)
+
+1542349640
+hio
+I have not found a single implementation of utf8 regex except I think in ICU4C but that library is huge and weird
+
+1542349665
+hio
+daurnimator: anything works on bytes, that's not the point. I obviously want it to work on graphemes when I make a regex on an utf8 string
+
+1542349683
+daurnimator
+hio: the only 'utf8' support you actually need in regex is the character classes. which is actually quite easy to add.
+
+1542349695
+daurnimator
+I believe libPCRE includes them
+
+1542349721
+daurnimator
+however outside of complicated email filters, I don't think I've actually seen any regexes in the wild that use them
+
+1542349730
+hio
+先秦兩漢.match(先) should work predictably
+
+1542349749
+daurnimator
+hio: is..... that a substring there?
+
+1542349761
+daurnimator
+hio: or are you assuming the regex would denormalise
+
+1542349773
+daurnimator
+*normalise into decomposed form
+
+1542349845
+hio
+uh I'm obviously(?) talking about some kind of string comparison and therefore things have to be normalized so they can be compared
+
+1542349870
+daurnimator
+hio: normalization should never be automatic, it should always be explicit
+
+1542349882
+hio
+says who?
+
+1542349897
+daurnimator
+says my history in debugging :P
+
+1542349944
+daurnimator
+but also from the zen of zig: "Communicate intent precisely."
+
+1542349999
+hio
+since we are talking about a library feature, either way the library will denote how it needs to be used.
+
+1542350117
+daurnimator
+also if such a thing makes it into the stdlib, make sure you accept a unicode standard as an argument! Many bugs have historically occured due to libraries/languages assuming there is only one "unicode"
+
+1542350130
+daurnimator
+
+
+1542355387
+hio
+interesting, seems like Rust never bothered to implement graph cluster related operations in their std library either, but this explanation of utf8 in general and their context is great:
+
+1542355419
+hio
+Their choice of not allowing single indexing but allowing slice based indexing seems really weird
+
+1542368222
+MajorLag
+andrewrk: I've experimented with align() and I'm pretty sure align(4096) won't do anything. Even the documentation says that alignOf(T) is guaranteed to be < @sizeOf(T).
+
+1542368987
+MajorLag
+<= rather
+
+1542370060
+DutchGh0st
+I build the compiler, and the selfhosted one
+
+1542370110
+DutchGh0st
+do I now export the place of the binary to my path variable sooo vim knows where to find zig to format the code?
+
+1542370569
+DutchGh0st
+Hejsil: , I build the selfhosted compiler, do I now add it to my path variable so the automatic format in vim knows where the compiler is?
+
+1542370596
+Hejsil
+Ye, that's probably right
+
+1542370615
+DutchGh0st
+but binary is the selfhosted? xD
+
+1542370620
+Hejsil
+I don't use vim though, so I'm not sure how zig.vim works :)
+
+1542370630
+DutchGh0st
+*but what
+
+1542370655
+Hejsil
+build/stage2/bin/zig ?
+
+1542370670
+Hejsil
+Idk where you have your build output
+
+1542370686
+DutchGh0st
+oh there
+
+1542370710
+DutchGh0st
+yeah I just literally followed the steps as described here:
+
+1542370922
+DutchGh0st
+so the stage2 compiler can do everything? I dont really know how all this works
+
+1542370953
+Hejsil
+Nope, stage2 can only build hello world and do zig fmt
+
+1542370993
+Hejsil
+I have zig1 and zig2 in my path, so I can compile with stage 1 and fmt with stage 2
+
+1542371078
+MajorLag
+side note: you can get a certain amount of zigfmt functionality just shoveling the output of std.zig.parse into std.zig.render without compiling stage2.
+
+1542371767
+DutchGh0st
+butt.....
+
+1542371790
+DutchGh0st
+inside the build directory, there is a zig executable
+
+1542371805
+DutchGh0st
+but in /build/bin there also is a zig executable..
+
+1542371966
+DutchGh0st
+so what should I pick? o.O
+
+1542372601
+ltr_
+probably they are the same
+
+1542372626
+hio
+what is this syntax? assert(ptr.?.* == 1);
+
+1542372661
+DutchGh0st
+its checking for an optianal pointer and the dereffing it
+
+1542372671
+DutchGh0st
+*and then
+
+1542372746
+hio
+ptr.?. is the check? why is each dot necessary, what does it mean?
+
+1542372764
+hio
+what am I calling on ptr
+
+1542372767
+hio
+ptr.
+
+1542372804
+DutchGh0st
+ptr.? <-- ptr is of type `?*T`, so ptr.? is basically unwrapping the optional part
+
+1542372835
+DutchGh0st
+after that you get something of type `*T`, which you can then dereference using `.*`
+
+1542372836
+ltr_
+is calling the function ? on ptr, thats how i see it
+
+1542372870
+DutchGh0st
+If you know, rust, it would be something like '*(ptr.unwrap())'
+
+1542372914
+ltr_
+what happens if ptr is null? error?
+
+1542372950
+DutchGh0st
+stacktrace I think?
+
+1542373023
+hio
+what do you guys think of the new syntax with all these dots?
+
+1542373086
+DutchGh0st
+I think putting the deref star in front of the pointer to dereference reads a little nicer
+
+1542373091
+DutchGh0st
+and saves you writing a dot
+
+1542373129
+hio
+what does this mean for example: array.*.append(valueToSet.*)
+
+1542373134
+DutchGh0st
+but hey, Im not a designer :), pt.* doesn't bother me that much really
+
+1542373152
+hio
+oh i guess it dereferences the array with the first *
+
+1542373244
+ltr_
+
+
+1542373368
+hio
+i dont think this applies here ltr_
+
+1542373383
+hio
+it would be like this then: append(array, valueToSet)
+
+1542373389
+hio
+first param is the caller
+
+1542373416
+ltr_
+if you see * as a function that dereferences it does,
+
+1542373449
+ltr_
+no?:S, i relearning zig btw this is new to me too
+
+1542373482
+ltr_
+one of the benefits is that you can chain things
+
+1542373563
+ltr_
+ie ptr.?.*
+
+1542373581
+DutchGh0st
+how do I add a command to the path variable?...
+
+1542373625
+hio
+you mean the linux environment PATH? you have to be a bit more specific
+
+1542373631
+hio
+also #linux
+
+1542373660
+ltr_
+export PATH=$PATH:/new/path
+
+1542373696
+ltr_
+your executable should be in /new/path
+
+1542373715
+DutchGh0st
+oh so you give the directory where the binary is in?
+
+1542373719
+DutchGh0st
+allright
+
+1542373730
+DutchGh0st
+should't I put it in /bin really?
+
+1542373738
+ltr_
+yes
+
+1542373741
+ltr_
+or /usr/bin/
+
+1542373745
+DutchGh0st
+yeah
+
+1542373747
+DutchGh0st
+okey
+
+1542373761
+hio
+I always write new commands into my .bash_rc in $HOME
+
+1542373769
+hio
+the path to its folder I mean
+
+1542373785
+hio
+then on bash I > source .bashrc
+
+1542373799
+DutchGh0st
+wait, doesn't zig need the lib directory also, with stdlib in it?
+
+1542373818
+hio
+it will find it with relative path, I strongly assume
+
+1542373839
+ltr_
+its looks somehwere in /usr/local
+
+1542373840
+DutchGh0st
+also if the binary is in /usr/bin?
+
+1542373849
+ltr_
+you can override the location too via cmd line
+
+1542373875
+ltr_
+when you do a make install
+
+1542373897
+ltr_
+it install the stdlib somewhere in the prefix_path chosen
+
+1542373922
+DutchGh0st
+but I did not doo that xD
+
+1542373978
+ltr_
+then you have to tell the compiler where it is
+
+1542374000
+DutchGh0st
+ugh
+
+1542374018
+DutchGh0st
+ill just never touch my /zig folder in ~/ again
+
+1542374027
+hio
+echo "export PATH=$PATH:/my/path/to/zig/bin" >> ~/.bashrc && source ~/.bashrc
+
+1542374031
+hio
+thats all you need to do!
+
+1542374162
+Hejsil
+I just have a ~/.bin in my path, and then I just symlink things into this folder
+
+1542374275
+DutchGh0st
+No such file or directory... mhh
+
+1542374362
+Hejsil
+DutchGhost, you could also install zig in your usr/bin: bin/zig build --build-file ../build.zig --prefix /usr/ install
+
+1542374434
+DutchGh0st
+and then stdlib will be installed in /usr/lib ?
+
+1542374454
+Hejsil
+Yea
+
+1542374460
+Hejsil
+I think
+
+1542374475
+Hejsil
+My build/stage2 has a lib and bin folder, so I would assume so
+
+1542374477
+ltr_
+$INSTALL_PREFIX/lib/zig
+
+1542374502
+ltr_
+$INSTALL_PREFIX/lib/zig/std for zig's stdlib
+
+1542374523
+DutchGh0st
+mh?
+
+1542374532
+DutchGh0st
+I suppose that also needs sudo then Hejsil?
+
+1542374560
+ltr_
+not if you specify CMAKE_INSTALL_PREFIX in the build process
+
+1542374579
+Hejsil
+Yea, which is why I do ~/.bin in path trick instead
+
+1542374862
+DutchGh0st
+
+
+1542374895
+DutchGh0st
+mhh, not sure what version I picked then?
+
+1542374967
+Hejsil
+Btw, stage2 cannot build anything real
+
+1542374993
+DutchGh0st
+yeahh I did this: usr/bin: bin/zig build --build-file ../build.zig --prefix /usr/ install
+
+1542375013
+Hejsil
+Yea, that's the stage 2 compiler you build and installed
+
+1542375027
+Hejsil
+Did you only want stage 1 in your path?
+
+1542375036
+Hejsil
+If so, my bad. I missunderstood
+
+1542375100
+DutchGh0st
+I just want to run something like 'zig build-exe main.zig' , from anywere in my system
+
+1542375114
+Hejsil
+Aaaah, right
+
+1542375115
+DutchGh0st
+and then maybe like 'zigfmt fmt main.zig'  to format
+
+1542375204
+DutchGh0st
+I guess I now need to remove zig from both my /lib and /bin folders?
+
+1542375407
+ltr_
+im getting a nasty SIGSEGV compiling the helloworld
+
+1542375591
+presiden
+compiling? not running?
+
+1542376028
+DutchGh0st
+why with the export path thingy, it can't find ./zig when executen from a different directory?
+
+1542377755
+andrewrk
+ltr_, I usually tell people to just unzip and run from there, rather than to try to do some global thing
+
+1542378388
+scriptnull
+Hi, could someone tell me what does `pub` keyword do? (unable to find it on docs, did I miss it out somewhere?)
+
+1542378541
+andrewrk
+scriptnull, it has to do with importing:
+
+1542378577
+andrewrk
+scriptnull, I just filed an issue to create documentation for pub:
+
+1542378652
+scriptnull
+I guess it is for publishing the variables/functions for importing in other zig file. Am I right? (much like export in ES6?)
+
+1542378674
+andrewrk
+correct
+
+1542378695
+ltr_
+uh oh
+
+1542378753
+ltr_
+is the master branch working? : CommandLine Error: Option 'dump-thin-cg-sccs' registered more than once!
+
+1542379005
+andrewrk
+ltr_, yep it's working - if you look at
+
+1542379020
+andrewrk
+you can see the most successful recent commit was ba361f31
+
+1542379579
+ltr_
+my llvm libs are all messed out
+
+1542379585
+ltr_
+ill build with a fresh env
+
+1542381487
+DutchGh0st
+there was something like a ' zig init' , right?
+
+1542381507
+DutchGh0st
+init-exe :D
+
+1542383528
+Sahnvour
+hi andrewrk , I'm looking at zig's inline asm code, and wondered why in `ir_render_asm` when building the constraints buffer, non-return-outputs are marked with a supplementary '*' to make them
+
+1542383579
+andrewrk
+Sahnvour, I don't remember clearly. I can look at git blame to find a commit message that maybe would explain it
+
+1542383791
+DutchGh0st
+what do you think of this colorscheme?
+
+1542383795
+Sahnvour
+okay, I'll have a look too
+
+1542383795
+andrewrk
+Sahnvour, it goes way back, to before even we had zig ir. I think it would be fair to start over in thinking how inline assembly should work
+
+1542383937
+Sahnvour
+unfortunately I'm not competent enough on this subject, so I think I'm just going to fix the few bugs that bothered me for now
+
+1542383955
+andrewrk
+Sahnvour,
+
+1542384086
+Sahnvour
+thanks
+
+1542384154
+andrewrk
+did you find the llvm docs on the llvm inline asm syntax?
+
+1542384172
+andrewrk
+
+
+1542384173
+Sahnvour
+yes, they're at
+
+1542384180
+andrewrk
+good
+
+1542384213
+Sahnvour
+I'm not clear on what the purpose of "return" asm outputs is
+
+1542384218
+Sahnvour
+(zig-wise)
+
+1542384235
+andrewrk
+it makes the asm expression have a result value
+
+1542384248
+andrewrk
+e.g. you could do something like `return asm (...)` or `const x = asm (...)`
+
+1542384275
+andrewrk
+this slightly helps the optimizer to omit 1 mov instruction
+
+1542384483
+Sahnvour
+okay. and what about systematically using indirect outputs (keeping the variable address and storing into memory) when not returning then ?
+
+1542384518
+andrewrk
+I have not tried that in a long time
+
+1542384603
+Sahnvour
+I mean, this is what "=*..." is doing, and zig uses that on the most common case (non returning output)
+
+1542384646
+Sahnvour
+if i understand correctly this would tend to add indirections
+
+1542384647
+andrewrk
+oh right - that's so that you can capture output into a variable
+
+1542384673
+andrewrk
+the * makes the variable address go into the assembly - that's needed if you want to populate the variable's memory
+
+1542384933
+Sahnvour
+I'm missing something because then I don't see the point of omitting the *, why would one want an output variable that doesn't end up with a result value ?
+
+1542384986
+andrewrk
+I was unable to understand that as well
+
+1542385141
+andrewrk
+at some point here I will be taking a deep dive into inline assembly and doing another pass at it
+
+1542385321
+Sahnvour
+rereading the doc, it seems that's only used for return values
+
+1542385972
+bheads
+just checking out the stream for yesterday, andrewk: have you see unum?
+
+1542386511
+scriptnull
+Hi, it is me again ( the newbie who just wrote Hello World in zig ) :D
+
+1542386522
+scriptnull
+May I know why Zig is called Zig? :D
+
+1542387404
+andrewrk
+scriptnull, random 3 letter word that has good internet search uniqueness
+
+1542387424
+scriptnull
+cool!
+
+1542389130
+oconnor0_
+What is `zig fmt` supposed to show up in the builds of master?
+
+1542389228
+andrewrk
+oconnor0, it would either be after the self hosted compiler is finished and we start shipping that, or if we do some special trick to make zig fmt available from stage1
+
+1542389257
+andrewrk
+I'll consider including the trick in 0.4.0
+
+1542389507
+oconnor0_
+andrewk, ah, got it; thank you. Are there Zig issues that detail what is needed for the self-hosted compiler? I see the project, but not specific issues connected.
+
+1542389578
+andrewrk
+oconnor0, it's a huge project and only in the early stages. there is this:
+
+1542389607
+andrewrk
+in summary, it's blocking on the coroutine rewrite which is blocking on copy elision which I'm working on now
+
+1542389685
+oconnor0_
+Yeah, I saw that project. Wasn't sure if there was more detail on the to-dos.
+
+1542389742
+andrewrk
+oconnor0, are you looking for somewhere to contribute?
+
+1542389769
+Sahnvour
+andrewrk: I want to fix the crash occuring with comptime_int as asm input, and I think we just need to insert a cast when generating IR ; basically I want to write `IrInstruction *cast = ir_build_int_cast(irb, scope, node, ???, input_value);` but don't know what to do to get an instruction representing the type to cast to (regardles of how to choose that type)
+
+1542389785
+andrewrk
+Sahnvour, I think that's right - you're looking for ir_implicit_cast
+
+1542389800
+andrewrk
+which takes a ZigType* as the destination type
+
+1542389831
+voldyman
+andrewrk: i am looking for somewhere to contribute (on stage2 of building the compiler rn)
+
+1542389927
+Sahnvour
+ok, then this needs to be in the analyze phase right ? Is that OK to make modifications of IR during it ?
+
+1542390178
+andrewrk
+voldyman, any interest in this?
+
+1542390309
+voldyman
+andrewrk: it is interesting but i know very little about writing linkers. any low hanging fruits to get my feet wet?
+
+1542390363
+andrewrk
+Sahnvour, yes it will be in the IR pass 2, I believe
+
+1542390382
+andrewrk
+e.g. you will have an `IrAnalyze* ira` parameter
+
+1542390417
+andrewrk
+in this phase the code is looking at pass 1 instructions and creating a new IrExecutable with pass 2 instructions
+
+1542390434
+andrewrk
+so, instructions are not really modified; they are interpreted and new instructions are generated. does that make sense?
+
+1542390445
+Sahnvour
+totally
+
+1542390461
+andrewrk
+AST (parser.cpp) -> ir pass1 (ir.cpp) -> ir pass2 (ir.cpp) -> llvm ir (codegen.cpp)
+
+1542390633
+Sahnvour
+this is the exact information I was looking for :)
+
+1542390673
+andrewrk
+voldyman, I created this issue for your consideration:
+
+1542390689
+andrewrk
+it's a bit of a large project, I can try to think of some other ideas for you if you like\
+
+1542390724
+voldyman
+andrewrk: this looks interesting, let me read parser.cpp :)
+
+1542390726
+voldyman
+thanks!
+
+1542390734
+andrewrk
+Sahnvour, the pass1 stuff generally starts with "gen_" and has an IrBuilder * arg, while the pass2 stuff generally starts with or contains "analyze_" and has an IrAnalyze * arg
+
+1542390753
+andrewrk
+some instructions are only meant for pass 1 and some instructions are only meant for pass 2; some are for both
+
+1542390801
+andrewrk
+voldyman, ok :) let me know if you need help figuring out how to run the tests in a convenient way
+
+1542390823
+Sahnvour
+how do we tell between pass 1^2 instructions ?
+
+1542390854
+oconnor0_
+andrewk, I am considering somewhere to contribute, though I am not able to build on Windows yet.
+
+1542390992
+andrewrk
+Sahnvour, pass1-only-instructions are listed here:
+
+1542391028
+andrewrk
+pass2-only-instructions are listed here:
+
+1542391077
+andrewrk
+oconnor0, happy to help. where along the instructions on
+
+1542391092
+Sahnvour
+thanks
+
+1542391623
+errpr
+how do I make a [*]T if it says 'does not support array initialization'?
+
+1542391698
+andrewrk
+errpr,  you need to create an array and then take the address of it. this will implicitly cast to [*]T, or you can slice it and get the pointer like this: array[0..].ptr
+
+1542391977
+oconnor0_
+andrewk, never mind, looks like I missed the "Win64" in the CMake generator.
+
+1542394175
+oconnor0_
+By the way, I really like that Zig prioritizes cross-platform builds and cross-compiling. Being on Windows often feels like a second-class citizen; so many languages and libraries kind of support it, but not really.
+
+1542394304
+andrewrk
+oconnor0, indeed. there's more to do to improve the windows experience for zig, but it's certainly a main use case
+
+1542394744
+oconnor0_
+andrewk, is there a list of simple or cleanup issues/bugs that I could take a look at? It wasn't obvious from the GitHub issues.
+
+1542394874
+andrewrk
+oconnor0, you can look at the "help wanted" label
+
+1542394889
+andrewrk
+also the "userland" label, which means you can write zig code to solve the issue
+
+1542395803
+oats
+does zig support all targets that llvm supports?
+
+1542395941
+andrewrk
+oats, that's not a yes or no question - here's the situation: zig supports all the architectures that LLVM supports. However, some language features require a small amount of additional code in the compiler, such as, what size should the c_long type be?
+
+1542395972
+andrewrk
+and then there's the standard library which provides abstractions across architectures - this sometimes requires architecture-specific code
+
+1542395984
+oats
+that makes sense
+
+1542396007
+andrewrk
+but because of zig's lazy top level declaration analysis, if you don't depend on a given part of the std lib, it doesn't get analyzed
+
+1542396027
+andrewrk
+so if your program has a small dependency on a particular OS or architecture, it will be a small effort to add compatibility
+
+1542396048
+andrewrk
+for example if your program only does os.sleep(1), then all you have to do is implement the sleep syscall for the target os and architecture, and it will work
+
+1542396708
+errpr
+does the parameter to a switch always have to be known at compile time?
+
+1542396906
+andrewrk
+errpr, yes, the expressions before `=>` must be comptime known
+
+1542396962
+andrewrk
+that reminds me of an issue I need to file...
+
+1542397036
+andrewrk
+never mind, the thing I thought of is already implemented
+
+1542397592
+voldyman
+it'll be nice to have something like the golang spec for zig (
+
+1542397617
+voldyman
+it makes it easier to learn the language, are anonymous functions supported?
+
+1542397622
+andrewrk
+
+
+1542397639
+voldyman
+ah nice
+
+1542398839
+benjikun
+good morning everyone
+
+1542399428
+voldyman
+andrewrk: how do i run parser_test.zig against my modified parse.zig file?
+
+1542399492
+andrewrk
+voldyman, I recommend this: make install && bin/zig test ../std/zig/parser_test.zig --test-filter "zig fmt"
+
+1542399517
+andrewrk
+then you can make changes, then press up, enter, in your terminal to do it again
+
+1542399544
+voldyman
+but doesn't this run the tests against the C++ parser?
+
+1542399569
+andrewrk
+no this is testing std/zig/parse.zig
+
+1542399570
+voldyman
+also, i started using ninja with cmake instead which makes the build much faster for me. just had to add `cmake -GNinja ..`
+
+1542399643
+voldyman
+hmm, weird since i clearly broke the `State.StringLiteral` case but the tests are passing, maybe that case is not covered by the tests.
+
+1542399652
+andrewrk
+yeah, replace `make install` with whatever is appropriate. you need that step though to copy the std lib files to the install dir
+
+1542399686
+andrewrk
+it's quite possible and more test coverage would be wonderful
+
+1542399699
+andrewrk
+it should be obvious from looking at parser_test.zig how to add more tests
+
+1542399741
+andrewrk
+or you may have not done the ninja equivalent of `make install`
+
+1542399798
+voldyman
+yup, you caught it. i was doing make install just for stage2 which wasn't enough. thanks!
+
+1542399813
+andrewrk
+please note that you are of course welcome to do whatever workflow changes are convenient for you, but I only provide support for the officially documented way
+
+1542399832
+andrewrk
+otherwise the combinations of possibilities explodes
+
+1542403294
+suirad
+how do i for loop over a range?
+
+1542403321
+suirad
+im only finding examples of iterator for loops
+
+1542404123
+benjikun
+not sure if there is a way to do something like `for (0..10) { }` directly
+
+1542404145
+benjikun
+I normally just do `var i: i8 = 0; while (i < 10) : (i += 1) { }` in zig
+
+1542404460
+benjikun
+suirad: Is that what you meant?
+
+1542404675
+suirad
+Yea i was just wondering if there was a way to do it directly. I would have used the while loop as an alternative, but just wanted to check if there was a more consise way.
+
+1542404941
+suirad
+I appreciate it
+
+1542404977
+benjikun
+anytime :)
+
+1542409297
+oconnor0_
+How is Zig's memory consumption compared to C (or Rust or whatever)? Maybe it's not a big deal, but "everything" seems to have a pointer to a memory allocator.
+
+1542409357
+andrewrk
+oconnor0, zig's memory consumption is usually lower than C and Rust since it's difficult to accidentally allocate heap memory
+
+1542409366
+andrewrk
+pointer arguments are passed in registers on most architectures
+
+1542409425
+benjikun
+depends on how you use it ofc, but zig gives you the tools in hand to acquire C-or-lower memory consumption, that's the goal
+
+1542409448
+andrewrk
+if you have a bunch of functions with the same arguments in the same order, a smart code generator will just leave the args in the registers for the respective parameters and there is then no cost whatsoever
+
+1542409492
+oconnor0_
+andrewk, ok, would it be fair to say the explicitness of zig's memory management encourages somewhat different programming styles that end up using less memory?
+
+1542409504
+andrewrk
+yes I think that would be fair to say
+
+1542409510
+MajorLag
+suirad, benjikun: If you find yourself using such a patter frequently, theres a trick you can do: `pub fn zeroToN(comptime n: usize) [n]void { return ([n]void)(undefined); }` => `for(zeroToN(10)) |_,i| { warn("{}\n", i); }`
+
+1542409546
+oconnor0_
+andrewk, interesting, thanks.
+
+1542409569
+benjikun
+MajorLag: oh, nice. didn't think about making a comptime function for that
+
+1542409659
+MajorLag
+benjikun: I think either Hejsil or thejoshwolfe came up with it originally.
+
+1542409923
+suirad
+MajorLang: haha clever
+
+1542409947
+suirad
+*MajorLag
+
+1542410881
+oconnor0_
+Is there a recommended place to post "gists" for discussion here instead of larger chunks of code?
+
+1542411385
+oconnor0_
+MajorLag, benjikun, suirad: Here's another iterable range option:
+
+1542411407
+benjikun
+oconnor0_: Andrew uses ptpb.pw
+
+1542411496
+benjikun
+the links are pretty short so that's nice
+
+1542411583
+suirad
+i feel like with coroutines, we could probably make range generators
+
+1542411667
+oconnor0__
+Anyway, I am quite glad that zig has a sane view of compile-time code generation; after half a decade of C++ I still have no idea how to make templates do what I want.
+
+1542411922
+suirad
+wading through template errors after slowly compiling a large c++ project for just makes me want to quit entirely lol.
+
+1542412138
+benjikun
+I'm getting pretty attached to zig already tbh
+

@@ -1,0 +1,532 @@
+1546219008
+oats
+if I call @import(), but don't assign its result, will the contents of the path be loaded into the current namespace, instead of its own?
+
+1546219103
+andrewrk
+oats, if you want that behavior you can use this syntax: `use @import("foo.zig")`
+
+1546219132
+oats
+ah, thanks!
+
+1546219364
+daurnimator
+Is there some sort of magic variable that contains the current
+
+1546219373
+daurnimator
+'struct'
+
+1546219407
+daurnimator
+i.e. where `foo()` and `@current_struct_scope.foo()` are the same thing
+
+1546219453
+knebulae
+daurnimator: is @This not what you're looking for?
+
+1546219471
+daurnimator
+knebulae: does @This work at the file scope?
+
+1546219489
+daurnimator
+to me I think the model of "a file is just a struct" makes the most sense.
+
+1546219501
+knebulae
+daurnimator: I don't know
+
+1546220523
+andrewrk
+daurnimator, @This works at file scope
+
+1546220537
+daurnimator
+andrewrk: great :)
+
+1546220540
+andrewrk
+it will make more sense why it works once
+
+1546220636
+daurnimator
+ah great
+
+1546221058
+knebulae
+Q for anyone: I have an object that contains a bunch of function pointers.  I am attempting to call the functions, and I have done so via standard dot notation, and when that didn't work, by defining a signature object and trying to assign the pointer contained in the object to it.  The object is not opaque, as the definition of its field layout is indeed included within the C import.  Zig complains that the type does not support field access.
+
+1546221095
+andrewrk
+knebulae, can you elaborate on "when that didn't work?" at the beginning?
+
+1546221138
+andrewrk
+it works for me
+
+1546221175
+knebulae
+andrewrk: I got the same error (does not support field access).
+
+1546221213
+andrewrk
+I need more information in order to help you
+
+1546221239
+knebulae
+andrewrk:
+
+1546221297
+daurnimator
+andrewrk: the alternative of course is where file contents are a function body
+
+1546221328
+knebulae
+andrewrk: the gBS object is the one in question
+
+1546221488
+andrewrk
+knebulae, I can't run your code because it depends on files that I don't have. where is gBS defined?
+
+1546221527
+andrewrk
+perhaps you could make a Short, Self Contained, Correct, Example
+
+1546221542
+knebulae
+andrewrk: within the edk-II code (it's part of the VisualUefi project)
+
+1546221694
+knebulae
+andrewrk: ok; I don't exactly have access to any random platform code that is passing in function pointers in this manner. :/
+
+1546221744
+andrewrk
+even just the full error message would be helpful - I'm pretty sure "does not support field access" is not including several clues that could help me help you
+
+1546221827
+knebulae
+andrewrk: error G7D2AEADC: type '?[*]EFI_BOOT_SERVICES' does not support field access
+
+1546221883
+andrewrk
+ok so the type is an optional pointer of unknown length to EFI_BOOT_SERVICES
+
+1546221899
+andrewrk
+the compiler is correct; such type does not support field access
+
+1546221940
+andrewrk
+so why should there be field access? I'm guessing that this  was auto-translated from C, and in fact should be a non-optional pointer to a single EFI_BOOT_SERVICES, which would support field access.
+
+1546221984
+andrewrk
+relevant is this issue:
+
+1546221992
+knebulae
+andrewrk: bingo. C import.
+
+1546222148
+daurnimator
+andrewrk: did you see my vararg question last night?
+
+1546222158
+daurnimator
+andrewrk: i.e. how can I call va_start from zig?
+
+1546222222
+daurnimator
+relevant code:
+
+1546222245
+andrewrk
+daurnimator,
+
+1546222253
+andrewrk
+It's in my high-priority 0.4.0 list
+
+1546222320
+daurnimator
+andrewrk: okay. what is your plan for making it work? new builtin?
+
+1546222396
+andrewrk
+daurnimator, yes probably builtins that map directly to the llvm builtins
+
+1546222421
+daurnimator
+andrewrk: do you intend that zig is tied to LLVM long term/forever?
+
+1546222451
+daurnimator
+andrewrk: just curious, as I ran into some confusion yesterday as I had to use LLVM-specific inline assembler annotations.
+
+1546222469
+andrewrk
+not necessarily. the language specification will not depend on LLVM. however in practice I don't foresee ever escaping it as a dependency
+
+1546222500
+andrewrk
+I do foresee zig implementing its own assembler that integrates better into the rest of the language
+
+1546222522
+andrewrk
+for example, for x86_64, something closer to NASM
+
+1546222552
+andrewrk
+often the zig builtins map directly to llvm builtins simply because LLVM got the abstraction correct
+
+1546222805
+daurnimator
+okay
+
+1546222828
+daurnimator
+so many things to do! :P
+
+1546224377
+knebulae
+andrewrk: hey man, I really am sorry to ask these questions.  I've attempted to follow your guidance, and it's infuriating.  This is the error now: expected type 'extern fn(?[*]c_ulonglong, ?[*]EFI_MEMORY_DESCRIPTOR, ?[*]c_ulonglong, ?[*]c_ulonglong, ?[*]c_uint) c_ulonglong', found '?extern fn(?[*]c_ulonglong, ?[*]EFI_MEMORY_DESCRIPTOR, ?[*]c_ulonglong, ?[*]c_ulonglong, ?[*]c_uint) c_ulonglong'  I can see no way to make the function pointer type an
+
+1546224378
+knebulae
+optional.
+
+1546224421
+knebulae
+andrewrk: otherwise the expected and found signatures are identical.
+
+1546224453
+andrewrk
+knebulae, I think this is a good reason that I should prioritize #1059. The best workaround right now would be to use `zig translate-c`  and then edit the prototypes to be better, and then commit that to your project
+
+1546224590
+andrewrk
+knebulae, in this particular case I think you can append a `.?` to your function pointer to make it
+
+1546224671
+andrewrk
+on examination I think this actually is not a case of the c translation picking unfortunate pointer types. I think this is a classic optional situation where you have a value that could be null, but you're trying to pass it where a value that cannot be null is expected
+
+1546224690
+andrewrk
+have a look:
+
+1546224736
+andrewrk
+so actually do not append `.?` to your function pointer unless you wish to assert that it is impossible that it could be null here
+
+1546224797
+knebulae
+andrewrk: ok.  I am fairly certain the the uefi boot services table pointer will not be null when running code written for a uefi environment.
+
+1546224823
+andrewrk
+in this case use .?
+
+1546224843
+andrewrk
+indeed this is something you could improve with hand-editing the translated header files
+
+1546224864
+knebulae
+andrewrk: I want to avoid that inasmuch as possible.
+
+1546224908
+andrewrk
+that's fair. interacting with auto-translated C code results in a lot of non-null assertions, since all C pointer types could be null
+
+1546224958
+knebulae
+andrewrk: understood.  I'm giving some consideration to #1059.
+
+1546225907
+knebulae
+andrewrk: what exactly was I supposed to append the .? to?  You said the function pointer, but it doesn't want to seem to take that syntax anywhere.
+
+1546225977
+andrewrk
+the error message you got was `expected T, found ?T`, pointing at an expression in your code. you need to append `.?` to the expression
+
+1546227005
+knebulae
+andrewrk: the compiler does not want to unwrap the value to match the expected function signature.  Unable to evaluate constant expression error.  Either way, I think the easiest, and perhaps cleanest way to address #1059 would be to have an override keyword of sorts, simply allowing us to provide a known-good function signature in zig terms without having to edit autogenerated C.  That has so many downsides I don't even know where to start.
+
+1546227061
+andrewrk
+knebulae, `unable to evaluate constant expression` makes me suspicious that there's something else going on here
+
+1546227092
+knebulae
+andrewrk: something like @overrideCSig(symbol, signature)
+
+1546227104
+knebulae
+andrewrk: @cOverride
+
+1546227146
+knebulae
+andrewrk: maybe so.  I can't seem to declare the pointer as optional, and I can't make the function pointer itself non-optional.  :/
+
+1546227175
+knebulae
+andrewrk: so the assignment expression always fails.
+
+1546227206
+andrewrk
+I still think it would be helpful for both of us if you created a simple self-contained zig file to explore the problems you're running into
+
+1546227228
+andrewrk
+put the relevant auto generated code in it, put the code you're trying to write into it, and then if you get an error it's easier to ask for help
+
+1546227262
+andrewrk
+as is, I'm pretty sure you're making a simple mistake but it's opaque to me what's going on so I can't offer assistance
+
+1546227278
+andrewrk
+(not to blame you, zig has a lot of rough edges in its current state)
+
+1546227340
+knebulae
+andrewrk: no problem; I'm sure I'm doing something foolish too.
+
+1546228547
+knebulae
+andrewrk: 2nd unwrapping operation within an expression not permitted, by chance?
+
+1546228587
+knebulae
+uefi.clib.gBS.?[0].GetMemoryMap.? as an example
+
+1546228965
+daurnimator
+knebulae: I don't see why not.
+
+1546232712
+knebulae
+andrewrk: maybe this will show you how I get into that catch-22 situation with never getting both sides of the expression to balance (?T=T or T=?T, but unable to evaluate constant expression when T=T or ?T=?T):
+
+1546232726
+knebulae
+andrewrk: hopefully this is less daunting that the sh*t I have going :)
+
+1546232733
+knebulae
+*than
+
+1546233465
+daurnimator
+knebulae: you probably want: pub var A: FnAPrototype = clib.sExample.?[0].FunctionA.?;
+
+1546233482
+daurnimator
+c`
+
+1546233715
+knebulae
+and that should work.  I've cleaned up the signatures a bit in the example.  You can see that what
+
+1546233751
+knebulae
+
+
+1546234523
+knebulae
+Well, I figured it out in the isolated example, and it has to do with lazy binding.
+
+1546234549
+knebulae
+So, now to figure out how to rectify the issue with a much larger underlying library.
+
+1546236034
+daurnimator
+knebulae: is that ptrCast really required?
+
+1546236093
+knebulae
+daurnimator: the compiler complains without it
+
+1546236118
+daurnimator
+knebulae: what error?
+
+1546236176
+knebulae
+daurnimator: error: expected type '?[*]u32', found '*u32'
+
+1546236264
+daurnimator
+knebulae: ah okay then. yes that is indeed this issue:
+
+1546236287
+daurnimator
+knebulae: FWIW you shouldn't need the ? in the cast.
+
+1546236296
+daurnimator
+you're really casting from * to [*].
+
+1546236297
+knebulae
+daurnimator: dude, I'm like a pocket full of edge cases. fml.
+
+1546236326
+daurnimator
+andrewrk: why isn't casting from [*] to * implicit?
+
+1546236329
+knebulae
+daurnimator: understood on the cast
+
+1546236351
+daurnimator
+andrewrk: isn't casting from "one item" to "unknown number of items" always going to be safe?
+
+1546236391
+daurnimator
+knebulae: zig is young. I hit 10 edge cases for every file of zig I write
+
+1546236428
+knebulae
+daurnimator: this is very similar to my other issue of optionals when interacting with auto imported c-code.
+
+1546236585
+daurnimator
+uh, my above comment should have been: * to [*] implicit
+
+1546236602
+daurnimator
+and I think the answer is that for * you can have an unknown size type. for [*] you need to know the size.
+
+1546236694
+daurnimator
+oh I see my question is part of 1059
+
+1546237142
+knebulae
+daurnimator:
+
+1546237352
+daurnimator
+knebulae: if you fix your extern declaration there you wouldn't need the casts...
+
+1546237419
+knebulae
+daurnimator: If I change the prototype, the compiler complains about a type mismatch when I attempt to assign the function pointer provided by EFI.
+
+1546237461
+daurnimator
+knebulae: oh, you're using cImport?
+
+1546237467
+knebulae
+daurnimator: not type mismatch, just a type signature mismatch; expected x, got y...
+
+1546237469
+daurnimator
+knebulae: then you don't need your own prototype at all...
+
+1546237489
+knebulae
+daurnimator: yes
+
+1546237553
+knebulae
+daurnimator: if I don't use a prototype, when I attempt to assign the fn ptr, say var x = blah;, I also get a function signature mismatch error.
+
+1546238209
+scientes
+that is awesome that the stack trace code works both in freestanding mode and with an OS
+
+1546256850
+knebulae
+andrewrk: to answer your question from before about the uefi environment, the runtime is essentially 2 tables worth of function and variable pointers.  The problem is that gnu exposed certain functions one way, Intel another. :/  But the underlying implementations are there regardless of how the C libraries expose them.  So this (
+
+1546256894
+knebulae
+*without edk-II or gnu-efi.
+
+1546263999
+knebulae
+andrewrk: so I'm torn; continue on my path using edk-II as a dependency, or write my own native zig uefi library.  On the one hand, for my needs, it will duplicate a lot of code.  On the other hand, it would tie up a few loose ends with zig itself, and it would also completely remove the dependency on C.
+
+1546266455
+knebulae
+on
+
+1546268114
+knebulae
+what does the underscore represent? is it an anonymous variable/type/method?
+
+1546273178
+andrewrk
+knebulae, it represents a "black hole" that you can send values into
+
+1546273267
+knebulae
+so like ignoring the return value without generating a compiler error
+
+1546273334
+andrewrk
+precisely
+
+1546287851
+vegecode
+quick question? Where did the numbers come from in the function zig_llvm_fn_key_hash? I'm trying to add the bitreverse intrinsic and failing.
+
+1546287910
+andrewrk
+vegecode, literally random
+
+1546287922
+andrewrk
+the hashing is pretty bad, probably could be vastly improved
+
+1546287994
+vegecode
+It keeps giving the behavior of the bswap intrinsic...
+
+1546288031
+andrewrk
+that probably meanst hat zig_llvm_fn_key_eql is wrong
+
+1546288087
+andrewrk
+or that you accidentally did         key.id = ZigLLVMFnIdBswap;
+
+1546288218
+vegecode
+They both look correct to me. Thanks for the reply.
+
+1546288436
+andrewrk
+vegecode, in this case I think the best bet is to create a very simple file (have you seen the build-obj trick with panic handler?) and step through the code when it chooses the llvm function name
+
+1546288476
+andrewrk
+
+
+1546288482
+vegecode
+Ok. I will try that after work. Thanks a bunch.
+
+1546299318
+ForLoveOfCats
+The docs state that characters are stored in unsigned 8 bit integers yet it also states that unfettered use of UTF-8 in strings is allowed. How is this possible when many Unicode points require multiple 8 bit ints to store? Are arrays just smart enough to handle this?
+
+1546300589
+andrewrk
+ForLoveOfCats, most operations can be done directly on encoded UTF-8 data
+
+1546300671
+andrewrk
+arrays are just arrays
+

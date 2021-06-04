@@ -1,0 +1,236 @@
+1527049722
+donpdonp
+i have a C to zig question.
+
+1527049731
+donpdonp
+c code: struct nk_context ctx;
+
+1527049754
+donpdonp
+zig: var ctx: c.nk_context = <?>
+
+1527049774
+donpdonp
+the c code allocates ram to hold the nk_context, but im not sure how to state that in zig
+
+1527051001
+donpdonp
+and in other news, this graphics lib .h is giving zig some trouble. any reference to a struct from the lib throws @compileLog(@sizeOf(c.struct_nk_context)); => analyze.cpp:4302: bool handle_is_ptr(TypeTableEntry*): Assertion `type_entry->data.unionation.complete' failed.
+
+1527056895
+donpdonp
+more type loopyness.
+
+1527056898
+donpdonp
+var ret_func = c.glfwGetProcAddress(fname); //?extern fn() void
+
+1527056913
+donpdonp
+@ptrCast(?&c_void, ret_func); => error: cast discards const qualifier
+
+1527057043
+donpdonp
+or maybe simpler still, just want to turn a fn() into a voidptr
+
+1527057054
+donpdonp
+return &c_void(c.glfwGetProcAddress(fname)); error: invalid cast from type '?extern fn() void' to 'c_void'
+
+1527058821
+donpdonp
+ok I cheated.
+
+1527058822
+donpdonp
+var ramptr = @ptrToInt(ret_func);
+
+1527058824
+donpdonp
+var vptr = @intToPtr(?&c_void, ramptr);
+
+1527059949
+Hejsil
+donpdonp, struct nk_context ctx; == var ctx: c.nk_context = undefined;
+
+1527059996
+Hejsil
+All functions are const pointers, so you can't cast then to none const pointers
+
+1527060043
+Hejsil
+@ptrCast(?&const c_void, func) should work
+
+1527060091
+Hejsil
+This makes sense, as the memory pointed to by a function pointer, probably isn't something you should change :)
+
+1527060157
+donpdonp
+well one c func returns a fn ptr, the other c func wants a void ptr.
+
+1527060175
+donpdonp
+casting to const c_void works but breaks what the 2nd function is looking for.
+
+1527060207
+Hejsil
+Aaah
+
+1527060213
+Hejsil
+Ye, that's a thing
+
+1527060214
+Hejsil
+Hmm
+
+1527060241
+donpdonp
+the ptr->int int->ptr hack seems to be a fine hack for now. :)
+
+1527060242
+Hejsil
+Well, I think your solution is the best way of discarding const
+
+1527060302
+donpdonp
+in addition to learning zig's c-interop, im learning that opengl is too low level to put somethingson the screen.
+
+1527060390
+Hejsil
+Why does the other function take a void ptr and not a fn ptr?
+
+1527060408
+Hejsil
+Is it some "generic" stuff?
+
+1527060700
+donpdonp
+not sure why. archaic opengl stuff
+
+1527060740
+Hejsil
+Hmm, ooh well
+
+1527065725
+donpdonp
+more ptr fun. this one should be easy for someone :)
+
+1527065726
+donpdonp
+var argc: c_int = 0;
+
+1527065728
+donpdonp
+var argv: [][]u8 = [][]u8{};
+
+1527065730
+donpdonp
+c.gtk_init(&argc, argv.ptr);
+
+1527065742
+donpdonp
+error: expected type '?&?&?&u8', found '&[]u8'
+
+1527065744
+donpdonp
+c.gtk_init(&argc, argv.ptr);
+
+1527065771
+donpdonp
+^
+
+1527066137
+donpdonp
+ok well not as zig-ish but this worked
+
+1527066146
+donpdonp
+var argv: ?&?&u8 = undefined;
+
+1527066147
+donpdonp
+c.gtk_init(&argc, &argv);
+
+1527066747
+Hejsil
+donpdonp, you could probably do this:
+
+1527069033
+donpdonp
+is there a way to dump all the symbols in c.*
+
+1527069059
+donpdonp
+im including #define g_signal_connect(... yet error: no member named 'g_signal_connect' in '(C import)'
+
+1527069178
+Hejsil
+It might be a macro that Zig wasn't able to translate
+
+1527069188
+Hejsil
+Zig translates C headers to Zig
+
+1527069201
+Hejsil
+And macros are tricky
+
+1527069215
+donpdonp
+nod. thats pretty cool. .h -> .zig
+
+1527069255
+donpdonp
+well then this road to a gui lib just got longer... (country guitar riff here)
+
+1527069255
+Hejsil
+You can do 'zig translate-c some-file.c' and it'll print the translated version to stdout
+
+1527069353
+donpdonp
+it gets stuch on missing paths and a maze of sub-includes
+
+1527069434
+Hejsil
+Ooh, ye, you probably need the include path with that command
+
+1527069444
+Hejsil
+I think the flag is -isystem
+
+1527069446
+Hejsil
+or something
+
+1527069888
+donpdonp
+is webasm on the roadmap for a zig target?
+
+1527070017
+donpdonp
+'WebAssembly has 32-bit and 64-bit architecture variants, called wasm32 and wasm64'
+
+1527070024
+donpdonp
+ohh i see them now
+
+1527070034
+donpdonp
+niiice.
+
+1527070843
+donpdonp
+$ zig build --verbose-cimport 2>&1 |grep -i signal_connect
+
+1527070862
+donpdonp
+that found the function that the macro expands to, so thats a good lead.
+
+1527092352
+andrewrk
+donpdonp, if you can come up with a small C test case that would be the first step towards fixing it
+

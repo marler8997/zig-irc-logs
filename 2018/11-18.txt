@@ -1,0 +1,308 @@
+1542506895
+suirad
+andrewrk: what minimal windows do you plan on zig targeting? I was considering doing the windows portion of std.mutex and was reading over the various api to use.
+
+1542507206
+suirad
+its looking like for winxp: CriticalSections; for winvista-win7: SRWLocks; and for win8+: WaitOnAddress since its the closest thing to a futex. But those I have found before digging into documented/undocumented winnt stuff.
+
+1542507316
+suirad
+perhaps NtWaitForKeyedEvent/NtReleaseKeyedEvent?
+
+1542510031
+emekoi_
+i was working on porting std.Muted to windows, but i didn't consider the different versions of windows
+
+1542512695
+daurnimator
+re: the pointer subtraction issue: how do you get the "array size" of a type in zig
+
+1542512717
+daurnimator
+e.g. if an object has size 3 but alignment 2. then it takes up 4 bytes per item in an array, right?
+
+1542513148
+MajorLag
+arrays don't have "specially" aligned elements. @sizeOf(u24) is 3, and @alignOf(u24) is 4. @sizeOf([10]u24) is 40. You can't declare [10]align(2) u24, it'll be a compile error.
+
+1542513191
+MajorLag
+oh, interesting. andrewrk: this violates the @alignOf(T) <= @sizeOf(T) rule.
+
+1542513221
+MajorLag
+as stated anyway, I'm pretty sure it is doing what's intended, it just isn't documented correctly?
+
+1542513457
+suirad_
+emekoi_: what api were you going to use for it?
+
+1542513461
+daurnimator
+MajorLag: huh? isn't the rule the other way around?
+
+1542513471
+daurnimator
+MajorLag: from @alignOf docs: " The result is a target-specific compile time constant. It is guaranteed to be less than or equal to @sizeOf(T). "
+
+1542513533
+MajorLag
+right, and @alignOf(u24) is 4, but @sizeOf(u24) is 3. 4 > 3.
+
+1542513868
+daurnimator
+MajorLag: would depend on the system. some probably have 1, some will have 2, others may have 4
+
+1542513899
+MajorLag
+right, but the fact that it violates the rule on any machine means the guarantee is not a guarantee.
+
+1542513909
+daurnimator
+yup
+
+1542513920
+daurnimator
+so sounds like we need to do work there
+
+1542513948
+daurnimator
+going back to my question though: how
+
+1542514102
+MajorLag
+`const item_index = (@ptrToInt(item_ptr) - @ptrToInt(base_ptr)) / @alignOf(ItemType);` I guess? Since you can't have a custom alignment of array items, @alignOf() will be the "natural" alignment.
+
+1542514315
+daurnimator
+MajorLag: even though the docs say align might be < sizeof?
+
+1542514333
+MajorLag
+hmm....
+
+1542514372
+MajorLag
+boy, having to add a math.max in there...
+
+1542514382
+daurnimator
+isn't not even math.max
+
+1542514407
+daurnimator
+wouldn't it be the lowest multiple of alignOf larger than sizeOf?
+
+1542514430
+MajorLag
+yeah, I guess it would be.
+
+1542514436
+daurnimator
+In C we solve this by using pointer subtraction :P but here I'm trying to emulate pointer subtraction in zig.
+
+1542514495
+MajorLag
+Ok, here's a crazy idea: const elem_size = @ptrToInt(base_ptr[1]) - @ptrToInt(base_ptr[0]);
+
+1542514580
+daurnimator
+MajorLag: is it valid in zig to do base_ptr[1] if the array is only 1 long?
+
+1542514591
+daurnimator
+or are you saying to do it on the base ptr case to [*]?
+
+1542514597
+daurnimator
+*cast
+
+1542514636
+MajorLag
+well, I'd do elem_size using a comptime block, so I'd just create a length two array in there to do it with.
+
+1542515273
+diltsman
+"section" changed to "linksection".  I can see that this better clarifies what it references, but was there some particular case that this helps with?
+
+1542515418
+benjikun
+diltsman:
+
+1542515498
+diltsman
+Did I see that that is a bug?  Did this change with a move to the Zig based Zig compiler?
+
+1542515555
+benjikun
+yes it does seem like something that was apparently blocking something from working with the self-hosted compiler
+
+1542515566
+benjikun
+excuse my use of the word something lmao
+
+1542515862
+diltsman
+I'm thinking that I am going to have to start spending time fixing bugs/incomplete fixtures in the compiler.
+
+1542517545
+emekoi
+suirad_: InitializeCriticalSection and friends
+
+1542518377
+daurnimator
+hrm. I tried out the export to C functionality..... not working so well
+
+1542518495
+benjikun
+how so
+
+1542518822
+daurnimator
+benjikun:
+
+1542519573
+benjikun
+
+
+1542519579
+benjikun
+Did you look at this?
+
+1542519614
+benjikun
+try doing it with the build.zig setup
+
+1542520532
+benjikun
+I know that's probably not much help, sorry
+
+1542520557
+benjikun
+haven't really used the C export functionality yet
+
+1542523297
+tiehuis
+daurnimator: you'll need to use an 'extern struct' the struct returned by makeThing to ensure it is c-compatible
+
+1542523456
+tiehuis
+also you'll probably need an opaqueType here on the inner node else it may be easier to simply use opaqueType for the makeThing and do a ptrCast in the c function boundary
+
+1542538270
+daurnimator
+How would @OpaqueType help here? Isn't that for accessing opaque types? not exporting them?
+
+1542538286
+daurnimator
+(also... what's going on with the capitalisation on that)
+
+1542539089
+daurnimator
+quiet day
+
+1542539473
+daurnimator
+also adding export to u32thing doesn't change the output.
+
+1542542387
+desperek
+hi
+
+1542542401
+desperek
+is zig zig->c->gcc?
+
+1542542757
+daurnimator
+desperek: no. it's zig->llvm ir->binaries
+
+1542542765
+desperek
+ahm
+
+1542552241
+presiden
+let say I wanna write a function that takes an array and modify it
+
+1542552263
+MajorLag
+darnumator, in 1748 you ask for a way to ignore the issue. Are you aware of @alignCast? If not you might want to clarify what you're asking for.
+
+1542552276
+presiden
+for example: fn foo(a: [10]u8) void { a[0] = 42; }
+
+1542552326
+presiden
+^ that didn't work right, since a is const in this case
+
+1542552364
+MajorLag
+fn foo(a: *[10]u8) void { a[0] = 42; }
+
+1542552442
+MajorLag
+It works like passing structs does. If you pass it straight the compiler is free to choose if it is passed as a pointer or a copy, which means it has to be const.
+
+1542552443
+presiden
+ah, so it's pointer to an array of 10 element
+
+1542552504
+MajorLag
+yes, a pointer to an array of u8 with a comptime-known length of 10. As far as I'm aware, you can treat a *[N]T just like [N]T, so you shouldn't need to change anything else.
+
+1542552624
+presiden
+thanks MajorLag
+
+1542559649
+daurnimator
+andrewrk: re: @sizeOf(): another thought occurs. If I have a u24, I expect that it would fit in a mmap of length 3.
+
+1542559730
+andrewrk
+do you mean actual mmap? because that requires allocations of at least page size
+
+1542562919
+daurnimator
+andrewrk: isn't that a linux-specific thing?
+
+1542562982
+daurnimator
+andrewrk: either way, sizeof not being the actual size of something is... weird
+
+1542563049
+daurnimator
+I also have no idea how zig does bitfields yet
+
+1542563106
+nbjoerg
+I wouldn't put bitfields into any modern language...
+
+1542563162
+daurnimator
+I'd prefer them over composing flags for lots of system APIs
+
+1542563197
+nbjoerg
+I don't think they offer any real advantage
+
+1542563224
+nbjoerg
+but I should find the time to write the mixin proposal since that would somewhat address the c&p overhead of non-bitfield designs
+
+1542570358
+MajorLag
+daurimator: zig uses packed structs. `const BitFields = packed struct { b0: bool, b1: bool,, b2: bool, b3: bool... b7: bool };` will be a single byte. In my experience, this is actually harder to work with that consts because you can't use bitwise operators on them.
+
+1542574266
+nbjoerg
+at least from the cfe experience, they also often result in bad performance
+
+1542574301
+nbjoerg
+and large code
+

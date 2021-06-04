@@ -1,0 +1,2704 @@
+1522116121
+itsMontoya
+andrewrk: It's a red-black tree which uses MMAP
+
+1522116231
+andrewrk
+memory mapped disk I/O makes it hard to handle I/O errors
+
+1522116295
+andrewrk
+because now writing to memory can fail, and in order to handle it you need a signal handler
+
+1522116341
+andrewrk
+which is basically the COMEFROM statement
+
+1522117746
+itsMontoya
+True
+
+1522117753
+itsMontoya
+That's currently the fastest implementation though
+
+1522117756
+itsMontoya
+It's what LMDB does as well
+
+1522117777
+itsMontoya
+Theoretically, errors are rare outside of grows
+
+1522118193
+andrewrk
+it's a conundrum isn't it? makes me think that the OS API is deficient
+
+1522118213
+andrewrk
+there must be a way to have the speed without the lack of error handling
+
+1522118236
+itsMontoya
+I agree
+
+1522118255
+itsMontoya
+What write errors can actually occur though?
+
+1522118259
+itsMontoya
+If the space is already allocated
+
+1522118280
+itsMontoya
+Like, I know when you call write on a file descriptor. One error is out of space, if the file is extended and the OS cannot provide more space
+
+1522118300
+itsMontoya
+I'm not sure what other errors really happen. That's all I've encountered in the wild
+
+1522118309
+andrewrk
+there's also EIO, "A low-level I/O error occurred while modifying the inode."
+
+1522118318
+itsMontoya
+Fair enough
+
+1522118325
+itsMontoya
+It would be essentially a silent error
+
+1522118335
+andrewrk
+which would be useful to report with something like, "heya, user, I have some bad news: your hard drive appears to be failing"
+
+1522118342
+itsMontoya
+I guess an OS will have to be written in zig that doesn't follow POSIX
+
+1522118343
+itsMontoya
+:P
+
+1522118392
+itsMontoya
+Agreed though, if you had the error messaging. You could notify of error rather than silently failing (and therefore corrupting data)
+
+1522118409
+andrewrk
+EFBIG "An attempt was made to write a file that exceeds the implementa‐ tion-defined maximum file size or the process's file size limit, or to write at a position past the maximum allowed offset."
+
+1522118428
+itsMontoya
+Well that's a panic in go
+
+1522118433
+andrewrk
+you could make an argument that this a database configuration error, and the db has undefined behavior if this error occurs
+
+1522118435
+itsMontoya
+Because it's an out of bounds error on the slice
+
+1522118451
+itsMontoya
+But if you properly manage you tails, you are fine
+
+1522118494
+andrewrk
+I'll concede that it's a rather small error set
+
+1522118517
+andrewrk
+but it seems pretty important to me that you should return failure if your DB commit fails due to ENOSPC or EIO
+
+1522118553
+itsMontoya
+I totally agree
+
+1522118558
+itsMontoya
+It would be nice to have
+
+1522118578
+itsMontoya
+For instance, with my DB. I could avoid merging the bad branch
+
+1522118590
+itsMontoya
+and save the data integrity of the existing data
+
+1522121364
+itsMontoya
+I'm out! I'll hop on IRC tomorrow
+
+1522121366
+itsMontoya
+Take care all
+
+1522121499
+jab
+I've built zig, but it fails when building its std
+
+1522121505
+jab
+specifically tokenizer.zig
+
+1522121508
+jab
+i get outofmemory
+
+1522121543
+jab
+specifically:
+
+1522121607
+andrewrk
+jab, this is a failure to compile the (incomplete) self-hosted compiler. did you remember to `make install` ?
+
+1522121642
+andrewrk
+`make install` copies the files from c_headers/ and makes them available for C imports. It looks like those headers are not available
+
+1522121731
+jab
+hmm, install worked but then running this fails:
+
+1522121801
+andrewrk
+I think inttypes.h is also in libc. let's double check the configure parameters passed to cmake
+
+1522121805
+andrewrk
+what OS/distro is this?
+
+1522121874
+jab
+mac/high sierra
+
+1522121938
+andrewrk
+hmmm
+
+1522121970
+andrewrk
+it's weird, because the build passed on travis;
+
+1522121999
+andrewrk
+is there any output there that seems like it could be a clue?
+
+1522122032
+andrewrk
+you're using llvm6 via homebrew?
+
+1522122037
+jab
+yep
+
+1522122081
+andrewrk
+you used the exact cmake line from the readme?
+
+1522122115
+jab
+I ran these:
+
+1522122116
+jab
+yeah
+
+1522122132
+andrewrk
+is that fish shell?
+
+1522122136
+jab
+(fish), so the expansion would not be $()
+
+1522122137
+jab
+haha yep
+
+1522122272
+andrewrk
+what happens if you take that big ./zig build-exe line and add the directory where inttypes.h is?
+
+1522122279
+andrewrk
+(is it at /usr/include/inttypes.h ?)
+
+1522122306
+andrewrk
+sorry, by "add the directory" I mean add `-isystem /path/to/dir`
+
+1522122422
+andrewrk
+actually /usr/include is the default, and you didn't override it
+
+1522122432
+andrewrk
+so I'm just curious if /usr/include/inttypes.h exists or not
+
+1522122463
+jab
+/user/include does not exist
+
+1522122474
+jab
+/usr/local/include does, but does not contain inttypes.h
+
+1522122482
+andrewrk
+/usr/include (no 'e')
+
+1522122494
+jab
+yeah, mistyped here
+
+1522122563
+andrewrk
+can you find inttypes.h on your system? if you don't have it, then you don't have libc .h files installed, which is pretty weird
+
+1522122594
+andrewrk
+zig does not provide a libc (yet!) so you will have to tell zig where your libc .h files are on your system at configure time
+
+1522122637
+andrewrk
+if you're curious, the self-hosted compiler depends on libc, because it depends on LLVM, which is in C++, which depends on libc
+
+1522122669
+andrewrk
+but zig programs don't depend on libc by default
+
+1522123108
+MajorLag2
+technically can't you tell zig where libc headers are at runtime using --libc-include-dir? Or even -isystem?
+
+1522123156
+andrewrk
+yes
+
+1522123171
+andrewrk
+however jab has a fresh installation and probably wants to make the "native" libc resolve correctly
+
+1522124230
+tiehuis
+hoppetosse: if you had any questions just say them anytime, i usually check the irc logs once a day at least
+
+1522128794
+jab
+isystem command odesn't exist
+
+1522128852
+tiehuis
+`-isystem` is a flag that can be passed to the compiler to specify a c directory to search for include files
+
+1522128938
+jab
+then why is it coming back with unrecognized arg?
+
+1522128948
+jab
+Unrecognized argument: -isystem
+
+1522128956
+tiehuis
+could you list what command you are trying to run?
+
+1522128968
+jab
+./zig build --build-file ../build.zig -isystem ./lib/zig/include/
+
+1522129007
+andrewrk
+jab, did you see my messages about inttypes.h?
+
+1522129043
+andrewrk
+there is an inttypes.h provided by zig (and clang). I believe it is independent, and intended to #include_next inttypes.h from libc
+
+1522129117
+jab
+
+
+1522129141
+andrewrk
+it seems that you do not have a libc installed
+
+1522129167
+andrewrk
+I'm confused how you were able to build anything with homebrew
+
+1522129237
+jab
+okay, it continued to run
+
+1522129247
+jab
+and found it under Xcode.app
+
+1522129293
+jab
+the others:
+
+1522129404
+andrewrk
+jab, what happens if you try to do this:
+
+1522129608
+jab
+/usr/local/Cellar/llvm/6.0.0/lib/clang/6.0.0/include/inttypes.h:30:15: fatal error: 'inttypes.h' file not found
+
+1522129862
+jab
+this line: #include_next <inttypes.h>
+
+1522129871
+jab
+in inttypes.h
+
+1522130001
+andrewrk
+ok, so clang is broken in exactly the same way zig is
+
+1522130021
+andrewrk
+I think there's something weird going on in your system
+
+1522130109
+jab
+silly mac
+
+1522130495
+jab
+trying on my linux
+
+1522130507
+jab
+can't find libxml2 but i have it installed
+
+1522130512
+jab
+debian
+
+1522130533
+hobomatic
+i think you need -dev on debian
+
+1522130540
+hobomatic
+libxml2-dev
+
+1522130591
+jab
+riiight
+
+1522130597
+hobomatic
+maybe not, i just know its a common error for other things
+
+1522130657
+GitHub68
+[zig] tiehuis opened pull request #861: wip: Add c_char type (master...c_char)
+
+1522130958
+jab
+what about CLANG_INCLUDE_DIRS
+
+1522130972
+jab
+downloaded libclang-dev, nothing
+
+1522131354
+hobomatic
+the way I got things built on ubuntu was installing libxml-dev, and following the ci scripts starting with travis_linux_* at
+
+1522131374
+hobomatic
+(i think i only changed the cmake install dir)
+
+1522131400
+hobomatic
+the install prefix passed to it
+
+1522131452
+hobomatic
+and not running all the tests
+
+1522134350
+hellerve
+good morning (at least in germany it is)!
+
+1522140929
+hellerve
+hey! i have trouble installing the dev build (specifically stage 3). the output tells me that `build` is an unknown command. funnily enough, it’s listed as an available command in the usage section. is that a known bug or did i do anything wrong?
+
+1522142188
+Hejsil
+hellerve, you can't build the self hosted compiler with the self hosted compiler yet :)
+
+1522142229
+hellerve
+ah, well, that explains it
+
+1522142252
+hellerve
+should there be a disclaimer or something?
+
+1522142273
+Hejsil
+There is this under stage 2: Note: Stage 2 compiler is not complete. Beta users of Zig should use the Stage 1 compiler for now.
+
+1522142348
+hellerve
+aha
+
+1522142378
+hellerve
+i wanted to hack on zig a bit and figured i should use the self-hosted compiler, but nevermind then! :)
+
+1522142489
+Hejsil
+Ye, if you want to play around with a working compiler, the stage 1 compiler in C++ is the way to go
+
+1522142518
+Hejsil
+But I'm sure andrewrk wouldn't mind if some love was put into the self hosted compiler
+
+1522142800
+hellerve
+haha, before taking that on i should probably get a working dev setup
+
+1522143046
+hellerve
+im trying to work out issue 792 right now; i’m sure i’ll bug y’all a bit with questions later.
+
+1522151629
+SimonNa
+I'm watching andrewrk's 1-hour talk (
+
+1522151638
+SimonNa
+thanks a lot for sharing
+
+1522152610
+SimonNa
+and very much correct assumption how people write exception code. In the top-level main loop in my D program, I have catch (Throwable) { log to file, rethrow to crash }
+
+1522152649
+SimonNa
+even though it rarely fires, once in a blue moon it's helpful
+
+1522157055
+MajorLag2
+I think I will forever see OOM as the Ski Free monster now.
+
+1522158218
+hellerve
+potentially stupid question incoming: i get an error i dont understand when hacking on zig. namely i get an error when running `build.zig` that `debug.dumpStackTrace()` expected 1 arguments & found 0. the error occurs in std/os/index, in unexpectErrorPosix, a function i havent touched
+
+1522159210
+hellerve
+to clarify: i also looked at the code in question and how its being used, and it is indeed never passed an argument. this doesnt seem to be a problem in master, though, and i’m not sure why.
+
+1522159960
+Hejsil
+hellerve, It seems like a bug in the standard library. Zig has lazy top level declaration, so if a function isn't used, it isn't analysed.
+
+1522159980
+Hejsil
+I'm not quite sure though, as I can't reprocude this error
+
+1522160070
+Hejsil
+Is "unexpected_error_tracing" set to "true" in std/os/index.zig?
+
+1522161188
+hellerve
+yes, that’s part of the wip branch that im looking at (by andrewrk, part of issue #792)
+
+1522161327
+andrewrk
+hellerve, can you give a link to a paste of more output?
+
+1522161660
+andrewrk
+hellerve, nevermind - it's a bug in the stdlib, I'll just push a fix
+
+1522161876
+GitHub63
+[zig] andrewrk pushed 1 new commit to master:
+
+1522161876
+GitHub63
+zig/master 0b7b319 Andrew Kelley: fix bitrotted code in unexpected error tracing
+
+1522161878
+andrewrk
+hellerve, ^
+
+1522162183
+hellerve
+oh wow, that was quick!
+
+1522162185
+hellerve
+thanks!
+
+1522162192
+andrewrk
+dumpCurrentStackTrace has an optional argument which is the first return address you want to start dumping at (since you usually don't want a few call frames leading up to dumping the trace)
+
+1522162212
+hellerve
+that makes sense
+
+1522162655
+hellerve
+alright, that fixed this error in particular. i still have to figure out how to actually make dirent work on os x, but at least i have a working setup now
+
+1522163798
+andrewrk
+hellerve, did you see my wip branch?
+
+1522163811
+hellerve
+yeah, thats what i was trying to get to run
+
+1522163818
+hellerve
+i rebased it and am working with it now
+
+1522163821
+andrewrk
+I was looking at apple's open source libc implementation
+
+1522163824
+andrewrk
+for inspiration
+
+1522163832
+hellerve
+ah, good call
+
+1522163856
+hellerve
+there are no tests for the syscalls/that syscall, correct?
+
+1522163919
+andrewrk
+there's one in that branch - std/os/test.zig
+
+1522163930
+andrewrk
+"makePath, put some files in it, deleteTree"
+
+1522163947
+andrewrk
+the call to os.deleteTree will use the os.Dir interface which will call that syscall
+
+1522163980
+hellerve
+ah, gotcha
+
+1522164045
+hellerve
+i dont really think ill be able to finish this quickly (having no experience with zig and all), but ill try my best; if anyone is faster than me or has more time to spare, no hard feelings
+
+1522164072
+hellerve
+ill comment on the issue again as well, so people know that i haven’t committed to taking this up
+
+1522164114
+andrewrk
+no worries. it's cool that you're contributing. don't be afraid to ask questions
+
+1522164238
+hellerve
+thanks!
+
+1522164660
+occivink
+hi, the talk mentioned concurrency (coroutines in particular) but I don't see anything in the docs (even in master), is it just that it's not documented yet?
+
+1522164900
+andrewrk
+occivink, correct. It's brand new and I haven't finished docs yet
+
+1522165017
+andrewrk
+I'm working on making error return traces work for coroutines (#821) then I'm going to finish up the wip-async-tcp-server branch which uses coroutines, and then try to multiplex coroutines onto a kernel thread pool, then write up docs, and a blog post explaining my findings
+
+1522165256
+hellerve
+bitCast is for casting values (e.g. ints, as opposed to pointers), right?
+
+1522165261
+andrewrk
+correct
+
+1522165270
+andrewrk
+mainly for something like f32 to u32
+
+1522165303
+andrewrk
+or i32 to u32
+
+1522165358
+hellerve
+okay, thanks!
+
+1522165393
+hellerve
+(context: needed it for __getdirentries->errnoWrap)
+
+1522165457
+andrewrk
+hellerve, if you're trying to debug code, I've found that lldb works pretty well on macos
+
+1522165472
+hellerve
+thats a good pointer, thanks
+
+1522165479
+hellerve
+i usually use it for my work on carp as well
+
+1522165486
+andrewrk
+cool
+
+1522165708
+hellerve
+i suppose the "address maps to more than one section" warning is known?
+
+1522165719
+hellerve
+i seem to get it for all programs i inspect under lldb
+
+1522165771
+andrewrk
+I've seen that but I don't know why it happens
+
+1522165799
+hellerve
+okay; ill ignore it for now, then
+
+1522165830
+hellerve
+thanks for your help! im going offline for a while and will work on this :)
+
+1522165838
+andrewrk
+cheers
+
+1522169820
+itsMontoya
+Hey all
+
+1522169855
+itsMontoya
+make[2]:
+
+1522169863
+itsMontoya
+andrewrk: Is this another lib I need to download?
+
+1522169922
+itsMontoya
+I have libclangFrontEnd.so
+
+1522169924
+itsMontoya
+but no .a
+
+1522169929
+andrewrk
+itsMontoya, what os/distro is this?
+
+1522169937
+itsMontoya
+Arch linux
+
+1522169973
+andrewrk
+looks like the AUR is out of date
+
+1522169997
+itsMontoya
+
+
+1522170002
+andrewrk
+I'll be back in a bit
+
+1522170006
+itsMontoya
+Oh ok
+
+1522173873
+andrewrk
+itsMontoya, try this:
+
+1522174301
+itsMontoya
+So this says it's 6.0.0
+
+1522174304
+itsMontoya
+but I think I have that already
+
+1522174401
+itsMontoya
+
+
+1522174404
+itsMontoya
+6.0.4
+
+1522174412
+itsMontoya
+Sorry 6.0.0-4
+
+1522174549
+jab
+I really like Zig
+
+1522174597
+jab
+it's like C, which I love. all the new replacements like Rust and Go take widely different approached so not to become C, but Zig is very much in C's spirit
+
+1522174599
+itsMontoya
+Me too, I'm itching to get some projects going on it
+
+1522174616
+itsMontoya
+Well my issue with Rust is it's OVERLY complicated for all these "nicities"
+
+1522174616
+andrewrk
+itsMontoya, if the archlinux packages aren't working for you then I recommend building from source
+
+1522174640
+andrewrk
+rust is a really impressive project. I think there are pros and cons choosing zig or rust
+
+1522174648
+itsMontoya
+andrewrk: Fair enough
+
+1522174677
+jab
+itsMontoya: true, it has its purpose though. Go is C with a GC, Rust is C with no GC and no leaks possible, Zig seems to take the C but better approach
+
+1522174690
+jab
+and even hits some marks Go and Rust don't, like handling bad_allocs :P
+
+1522174696
+jab
+andrewrk: agreed
+
+1522174739
+itsMontoya
+I think your assessment of Go is completely correct
+
+1522174759
+itsMontoya
+I feel they maintained that C simplicity mantra, which really resonates with me
+
+1522174777
+jab
+interface{} is void*
+
+1522174838
+itsMontoya
+Or unsafe.Pointer
+
+1522174838
+andrewrk
+one of my goals with zig is that you can write truly reusable code
+
+1522174848
+itsMontoya
+andrewrk: Like modular?
+
+1522174861
+andrewrk
+you can use non-garbage collected libraries from garbage collected languages, but not vice versa
+
+1522174879
+itsMontoya
+In general, I try to break up everything into modules to ensure code re-use
+
+1522174897
+itsMontoya
+LLVM make install is at 9%
+
+1522174898
+andrewrk
+and then if you want all languages to be able to use your library then you have to be able to export a C API
+
+1522174912
+itsMontoya
+Go threadrippers! Do my bidding! (compilation..)
+
+1522174957
+jab
+I have a hard time thinking about code reuse on a high-level. Only for the most generic stuff any functionality does not live in isolation and carries assumptions around the environment it grew in.
+
+1522175018
+jab
+Basically for code re-use to happen a way to do something had to be perfect for all use-cases that need it, which is impossible
+
+1522175104
+andrewrk
+jab, agreed. but practically speaking, you would not write, say, ffmpeg in Python
+
+1522175132
+andrewrk
+instead it's in C and Python code that wants to support lots of media formats will use FFI to utilize it
+
+1522175154
+andrewrk
+on the other hand, writing ffmpeg in zig would be a safe bet, because you can have a C ABI
+
+1522175175
+jab
+gotcha
+
+1522175193
+jab
+yeah, that makes sense
+
+1522175206
+jab
+i usually turn to C when I want to write something that everything can use
+
+1522175231
+andrewrk
+
+
+1522175312
+itsMontoya
+Yea
+
+1522175325
+itsMontoya
+Once you have a C ABI, you can use almost anywhere
+
+1522175332
+jab
+comptime is basically Zig's macros?
+
+1522175337
+andrewrk
+yes
+
+1522175338
+itsMontoya
+Golang doesn't play nice with C abi though
+
+1522175341
+jab
+cool
+
+1522175351
+itsMontoya
+C-code is super slow in Go-land
+
+1522175352
+jab
+itsMontoya: it's not bad
+
+1522175367
+itsMontoya
+It really is though, do you know what happens under the hood?
+
+1522175371
+itsMontoya
+Way too much context switching
+
+1522175374
+andrewrk
+jab, have a look at
+
+1522175375
+itsMontoya
+and thread wasting
+
+1522175397
+andrewrk
+this explains how zig stdlib print function works
+
+1522175470
+itsMontoya
+"In Zig, types are first-class citizens." <--- :thumbsup:
+
+1522175476
+MajorLag2
+That's kind of a feature of Go in my opinion. It has made their community open to rewriting things natively instead of using libraries, which is great if I need to, say, figure out how the kernel interface for FUSE works, because there is no documentation other than the libfuse source.
+
+1522175513
+itsMontoya
+MajorLag2: "Feature"
+
+1522175520
+itsMontoya
+One could argue happy byproduct
+
+1522175532
+itsMontoya
+But I disagree with feature
+
+1522175533
+MajorLag
+It's a feature to me, the guy reading their source and not writing Go code.
+
+1522175551
+andrewrk
+that's something go and zig have in common: producing static binaries
+
+1522175559
+MajorLag
+also great.
+
+1522175559
+andrewrk
+hello world in rust links against libc
+
+1522175584
+jab
+fat binaries are win
+
+1522175607
+MajorLag
+I remember when a fat binary was one that included code for multiple architectures.
+
+1522175607
+jab
+the fatter the better
+
+1522175646
+MajorLag
+Because shared libraries hadn't become a fad yet
+
+1522175711
+itsMontoya
+Yea I like static binaries
+
+1522175714
+itsMontoya
+So easy for deploying
+
+1522175762
+itsMontoya
+21% LLVM make install
+
+1522175776
+andrewrk
+strace: go hello world vs zig hello world:
+
+1522175814
+MajorLag
+Go's runtime is a bit of an albatross.
+
+1522175847
+MajorLag
+Minimum Go executable size is 1.6MB IIRC.
+
+1522175858
+jab
+i'm going through how zig do and how strong is the typing? it seems you can convert from u8 to 'c' literals seemlessly
+
+1522175890
+andrewrk
+jab, can you clarify your question? a c string literal has type `&const u8`
+
+1522175900
+andrewrk
+related is the pointer reform issue:
+
+1522175933
+jab
+i do not need to cast from 'c' to u8 or vice-versa
+
+1522175951
+jab
+'+' == 43 without converting
+
+1522175971
+itsMontoya
+In golang, byte and u8 is the same thing
+
+1522175979
+itsMontoya
+No type conversion needed
+
+1522175984
+jab
+so same here
+
+1522175990
+andrewrk
+ah, a character literal is of type `(integer literal)`. Soon to be renamed to `comptime_int`:
+
+1522175993
+itsMontoya
+it makes sense
+
+1522175996
+jab
+would I need to convert from '+' to u32?
+
+1522176003
+jab
+gotcha
+
+1522176020
+andrewrk
+a comptime_int implicitly casts to any integer type, and you'll get a compile error if it does not fit
+
+1522176021
+jab
+urm u32 to '+', narrowing the range
+
+1522176025
+jab
+gotcha
+
+1522176028
+jab
+that's cool
+
+1522176035
+itsMontoya
+I like this comptime shit
+
+1522176038
+itsMontoya
+This is really neat
+
+1522176115
+andrewrk
+jab, yes you would need an explicit cast to convert from u32 to u8. When you do this, you are asserting that the value is in range of the u8
+
+1522176131
+andrewrk
+so you can get a runtime panic in debug mode, or undefined behavior in release-fast mode if your integer is too big
+
+1522176148
+andrewrk
+
+
+1522176219
+jab
+is there a way to do a checked conversion?
+
+1522176223
+jab
+returning an error
+
+1522176226
+jab
+like a !u8
+
+1522176232
+andrewrk
+std.math.cast
+
+1522176270
+andrewrk
+
+
+1522176500
+andrewrk
+hm I think this function does not handle negative values correctly
+
+1522177108
+jab
+is there a way to ignore a !void return?
+
+1522177115
+jab
+and by ignore i mean force a wrap
+
+1522177117
+jab
+unwrap*
+
+1522177123
+jab
+like if it is an error panic
+
+1522177143
+andrewrk
+if you want to panic in the case of an error:  foo() catch @panic("message")
+
+1522177150
+jab
+is there a shorthand?
+
+1522177160
+andrewrk
+or you can assert that it will never cause an error:  foo() catch unreachable
+
+1522177175
+andrewrk
+the latter will panic in debug mode and undefined behavior in release-fast
+
+1522177181
+jab
+also in the catch statement can i grab the specific error?
+
+1522177186
+jab
+ooooo
+
+1522177190
+andrewrk
+foo() catch |err| expression
+
+1522177236
+jab
+i think i found a bug :D
+
+1522177248
+jab
+$ zig test main.zig
+
+1522177249
+jab
+unreachable
+
+1522177259
+jab
+SIGABRT
+
+1522177271
+andrewrk
+indeed that is a bug
+
+1522177294
+jab
+the program:
+
+1522177305
+jab
+the line in question: bf(src, storage[0..]) catch |err| @panic(err);
+
+1522177327
+jab
+removing the catch zig executes normally
+
+1522177350
+jab
+(but still reports errors for not catching)
+
+1522177574
+jab
+how to print err types?
+
+1522177702
+GitHub142
+[zig] andrewrk pushed 1 new commit to master:
+
+1522177702
+GitHub142
+zig/master 6cb99fd Andrew Kelley: fix crash when compile error in analyzing @panic call
+
+1522177705
+andrewrk
+jab, ^ fixed
+
+1522177731
+andrewrk
+std.debug.panic("{}", err) // if you want a format string
+
+1522177807
+jab
+panic is only good for []u8s/
+
+1522177807
+jab
+?
+
+1522177827
+andrewrk
+@panic is a low level intrinsic
+
+1522177843
+andrewrk
+it has to work across .o boundaries
+
+1522177858
+jab
+ahh
+
+1522177931
+jab
+I'm always warry of taking addresses of function returns in non-GC languages: const stdout = &(io.FileOutStream.init(&(io.getStdOut() catch unreachable)).stream);
+
+1522177950
+andrewrk
+I wish jfo would not have put that code there
+
+1522177952
+jab
+How does this not create a dangling pointer if init returns something on the stack and I'm taking a reference to it
+
+1522177996
+jab
+Hahaha
+
+1522178046
+andrewrk
+it works exactly how you would expect: address of function returns is taking the address of a temporary stack variable
+
+1522178436
+GitHub176
+[zig] andrewrk pushed 1 new commit to master:
+
+1522178437
+GitHub176
+zig/master 5b00dee Andrew Kelley: std.math.cast handles signed integers
+
+1522178477
+jab
+so taking the address is unecessary in this case?
+
+1522178478
+andrewrk
+@panic calls the panic handler, which defaults to calling std.debug.panic
+
+1522178492
+andrewrk
+but you can override the panic handler by exposing pub fn panic in your root source file just like you do with pub fn main
+
+1522178552
+andrewrk
+I recommend using std.debug.warn to write to the console, unless you're making a program where you're actually trying to write some kind of formatted data to stdout
+
+1522178607
+Hejsil
+Oooh ye, that reminds me. Is stderr.print or debug.warn the best way to report errors?
+
+1522178631
+Hejsil
+To users of a terminal application
+
+1522178665
+Hejsil
+I guess debug.warn is better. It's not like I can recover from not being able to give users errors anyways
+
+1522178713
+andrewrk
+that's the idea
+
+1522178768
+andrewrk
+sometimes you would want to know about EPIPE but for kind of like error messages and things std.debug.warn is fine
+
+1522178813
+andrewrk
+if you were implementing git diff, you would be more careful about stdout - you'd probably want to exit 1 if you don't fully finish writing the diffg
+
+1522178911
+jab
+are there any facilities to help prevent duplicated error cases?
+
+1522178931
+jab
+defining an error that already exists except named slightly different
+
+1522178954
+andrewrk
+if you switched on such an error, and then enumerated all the cases, it would be pretty obvious
+
+1522178967
+andrewrk
+and you get a compile error for omitting a case
+
+1522178973
+jab
+ahh, yeah
+
+1522179154
+jab
+currently no default allocator?
+
+1522179168
+jab
+so malloc/free don't exist in some form in zig?
+
+1522179260
+jab
+and why are some enum constants inconsistent with naming? :P
+
+1522179273
+jab
+AtomicOrder.Release vs ObjectFormat.elf
+
+1522179291
+andrewrk
+the lower case ones are synchronized with LLVM's names
+
+1522179303
+andrewrk
+idk, a case could be made to do it either way
+
+1522179586
+andrewrk
+Hejsil, or if you were implementing a terminal gui, you'd probably want to know if writing control characters failed
+
+1522179670
+MajorLag
+@jab, there are some simple allocators shipped in std. DirectAllocator works for general cases.
+
+1522179720
+andrewrk
+if you're linking against C for other reasons, probably best to use std.heap.c_allocator
+
+1522179804
+Hejsil
+Naah, the randomizer right now is just: 1. pass arguments to program. 2. let program do it's thing the finish, reporting errors if any happend
+
+1522179834
+andrewrk
+Hejsil, yeah, for your case I think std.debug.warn is fine
+
+1522179850
+Hejsil
+But a terminal gui is a good usecase for stderr.print. Was trying to think of one myself
+
+1522179921
+andrewrk
+if people are going to make fun of the zig community for anything, I want it to be that we sometimes sit around thinking about potential bugs that our software have, and then fix them anyway even though we haven't run into them yet
+
+1522179942
+Hejsil
+Lol, yes
+
+1522180305
+andrewrk
+MajorLag, I've been off and on trying to get a build of clang, llvm, lld that uses musl instead glibc, and it's been really tricky
+
+1522180325
+andrewrk
+if I got that working, we could at least provide a single static linux zig binary
+
+1522180409
+itsMontoya
+andrewrk: So I installed llvm from source as per the instructions
+
+1522180414
+itsMontoya
+and when I look in ~/local/lib
+
+1522180424
+itsMontoya
+I don't see libclangFrontend.a
+
+1522180430
+MajorLag
+yeah, I got as far as getting llvm built I think. But I was also trying use libc++ from llvm instead of recompiling libstdc++ with musl, which I imagine presents its own difficulties.
+
+1522180659
+Hejsil
+Building software from source is an NP complete problem. The only way to solve it is brute force
+
+1522180675
+itsMontoya
+Hejsil: That's Tweet-worthy
+
+1522180690
+Hejsil
+Sadly, I don't do twitter :)
+
+1522180701
+itsMontoya
+Fair enough
+
+1522180711
+MajorLag
+itsMontoya, if you're just looking to have a working zig compiler to work with, you could try the zig appdir:
+
+1522180721
+itsMontoya
+andrewrk: Is the most recent release on github good enough?
+
+1522180727
+itsMontoya
+I just want to play around a bit with Zig
+
+1522180771
+andrewrk
+itsMontoya, you can try the docker image or MajorLag's appdir
+
+1522180787
+andrewrk
+0.2.0 is pretty recent but there are only binaries provided for windows
+
+1522180793
+itsMontoya
+Oh shoot
+
+1522180801
+itsMontoya
+
+
+1522180803
+andrewrk
+I would provide linux binaries for every commit to master if I could figure out this static build
+
+1522180814
+itsMontoya
+Fair enough
+
+1522180822
+itsMontoya
+I'm just so confused
+
+1522180833
+itsMontoya
+I downloaded straight from the link provided, and I see nothing about libclang
+
+1522180835
+itsMontoya
+in this lib dir
+
+1522180843
+andrewrk
+itsMontoya, you compiled llvm right?
+
+1522180851
+itsMontoya
+oh wait1
+
+1522180853
+andrewrk
+did you then proceed to follow the instructions to build clang?
+
+1522180855
+itsMontoya
+I'm stupid, I found it
+
+1522180905
+andrewrk
+so now you need to add to the zig cmake line:  -DCMAKE_PREFIX_PATH=$(HOME)/local
+
+1522180912
+itsMontoya
+So I just add this to the end of my cmake right? -DCMAKE_PREFIX_PATH=$HOME/local
+
+1522180918
+itsMontoya
+Oh, you beat me to it
+
+1522180921
+andrewrk
+oops, yes my syntax is incorrect
+
+1522180933
+itsMontoya
+Yea I did that
+
+1522180936
+itsMontoya
+no errors on cmake
+
+1522180939
+itsMontoya
+then make has the error still
+
+1522180947
+itsMontoya
+Oh, do I need to delete anything
+
+1522180950
+itsMontoya
+Maybe I have something cached
+
+1522180952
+andrewrk
+you need to rm rf th ebuild folder
+
+1522180956
+itsMontoya
+Ah yes, ok
+
+1522180963
+andrewrk
+cmake has its oddities
+
+1522180986
+andrewrk
+I am amused that people have gotten into the habit of deleting zig-cache folder even though we don't cache anything yet
+
+1522180994
+andrewrk
+years of bugs have taught us to not trust caches
+
+1522181000
+itsMontoya
+Yea
+
+1522181014
+itsMontoya
+Ok running make now
+
+1522181020
+itsMontoya
+I'm sorry for all the hassle andrew
+
+1522181309
+andrewrk
+no worries
+
+1522181319
+andrewrk
+it'll be worth it to get zig running :)
+
+1522181739
+itsMontoya
+ok so make
+
+1522181740
+itsMontoya
+make install
+
+1522181744
+itsMontoya
+both worked, no errors
+
+1522181786
+itsMontoya
+panda@archPanda/usr/local/src/zig/build: (master) $ ./zig build --build-file ../build.zig test
+
+1522181789
+itsMontoya
+: CommandLine Error: Option 'pm-max-devirt-iterations' registered more than once!
+
+1522181791
+itsMontoya
+LLVM ERROR: inconsistency in registered CommandLine options
+
+1522181830
+andrewrk
+wow
+
+1522181920
+andrewrk
+it could be a mismatch of llvm versions
+
+1522181935
+andrewrk
+e.g. it picked up the .h files from your AUR but the .a files from the build you just did
+
+1522181961
+andrewrk
+we can never escape from C
+
+1522181978
+andrewrk
+its tendrils will forever haunt the self hosted compiler
+
+1522182024
+andrewrk
+can you provide the cmake output?
+
+1522182046
+itsMontoya
+It's long
+
+1522182050
+itsMontoya
+I'll gist it
+
+1522182051
+itsMontoya
+one sec
+
+1522182057
+jab
+nah, just raw paste ehre
+
+1522182058
+jab
+here
+
+1522182062
+itsMontoya
+LOL
+
+1522182198
+itsMontoya
+andrewrk:
+
+1522182203
+itsMontoya
+Not as long as I thought, sorry
+
+1522182226
+andrewrk
+-- Found CLANG: /usr/lib/libclangFrontend.so;/usr/lib/libclangDriver.so;/usr/lib/libclangSerialization.so;/usr/lib/libclangSema.so;/usr/lib/libclangAnalysis.so;/usr/lib/libclangAST.so;/usr/lib/libclangParse.so;/usr/lib/libclangSema.so;/usr/lib/libclangBasic.so;/usr/lib/libclangEdit.so;/usr/lib/libclangLex.so
+
+1522182230
+andrewrk
+that's not what you just built
+
+1522182244
+itsMontoya
+Do I need to take a flag out?
+
+1522182251
+itsMontoya
+I posted my command
+
+1522182253
+itsMontoya
+at the top
+
+1522182272
+itsMontoya
+Maybe install prefix is conflicting?
+
+1522182281
+andrewrk
+I don't think it's that
+
+1522182294
+andrewrk
+unfortunately we don't have a way to tell cmake to prefer looking at CMAKE_PREFIX_PATH first
+
+1522182385
+andrewrk
+can you just remove the conflicting packages?
+
+1522182425
+itsMontoya
+Then do cmake again?
+
+1522182435
+andrewrk
+yes and make sure the output is correct
+
+1522182471
+andrewrk
+I think tiehuis uses archlinux. tiehuis did you have to do anything weird to build from source?
+
+1522182491
+jab
+how can i link to a c file?
+
+1522182495
+jab
+urm c library
+
+1522182499
+andrewrk
+--library foo
+
+1522182505
+itsMontoya
+
+
+1522182525
+andrewrk
+jab, or if you want to use zig build:
+
+1522182566
+andrewrk
+itsMontoya, that's still not $HOME/local/*
+
+1522182577
+itsMontoya
+Clang and LLVM from source?
+
+1522182580
+itsMontoya
+All I did was llvm
+
+1522182597
+andrewrk
+yes you must always use the same compiler and build them together
+
+1522182608
+itsMontoya
+Ah
+
+1522182615
+andrewrk
+c++ is finnicky. you can't mix and match things
+
+1522182615
+itsMontoya
+So the llvm I built it worthless lol
+
+1522182621
+andrewrk
+no, it's not worthless
+
+1522182626
+andrewrk
+you just need to also follow the instructions to build clang
+
+1522182634
+itsMontoya
+Oh ok
+
+1522182637
+itsMontoya
+I'll do tha tnow
+
+1522182673
+andrewrk
+if there's one thing I've learned trying to build and run other people's projects, it's this
+
+1522182680
+andrewrk
+never ever take the path less travelled
+
+1522182684
+andrewrk
+always follow the beaten path
+
+1522182714
+andrewrk
+nobody wants to troubleshoot the bug that happens when you do the thing that nobody does
+
+1522182905
+itsMontoya
+Fair enough
+
+1522182939
+itsMontoya
+Clang is building right noew
+
+1522182942
+itsMontoya
+*now
+
+1522183743
+MajorLag
+what I've learned is: always build a completely new isolated environment for the build, because build systems are so awful.
+
+1522184204
+jab
+minor note: in tetris why not just make t: Tetris global in main, basically every function uses it
+
+1522184315
+jab
+also, i might want to venture into the game library land for zig
+
+1522185101
+ltr_
+ZDL? zig directmedia layer
+
+1522185104
+ltr_
+sounds good
+
+1522185116
+jab
+the "undefined behavior" section goes over some behaviors which appear to be defined
+
+1522186035
+jab
+how to initialize a c struct?
+
+1522186149
+jab
+or how can i specify all struct variables as undefined at once?
+
+1522186151
+jab
+for large structs
+
+1522186464
+jab
+"missing field: x"
+
+1522186964
+Hejsil
+var s: StructType = undefined;
+
+1522187208
+jab
+what if i want to defined some things but not others?
+
+1522187245
+andrewrk
+var s = StructType { .a = undefined, .b = 1234 };
+
+1522187282
+andrewrk
+it's worth it to list out all the fields. you for sure want a compile error if you add a new field
+
+1522187299
+jab
+still, if the struct is large that's hard to do
+
+1522187324
+jab
+what i'm trying to do: call a c function that takes a pointer to a struct, in that function it sets some of its members
+
+1522187338
+andrewrk
+consider how long it will take to do that, compared to how long it would take to debug forgetting to initialize a field
+
+1522187344
+jab
+setting the whole thing to undefined gives me an error, setting each one individually is a complete wash
+
+1522187350
+andrewrk
+we're talking minutes vs potentially days
+
+1522187379
+jab
+how about a way to set it all to 0?
+
+1522187384
+jab
+or default values
+
+1522187390
+andrewrk
+zeroes was removed
+
+1522187395
+andrewrk
+default values I believe is an open proposal
+
+1522187412
+andrewrk
+what do you mean setting the whole thing to undefined gives you an error?
+
+1522187417
+jab
+SDL has a function called SDL_PollEvent(SDL_Event *ev);
+
+1522187428
+jab
+"can't use undefined value"
+
+1522187445
+andrewrk
+default struct initialization proposal:
+
+1522187453
+jab
+in the mean time?
+
+1522187459
+andrewrk
+jab, can I see your code?
+
+1522187460
+jab
+SDL_Event is a massive struct
+
+1522187466
+jab
+i'm using termbox though
+
+1522187467
+jab
+sure
+
+1522187473
+MajorLag
+yeah, I had the same concerns jab. In general, I just initialize it to undefined, then set each variable I actually want individually afterwards. I zero it with a simple `for(([]u8)(struct))|*b|{*b = 0;};` it hasn't been as big a deal as I thought it would.
+
+1522187521
+jab
+
+
+1522187544
+andrewrk
+I don't think you want a const undefined pointer
+
+1522187558
+MajorLag
+var event: sdl.SDL_Event = undefined;
+
+1522187558
+MajorLag
+while (sdl.SDL_PollEvent(&event) != 0) {
+
+1522187564
+andrewrk
+yeah this will work fine
+
+1522187579
+jab
+ahh gotcha
+
+1522187584
+jab
+yep
+
+1522187590
+jab
+MajorLag: that's just memset
+
+1522187593
+jab
+why not use @memset?
+
+1522187596
+MajorLag
+yes, yes it is
+
+1522187616
+MajorLag
+well, because I ran into a bug with memset early on, and documentation says that for construct would compile to memset anyways.
+
+1522187636
+jab
+i see
+
+1522187674
+jab
+also, trying to wrap my head around the declarations. that for loop has a |*b| which captures the array iteration, but i would expect it to be &b
+
+1522187677
+MajorLag
+the documentation recommends the for construct because @memset is a low level intrinsic with no saftey.
+
+1522187718
+hobomatic
+there's also mem.set() that does that for you
+
+1522187756
+MajorLag
+I'm honestly not sure of the syntax reasoning there.
+
+1522187787
+hobomatic
+oh wait thats for slices
+
+1522187813
+jab
+and would |b| capture by value?
+
+1522187824
+MajorLag
+yes, if my understanding is correct.
+
+1522187837
+jab
+does the for loop dictate the type you can iterate or does the capture?
+
+1522187844
+andrewrk
+jab, did you see this btw?
+
+1522187865
+jab
+if the for loop was iterating over an array of pointers how do you capture by value?
+
+1522187878
+jab
+andrewrk: nope, will look
+
+1522188007
+Hejsil
+Geeh. Just compiled Zig for a laptop and a debug version of Zig work fine, but release gives me: "CommandLine Error: Option 'color' registred more than once!"
+
+1522188030
+andrewrk
+Hejsil, that's strange, I have never seen that before until today where itsMontoya also ran into it.
+
+1522188031
+MajorLag
+jab, I'd probably take `|b|` and dereference it in the loop.
+
+1522188039
+andrewrk
+Hejsil, what distro are you on again?
+
+1522188049
+Hejsil
+Arch
+
+1522188054
+andrewrk
+same as itsMontoya
+
+1522188069
+Hejsil
+But on my desktop it works fine
+
+1522188078
+Hejsil
+This is some weird stuff
+
+1522188081
+andrewrk
+it appears to have something to do with mismatch of libraries. e.g. system clang + compiled from source llvm
+
+1522188097
+andrewrk
+I would double check your cmake output
+
+1522188106
+Hejsil
+I did not build clang and llvm from source
+
+1522188109
+Hejsil
+On both machines
+
+1522188126
+KingOfThePirates
+what's the recommended way to install vim for a noobie?
+
+1522188144
+Hejsil
+Oooh, maybe the wrong compiler is used for compiling Zig on the laptop
+
+1522188153
+jab
+MajorLag: so |*b| captures by reference?
+
+1522188203
+MajorLag
+yeah,
+
+1522188209
+andrewrk
+KingOfThePirates, the #vim irc channel is quite friendly
+
+1522188215
+jab
+&b makes more sense to me, but that may just be me. matches c++ syntax too with captures, and also creates the &b / *b duality, where *b / *b seems odd
+
+1522188217
+KingOfThePirates
+perfect, thanks
+
+1522188260
+MajorLag
+jab, yeah, I'm not sure of the reasoning behind how it works now, but it make more sense after the pointer reform?
+
+1522188283
+andrewrk
+yeah let's talk about capturing by reference in the pointer reform issue
+
+1522188327
+Hejsil
+It should be |x.&|. Just to keep the inconsistency :)
+
+1522188341
+MajorLag
+seems to me the construct would be something like `for(array) |*x| { x.& = 0; };`
+
+1522188390
+jab
+where is this discussion?
+
+1522188402
+Hejsil
+Shouldn't it be |&x|? * was for types
+
+1522188440
+jab
+MajorLag: that makes less sense, but i don't have context on pointer reform
+
+1522188479
+andrewrk
+pointer reform issue:
+
+1522188498
+MajorLag
+jab, unfortunately to get the many great things that come with pointer reform we sacrificed the dereference operator a bit.
+
+1522188594
+MajorLag
+I think what I wrote should parse as "for every value in the array, give me a pointer to that value called x."... but that still seems a little off. Can't put my finger on it.
+
+1522188630
+jab
+hmm
+
+1522188631
+jab
+i see
+
+1522188641
+MajorLag
+*shrug*, all I can say is that it hasn't been a problem in practice regardless.
+
+1522188657
+jab
+derefencing with x.& is a lot of overhead
+
+1522188667
+jab
+2 special characters
+
+1522188688
+andrewrk
+jab, one of the important tradeoffs to understand about zig is that we're very willing to type more characters when writing code, in exchange for having lots of handy guarantees when reading code
+
+1522188710
+MajorLag
+the alternatives were worse. things like enforced parans around dereferences: (*var)
+
+1522188762
+jab
+so type delcaration: *u8, address of: &x, dereference: x.&
+
+1522188807
+MajorLag
+yeah, that's the gist of it. the block pointers are the real treat.
+
+1522188863
+andrewrk
+the really important thing is that *T is a pointer to exactly one T
+
+1522188880
+jab
+and multiple T's?
+
+1522188884
+MajorLag
+[*]T
+
+1522188893
+MajorLag
+if length is unknown at compile time.
+
+1522188903
+jab
+[*5]T if it is?
+
+1522188908
+andrewrk
+usually for multiple Ts you know how many there are at runtime, in which case use a slice: []T
+
+1522188950
+jab
+slice of pointers would be []*T?
+
+1522188956
+MajorLag
+yep
+
+1522188966
+andrewrk
+pointer to an array is *[N]T
+
+1522188980
+andrewrk
+[*x]attrs T, where x is any expresesion, is a syntax error
+
+1522188988
+jab
+[*]T is analagous to a C pointer then
+
+1522188994
+andrewrk
+yes
+
+1522189022
+MajorLag
+actually [*]null T is probably what you want.
+
+1522189022
+jab
+personally, i like all this... except for x.& :D
+
+1522189031
+jab
+why?
+
+1522189061
+jab
+you'd probably want it, but C arrays are not null terminated
+
+1522189089
+andrewrk
+here's another cool benefit: string literals would become `[N]null u8`. And then we can allow implicitly casting `[N]null T` to `[*]null const T`. So we no longer need C string literals - normal zig string literals will implicitly cast to where a c string is expected
+
+1522189094
+MajorLag
+true, they aren't necessarily, but a lot of apis use null terminated arrays. linux syscalls for instance.
+
+1522189109
+jab
+yeah
+
+1522189113
+jab
+andrewrk: i like that
+
+1522189135
+andrewrk
+having the type system know more facts lets us do more safe implicit casts
+
+1522189164
+jab
+how about instead of x.& it's x->, same ol' syntax and uses two special characters :P
+
+1522189184
+MajorLag
+I kinda don't like the non-C literal being null terminated, but I can't come up with a good argument why.
+
+1522189187
+jab
+almost looks like something is being carried out too
+
+1522189210
+jab
+var b: &u8 = a->;
+
+1522189234
+MajorLag
+anyways, I gotta duck out for a few hours.
+
+1522189239
+jab
+would become confusing when you see: a->.func()
+
+1522189244
+andrewrk
+MajorLag, there's a benefit besides C compatibility - you can avoid allocation overhead if you call posix APIs directly with string literals
+
+1522189268
+andrewrk
+I mean if you consider the linux syscall interface distinct from C compatibility
+
+1522189273
+jab
+but -> could be dual purpose
+
+1522189281
+MajorLag
+That is true... I could come around to it. It's that nagging extra byte...
+
+1522189286
+jab
+a->func() works like a.func(), a-> works like a.&
+
+1522189307
+jab
+erm, first case works like a.&.func()
+
+1522189468
+jab
+so for calling a function on a pointer struct you would have to do: a.&.func()?
+
+1522189474
+jab
+that's a very common operation to be so ugly
+
+1522189499
+jab
+unless func takes a reference i guess
+
+1522189525
+Hejsil
+jab, look at thejoshwolfe comment on Pointer Reformed
+
+1522189541
+Hejsil
+He suggests that the ., () and [] operators auto deref
+
+1522189545
+Hejsil
+Just like . does now
+
+1522189553
+Hejsil
+But only one level
+
+1522189618
+Hejsil
+so a.f == a.&.f, a() == a.&() and a[slicing or index] == a.&[slicing or index]
+
+1522189630
+andrewrk
+I wonder if it makes sense to only do the `.` auto deref only for *T (ptr to single thing)
+
+1522189663
+Hejsil
+Yes, I think that is perfectly acceptable
+
+1522189667
+andrewrk
+likewise I think a pointer to an array should let you use [ ] operators
+
+1522189694
+Hejsil
+Also, maybe pointer reformed would allow this:
+
+1522189700
+andrewrk
+but using [ ] operators on `[*][N] T` is derefing the pointer, not the array
+
+1522189758
+andrewrk
+oh interesting - comptime slicing would give an array?
+
+1522189765
+andrewrk
+that's a really good question
+
+1522189767
+Hejsil
+Ye, pointer to array
+
+1522189803
+andrewrk
+I think there's still a distinction between a comptime array and a comptime slice
+
+1522189806
+andrewrk
+a slice is a reference
+
+1522189834
+andrewrk
+you can take the address of an element of a slice at comptime and it will equal at runtime the address of the original array that was sliced
+
+1522189864
+andrewrk
+even though the address is not known until linking
+
+1522189927
+Hejsil
+Wait? Im confused
+
+1522189956
+Hejsil
+I suggest slicing with constants returns a pointer to a fixed size array. Aka a refences as well :)
+
+1522189972
+andrewrk
+ahhh right of course
+
+1522190079
+andrewrk
+Hejsil, I think this is related to this question: what happens when you make an error union with an empty error set:
+
+1522190085
+andrewrk
+error{}!i32
+
+1522190094
+andrewrk
+at first I thought that this should just give you a i32
+
+1522190121
+andrewrk
+the problem I ran into was that calling code would use try, catch, if, on the value and it wouldn't work since it wasn't an error union
+
+1522190138
+Hejsil
+Ye, generics becomes a pain
+
+1522190215
+Hejsil
+But how is this related? :)
+
+1522190229
+Hejsil
+Are you refering to passing
+
+1522190236
+Hejsil
+*[2]u8 to []u8?
+
+1522190252
+Hejsil
+I would say that should be an implicit cast
+
+1522190287
+andrewrk
+I agree that should implicitly cast
+
+1522190300
+andrewrk
+but imagine generic code that slices, and then expects the type id of the result to be a slice
+
+1522190309
+andrewrk
+it might still be the correct thing to do
+
+1522190318
+andrewrk
+I'm thinking about it
+
+1522190320
+Hejsil
+Hmmm
+
+1522190573
+Hejsil
+Ok, two things!
+
+1522190606
+Hejsil
+1. generics have to handle *[2]u8 no matter what, so maybe pointer reformed is the problem itself
+
+1522190635
+Hejsil
+2. Have (*[2]u8)(slice) do the same as what I proposed with const slicing
+
+1522190662
+andrewrk
+and (2) would work as an implicit cast right?
+
+1522190695
+Hejsil
+Implicit cast back to []u8? Yes
+
+1522190843
+Hejsil
+So this instead:
+
+1522190870
+Hejsil
+It's more verbose, but it's easier to see when you get a slice, and when you get a array pointer
+
+1522190906
+Hejsil
+And (*[2]u8) cast would runtime assert that the slice.len >= 2
+
+1522191226
+jab
+allocator interface?
+
+1522191230
+jab
+zig has interfaces?
+
+1522191290
+andrewrk
+Hejsil, I think I agree with that latest paste
+
+1522191310
+Hejsil
+This is how you would do it now btw: @typeOf(@ptrCast(&const [2]u8, s[a..2].ptr))
+
+1522191314
+jab
+one thing I think a lot of languages lack is a member interface requirements, like requiring x: i32 to exist in the data passed
+
+1522191324
+jab
+encourages compositing
+
+1522191364
+andrewrk
+jab, there's no language feature for interfaces. there's just a struct with some function pointers and member functions
+
+1522191379
+jab
+ahhhhhh gotcha
+
+1522191381
+andrewrk
+
+
+1522191394
+jab
+i dig it
+
+1522191411
+Hejsil
+Well, when you say s.x in generic code, then that's an interface requrement :)
+
+1522191434
+Hejsil
+Now all types that s can be must contain the field x :)
+
+1522191459
+Hejsil
+And then you go comptime assert(@typeOf(s.x) == i32) for the type
+
+1522191484
+Hejsil
+No need for complicated type systems when you have comptime! :)
+
+1522191570
+jab
+yeah, i really like comptime
+
+1522191671
+Hejsil
+andrewrk, I'll open a new issue for casting slices to array pointers as it is not directly related to Pointer Reformed. Pointer Reformed does however make indexing array pointers easier
+
+1522192252
+andrewrk
+Hejsil, sounds good
+
+1522192807
+Hejsil
+Oooh. Array pointer to slice implicit conversion already works lol
+
+1522192863
+andrewrk
+I think only if it's const
+
+1522193020
+Hejsil
+Correct
+
+1522193874
+jab
+i feel like there's still a lot to go for zig
+
+1522193901
+jab
+would writing a lib be less benificial than contributing to zig itself?
+
+1522193926
+jab
+(looking at milestones and issues)
+
+1522194079
+Hejsil
+Well, the more Zig's design is tested on real software before 1.0.0 the better
+
+1522194092
+jab
+true
+
+1522194098
+Hejsil
+Because I can imagine, the language will lock down a lot more when 1.0.0 happend
+
+1522194108
+Hejsil
+So better get those changes in now, that later
+
+1522194119
+jab
+are there any game libraries already in development?
+
+1522194182
+Hejsil
+There is this. Though it doesn't seem very active
+
+1522194353
+jab
+there should be a complimentary std extension library called "Zag"
+
+1522194354
+jab
+:P
+
+1522194478
+Hejsil
+Oooh yes
+
+1522194500
+Hejsil
+I need to be more witty with my project names :/
+
+1522194519
+jab
+i think i'm pretty good with names
+
+1522194554
+Hejsil
+The you are the prefect candidate for
+
+1522194555
+Hejsil
+:)
+
+1522194655
+jab
+at the top of the table in the readme, the U E... headers are languages?
+
+1522194721
+Hejsil
+Well, yes. They are region/language specific versions of games
+
+1522194727
+jab
+gotcha
+
+1522194737
+jab
+i've never heard of rom randomizers before, that's cool
+
+1522194754
+Hejsil
+I'll fix that table, when I know what all the letters actually mean :)
+
+1522194757
+jab
+so it randomize some elements of the game like starting pokemon, items found, and grass encounters?
+
+1522194763
+Hejsil
+Yes
+
+1522194770
+jab
+nice
+
+1522195085
+jab
+heh
+
+1522195101
+jab
+one possible name (plays on the strategy): TrickROM
+
+1522195106
+jab
+like trick room
+
+1522195109
+jab
+heh heh
+
+1522195124
+Hejsil
+Lol
+
+1522195137
+jab
+i'm coming up with a list
+
+1522195138
+Hejsil
+Well, it's not that related to what it does though :)
+
+1522195143
+Hejsil
+Ooh boy
+
+1522195155
+andrewrk
+jab, file extension is not mandated by zig, you could use .zag extension and it will work the same
+
+1522195166
+jab
+yeah, you can be specific and have the name describe, or be floofy and come up with analogies
+
+1522195177
+jab
+or, a name that's unrelated e.g. Zig
+
+1522195187
+andrewrk
+you could use the .perl extension if you want
+
+1522195194
+andrewrk
+or .exe just to be extra confusing
+

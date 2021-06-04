@@ -1,0 +1,300 @@
+1537324319
+andrewrk
+I think it's going to take 8+ hours just to type up the release notes
+
+1537357544
+tiehuis
+looks like LLVM 7.0 is released:
+
+1537362236
+unique_id
+So with packed structs I can just mmap and cast the pointer to a struct that fits the precise layout on disk? That is very cool!
+
+1537362348
+unique_id
+And it'll work for arrays of structs as well? Because the alignment will be 1? That's awesome!
+
+1537363123
+andrewrk
+unique_id, yes
+
+1537363192
+andrewrk
+alright, time to merge llvm7 into master
+
+1537367878
+DutchGh0st
+what is a 'Definition.Data.Type' ?
+
+1537369275
+andrewrk
+DutchGh0st, run `zig builtin` (which prints the contents of @import("builtin")) and search for `Definition`
+
+1537370567
+j`ey
+oh, zig has run time type ino
+
+1537370569
+j`ey
+*info
+
+1537370614
+andrewrk
+j`ey, no, only compile-time type info
+
+1537370628
+j`ey
+ah
+
+1537372491
+wink_
+andrewrk: Your thoughts on discussing ux-semantics in an issue? (
+
+1537372628
+DutchGh0st
+mhh, I found a case that should trigger a compile error, but does not
+
+1537372635
+andrewrk
+wink_, issues should be one of the following: a question, a proposal, a bug report, a use case, or missing documentation. which kind of issue would you like to open?
+
+1537372818
+andrewrk
+unique_id, I haven't done thorough tests of packed structs in arrays, so please be patient if we have to solve some bugs with that
+
+1537372892
+DutchGh0st
+or well, how do you concat an [][]const u8 into a large []u8 ?
+
+1537372962
+andrewrk
+DutchGh0st, at compile time?
+
+1537372971
+DutchGh0st
+yes
+
+1537372997
+andrewrk
+you might be hitting #1362
+
+1537373010
+andrewrk
+I can look at this today
+
+1537373016
+DutchGh0st
+I have an array of compiletime "Strings",
+
+1537373066
+DutchGh0st
+here's the contect: I take a struct with only funtions defined on it, which you can see as 'Interface' or 'Trait', I then also take any type
+
+1537373144
+DutchGh0st
+and match if the type has all the functions the interface  defines, and if not, I'd like to give an error message like "Function foo(*const Type) void Not found. Found: <all the functions listed on the type>"
+
+1537373160
+DutchGh0st
+something like that
+
+1537373193
+DutchGh0st
+but dinner is ready, brb!
+
+1537373334
+wink_
+andrewrk: maybe "What are the semantics of uX types?"
+
+1537373469
+andrewrk
+wink_, the goal is to have the documentation be able to answer that question - so it would help to be more specific on where the docs are lacking
+
+1537373481
+andrewrk
+is my checklist on your issue incomplete?
+
+1537374328
+wink_
+Because I don't know what the semantics are I don't know what questions to ask so I don't know if the list is complete or not. To be more specific, if I define a `var z: u0 = 0; var pZ: *u0 = &z;` what is the value of pZ?
+
+1537374416
+andrewrk
+it's a compile-time only value
+
+1537374433
+andrewrk
+same as a variable of type `type`
+
+1537375404
+wink_
+Hmmm, what about `const S = packed struct { f1: u8, f2: u0, f3: u8,}; var s = S { .f1 = 1, .f2 = 0, .f3 = 3, }; var pSf2 = &s.f2;`
+
+1537375422
+andrewrk
+same thing
+
+1537375715
+wink_
+what is the value of `const o = @offsetOf(S, "f2");`
+
+1537375883
+andrewrk
+error: 0 bit type has no in memory representation
+
+1537375930
+andrewrk
+that one already works, you can try it
+
+1537376075
+wink_
+Agree that is what the what the compiler says, but if `f2: u8,` it has a value of 1, correct?
+
+1537376076
+MajorLag
+DutchGh0st:
+
+1537376134
+wink_
+s/what the what the/what the/ :)
+
+1537376216
+andrewrk
+wink_, correct
+
+1537376375
+andrewrk
+zig now depends on LLVM 7.0.0
+
+1537376378
+wink_
+why is a u0 an error where as a u8 isn't they seem the same to me.
+
+1537376562
+MajorLag
+andrewrk, looking at the LLVM thread on HN, someone posted the `printValue`  example from the docs where `@isInteger` and `@isFloat` are used., which don't exist. Is this intentional?
+
+1537376576
+andrewrk
+they exist but they're deprecated, use @typeInfo
+
+1537376607
+MajorLag
+`test.zig:11:22: error: invalid builtin function: 'isFloat'`
+
+1537376621
+andrewrk
+oh, huh, that's weird. I wonder why docgen isn't erroring out
+
+1537376660
+MajorLag
+Don't get me wrong, I'm not asking for them to come back or anything. I'd just rather not mislead people with the docs.
+
+1537376670
+andrewrk
+yeah I'll fix it
+
+1537379410
+DutchGh0st
+if anyone has time to spit into this, what do you think of it?:
+
+1537379618
+DutchGh0st
+the function `require` basically takes type A, and type B, and matches if type A has all the functions type B has (a match means the names and signatures of the function are equal)
+
+1537379760
+DutchGh0st
+and whenever type A does not have all the functions type B has, compilation is stopped with a compile-error
+
+1537380990
+MajorLag
+I think it is a bit cumbersome to force the implementer to define as_mut and as_ref. Also you should be aware that fn signiture comparison breaks down in the presence of comptime parameters. I posted some gists about an hour ago of my own pass at implementing this sort of thing if you'd like to peruse it for ideas.
+
+1537381047
+MajorLag
+Otherwise it's pretty much how I did it, so I'm confident it will work.
+
+1537381052
+andrewrk
+DutchGh0st, for what it's worth, I agree that this use case you're talking about is an important use case, and there's an important open issue to address it
+
+1537381054
+DutchGh0st
+yes, thats a donwside I thought of myself
+
+1537381072
+andrewrk
+but I haven't personally tried to solve it yet or come up with a serious proposal for the issue
+
+1537381092
+DutchGh0st
+but lets say you want an Iterator, you probably only have 1 Iterator implementation for a type
+
+1537381168
+DutchGh0st
+what is your github Gist MajorLag?
+
+1537381188
+MajorLag
+
+
+1537381222
+MajorLag
+typeclass is similar to what you're trying to do, trait is more for simple name and type matching
+
+1537381404
+DutchGh0st
+is the mem.copy() a workaround of concatting an array of 'strings' ?
+
+1537381819
+DutchGh0st
+mh, in the 'as_ref' and 'as_mut' example, it might be possible to have a lookup table based on the type you want .as_ref() to return, but the lookup must be comptime
+
+1537384195
+DutchGh0st
+how is the progress for 0.4 going? :)
+
+1537384270
+DutchGh0st
+err, *0.3
+
+1537384654
+andrewrk
+DutchGh0st, here's the schedule:
+
+1537384671
+andrewrk
+you can see we're down to 19 issues in the milestone:
+
+1537384699
+andrewrk
+LLVM 7 released today, so I just merged the llvm7 branch into master
+
+1537384722
+DutchGh0st
+wow! Not so long ago there were sooo many issues o.O
+
+1537384752
+andrewrk
+I postponed some of them, but I've also been fixing 6+ bugs per day for about a month
+
+1537384855
+DutchGh0st
+that's still quite alot each day! and only 9 days to go :D :D
+
+1537391305
+andrewrk
+for future reference
+
+1537391314
+andrewrk
+<andrewrk> does llvm 7 as a .so have some kind of new initialization requirement? I'm getting a segfault in llvm::DIBuilder::createFile (with valid non-null parameters), when linking my frontend against llvm-7.so but not when linking against llvm .a libraries
+
+1537391321
+andrewrk
+<d0k> we have an ABI bug in LLVM 7 when the .so is built with gcc but your program is build with clang. I'm sorry for that.
+
+1537391381
+andrewrk
+I've already been mentioning and documenting that it's required to build zig and llvm with the same c++ compiler, but now with llvm7 there's a segfault if you try to build zig with clang and llvm was built with gcc
+

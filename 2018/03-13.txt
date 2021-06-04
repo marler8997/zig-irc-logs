@@ -1,0 +1,448 @@
+1520931267
+GitHub194
+[zig] tiehuis pushed 1 new commit to master:
+
+1520931267
+GitHub194
+zig/master d6e84e3 Marc Tiehuis: Add WebAssembly output workaround for LLVM 6
+
+1520931298
+tiehuis
+jfo: I added a workaround to master for that environment parsing issue when trying to get wasm output
+
+1520931313
+tiehuis
+if you have llvm configured with the wasm backend then you shouldn't need any extra configuration
+
+1520931359
+tiehuis
+i'll also enable that backend in the docker image so you won't necessarily have to do a full compile yourself
+
+1520931380
+tiehuis
+will get that pushed to docker hub tomorrow when i re-compile
+
+1520931950
+jfo
+tiehuis: cool! I'm looking forward to working on that more in the near future
+
+1520932047
+tiehuis
+awesome. I have to say, it's pretty great not needing emscripten/binaryen and all that to do compilation
+
+1520938977
+jfo
+yeah... I'm really interested in how webassembly will develop. I have always been interested in it but every time I have given it a try I've been immediately confounded by the massive emscripten output, I just couldn't understand why I couldn't simply compile an object file and load it into js land
+
+1520939015
+jfo
+of course that was always possible, but emscripten is heavy because it's polyfilling the stdlib and building all sorts of bridges back to the browser api
+
+1520939097
+jfo
+I really want to write about this because I feel like wasm in its current form is very confusing to most people... it's really interesting and powerful but there are significant implications about library compatibility and the runtime etc that are really lost in the shuffle
+
+1520941012
+jfo
+but of course I have to fully understand it myself first :)
+
+1520949322
+MajorLag
+andrewrk: it looks like my issues with comptime error handling were either me doing something wrong when I was debugging or they were fixed with the other comptime patches. There is some strange @compileLog() behavior related to comptime loops, but I'm not entirely sure it doesn't make sense in some way I'm not clear on. I'll post an issue regardless.
+
+1520952544
+MajorLag
+actually, I think this is expected. Does this make sense to you: when @compileLog is encountered in comptime in a function, we stop executing once we exit that function?
+
+1520952603
+andrewrk
+MajorLag, I think I would need to see a code snippet to answer in a helpful way
+
+1520952716
+andrewrk
+@compileLog does create a compile error, so it's quite possible that the compile error mechanism stops further analysis in some way
+
+1520952751
+andrewrk
+my original intention would be that it would not modify analysis other than adding compile errors to prevent an actual build
+
+1520956971
+MajorLag
+andrewrk:
+
+1520957008
+MajorLag
+based on what you're saying, this isn't the expected behavior, so I should make an issue.
+
+1520957138
+andrewrk
+let me consider this example for a few minutes
+
+1520957237
+MajorLag
+ok. I notice that the results in that paste are slightly older than the code. I added the @compileLog("result: ", i); line.
+
+1520958682
+andrewrk
+MajorLag, thanks for the example. I agree this is not expected behavior, and I understand what is causing it
+
+1520958717
+andrewrk
+I have a lot going on today - I would appreciate a writeup. but I think the solution will be straightforward
+
+1520958739
+andrewrk
+s/writeup/a github issue with this example code/
+
+1520959181
+Hejsil
+Should we have some issue to improve error messages?
+
+1520959788
+andrewrk
+Hejsil, sure. something in particular?
+
+1520959929
+Hejsil
+Things like "try" in functions that doesn't return errors give you something like this:
+
+1520959930
+Hejsil
+test "" {
+
+1520959930
+Hejsil
+fn f() void {
+
+1520959930
+Hejsil
+}
+
+1520959930
+Hejsil
+f();
+
+1520959930
+Hejsil
+const T = @typeOf(this).ReturnType;
+
+1520959932
+Hejsil
+const K = @typeOf(this).ReturnType; // error: type '(block)' does not support field access
+
+1520959934
+Hejsil
+}
+
+1520959936
+Hejsil
+Ops
+
+1520959940
+Hejsil
+Wrong paste
+
+1520959942
+Hejsil
+Lol
+
+1520959947
+Hejsil
+error: expected type '[]u8', found '@typeOf(Allocator_alloc).ReturnType.ErrorSet'
+
+1520960001
+andrewrk
+ah yes we need a better error message for this
+
+1520960071
+Hejsil
+This "expected x, found y" are rarely the most helpful error messages either :)
+
+1520960116
+andrewrk
+one thing we could add is a note for each type saying "declared here" if it is a struct or other aggregate type
+
+1520960131
+andrewrk
+oh, I have a framework started for making these error messages better
+
+1520960138
+andrewrk
+that's the implicit cast failure error
+
+1520960150
+andrewrk
+and I added code to make implicit cast failure return detailed recursive information on why the implicit cast failed
+
+1520960168
+andrewrk
+but most of that information is unused and we just print "expected x, found y"
+
+1520960169
+Hejsil
+Nice
+
+1520960197
+Hejsil
+Well, I can imagine the error messages will get better
+
+1520960198
+andrewrk
+it's currently used only for error sets, when an error set cannot be implicitly casted to another one
+
+1520960208
+andrewrk
+then it explains which error codes are missing from the destination set
+
+1520960241
+andrewrk
+the philosophy of the c++ compiler is "get it to work and make sure it's tested"
+
+1520960258
+andrewrk
+the philosophy of the self hosted compiler is "make sure it's perfect before moving on"
+
+1520960297
+Hejsil
+Self hosted is pretty hype
+
+1520960307
+Hejsil
+Zig is soo much nicer that C++
+
+1520960514
+Hejsil
+Isn't the "declarations make new scopes" legacy from when goto was a thing?
+
+1520960548
+Hejsil
+Ooh wait, no.
+
+1520960579
+Hejsil
+I just remembered reading the "declaration makes new scopes" in the goto thread
+
+1520960604
+Hejsil
+But ofc, to introduce variables mid function, a new scope is required
+
+1520961383
+MajorLag
+andrewrk: #832
+
+1520964216
+andrewrk
+Hejsil, it makes sense even from a debug info perspective. consider that until you step over a given variable declaration, that variable should not be in scope yet according to gdb
+
+1520971814
+aiwakura
+build is failing for me on MacOS
+
+1520971827
+aiwakura
+could just be some weird stuff in my work machine
+
+1520971837
+andrewrk
+aiwakura, master branch is passing on travis MacOS. is this the libxml thing?
+
+1520971853
+andrewrk
+can you give more details?
+
+1520971863
+aiwakura
+
+
+1520971878
+aiwakura
+lld build is failing actually. lol.
+
+1520971957
+andrewrk
+can you do make VERBOSE=1 and pastebin the command used to compile COFF/Driver.cpp
+
+1520972014
+aiwakura
+
+
+1520972042
+aiwakura
+this is using clang 6, but fails with the same error with apple's clang
+
+1520972140
+andrewrk
+you're using a different compiler to build zig as was used to build llvm/clang
+
+1520972169
+andrewrk
+you have to use whatever homebrew used. which is apple's clang, which is giving the same error, correct?
+
+1520972226
+andrewrk
+the error you pastebinned is looking at llvm 6.0.0 libc++. that's not the same libc++ that homebrew used for llvm/clang
+
+1520972245
+andrewrk
+I think you need to delete your build folder, create a new one, and then make sure to run cmake with the same compiler that homebrew used
+
+1520972259
+aiwakura
+let me try
+
+1520972259
+andrewrk
+aiwakura, ^
+
+1520972313
+aiwakura
+wait I know what's going on...
+
+1520972427
+aiwakura
+I was cloning my fork which is not up to speed with master
+
+1520972434
+aiwakura
+lame
+
+1520972838
+andrewrk
+aiwakura, is it working now?
+
+1520972883
+andrewrk
+jacobdufault, I'll try to get to your PR tonight. thanks for waiting. I've been busy the past couple days
+
+1520972957
+aiwakura
+yeah it's working
+
+1520972996
+aiwakura
+sorry ;)
+
+1520973144
+andrewrk
+np, glad it worked out
+
+1520973595
+jacobdufault
+andrewrk: no worries, thanks. The bit I'm confused about is why everything is unresolved
+
+1520973653
+andrewrk
+jacobdufault, what's your test input? one thing to note is that zig has lazy evaluation of top level declarations
+
+1520973667
+andrewrk
+so the declaration has to reachable from an exported top level decl or a test
+
+1520973714
+andrewrk
+`zig json` would probably be interested in setting some flag to check all declarations regardless of whether they are referenced
+
+1520974032
+jacobdufault
+yes, build-exe will correctly resolve the declarations though
+
+1520974038
+jacobdufault
+the test input is the same as in the comment
+
+1520974421
+andrewrk
+yeah and it should at least have declarations for standard panic since you didn't override it
+
+1520974425
+andrewrk
+I'll have a look
+
+1520975108
+andrewrk
+jacobdufault, I added a comment onto the PR, I hope this can unblock you
+
+1520975113
+andrewrk
+let me know if you have any more questions
+
+1520976671
+aiwakura
+andrewrk, isn't zig built with debug symbols by default anymore?
+
+1520976752
+andrewrk
+aiwakura, the default mode of zig builds is Debug, which comes with debug symbols
+
+1520976771
+andrewrk
+the default cmake build type of the zig c++ compiler is Debug, which comes with debug symbols
+
+1520976803
+andrewrk
+what are you observing?
+
+1520976854
+aiwakura
+gdb -ex=r --args zig build-exe main.zig
+
+1520976867
+aiwakura
+can't step through the compiler code though
+
+1520976870
+andrewrk
+macos?
+
+1520976886
+aiwakura
+this is Debian
+
+1520976896
+andrewrk
+it works for me. what cmake command did you use
+
+1520976960
+andrewrk
+you can also try: readelf --debug-dump=info zig
+
+1520976972
+andrewrk
+you should get about 15 million lines of output
+
+1520976976
+aiwakura
+hahahha
+
+1520977012
+aiwakura
+I'm using the default options
+
+1520977023
+aiwakura
+rebuilding just to be safe
+
+1520977504
+aiwakura
+it works now. oh well.
+
+1520982944
+GitHub103
+[zig] andrewrk pushed 1 new commit to master:
+
+1520982944
+GitHub103
+zig/master 7f7823e Andrew Kelley: fix casting a function to a pointer causing compiler crash...
+
+1520983031
+GitHub31
+[zig] AndreaOrru pushed 2 new commits to master:
+
+1520983031
+GitHub31
+zig/master 2a6ad23 Andrea Orru: Merge branch 'master' of
+
+1520983031
+GitHub31
+zig/master 2cdd50c Andrea Orru: Panic instead of segfault when returning generic type from functions...
+

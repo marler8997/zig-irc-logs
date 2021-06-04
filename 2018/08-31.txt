@@ -1,0 +1,560 @@
+1535676815
+MajorLag
+I usually call `zig build-exe` directly, unless the build is more complicated for some reason, then I just use a cmd script for now.
+
+1535677376
+andrewrk
+and you run that from cmd.exe?
+
+1535677382
+MajorLag
+yeah
+
+1535677409
+andrewrk
+cool. just making sure that you'll see the new stack traces
+
+1535677476
+MajorLag
+I'm looking forward to doing a lot less debug.warn debugging.
+
+1535677719
+MajorLag
+Sad news, it looks like my inline copy eliding trick doesn't always work under release-fast optimizations. Most of the time it does, but I've run into a case where it doesn't.
+
+1535677936
+andrewrk
+there's a really important language design issue to address this that I've been putting off for a long time
+
+1535677966
+andrewrk
+
+
+1535678109
+MajorLag
+yeah, I know. Thing about named returns is that I found it kinda hard to parse Go code that used them, but I can't think of a better way.
+
+1535678229
+andrewrk
+I think we can get to the point where memcpy is guaranteed to only happen at a `const` or `var` statement
+
+1535678289
+andrewrk
+and maybe even then remove `a = b;` from working for structs; you'd have to do a std.mem.copyStruct() or something
+
+1535678315
+andrewrk
+idk that might be an unnecessary goal. but it would definitely mean that zig is not hiding anything from you
+
+1535678361
+MajorLag
+I'd be ok with that.
+
+1535678969
+scientes
+ir_print_call needs to output " sret nonnull" on pointers
+
+1535679001
+scientes
+but i can't figure out how to call handle_is_ptr() on a IrInstruction
+
+1535679128
+scientes
+nvm
+
+1535679393
+andrewrk
+scientes, look for do_code_gen
+
+1535679407
+andrewrk
+there are some examples of adding nonnull there
+
+1535679434
+andrewrk
+you'll need to modify the declaration as well as the callsite, I believe
+
+1535679489
+scientes
+yeah the callsite is missing it
+
+1535679492
+scientes
+the declaration has it
+
+1535679495
+scientes
+thats what the bug was
+
+1535679498
+scientes
+someone got back to me
+
+1535679846
+andrewrk
+ah, that's good to know
+
+1535679864
+andrewrk
+I wonder if that was causing any other invalid codegen in release-fast mode
+
+1535679986
+andrewrk
+oh baby, I found the line/column info with offsets
+
+1535685232
+scientes
+does ir_print go into --emit llvm-ir?
+
+1535685411
+scientes
+ahh it doesn't
+
+1535734864
+scientes
+kristate, its so hard to know where the flow is going in C++ code
+
+1535734876
+kristate
+scientes: ?
+
+1535734931
+scientes
+like in clang llvm::CallSite CS;
+
+1535734940
+scientes
+S.setAttributes(Attrs);
+
+1535734948
+scientes
+but setAttributes comes from CallSIteBase
+
+1535734993
+scientes
+anyways, it turns out that the we are generating bad ir
+
+1535735006
+scientes
+but the x86_64 gen doesn't care in this case
+
+1535735014
+kristate
+scientes: whereabouts?
+
+1535735021
+scientes
+
+
+1535735036
+scientes
+arm64 passes sret in register x8
+
+1535735141
+scientes
+the clang code that set that attribute is ~1000 lines long
+
+1535735146
+scientes
+so i'm sifting through it
+
+1535735211
+kristate
+yeah, I read the mailing list item earlier -- where is the code?
+
+1535735256
+scientes
+ir_render_call in src/codegen.cpp, and ZigLLVMBuildCall in src/zig-llvm.cpp
+
+1535735288
+scientes
+but it is complicated as we are no using llvm::CallSite, but llvm::CallInst directly
+
+1535735296
+scientes
+nor are we using llvm::Argument
+
+1535735384
+scientes
+the code in clang that does the same thing is in lib/CodeGen/CGCall.cpp, but it is quite long
+
+1535735409
+andrewrk
+scientes, if we have to do we can use the c++ api and wrap it. that's what zig_llvm.h / zig_llvm.cpp is for
+
+1535735413
+kristate
+let me read-up on lib/CodeGen/CGCall.cpp
+
+1535735470
+kristate
+andrewrk: morning
+
+1535735474
+andrewrk
+I'm stepping through some llvm code in a debugger, and it seems that nearly every line I thought was doing something simple is actually an overloaded operator D:
+
+1535735522
+andrewrk
+morning
+
+1535735531
+scientes
+kristate, CodeGenFunction::EmitCall and CodeGenModule::ConstructAttributeList
+
+1535735625
+scientes
+andrewrk, its just going to be quite intrusive to change ZigLLVMBuildCall, but it will give us access to sret, byval, inreg, returned, and inalloca
+
+1535735641
+kristate
+inalloca...
+
+1535735651
+andrewrk
+scientes, sounds worth it
+
+1535735692
+andrewrk
+are you just trying to add sret at the callsite though? I think we have code that demonstrates doing something like that already
+
+1535735728
+scientes
+it can't add argument attributes, only call attributes (like async)
+
+1535735775
+scientes
+maybe...
+
+1535735777
+andrewrk
+hmm maybe not, yeah
+
+1535735791
+ltr_
+hello everyone
+
+1535735799
+andrewrk
+why wouldn't it automatically add matching attributes as the definition?
+
+1535735803
+andrewrk
+hi ltr_
+
+1535735829
+ltr_
+andrewrk: just in case, do you have a clean *.nix file to work with llvm clang libc++ 6?
+
+1535735896
+ltr_
+or at least libstdcxx (>c++11) , my clang refuse to find the std include files
+
+1535735898
+ltr_
+=/
+
+1535735903
+scientes
+<andrewrk> why wouldn't it automatically add matching attributes as the definition?
+
+1535735913
+andrewrk
+ltr_, hmm my nix file for building llvm does not have any libc++ workaround in it
+
+1535735948
+ltr_
+oh
+
+1535735987
+andrewrk
+ltr_, oh I have a similar problem to that sometimes
+
+1535736010
+andrewrk
+I haven't figured out why it happens, but I use the default compiler (gcc) to build zig
+
+1535736016
+andrewrk
+and llvm
+
+1535736048
+andrewrk
+scientes, when I originally wrote this code, I assumed that LLVMBuildCall would choose matching attributes as the function definition. so looks like that bad assumption is the cause of the bug
+
+1535736115
+scientes
+yes
+
+1535736140
+kristate
+hmmmm
+
+1535736178
+scientes
+what I don't understand in the clang code is how it is handled when differn't argument have difffern't attributes, it looks like there is only one AttributeList
+
+1535736189
+scientes
+(even though this doesn't apply to sret)
+
+1535736290
+kristate
+scientes: here is the code mirrored on github:
+
+1535736363
+kristate
+scientes: doing a blame is informative
+
+1535736414
+scientes
+ahh, I missed EmitCallArgs, thats the meat
+
+1535736824
+scientes
+I still don't understand how it implements differn't attributes on differn't arguments
+
+1535736852
+scientes
+it seems it is all
+
+1535736852
+scientes
+CS.setAttributes(Attrs);
+
+1535736876
+kristate
+lets look at the hpp files too
+
+1535737143
+kristate
+scientes: might be faster to set a breakpoint and step through
+
+1535737162
+kristate
+
+
+1535737781
+scientes
+its actually in CallSiteBase
+
+1535740509
+MajorLag
+here's another issue with typeInfo: enum value is represented as a usize, but enum(u128) is valid.
+
+1535740605
+andrewrk
+yep. gotta fix that
+
+1535740732
+MajorLag
+is there a maximum int size? I recall LLVM crashing on some things I tried.
+
+1535740957
+andrewrk
+using ints for loading, storing, and bit manipulation I think works for any size
+
+1535741007
+andrewrk
+math operations such as addition and multiplication, llvm will crash because it only knows how to do lib calls for compiler-rt functions. but I'm going to propose a patch to llvm that will let it generate lib calls for arbitrary sized integers
+
+1535741029
+andrewrk
+it would be a non-standard thing
+
+1535741037
+andrewrk
+(but arguably should be a standard)
+
+1535741050
+andrewrk
+128 should be safe in status quo land
+
+1535741060
+andrewrk
+for all operations
+
+1535741116
+andrewrk
+according to zig, all integer sizes are valid for all operations, and it's a bug that we can't handle operations for really big ints
+
+1535741144
+andrewrk
+if we have to fork llvm, then we fork llvm.
+
+1535743968
+scientes
+kristate, I got it working.
+
+1535744245
+scientes
+good night
+
+1535753216
+unique_id
+Back to Zig baby. Yeahhhhh switching languages is WHAT I DO! You might think I'm mentally unstable, I assure you I am not.
+
+1535753226
+andrewrk
+lol unique_id welcome back
+
+1535753238
+unique_id
+Thank you, thank you :)
+
+1535753241
+scientes
+hi
+
+1535753261
+andrewrk
+unique_id, i'm sorry that zig is not further along in maturity, that would probably make it easier to stay
+
+1535753291
+andrewrk
+on the plus side we're about to get windows stack traces
+
+1535753293
+andrewrk
+are you on windows?
+
+1535753321
+unique_id
+No, but I'm glad nontheless :)
+
+1535753398
+scientes
+also alot of stuff is working on arm64
+
+1535753405
+scientes
+linux/arm64
+
+1535753416
+andrewrk
+nice! I'm excited to look at your patches soon
+
+1535755404
+c15ade4
+unique_id: the search for the perfect language is a long and difficult one
+
+1535755422
+c15ade4
+the more you try, the more you things you find to hate about each
+
+1535755486
+c15ade4
+and each feature with a productivity gain, is a lost again by either language immaturity, or because you are not a newbie again
+
+1535755495
+c15ade4
+are**
+
+1535755498
+c15ade4
+enjoy :P
+
+1535755539
+scientes
+* Favor reading code over writing code.
+
+1535755597
+c15ade4
+I don't see why you couldn't have both - terse mode for writing, easy mode for reading :P
+
+1535756751
+unique_id
+well looking at the Zig code that I've written, I'm definitely liking it a lot. I see that I had started working on a template engine for my website, something I remember now but I had forgotten about. Switching languages too often is super confusing.
+
+1535756845
+unique_id
+my workspace is an absolute mess
+
+1535757308
+scientes
+unique_id, i just got a 3rd monitor
+
+1535757326
+unique_id
+I meant my workspace folder though :)
+
+1535757337
+unique_id
+scientes: what size?
+
+1535757377
+scientes
+they area all cheap, 1920x1080, the others are 1680x1050 and 1440x900
+
+1535757498
+unique_id
+I had a 4K monitor. I noticed no difference other than the smaller font before scaling. However, once I moved from 4K to 1080p it was nightmarish for a while. You really notice the pixels!
+
+1535757544
+scientes
+i heard that 4k support was bad, so i got a 4k tv instead
+
+1535757569
+unique_id
+But it's a fairly large 1080p monitor, so the effect wouldn't be as noticable on a smaller one
+
+1535757617
+unique_id
+yeah, 4k on Linux at least was not fun for a long time
+
+1535758051
+unique_id
+My 4K monitor would once every few months emit an extremely loud sound that sounded like some kind of siren. Apperantly it's something the manufacturer uses to test the monitor? I don't know. But it was surpsingly frightening every time it happened.
+
+1535758428
+unique_id
+C++ code would be better if deep copies (copy constructor) was an explicit op like in Rust. I don't really care that I can't see if a destructor is run or not because that's not actionable info, what is actionable is knowing whether or not you are doing stupid copies!
+
+1535758791
+unique_id
+So defer or RAII with explicit .clone() and destructive moves are both good. Both have their strengths and weaknesses, with defer definitely winning over in the simplicity department IMO. RAII no matter how good will make you fight with it in edge cases. Defer is better for games, OS dev, etc. RAII competes better in less serious applications IMO. Just a random thought.
+
+1535758832
+andrewrk
+unique_id, I think I generally agree with you
+
+1535758904
+scientes
+defer is also kinda confusing
+
+1535758973
+andrewrk
+scientes, why doesn't it do what the programmer expicts?
+
+1535758977
+andrewrk
+*expects
+
+1535758998
+scientes
+It doesn't unlock node, it unlocks othernode
+
+1535759006
+andrewrk
+I would expect it to do this: node.lock(); node = othernode; node.unlock();
+
+1535759010
+andrewrk
+which it does
+
+1535759041
+scientes
+yeah it can be worked around
+
+1535759071
+andrewrk
+try to use const and not var when possible
+
+1535759083
+scientes
+I was just use to
+
+1535759091
+andrewrk
+I see
+

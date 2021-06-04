@@ -1,0 +1,488 @@
+1534120054
+Dirkson
+Hey all. It looks like zig binaries are nearly 10x the size of C binaries of similar code complexity. What's goin' on there?
+
+1534120137
+scientes
+use strip
+
+1534120140
+scientes
+and also --release-small
+
+1534120144
+Dirkson
+Oh, they shrink right down when you run 'strip' on 'em. I guess debugging info is included when building via --release-fast ? that seems odd.
+
+1534120171
+scientes
+that isn't odd at all, sometimes you have to debug optimized versions
+
+1534120187
+scientes
+what is kinda odd is that we should be using -gsplit-dwarf
+
+1534120203
+scientes
+but i guess you only switch to that when you need to
+
+1534120217
+scientes
+"dwarf" is the debugging format
+
+1534120223
+Dirkson
+Fair point
+
+1534120301
+Dirkson
+Hmm. Some of the binaries are still 10x the size of the C binaries, even after stripping.
+
+1534120387
+Dirkson
+Even after using --release-small
+
+1534120593
+scientes
+hmmm, what are you calling?
+
+1534120606
+scientes
+and is your app really tiny?
+
+1534120632
+scientes
+cause zig std lib doesn't use glibc
+
+1534120915
+Dirkson
+scientes: I'm just grabbing some of tiehuis's code and compiling it.(
+
+1534120941
+scientes
+then what you are bringing in is standard library stuff
+
+1534120949
+scientes
+that would otherwise be in glibc
+
+1534120982
+Dirkson
+Gotcha. And this is all statically compiled in, rather than having a 'glibzig' dynamic lib on the OS?
+
+1534120989
+scientes
+correct
+
+1534120994
+Dirkson
+Why is that?
+
+1534121060
+scientes
+nono
+
+1534121072
+scientes
+zig doesn't use glib by default, and if it does it would link against it dynamically
+
+1534121091
+scientes
+the point is that the zig standard library (which does not depend on libc) is statically linked
+
+1534121109
+Dirkson
+Yes. Why is that? Why isn't it dynamically linked like the C equivalent is?
+
+1534121118
+scientes
+many reasons
+
+1534121178
+scientes
+one is that static libraries mean you have to maintain two languages, the API and the ABI
+
+1534121192
+scientes
+that is the biggest IMHO
+
+1534121210
+scientes
+and its only linking in what is used
+
+1534121214
+Dirkson
+You mean with dynamic libraries, you have to do that?
+
+1534121226
+scientes
+yes
+
+1534121243
+scientes
+maintaining ABI compatibility is a PITA
+
+1534121261
+Dirkson
+Interesting. Does that mean zig doesn't have dynamic libraries at all?
+
+1534121274
+scientes
+you can make a dynamic library
+
+1534121287
+scientes
+zig implements the C ABI, which will work even if you have zero C
+
+1534121295
+Dirkson
+Well, fair point : )
+
+1534121345
+scientes
+this is alot better than go, which has a runtime which means you can't write a shared library
+
+1534121353
+scientes
+zig has no runtime
+
+1534121380
+Dirkson
+But imagine you had a pure-zig OS for some reason. Would the Zig Way to do it be to statically compile every binary, or would you still have dynamic libraries via some mechanism?
+
+1534121421
+scientes
+probably dynamic libraries would develop eventually, but zig is far too young to want to have to maintain ABI compatibility yet
+
+1534121453
+Dirkson
+Interesting! Thanks for the breakdown.
+
+1534121465
+scientes
+note i have not contributed to zig much
+
+1534121486
+Dirkson
+Me either. I'm just making some stumbling steps towards learning it when I have a few free moments : )
+
+1534121487
+scientes
+and I don't know C++, so I won't be working on the stage1 compiler at all
+
+1534121502
+scientes
+stage2 is a zig compiler
+
+1534121504
+Dirkson
+We're nearly to self-hosting, aren't we?
+
+1534123383
+scientes
+Dirkson, see the bottom of this
+
+1534124456
+scientes
+is this correct:
+
+1534124457
+scientes
+negative = @bitCast(u32, 0 - @intCast(i32, ((a[31] >> 7) & 1)));
+
+1534124464
+scientes
+wait i can use translate-c
+
+1534126687
+scientes
+translate-c needs some work
+
+1534126695
+scientes
+the code it produces doesn't build
+
+1534137895
+tiehuis
+Dirkson: regarding the binary size of the zig programs in that repository there are a few things to consider
+
+1534137930
+tiehuis
+firstly some examples were using the debug.global_allocator which embeds ~100K in the .data section so i've removed that
+
+1534137935
+tiehuis
+which reduces a lot of the examples
+
+1534137940
+tiehuis
+before:  32K binary-trees*  124K fannkuch-redux*  124K fasta*  124K mandelbrot*  160K n-body*   28K reverse-complement*   56K spectral-norm*
+
+1534137945
+tiehuis
+after: 32K binary-trees*  16K fannkuch-redux*  24K fasta*  24K mandelbrot*  60K n-body*  28K reverse-complement*  56K spectral-norm*
+
+1534137989
+tiehuis
+secondly the remaining larger examples (n-body/spectral-norm) are that large because of pulling in the float printing code
+
+1534138007
+tiehuis
+this requires ~25Kb of tables for the current implementation (errol3) to accurately print floats
+
+1534138013
+Dirkson
+Yeah, that's roughly what I was seeing. You were specifically using a debug allocator?
+
+1534138019
+Dirkson
+Interesting!
+
+1534138047
+tiehuis
+c doesn't have this issue of course since it dynamically links libc but in our Zig's view we should always statically link since it can be very beneficial regarding inlining
+
+1534138062
+tiehuis
+also, the float printing code will likely get much smaller shortly
+
+1534138069
+Dirkson
+Also interesting.
+
+1534138086
+tiehuis
+i've implemented another algorithm (ryu) over the past week which with --release-small only required ~800 bytes of tables for accurate f64 printing
+
+1534138108
+Dirkson
+That sounds like a lovely little improvement.
+
+1534138120
+tiehuis
+another small thing thay may account for ~10Kb or so as well is due to the linker and how it seems to place zig programs
+
+1534138144
+tiehuis
+i've tried a minimal hello world in zig but it pads the sections with a lot of zeros compared to c even though the actual
+
+1534138155
+tiehuis
+.text section with the code is < 500 bytes
+
+1534138173
+tiehuis
+but i haven't explored that too much and you can probably reduce that with a custom linker script
+
+1534138189
+tiehuis
+in practice though it's only like ~10Kb so for every standard program it doesn't actually matter
+
+1534138199
+Dirkson
+Which linker is being user? Something made for zig, or some pre-existing bit?
+
+1534138217
+Dirkson
+*being used
+
+1534138218
+tiehuis
+zig uses lld the new linker from the llvm project
+
+1534138226
+tiehuis
+while c is just using the system linker
+
+1534138228
+Dirkson
+That makes sense.
+
+1534138249
+tiehuis
+but i haven't explored that much at all so don't know the particular reason for the difference
+
+1534138287
+Dirkson
+Say, you might know the answer to a worry I had the other day - Is implicit typing planned for function return types (or argument types, for that matter)
+
+1534138339
+tiehuis
+do you mean inferred generic return types?
+
+1534138348
+tiehuis
+there was this issue i remember:
+
+1534138496
+Dirkson
+I might mean that thing! The ability to create a function whose arguments or return types are inferred from distant sections of code, rather than being explicitly listed in the function definition.
+
+1534138520
+tiehuis
+yeah that is probably what you are after then
+
+1534138542
+tiehuis
+i'm personally not convinced on var return type's but i haven't yet thought about it in-depth either
+
+1534138586
+Dirkson
+I've experienced them in other languages, and torn my hair out because of them. This bug report appears to suggest that they'll become a thing, which, frankly, makes me want to drop zig instantly.
+
+1534138643
+tiehuis
+it has been a fair while since that has been brought up or discussed and i wouldn't be so sure it'll still stick
+
+1534138687
+tiehuis
+even thought it has the accepted tag of course, things change and the given use case is quite specific at this stage
+
+1534138702
+tiehuis
+you can make a comment on the issue if you have any specific complaints/arguments against it
+
+1534138707
+Dirkson
+Maybe I ought to write up a little "here's how this burned me in other languages" blurb and tack it onto the issue? Would that be useful, or just tilting at windmills, you think?
+
+1534138719
+Dirkson
+Well, you beat me to the suggestion anyway :D
+
+1534138722
+tiehuis
+that would definitely be helpful!
+
+1534138892
+Dirkson
+Thanks for all the info, by the by!
+
+1534138915
+tiehuis
+no problem, feel free to ask any other questions whenever, i usually read the logs
+
+1534138935
+Dirkson
+I am usually pretty liberal with my stupid questions, don't worry : )
+
+1534170278
+mnoronha
+How do I run the tests in the compiler?
+
+1534170475
+mnoronha
+I ran `./../build/bin/zig build --build-file ../build.zig test`, copying the ci script, but no luck
+
+1534170790
+mnoronha
+jk, figured it out :)
+
+1534185607
+Dirkson
+How do you maintain a codebase with zig-style generics? Imagine you follow a chain of calls down to a particular function. You change that function, in order to accomplish some goal. But, unbeknownst to you, that function is also called by other sections of code that pass completely different arguments.
+
+1534185649
+Dirkson
+And thus your new changes, while perfectly fine syntactically and logically, are actually compile errors, as far as zig is concerned.
+
+1534185699
+Dirkson
+Coming from C, this is a pretty new concept for me, so I'm trying to wrap my head around it.
+
+1534185794
+Barabas
+What's the problem? If you change a C function/macro to do something else you also get compile errors, right? Or worse it fails at runtime ^^
+
+1534185853
+Dirkson
+The problem is that you need to know all the places a function is called in order to know if you can change it in some manner, because any one of those places may call the function with arguments of a different type.
+
+1534185994
+Dirkson
+Whereas with C, you may need 157 nearly identical boilerplate functions for all of your types, but all you need to figure out what any individual function is doing is the trgument type information and the function definition.
+
+1534186016
+Dirkson
+*argument
+
+1534186043
+Barabas
+Hmm... yeah I see.
+
+1534186072
+Barabas
+I don't think that's a huge issue in Zig, as it doesn't have overloaded functions or operators. So generally the things it'll do will be quite specific to certain use cases.
+
+1534186097
+Dirkson
+That helps, but doesn't fix the issue.
+
+1534186181
+Dirkson
+I could see a function that takes some defined class of structs, that all have certain fields. You add a new field to one of the structs, and change the function to suit the new field... And suddenly 157 other sections of code are blaring errors at you, because their structs don't have this field.
+
+1534186240
+Barabas
+Then probably you should make a new function.
+
+1534186319
+Barabas
+Or do a comptime if for something.
+
+1534186344
+Dirkson
+Ok. This does mean that you can't tell a compilable change from a non-compilable change without handing it to the compiler. No amount of staring at the bits changed will allow you to work that out. Is that ok? I guess I don't have an explicit objection to it, it just feels wrong somehow.
+
+1534186407
+Barabas
+Well, in your example if you add a field and start using it then you can probably guess that any other place where it's called will break.
+
+1534186444
+Dirkson
+Well, you had no idea about the 157 other places it was called until you made the change. On large code bases, it's unreasonable to know all the places some function is called.
+
+1534186452
+Barabas
+It's like if you change a function definition in C for the one time you call it. Then all other places where it's used will fail as well, right?
+
+1534186466
+Dirkson
+That's true.
+
+1534186489
+Dirkson
+I've used that behavior purposefully to track down stuff I need to change :D
+
+1534186493
+Barabas
+^^
+
+1534186511
+Barabas
+And you can be happy that it breaks at compile time rather than at runtime like in Python.
+
+1534186537
+Dirkson
+I like that analogy. That helps me come to grips with generics a bit better.
+
+1534186550
+Barabas
+Cool.
+
+1534186561
+Dirkson
+And yeah, I think we can all agree that compile time breakage is way better than runtime :D
+
+1534186595
+Barabas
+I still remember the times where my simulation results of several hours got lost due to me making a typo in the code that prints it's done or something.
+
+1534186689
+Dirkson
+Thanks for chatting that out with me!
+
+1534186696
+Barabas
+You're welcome!
+

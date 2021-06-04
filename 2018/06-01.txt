@@ -1,0 +1,636 @@
+1527818743
+andrewrk
+isaachier, have a look at
+
+1527818802
+andrewrk
+we will have the c++ compiler forever and it must always be able to build the self hosted compiler. this keeps our bootstrapping process O(1)
+
+1527818821
+andrewrk
+also, the self-hosted compiler shares some c++ code with it, because we use LLVM which is a C++ API
+
+1527827001
+GitHub1
+[zig] andrewrk opened pull request #1032:  use * for pointer type instead of & (master...pointer-reform)
+
+1527827059
+dbandstra
+can someone give me a basic pointer or two? i just started playing with zig last night and i'm struggling with a few things
+
+1527827064
+dbandstra
+i made a gist
+
+1527827088
+andrewrk
+dbandstra, I recommend this blog article:
+
+1527827092
+dbandstra
+two questions (why can i return a struct by value, and why do i get a compile error lower down)
+
+1527827103
+andrewrk
+I'm also happy to answer questions :) looking at your gist now
+
+1527827121
+dbandstra
+ok i think i bookmarked that article but i will give it a read thanks
+
+1527827415
+andrewrk
+dbandstra, returning a struct by value - currently this does a memcpy to copy the result to the caller, however the optimizer can sometimes elide the copy. we also have a plan to have well-defined copy-eliding semantics so that you can get a guarantee about the return value not being copied.
+
+1527827447
+andrewrk
+if you're askign, why can you return a struct by value, but not accept a struct by value as a parameter, see
+
+1527827588
+andrewrk
+as for the compile error in your gist, I believe that is a bug and I will look into that right now
+
+1527827722
+andrewrk
+oh, actually I think this is working as designed
+
+1527827739
+andrewrk
+when you put the * in the |*person| you're asking for a mutable pointer
+
+1527827750
+andrewrk
+so you can take out the * and it builds fine
+
+1527827809
+dbandstra
+does that still return a reference to the Person object from the global array?
+
+1527827817
+dbandstra
+|person| doesn't copy it out?
+
+1527828076
+andrewrk
+I think you can return &person
+
+1527828088
+andrewrk
+let me double check
+
+1527828122
+andrewrk
+oh, and you can implicitly cast T to &const T, so return person is the same as return &person
+
+1527828186
+andrewrk
+in answer to your other comment, you can also implicitly cast T to ?T
+
+1527829587
+dbandstra
+i guess things are changing a lot at the moment hehe
+
+1527829632
+dbandstra
+what i'm really troubleshooting is a weird runtime crash in a little game i'm making, but i'm going to slow down a bit, do some more reading
+
+1527830255
+dbandstra
+feels like i'm returning a pointer to a stack local
+
+1527831162
+andrewrk
+in your gist?
+
+1527835932
+dbandstra
+yeah
+
+1527836465
+dbandstra
+oh no it was outside of that, in some code i didn't represent in the gist
+
+1527836598
+dbandstra
+i was allowed to do an assignment where left hand side was a pointer and right hand side was not.. that's where the stack local crash was happening
+
+1527836709
+dbandstra
+i still don't know how to write the findPersonByAge function so that it returns a pointer to the original array item, where the array is const
+
+1527839270
+dbandstra
+what i mean is in this:
+
+1527839271
+dbandstra
+var pointer: &const i32 = undefined;
+
+1527839272
+dbandstra
+pointer = value;
+
+1527839272
+dbandstra
+const value: i32 = 1;
+
+1527839281
+dbandstra
+the last line seems to coerce to `pointer = &value;`
+
+1527839290
+dbandstra
+is that intentional?
+
+1527840053
+dbandstra
+guess c++ references do that too... phew
+
+1527844200
+Hejsil
+dbandstra, idk what andrewrk means that |*something| captures by mutable pointer. It should really just capture by pointer of same mutability as the slice:
+
+1527844306
+Hejsil
+Ooh wait, i see the problem
+
+1527844366
+Hejsil
+Wait, no
+
+1527844380
+Hejsil
+Isn't that a compiler bug on your gist
+
+1527844702
+Hejsil
+Idk, I would say it should work:
+
+1527853247
+isaachier
+thanks andrewrk for the explanation. i definitely see the benefit to writing a compiler in pure zig now.
+
+1527853329
+isaachier
+on a separate note, i was writing some zig code yesterday and noticed there is no easy way to iterate through an array list and deinit the elements. i understand i can use an arena allocator, but why does `toSlice` act like `toSliceConst`?
+
+1527853394
+isaachier
+also, why does the array list deinit take `&const Self` as its arg, vs. buffer's deinit takes `&Self` as its arg.
+
+1527853437
+isaachier
+or i should actually say buffer's deinit takes `&Buffer`.
+
+1527856401
+nicolaslekoala_
+What happens if I create an undefined []u8 variable, defer alloc.free, try to allocate memory and the allocation fails?
+
+1527858842
+Hejsil
+nicolaslekoala_ the same as if you try to dealloc a uninitialize pointer in C
+
+1527864280
+nicolaslekoala
+#1030 looked like a nice first issue to learn a bit about the code base. I coded a small fix that disables zig fmt on all files that start with // zig fmt: skip (and that only reads the first 16 chars at first, to avoid loading large files in memory). Can anyone take a look at it? Or should I just send a pull request? It's up at github.com/d1adev/zig/tree/fmt-guard
+
+1527864411
+Hejsil
+nicolaslekoala, you can just open a PR. If something isn't right, someone is sure to request a change :)
+
+1527865625
+GitHub90
+[zig] d1adev opened pull request #1033: Add a format guard (master...fmt-guard)
+
+1527868076
+andrewrk
+dbandstra, I think Hejsil is right that there is a compiler bug here. What you're trying to do is definitely supposed to be possible, and the * in |*| is supposed to make the thing a pointer, not necessarily mutable
+
+1527868100
+andrewrk
+maybe I should close IRC after I get past a certain point of sleepiness :)
+
+1527868179
+GitHub43
+[zig] andrewrk pushed 1 new commit to master:
+
+1527868179
+GitHub43
+zig/master 3918e76 Andrew Kelley: Merge pull request #1032 from ziglang/pointer-reform...
+
+1527868180
+GitHub26
+[zig] andrewrk closed pull request #1032:  use * for pointer type instead of & (master...pointer-reform)
+
+1527870035
+GitHub92
+[zig] clownpriest opened pull request #1034: fix typo (master...typo)
+
+1527870202
+GitHub150
+[zig] andrewrk closed pull request #1034: fix typo (master...typo)
+
+1527870205
+GitHub2
+[zig] andrewrk pushed 1 new commit to master:
+
+1527870206
+GitHub2
+zig/master 0869341 Arthur Elliott: fix typo (#1034)
+
+1527870217
+GitHub134
+[zig] andrewrk pushed 2 new commits to master:
+
+1527870218
+GitHub134
+zig/master a3d7a80 Andrew Kelley: appveyor: remove llvm 5.0.1 from cache
+
+1527870218
+GitHub134
+zig/master 081072d Andrew Kelley: docs: add missing builtin to langref syntax coloring
+
+1527875061
+isaachier
+Any ideas about the ArrayList anomaly I mentioned above?
+
+1527875395
+Hejsil
+isaachier, Well ArrayList.deinit doesn't modify the state of the struct, so taking const pointer makes sense
+
+1527875395
+andrewrk
+isaachier, Buffer deinit could take a const ptr
+
+1527875409
+Hejsil
+^ Was about to write that lol
+
+1527875415
+andrewrk
+that being said, I'm considering that it may be idiomatic to have deinit functions end with self.* = undefined;
+
+1527875458
+andrewrk
+this would be a no-op in release and in debug mode write 0xaa's (same as initializing a variable to undefined), or potentially more advanced debug safety ideas
+
+1527875502
+Hejsil
+zig-fmt-pointer-reform-2 was the branch that updates to newest syntax yes?
+
+1527875519
+andrewrk
+yes, this will translate all address-of and pointer-type nodes to *
+
+1527875527
+andrewrk
+so you would then have to fix all the address-of instances
+
+1527875533
+Hejsil
+Right
+
+1527875595
+andrewrk
+all that work, just for this:
+
+1527875602
+andrewrk
+gotta have it though
+
+1527875706
+Hejsil
+It's part of a greater whole
+
+1527875722
+Hejsil
+Pointer reform is gonna be great
+
+1527875738
+Hejsil
+error: Unattached documentation comment
+
+1527875741
+Hejsil
+>:(
+
+1527875756
+Hejsil
+I guess i'll just make it a normal comment
+
+1527875922
+Hejsil
+Found a bug. This code the self hosted compiler doesn't parse:
+
+1527876482
+andrewrk
+Hejsil, what was the unattached doc comment? did it look like it should be attached?
+
+1527876521
+Hejsil
+No, it was a doc comment on out commented code
+
+1527876534
+Hejsil
+So it makes sense it wasn't attached :)
+
+1527877345
+andrewrk
+Hejsil, the problem I'm getting with std-meta-rebased right now is that we're doing @typeInfo(error) and the implementation is trying to populate the []Error slice but that doesn't make sense for that type
+
+1527877353
+andrewrk
+I think we need a different way to represent the global error set in TypeInfo
+
+1527877484
+Hejsil
+Hmmm
+
+1527877513
+Hejsil
+Ye, we probably can't use @typeInfo to get all errors in the global error set can we?
+
+1527877519
+andrewrk
+correct
+
+1527877529
+Hejsil
+So @errorName have to stay
+
+1527877536
+Hejsil
+Idk if I tried to remove it
+
+1527877551
+andrewrk
+you did not
+
+1527877558
+Hejsil
+Good job me!
+
+1527877574
+andrewrk
+here's my proposed new definition of builtin.TypeInfo.ErrorSet:
+
+1527877624
+andrewrk
+that way @typeInfo(error) == TypeInfo.ErrorSet
+
+1527877635
+Hejsil
+Looks good
+
+1527877641
+Hejsil
+Looking over all the formatted code is amazing
+
+1527877647
+andrewrk
+you like it? :)
+
+1527877655
+Hejsil
+Love it!
+
+1527877680
+Hejsil
+Though, my aligned imports are gone :(
+
+1527877683
+Hejsil
+Ooh wel
+
+1527877710
+andrewrk
+I think that's an unfortunate downside, but the plus side is that not-aligned things are more diff friendly
+
+1527877735
+Hejsil
+Now we just need fmt on build
+
+1527877774
+Hejsil
+Is there a plan for having fmt available from the stage 1 compiler... Somehow?
+
+1527877782
+andrewrk
+I have an idea if we wanted to do that
+
+1527877812
+andrewrk
+we would do it the same as how we do zig test and zig build - have std/special/fmt_runner.zig and we would just build zig fmt on demand and then run it as a child process
+
+1527877828
+Hejsil
+That works
+
+1527877829
+andrewrk
+once the self hosted compiler is up to par though we would delete this, because end users wouldn't have any use for stage 1
+
+1527877847
+Hejsil
+Agreed
+
+1527877876
+Hejsil
+Stage 1 is just the only usable compiler, so it would be nice if we could use fmt from it :)
+
+1527877880
+andrewrk
+agreed
+
+1527877889
+andrewrk
+now that I'm thinking about it more, I think it would be worth it
+
+1527877900
+andrewrk
+especially because we could use it as a suggestion for
+
+1527877908
+andrewrk
+...for hard tabs and windows newlines
+
+1527877914
+andrewrk
+"just run zig fmt"
+
+1527877928
+Hejsil
+People would still complain though
+
+1527877932
+Hejsil
+But it's better
+
+1527877934
+andrewrk
+true
+
+1527877964
+Hejsil
+Looking forward to newline and tap discussions for years to come
+
+1527877999
+andrewrk
+that would be ironic since the goal is to just pick a side so that people can stop discussing
+
+1527878027
+Hejsil
+I'm all in for, "just pick a side"
+
+1527878054
+Hejsil
+It makes life easier
+
+1527878113
+Hejsil
+I do prefer "Struct {" over "Struct{" though :)
+
+1527878141
+Hejsil
+But with "Struct.{" comming up, I get my way >:)
+
+1527878495
+Hejsil
+This array got messed up pretty badly:
+
+1527879223
+andrewrk
+Hejsil: ah that's tricky. It tried to put 3 items on every row
+
+1527879238
+andrewrk
+I recommend putting 1 Pokemon comment per line
+
+1527879276
+Hejsil
+Hmm, i guess
+
+1527879287
+Hejsil
+They where pretty logically grouped
+
+1527879301
+Hejsil
+But I guess I could do the same with spacing
+
+1527879831
+Hejsil
+Hmmm
+
+1527879865
+Hejsil
+It really want's to put arrays with one element on "1" line
+
+1527879875
+Hejsil
+Even if the element is big and have trailing comma
+
+1527879910
+andrewrk
+that looks like a mistake specific to multiline strings
+
+1527879940
+andrewrk
+oh, that's a line comment. oops
+
+1527882990
+clownpriest
+"evaluation exceeded 1000 backwards branches" is this saying that a compile time function eval is too long? if so, how do i tell the compiler it's ok?
+
+1527883129
+nicolaslekoala
+@setBranchEvalQuota(number)
+
+1527883150
+nicolaslekoala
+@setEvalBranchQuota, sorry
+
+1527883177
+clownpriest
+thank you
+
+1527883456
+clownpriest
+where would i put this call?
+
+1527883489
+clownpriest
+placing it before the function which causes it (or at the beginning of main()) doesnt work
+
+1527883871
+nicolaslekoala
+Put it inside comptime {}
+
+1527886111
+andrewrk
+the compile error you get if you put it at the wrong place tells you where to put it - the bottom of the "called from here" stack
+
+1527895416
+clownpriest
+fmt.bufPrint throws an "exceeded 1000 backwards branches" error, even though it's a vararg function (i.e. can't increase evalbranchquota in a comptime block)
+
+1527895471
+clownpriest
+any chance there's some existing resources on string formatting in zig? or are we not there yet
+
+1527895481
+andrewrk
+you have to put the setEvalBranchQuota at the top of the comptime stack. so probably the same scope that you're calling bufPrint in
+
+1527895501
+andrewrk
+resources? you mean like documentation?
+
+1527895503
+clownpriest
+yeah
+
+1527895509
+clownpriest
+in addition to the base docs
+
+1527895538
+andrewrk
+not yet. the roadmap for that is self-hosted compiler, then auto generated HTML docs, then I'll put some effort into adding doc comments
+
+1527895598
+clownpriest
+cool
+
+1527895650
+clownpriest
+what do you mean by comptime stack?
+
+1527895763
+andrewrk
+the first compile-time expression starts the block quota. every function call from then on is counted against the quota
+
+1527895782
+andrewrk
+so you have to put the quota in the root comptime expression
+
+1527895825
+clownpriest
+sorry, internet died
+
+1527895841
+andrewrk
+no worries, the channel is logged
+
+1527895965
+clownpriest
+thank you! i will have to return to this later, about to board plane
+
+1527895988
+clownpriest
+just want to say thank you for making zig tho, it has been so sorely missing from the language landscape
+
+1527895997
+andrewrk
+:)
+

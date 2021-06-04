@@ -1,0 +1,700 @@
+1529980827
+dbandstra
+alexnask:
+
+1530007820
+alexnask
+@dbandstra Thanks, I'll look into it, defs should be an empty slice, perhaps it contains corrupted data somehow
+
+1530018085
+kevw
+I was trying to use the sokol library from zig (
+
+1530018096
+kevw
+I have code like:
+
+1530018101
+kevw
+const desc:c.sg_desc = undefined;
+
+1530018110
+kevw
+c.sg_setup(&desc);
+
+1530018118
+kevw
+and i get
+
+1530018137
+kevw
+main.zig:24:17: error: expected type '[*]const sg_desc', found '*const sg_desc'
+
+1530018184
+kevw
+do the docs explain the difference between * and [*]?
+
+1530018506
+kevw
+additionally, the sokol docs usually make that call like this:
+
+1530018508
+kevw
+sg_setup(&(sg_desc){0});
+
+1530018514
+kevw
+which is C for "initialize the struct to zero."
+
+1530018521
+kevw
+is there such a shortcut in zig?
+
+1530019536
+kevw
+and finally, a third question1
+
+1530019537
+kevw
+!
+
+1530019616
+kevw
+i'm getting confusing behaviour with my c.zig file, and my @cInclude not picking up the sg_setup function
+
+1530019628
+kevw
+@cDefine("SOKOL_IMPL", "1");
+
+1530019631
+kevw
+@cDefine("SOKOL_GLCORE33", "1");
+
+1530019633
+kevw
+@cInclude("sokol_gfx.h");
+
+1530019671
+kevw
+is there a way to debug what exported functions from the header the cInclude is picking up?
+
+1530019780
+alexnask
+@kevw
+
+1530019787
+alexnask
+[*] is the equivalent to C pointer
+
+1530019798
+alexnask
+it means that you are pointing to an unknown amount of the types
+
+1530019826
+alexnask
+While * is a single item pointer, it is guaranteed to point to a single object of the type
+
+1530019892
+alexnask
+sg_setup(&sg_desc(undefined)), it should work
+
+1530019931
+kevw
+sg_desc(undefined) means "uninitialized memory" though, right?
+
+1530019939
+kevw
+isn't that different than C's {0} init syntax?
+
+1530019945
+alexnask
+I think it's planned for *T to be implicitely castable to [*]T
+
+1530019957
+alexnask
+right, does the sg_desc need to be zero initialized?
+
+1530019979
+kevw
+yes. I'm happy to write a zero init function, just wondered if there was a shortcut :)
+
+1530019985
+kevw
+btw I ended up trying "const desc_ptr:[*]c.sg_desc = @ptrCast([*]c.sg_desc, &desc);"
+
+1530020000
+kevw
+thanks for clarifying the difference though
+
+1530020002
+alexnask
+Right, @ptrCast is the correct solution atm but I think it should be fixed soon
+
+1530020030
+alexnask
+I don't think there is a shortcut for zero initialization
+
+1530020038
+kevw
+as for a function not being picked up by cInclude, is there a verbose mode for the c header file stuff?
+
+1530020057
+alexnask
+You can use 'zig translate-c' to basically get a .zig file of what @cImport does
+
+1530020088
+kevw
+gotcha
+
+1530020093
+kevw
+it's just extern void sg_setup(const sg_desc* desc); in the .h file
+
+1530020101
+alexnask
+That way you can also fix function prototypes if zig's translation is not optimal
+
+1530020143
+kevw
+it might be that my issue is that sokol is a "header only" library
+
+1530020152
+kevw
+i.e.,
+
+1530020175
+alexnask
+translate-c should be able to pick them up
+
+1530020180
+kevw
+it uses extern void to declare the function, and then you use a #define to implement the function
+
+1530020182
+alexnask
+I've generated windows headers with it
+
+1530020189
+alexnask
+Ah hmm
+
+1530020262
+kevw
+now that i see the "mixing object files" section in the docs, I think one possible answer might be to have a main.c that does the #define SOKOL_IMPL
+
+1530020285
+kevw
+and then the @cInclude without the @cDefine(SOKOL_IMPL) so that the declaration gets picked up
+
+1530020295
+kevw
+but ideally I could just @cInclude the header twice(?)
+
+1530020357
+alexnask
+Right you should be able to do a @cImport with the define and one without
+
+1530020431
+kevw
+when i do translate-c without the IMPL define, the zig file has
+
+1530020432
+kevw
+pub extern fn sg_setup(desc: ?[*]const sg_desc) void;
+
+1530020575
+kevw
+ah, so @cImport twice does compile the zig file, but then I get an undefined symbol for _sg_setup in the linker
+
+1530020580
+kevw
+i'm going to try the main.c thing
+
+1530020597
+alexnask
+you should probably
+
+1530020612
+alexnask
+just have a C file that defines SOKOL_IMPL and includes it
+
+1530020619
+alexnask
+and compile that to an object file
+
+1530020636
+alexnask
+then link that with the zig file that just @cInclude's to generate the function prototypes
+
+1530020841
+alexnask
+I don't get the advantage of a header only library in C, I see why it makes sense in C++ :P
+
+1530020920
+kevw
+the pains people go to deal with the lack of a module system
+
+1530020938
+kevw
+just adding    exe.addSourceFile("src/sokol-impl.c"); results in reached unreachable code _assert: 0x10461fec9 in ??? (???) _LibExeObjStep_addSourceFile: 0x1046381a4 in ??? (???)
+
+1530020977
+kevw
+but perhaps addSourceFile needs to be from an addCExecutable like in the docs
+
+1530021014
+alexnask
+Im not too sure about the build system sorry
+
+1530021032
+kevw
+it's ok, thanks for your help!
+
+1530021038
+alexnask
+I don't know if compilation of C files is available yet, you could just compile it once and keep the .o around
+
+1530021047
+alexnask
+and add that to the linker objects in the build file
+
+1530021263
+alexnask
+I guess headeronly  libraries are useful if you want to build in a single translation unit
+
+1530022496
+kevw
+I got it to link with an ugly call to addObjectFile:
+
+1530022606
+kevw
+see also, how i got zero-struct-initialization to work
+
+1530022629
+kevw
+now to figure out why the exe dumps with UncleanExit
+
+1530022921
+alexnask
+You could also probably do: mem.set(u8, @ptrCast([*]u8, &dest)[0..@sizeOf(c.sg_desc)], []u8 { 0 } ** @sizeOf(c.sg_desc));
+
+1530022929
+alexnask
+woops
+
+1530022951
+alexnask
+actually, mem.set(u8, @ptrCast([*]u8, &desc)[0..@sizeOf(c.sg_desc)], 0);
+
+1530023074
+alexnask
+It's the same thing obviously, just saying :P
+
+1530029814
+kevw
+that brings up a good question
+
+1530029832
+kevw
+is there an easy way to make a macro that inlines to that? or to have a function that always inlines?
+
+1530031754
+kevw
+looks like I hit an existing bug:
+
+1530031827
+alexnask
+Functions marked as inline should always be inlined
+
+1530031851
+alexnask
+I would suggest a zero_init(comptime T: type) T function
+
+1530031854
+MajorLag1
+functions marked as inline that can't be inlined are a compile error
+
+1530032154
+kevw
+great!
+
+1530032192
+kevw
+yeah I'm stumped until I can pass a [*]const opaque_type pointer to the c library I'm trying to use, and calling @ptrCast results in the LLVM ERROR: Cannot select I pasted in the issue above
+
+1530032205
+kevw
+really excited to try to get a small game loop going!
+
+1530032686
+alexnask
+I'll take a look at the code in a bit, first time I come accross a LLVM error on @ptrCast personally
+
+1530032890
+kevw
+i ran a zig debug compiler and got an assert: Assertion failed: (LLVMGetTypeKind(LLVMTypeOf(value)) == LLVMPointerTypeKind), function gen_assign_raw, file /Users/kevin/src/zig/src/codegen.cpp, line 1769.
+
+1530033012
+andrewrk
+hello
+
+1530033044
+andrewrk
+kevw, you found a bug
+
+1530033113
+kevw
+andrewrk: let me know if there's any more info i can provide
+
+1530033193
+andrewrk
+if it's the same issue as the above linked github issue, I can reproduce the problem, so I have everything I need
+
+1530033313
+alexnask
+@andrewrk Is there any way to create a TldVar without making AST nodes?
+
+1530033330
+alexnask
+I know the type and ConstExprValue of the variable
+
+1530033354
+andrewrk
+I think the ast node is allowed to be null at least for some of the kinds of Tlds
+
+1530033364
+alexnask
+But it seems like all the logic is geared around AST nodes
+
+1530033365
+andrewrk
+if not, the logic can be reworked
+
+1530033435
+alexnask
+ir_gen_var_decl needs a type or expr AST node in the parent AstNodeVariableDeclaration
+
+1530033438
+alexnask
+(which I am creating)
+
+1530033453
+alexnask
+Anyway I'll look into bypassing it somehow for now
+
+1530034104
+alexnask
+Hmm actually I think if I mark it as resolved I may be able to circumvent all that
+
+1530034112
+alexnask
+But idk if it's a sane thing to do :P
+
+1530034214
+andrewrk
+I think there are enough gotchas in that code that if we're going to add complexity to it, it should be by understanding the logic and  reworking it to make more sense rather than trying to hack in a new feature
+
+1530034244
+alexnask
+Seems to work
+
+1530034249
+alexnask
+Right
+
+1530034283
+alexnask
+Well in this case I think it's more about me not having a complete mental picture of how all the passes etc work
+
+1530034309
+GitHub3
+[zig] andrewrk closed pull request #1158: Fix os_path_join for case where dirname is empty (master...os-join-empty-path-fix)
+
+1530034309
+GitHub120
+zig/master 8e71428 Isaac Hier: Fix os_path_join for case where dirname is empty
+
+1530034309
+GitHub120
+[zig] andrewrk pushed 1 new commit to master:
+
+1530034338
+alexnask
+But I do think it's actually correct to say the variable decl is resolved in this context, it is generated directly with a type and value (this is @reify code)
+
+1530034347
+andrewrk
+ah, ok, in that case I'm fine with it
+
+1530034382
+alexnask
+Which should be done (with no tests etc) in a couple of hours
+
+1530034392
+alexnask
+Struct is done, union and enum are basically the same
+
+1530034399
+andrewrk
+I'm hoping to use the self hosted code as a test bed for rewriting the zig compiler logic in a sound and clear way, and then maybe backporting it to stage1
+
+1530035368
+GitHub72
+[zig] isaachier closed pull request #1157: Add fuzz test (master...fuzz-test)
+
+1530039335
+oats
+how do arrays in zig know how long they are?
+
+1530039353
+oats
+it appears you don't have to keep track of an array's length with another variable, like you might in C
+
+1530039357
+andrewrk
+oats, the length is part of the type
+
+1530039383
+oats
+so is there a maximum array length?
+
+1530039388
+andrewrk
+if the length is known only at runtime, that's a slice - which is a struct { ptr, len }
+
+1530039457
+oats
+interesting
+
+1530041336
+GitHub140
+[zig] andrewrk pushed 2 new commits to master:
+
+1530041336
+GitHub140
+zig/master 11ca38a Andrew Kelley: fix crash for optional pointer to empty struct...
+
+1530041336
+GitHub140
+zig/master af95e15 Andrew Kelley: rename get_maybe_type to get_optional_type
+
+1530042578
+GitHub154
+[zig] andrewrk pushed 1 new commit to master:
+
+1530042579
+GitHub154
+zig/master 4de60dd Andrew Kelley: langref: explicit cast section
+
+1530045722
+alexnask
+@andrewrk I think stdcall on x86 expects a 4 byte aligned stack (as opposed to the win64 calling convention that expects a 16 byte aligned stack)
+
+1530045943
+andrewrk
+ah
+
+1530045963
+alexnask
+Although the MS official docs aren't clear on that :P
+
+1530045993
+alexnask
+So I don't think the win32 test failures are due to the stack alignment, could be wrong though
+
+1530049187
+oats
+where can I find documentation on the standard library?
+
+1530049258
+andrewrk
+oats, currently, only in the source code
+
+1530049269
+oats
+in /usr/lib/zig then?
+
+1530049350
+oats
+also, I noticed that it says on the site that the standard library doesn't depend on libc
+
+1530049355
+oats
+how do you get around that?
+
+1530049392
+oats
+forgive my ignorance of programming language design, but I thought pretty much the only way to interface with the linux kernel is to use a libc of some kind
+
+1530049445
+andrewrk
+oats, if you downloaded zig then the standard library is in there. if you're building it from source the std lib is in the `std` directory
+
+1530049463
+andrewrk
+the linux kernel defines a stable ABI for syscalls
+
+1530049485
+andrewrk
+it's like calling a function, but you use an interrupt to activate kernel mode
+
+1530049513
+oats
+interesting
+
+1530049520
+andrewrk
+that's what libc does internally
+
+1530049554
+oats
+so a libc gives you an abstraction over making raw syscalls, do I understand that correctly?
+
+1530049571
+andrewrk
+correct
+
+1530049587
+andrewrk
+many libc functions are thin wrappers around syscalls
+
+1530049624
+oats
+are there examples of syscalls in the zig stdlib I can look at?
+
+1530049691
+andrewrk
+yes, here's one:
+
+1530049718
+andrewrk
+here is where syscall3 is defined:
+
+1530049800
+oats
+ahhh, that makes sense that it's backed by asm
+
+1530049804
+oats
+I should've guessed :P
+
+1530049816
+oats
+that is very informative, thank you
+
+1530050322
+alexnask_
+Does having a null union tag type result in auto generating an enum tag type make sense? (+ all union fields having an enum_field)
+
+1530050771
+alexnask
+ir.cpp is getting pretty crazy, I thought it was around 16k loc and is now 21.5k on my branch :P
+
+1530051487
+andrewrk
+it's 20,702 on master
+
+1530051515
+andrewrk
+self hosted will be more organized since there is no compilation speed / performance penalty for splitting stuff up
+
+1530051544
+andrewrk
+alexnask, yeah I think null union tag type makes sense to represent union(enum)
+
+1530051582
+andrewrk
+either that or union(enum) { Auto, Explicit: type }
+
+1530051634
+alexnask
+Right, my idea is to use null for union(enum) {} when all union fields have enum_field != null and union {} when all union fields have enum_field == null
+
+1530053944
+andrewrk
+I believe I have created a many producer, many consumer, thread-safe, lock-free, runtime configurable buffer size Channel data structure that integrates with the userland event loop
+
+1530053979
+andrewrk
+when the buffer is empty, consumers suspend and are resumed by producers; when the buffer is full, producers suspend and are resumed by consumers
+
+1530054012
+andrewrk
+time to test it with a thread pool
+
+1530054786
+oats
+I really appreciate there being vim configs for zig already, that's super neat
+
+1530054848
+andrewrk
+it supports automatically running zig fmt too if you set it up
+
+1530054853
+andrewrk
+I've been using it
+
+1530056483
+tiehuis
+andrewrk: when was the timeframe for more effort on the self-hosted compiler? have an okay enough Rational implementation for the moment if that was wanted.
+
+1530056505
+tiehuis
+just need to modify it to take by value vs. reference
+
+1530056585
+andrewrk
+tiehuis, I started working on the self hosted compiler as the main "big thing" after 1 bug fix, 1 doc improvement, & dealing with PRs  every day
+
+1530056605
+andrewrk
+I think you've at least a few weeks until that becomes a blocker though
+
+1530056636
+tiehuis
+great, just wanted to check to see the timeframe
+
+1530056670
+andrewrk
+it's a slow start because I'm insisting on full multithreading / async I/O from the start
+
+1530056694
+tiehuis
+yeah, fair enough, may as well start off right when we have a clean slate
+
+1530056779
+andrewrk
+independent from that, though, I'm thinking that I'd like to make a well defined zig IR and start adding zig IR to zig IR tests and zig IR to llvm IR tests
+
+1530056827
+andrewrk
+hopefully then we can grow the self hosted compiler without having to support everything at once
+
+1530056997
+andrewrk
+I think with more focus on IR robustness we can solve most zig bugs
+
+1530057061
+oats
+is a string literal a struct in disguise?
+
+1530057077
+oats
+since I can do the_string.len
+
+1530057141
+andrewrk
+a string literal is an array, so the length is known as part of the type:
+
+1530057536
+oats
+yeah
+
+1530057540
+oats
+that's the page I'm going through
+
+1530057546
+oats
+it's the official "tutorial", right?
+

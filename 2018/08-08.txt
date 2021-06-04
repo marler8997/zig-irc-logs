@@ -1,0 +1,1044 @@
+1533688873
+andrewrk
+MajorLag, how would comptime function call caching change that behavior?
+
+1533688918
+andrewrk
+scientes, I think those 2 things are unrelated
+
+1533689058
+andrewrk
+right now I test std by specifying a file directly and using --test-filter
+
+1533689118
+andrewrk
+I consider it an open issue, that which tests to run is not intuitive
+
+1533690896
+MajorLag
+andrewrk: maybe I blamed the wrong thing. All I know is that every def in the loop is treated as though it has the same is_pub as the first def encountered. There are other instances, I can't use an isSlice() fn because of #906.
+
+1533690936
+andrewrk
+oh, that sounds like an easy fix in the @typeInfo implementation
+
+1533691089
+andrewrk
+hm I don't see an obvious bug with is_pub
+
+1533691400
+MajorLag
+I don't think it is specific to .is_pub
+
+1533691591
+MajorLag
+in fact, if I remove the non-pub struct def something else weird happens. Is a `fn func(self: this) void` var_args? is that a property of `this`?
+
+1533691705
+MajorLag
+no, even using actual typenames trips is_var_args, despite neither struct having any var_args functions.
+
+1533692327
+MajorLag
+..and now I'm crashing the compiler. I think I'll just wait until stage2 is ready to do fancy stuff with comptime.
+
+1533692441
+kristate
+online 10:40am JST
+
+1533694220
+andrewrk
+MajorLag, I don't blame you
+
+1533694238
+MajorLag
+Ok, apparently TypeInfo.Definition.Data.FnDef just has empty arg_names?
+
+1533694279
+MajorLag
+Grabbing the typeInfo of the Fn and using TypeInfo.Fn.args seems to work properly though...
+
+1533694284
+andrewrk
+kristate, I have all tests passing in async-fs for darwin using only kqueue
+
+1533694296
+andrewrk
+I'll push in a moment
+
+1533694304
+kristate
+andrewrk: cool -- I can take that and push it into bsd
+
+1533694327
+andrewrk
+probably FSEvents is in the future, but I'd like to put that off for now and get more progress on stage2
+
+1533694406
+MajorLag
+...not really. arg type comparisons still succeed or fail in inexplicable ways. Oh well. I'd better quit this now before I pull my hair out.
+
+1533694417
+kristate
+andrewrk: well, the faster we can get async-fs into master, the better
+
+1533694422
+kristate
+I want to work on networking
+
+1533694427
+andrewrk
+right
+
+1533694617
+kristate
+andrewrk: also, I don't like that we have so many public functions into the loop
+
+1533694624
+kristate
+like bsdAddKev
+
+1533694650
+kristate
+it should be one function for adding handlers, and then that function can support epoll or kqueue
+
+1533694718
+andrewrk
+why not have that though?
+
+1533694730
+andrewrk
+this is the "layered abstraction" concept
+
+1533694749
+andrewrk
+or "multilayered". I haven't heard anyone name it before
+
+1533694775
+andrewrk
+idea being that you expose multiple layers of abstraction
+
+1533694787
+andrewrk
+and the API consumer should use the highest one if it makes sense, otherwise they should drop down a layer
+
+1533694817
+andrewrk
+for example std.ArrayList exposing ensureCapacity
+
+1533694822
+kristate
+so, for TCP and UDP, all they need is to add an FD to the loop
+
+1533694840
+kristate
+they don't have any special flags and TCP and UDP is common on most platforms
+
+1533694853
+kristate
+loop complexity should be inside loop.zig
+
+1533694917
+kristate
+also, when we document loop.zig, we have a lot of domain knowledge, but others will struggle to figure out which function and which flags need to be used
+
+1533694942
+andrewrk
+I don't think that users will be accessing methods of loop directly
+
+1533694966
+andrewrk
+I think they will  be using event.fs.* , event.tcp.*, event.Group, event.Lock, etc
+
+1533695082
+kristate
+andrewrk: i guess it boils down to culture. we are all watching how you are structuring zig, if we have so many ways to access the loop, then it may be appropriate to do that on other APIs too
+
+1533695113
+andrewrk
+I see it all as very disorganized right now
+
+1533695139
+andrewrk
+nearly every API is in flux and some of the std lib is experimental
+
+1533695141
+kristate
+andrewrk: likewise, I want to directly access the loop to process other FDs, like serial device drivers and tunnels
+
+1533695163
+andrewrk
+I think it will become obvious the best way to structure once more is complete
+
+1533695174
+andrewrk
+and once we have doc gen
+
+1533695220
+andrewrk
+kristate, I agree with you that Loop should have a higher level posix API for adding a file descriptor
+
+1533695246
+kristate
+andrewrk: well, it doesn't need to be posix, but it just has to be one interface
+
+1533695261
+kristate
+I don't see the need for the complexity from the start -- i implemented such an interface
+
+1533695292
+andrewrk
+let me have another look - what function are you referring to in particular?
+
+1533695321
+kristate
+
+
+1533695345
+kristate
+addEvHandle, removeEvHandle, waitEvHandle
+
+1533695349
+andrewrk
+ahh
+
+1533695363
+kristate
+flags are of type EventFlagType
+
+1533695378
+kristate
+
+
+1533695399
+kristate
+wanted to make that an enum, but couldn't get enums to work with binary ops
+
+1533695425
+andrewrk
+how do you communicate EVFILT_VNODE?
+
+1533695571
+kristate
+andrewrk: libuv solves that by telling the loop what type the FD/handle is
+
+1533695573
+andrewrk
+enum isn't the right type for a bit field - it's e.g. packed struct {Read: bool, Write: bool, Except: bool, Reserved: u5}
+
+1533695621
+andrewrk
+telling the loop what type the FD/handle is is kinda the same thing as having multiple functions depending on the system API
+
+1533695668
+andrewrk
+here's the deal - if we need to abstract, let's abstract - but right now there isn't a callsite in zig std lib of where the abstraction would accomplish anything
+
+1533695684
+kristate
+andrewrk: it is and it isnt :) having multiple functions requires a choice. for instance, the TCP code would have to guess/match what platform its on
+
+1533695686
+andrewrk
+it very well may be in the future, so let's keep your idea in mind for if that happens
+
+1533695735
+andrewrk
+I really do see what you are saying, and I think we may switch to your strategy in the future - but let's wait until we can actually take advantage of the API in practice
+
+1533695759
+andrewrk
+for example your TCP/UDP implementation may require it
+
+1533695762
+andrewrk
+if so, great, let's do it
+
+1533695779
+kristate
+andrewrk: okay, lets regroup and get async-fs into master
+
+1533695824
+kristate
+andrewrk: I know that you want to get stage2 going as fast as possible, and as long as you understand that we should be in that direction, I am fine
+
+1533695825
+andrewrk
+looks like it's just windows now
+
+1533695828
+kristate
+yeah
+
+1533695853
+kristate
+windows seems to be ReadDirectoryChangesW
+
+1533695952
+andrewrk
+looks like it will be closer to linux than darwin
+
+1533696090
+kristate
+andrewrk: i am going to pull async-fs on my mac and test
+
+1533696101
+kristate
+andrewrk: which version of macOS are you testing on?
+
+1533696143
+andrewrk
+I noticed that in practice I get a delete event and then no further events, so one improvement will be to additionally watch the directory and detect when the file is re-created
+
+1533696153
+andrewrk
+10.13.5
+
+1533696206
+kristate
+andrewrk: are you testing on real windows hardware or wine?
+
+1533696225
+andrewrk
+real windows hardware. I have 3 laptops
+
+1533696319
+kristate
+cool
+
+1533696371
+kristate
+going to jump to tokyo university
+
+1533696384
+kristate
+be back online in an hour or so
+
+1533696422
+kristate
+once we get TCP and UDP going, we can start using it in my research lab for projects
+
+1533696468
+andrewrk
+that will be a great milestone
+
+1533698676
+kristate
+back online
+
+1533740068
+MajorLag
+andrewrk: is there any way to get the active tag type of a union other than going through a switch?
+
+1533740309
+unique_id
+good question, I would also like to know.
+
+1533740497
+andrewrk
+MajorLag, yes if the union is tagged you can implicit cast it to its enum type
+
+1533740521
+andrewrk
+example: @TagType(x)(x)
+
+1533740530
+unique_id
+Does anyone know how to allocate a huge virtual array on Linux using mmap? From my notes from the last time I tried this, it seems overcommit stops me from doing it? So I need to make multiple contiguous allocations and to make that robust I guess I need to read from /proc/self/maps ?
+
+1533740575
+andrewrk
+unique_id, how huge is huge? I think overcommit is actually the thing that lets you get away with it when you probably shouldn't
+
+1533740588
+unique_id
+gigabytes, not that huge :)
+
+1533740602
+andrewrk
+did you try already? it might just work
+
+1533740628
+unique_id
+From my notes, if I trust my old self, allocating larger than ~4 GiB did not work
+
+1533740637
+MajorLag
+andrewrk: thanks, I didn't think of that. I tried fancy comptime stuff, it didn't work out.
+
+1533740648
+andrewrk
+note that mmap is memory allocation - the system very well might have overcommit off, in which case you are using x GiB memory by doing this
+
+1533740698
+andrewrk
+MajorLag, yeah, apologies, that's one of the less obvious things about tagged unions
+
+1533740762
+andrewrk
+oh my example is wrong. @TagType(@typeOf(x))(x)
+
+1533741614
+unique_id
+andrewrk: I needed the MAP_NORESERVE flag. Otherwise mmap returns -1 for me when the 'length' is large. Why I do not exactly know, but probably because I don't have much swap space (I hate that stuff).
+
+1533741643
+unique_id
+The linux documentation could be made clearer
+
+1533741670
+unique_id
+and I'm not even writing to it, it's failing right away at mmap
+
+1533741720
+andrewrk
+unique_id, but now when you write to a page it might cause OOM and there's no way to handle it
+
+1533741745
+bheads
+freenod has become a PITA
+
+1533741764
+unique_id
+andrewrk: that's a good point
+
+1533741798
+andrewrk
+bheads, are you getting spammed? I figured out how to stop it
+
+1533741818
+bheads
+andrewrk, I get disconnected once an hour
+
+1533741845
+bheads
+then have to wait for my username to timeout so I can re identify
+
+1533742214
+andrewrk
+there's a command to force it to timeout. it's something to do with "ghost" iirc
+
+1533743991
+andrewrk
+how delightful! there is a zig stackoverflow tag now
+
+1533744005
+unique_id
+nice!
+
+1533744459
+unique_id
+andrewrk: Is there ever a way to handle OOM on Linux? I'm not sure what not reserving swap space means exactly but if it increases the chance of an issue then yeah that's not good. But I'm not going to use map_noreserve because getting killed by sigsegv instead of the oom killer makes the program look buggy
+
+1533744517
+unique_id
+(apparently you'll get a segfault error when you run out of memory if you do map_noreserve)
+
+1533744607
+andrewrk
+unique_id, yeah, if overcommit_vm is disabled in the kernel. rare but possible
+
+1533744634
+andrewrk
+also, as you've observed, sometimes mmap returns an error which you can handle
+
+1533744650
+andrewrk
+what's your use case for preallocating so much memory?
+
+1533745001
+bheads
+please say your build a genomics library
+
+1533745023
+unique_id
+I don't need that much, but I do want the option of having pointers to arrays that can grow.
+
+1533745031
+unique_id
+hah no, I'm working on a game
+
+1533745061
+bheads
+oh darn, I guess I am still going to have to write that myself :)
+
+1533745092
+unique_id
+I just can't figure out the rules of this. I'm on a 16GiB/GB computer, with 2GiB/GB swap, and I can allocate 5GiB through mmap, no more. If I do 6GiB it fails. I need this to work for everyone.
+
+1533745121
+andrewrk
+unique_id, why not follow the strategy of ArrayList and ArenaAllocator where they allocate a little more than necessary, and when they run out they ask for ~1.5x more
+
+1533745134
+andrewrk
+it's amortized O(1)
+
+1533745142
+bheads
+another option is a block allocator
+
+1533745158
+andrewrk
+afaik that's what std.heap.ArenaAllocator is
+
+1533745270
+unique_id
+andrewrk: That's the standard strategy. But in games you write all kinds of systems as I call them that manage their own memory in custom ways. Being able to call "virtual_alloc(billion objects)" could be useful for some system, temporary or as the final design
+
+1533745272
+bheads
+I was thinking for the array itself, ie an array that points to large blocks.  So array[5]  is really in  array.block[0].*[5]
+
+1533745300
+andrewrk
+unique_id, allocating so much with mmap doesn't pre-reserve the memory, so it's not really accomplishing the goal
+
+1533745310
+bheads
+for a game, dont count on the user having 6 gigs
+
+1533745312
+andrewrk
+if you're trying to achieve deterministic timing you need to pre-reserve the memory
+
+1533745331
+andrewrk
+unique_id, for game I suggest using mlockall() at the beginning of your app
+
+1533745354
+andrewrk
+and then don't ask for more memory than you expect the user to have
+
+1533745354
+unique_id
+andrewrk: The point is to not have the memory allocated. So you can have an array that grows without pointers to the data ever being invalidated
+
+1533745355
+bheads
+putting all your game data in a huge array will result in bad cache performance
+
+1533745396
+andrewrk
+but then at some point that you can't really control, writing to memory will be non-deterministic speed because it's not reserved
+
+1533745412
+andrewrk
+you wouldn't want to use this memory while rendering the frame, for example
+
+1533745421
+andrewrk
+you want to only touch pre-reserved memory in the frame
+
+1533745439
+andrewrk
+mapped-but-not-reserved memory is a generally horrible idea
+
+1533745440
+bheads
+also due to paging your data wont be linear
+
+1533745453
+unique_id
+lol bheads
+
+1533745454
+MajorLag
+unique_id, if I understand correctly, a pool allocator is more appropriate to what you're trying to accomplist. You keep pools of fixed size blocks and reuse them, adding new pools as needed to grow.
+
+1533745760
+MajorLag
+It won't let you grow something like an arraylist without realloc, but it will let you go from 1000 particles to 5000 particles without invalidating any addresses.
+
+1533746583
+unique_id
+
+
+1533746623
+unique_id
+those guys' previous engine was bought by autodesk
+
+1533746715
+unique_id
+interestingly enough, they've moved from C++ to C
+
+1533747418
+unique_id
+andrewrk: If you're saying I should cap the memory used and have that reserved so there's no system allocation calls for more memory after loading a level, then that would be ideal but it's not something that I want to do for an open world game that support modding. All systems will be able to grow to use as much memory as the game demands of it, but they'll do so in a cache efficient, specialized, and proper manner.
+
+1533747481
+andrewrk
+unique_id, but don't you have something like a loading screen, and then your gameplay?
+
+1533747510
+unique_id
+sure
+
+1533747514
+andrewrk
+I'm just saying that once the loading screen is done, all the memory you will ever touch should be mlocked
+
+1533747530
+andrewrk
+unless you're doing loading as a background task during gameplay
+
+1533747561
+andrewrk
+which sounds like perhaps is the case in an open world game
+
+1533747641
+unique_id
+yeah but it still might work. Mods can report how much memory they would like to use.
+
+1533747690
+andrewrk
+I just think that accessing non-reserved memory should not be in the renderFrame() or computeNextFrame()
+
+1533747790
+unique_id
+which is the equivalent of saying that the game should know how much memory it needs for the level?
+
+1533747799
+unique_id
+and then have it reserved
+
+1533747867
+unique_id
+The only issue is that people create mods to stress their system. They might spawn an endless of x and y. And that's a huge amount of fun. So I don't see the issue with asking the OS for more memory in emergency situations
+
+1533747874
+andrewrk
+right - or if that is not the case, then you need the concept of "loading" during gameplay, which means that you need some kind of background loading job, and need to handle the case of it not finishing in time
+
+1533747946
+andrewrk
+hm, yes I see
+
+1533747987
+andrewrk
+the user may spawn an endless amount of x and y in exchange for the possibility of frame skips
+
+1533748021
+unique_id
+yes
+
+1533748055
+andrewrk
+you could still model it as a "loading" task to spawn something, provided that there is no frame deadline for the item being spawned
+
+1533748072
+andrewrk
+and then you'd have no frame skips, but the items might be spawned a few frames late
+
+1533748095
+unique_id
+yeah that would work
+
+1533750094
+wink_
+Q: There are two types of struct initializers I've created: pub fn init() Self { return Self { ...... }; } which is nice syntatically but doesn't work if I need to refer to the address of a field in Self because there is a copy. In that case I change the init to be pub fn init(pSelf: *Self) void {}. Which technique should I prefer, or maybe somethi
+
+1533750094
+wink_
+ng else?
+
+1533750232
+andrewrk
+wink_,
+
+1533750258
+MajorLag
+in the category of something else, you can perform a kind of copy eliding by forcing init to be inline. Give me a minute to recall the precise construction.
+
+1533750430
+MajorLag
+oh right, the compiler actually tries to stop you from doing this and you have to work around it...
+
+1533750962
+MajorLag
+hmm... nevermind. I can't prove the behavior right now because it seems to be working even with @noInlineCall.
+
+1533751277
+wink_
+From reading 287 it seems I should prefer "init() Self" style when possible, is that correct?
+
+1533751370
+andrewrk
+wink_, yes
+
+1533751506
+MajorLag
+
+
+1533751519
+MajorLag
+This is one of those stupid tricks you should only ever do if you have to.
+
+1533751631
+MajorLag
+In fact, even then you probably shouldn't.
+
+1533751873
+andrewrk
+MajorLag, can't you just mark the init function inline?
+
+1533752215
+MajorLag
+yes, but that meant that to test the behavior I'd have to add @noInlineCall and remove `inline`. This way I could swap back and forth more easily.
+
+1533752224
+MajorLag
+In real life you'd mark the fn inline.
+
+1533752372
+MajorLag
+If you used this in real life, which you probably shouldn't. It's just part of a series of Poking at the Compiler exercises.
+
+1533752493
+MajorLag
+In that same series: `unreachable: C:\projects\zig-d3l86\src\analyze.cpp:hash_const_val:4762` if you try to use a BoundFn type as a parameter type to a function.
+
+1533753693
+andrewrk
+BoundFn - the type that the compiler wants to pretend doesn't exist
+
+1533753707
+andrewrk
+but we're going to have to admit it :)
+
+1533755062
+wink_
+You guys lost me, should I use "inline fn" (which I've never done)? If I inline a "pub inline fn init() Self" can I take the address of a field as it won't do a "copy"?
+
+1533755267
+andrewrk
+wink_, no, if you don't need struct fields to reference each other then use init() Self
+
+1533755292
+andrewrk
+if you do, the recommended workaround until #287 is done is to use create()/destroy() and allocate the struct on the heap
+
+1533755340
+andrewrk
+having fields point to each other is rare, it might be a code smell if you're doing it
+
+1533755455
+wink_
+sg
+
+1533755688
+wink_
+The particular case I've run into now is that I'm calling another init function within my own init function and want to pass the address of a field as a parameter, that doesn't seem terribly esoteric on the face of it, should I really not do that type of thing?
+
+1533755806
+andrewrk
+var self = Self{...}; foo(&self.bar); return self;
+
+1533755818
+andrewrk
+make sure that foo is not capturing a reference to bar
+
+1533755940
+wink_
+So don't do what what you've shown (gtg to lunch, later)?
+
+1533756001
+andrewrk
+mutating the data would be fine, but make sure it does not store a reference and use it later
+
+1533756029
+andrewrk
+if you want it to be able to do that, then wait until #287 is done or use the heap workaround that I mentioned
+
+1533757760
+MajorLag
+andrewrk, I'm not seeing any relevant documentation: are there any bit ordering guarantees in packed structs? I would imagine it just matches native endianess, is that a correct assumption?
+
+1533757969
+andrewrk
+MajorLag, that's correct
+
+1533758034
+andrewrk
+right now it's convenient for representing memory mapped addresses for embedded/OS dev. there's a plan to better support the use case for mapping a packed struct to a specific endianness for e.g. a file format
+
+1533758067
+andrewrk
+the current workaround for this use case is to have a little endian version and a big endian version and choose the correct one based on builtin.endian
+
+1533758117
+schroffl
+Hey guys, is there any way to get information about a type/struct/etc. apart from the documentation or source-code?
+
+1533758158
+andrewrk
+schroffl, you mean like reflection?
+
+1533758334
+schroffl
+No, for example, I am trying to read from stdin right now, but I don't have any idea of the File struct (it's a struct, right? :p). And because the documentation is not fully complete I was wondering whether you could somehow get this information in some other way.
+
+1533758419
+schroffl
+GHCi (Haskells repl) has the ":i <...>" which shows the instances of a type, where it's declared, etc.
+
+1533758423
+andrewrk
+@compileLog(@typeOf(x))
+
+1533758443
+andrewrk
+I have some ideas for a repl-ish thing like that in stage2
+
+1533758459
+schroffl
+Thank you! Sounds like the thing I'm looking for :)
+
+1533758615
+MajorLag
+andrewrk: I've already built tooling for reading and writing struct to disk with appropriate endianess, getting the bit pattern correct for bit-packed data should be doable as part of that and is on my short list which is why I asked. If @reify ends up going in then creating an appropriately bit-reversed struct would be a usecase for that though.
+
+1533758704
+schroffl
+andrewrk Any ideas on how that might look like? I think something like "zig show <...>" would already be quite awesome
+
+1533758747
+andrewrk
+schroffl, here's a 1 minute demo for context:
+
+1533758757
+andrewrk
+you can see that the stage2 compiler stays running and rebuilding
+
+1533758768
+andrewrk
+the idea is that it can also show a repl prompt there
+
+1533758785
+andrewrk
+so you have your fully built code, and you can introspect it in any way that e.g. an IDE can
+
+1533759065
+MajorLag
+Will it work at runtime, so you can call up a prompt on a breakpoint or panic and debug? because that'd be wicked.
+
+1533759162
+andrewrk
+no, this is a comptime repl
+
+1533759195
+andrewrk
+I might have a more interesting answer to your question when I look into hot code swapping
+
+1533762454
+haolez
+I'm thinking of using zig in a small project that needs to access a postgres database. What would be the best option as of today in zig for that? Maybe interfacing with the official libpq C library from postgres itself
+
+1533762638
+andrewrk
+using the official libpq C library would be the null hypothesis
+
+1533762653
+andrewrk
+up to you if you want to write the code to speak the pg protocol directly
+
+1533762739
+andrewrk
+haolez, with libpg you have 2 options - use @cImport in your code adn directly use the .h files, or do a `zig translate-c pg.h` offline and then clean up the bindings by hand and use that
+
+1533762756
+andrewrk
+for example you might change some optional pointers into normal pointers so that you don't accidentally pass null
+
+1533762825
+haolez
+Might try the translate alternative. libpq is ridiculously complicated. I will probably have to cherrypick what I need, which is very basic
+
+1533762840
+andrewrk
+that's a very reasonable option
+
+1533762860
+haolez
+Another option is to put something like postgrest in front of my database, which then can be accessed with HTTP methods, which I believe must be trivial in zig or any other language
+
+1533762876
+andrewrk
+zig std lib does not yet have an http client
+
+1533762883
+andrewrk
+so you're probably better off with libpg at this point
+
+1533762903
+haolez
+hmm so I would still need to translate a c library, right?
+
+1533762906
+haolez
+got it
+
+1533762991
+haolez
+Ah! I was reading about zig yesterday and a doubt came up! Let me take this opportunity to clarify it: libpq uses Linux's "select" to implement async stuff. Will I be able to use something like that to wait for postgres events with hot loops? Thanks again
+
+1533763100
+andrewrk
+haolez, it sounds like there would be a benefit to writing postgres client code in zig since it could integrate with zig's event loop
+
+1533763113
+andrewrk
+to be clear, not zig's event loop, the event loop that zig's std lib provides
+
+1533763134
+MajorLag
+andrewrk: any idea how it is possible for TypeInfo.Fn.args[i].arg_type to be null? Is it for empty varargs or something?
+
+1533763148
+andrewrk
+haolez, however if libpg did their API correctly, then it can be integrated regardless
+
+1533763186
+andrewrk
+MajorLag, for every arg after a comptime one
+
+1533763189
+haolez
+andrewrk: cool! It might be a fun little project. I'm considering zig because this is a microservices architecture using docker and container orchestration, and it has become quite expensive! I would like to replace some of my bloated python containers with static binaries that are self-sufficient, and I was going to go with Go, but then I found Zig and it seems like a better fit :)
+
+1533763248
+andrewrk
+MajorLag, @typeInfo on generic functions is not really well thought out
+
+1533763255
+andrewrk
+I should type up an issue for that
+
+1533763284
+MajorLag
+ah, ok. I wasn't sure why that would be the case, but "it isn't finished yet" makes sense.
+
+1533763314
+andrewrk
+if anything the types of args would be a function and you'd have to pass in the types of the previous args and the values of previous comptime args, before you could find out the type
+
+1533763322
+andrewrk
+because that's how it works
+
+1533763355
+andrewrk
+haolez, your project is very related to what kristate and I am working on in the std lib right now
+
+1533763385
+andrewrk
+I'm just finishing up cross-platform async I/O for file system read/write and directory watching
+
+1533763393
+MajorLag
+builtin.TypeInfo.Fn.args should maybe be an iterator then?
+
+1533763394
+andrewrk
+kristate is working on async I/O tcp/udp
+
+1533763409
+haolez
+andrewrk: async stuff? My system is very "queue-oriented", if that's even a term :D  and I would benefit from waiting on events without hot loops
+
+1533763445
+haolez
+andrewrk: nice! you guys got a great pace here. I will try to get up to speed here. Will come back with more doubts for sure :)
+
+1533763483
+andrewrk
+MajorLag, sorry I think my brain is at capacity right now, I think this is going to have to be a ticket that I can be thougthful about later
+
+1533763553
+MajorLag
+right, sorry, throwing questions at you about unrelated stuff while you're being questioned about async
+
+1533763586
+haolez
+my bad :D
+
+1533763593
+andrewrk
+haolez, have a look at this test case:
+
+1533763608
+andrewrk
+imagine that your postgres queries start with async, and finish with await
+
+1533763617
+haolez
+async is hard to get right following zig's philosophy, but it actually looks like you guys are pulling it off
+
+1533763623
+haolez
+thanks! will take a look
+
+1533763627
+andrewrk
+if you had it integrated this way, your program would be doing M:N threading, optimally using cpu cores and I/O
+
+1533763712
+andrewrk
+there are a couple of important problems to solve with coroutines but it looks like it's going to work
+
+1533763743
+andrewrk
+the biggest problem is that c++ folks are barely getting around to using coroutines, so there are a bunch of bugs in LLVM
+
+1533763832
+andrewrk
+(and until LLVM decides to rewrite in zig, we rely on people caring about c++ in order for LLVM to care about bugs)
+
+1533763832
+haolez
+you will have coroutines, but not a standard allocator haha that's awesome! it's like learning forth all over again
+
+1533763890
+haolez
+got it
+
+1533764542
+MajorLag
+`const TargetFnType = @typeOf(@field(Target, trait_def.name));`. That felt cool to write, and it actually worked. Neat.
+
+1533764775
+MajorLag
+`zig test trait.zig` =>`trait.zig:69:13: error: ByteStreamTrait trait unsatisfied.`. Seems I may have just been misunderstanding certain aspects of TypeInfo's layout before. This do-over is actually working pretty seamlessly so far.
+
+1533764815
+andrewrk
+ooh "unsatisfied", that's a nice word
+
+1533765319
+MajorLag
+Changed it when I made the error message more descriptive. `error: ByteStreamTrait trait not satisfied by TestByteStream`
+
+1533765366
+MajorLag
+Though I could make it `error: TestByteStream has left ByteStreamTrait unsatisfied.`
+
+1533765830
+andrewrk
+avoiding passive language: `error: TestByteStream does not satisfy ByteStreamTrait trait`
+
+1533765867
+andrewrk
+idk, passive language is probably ok in compile errors
+
+1533766709
+MajorLag
+I'll make a note for later cleanup. Also: `error: Only GenericType can follow GenericType in trait function args`. This is actually going quite smoothly now.
+
+1533766775
+MajorLag
+typeInfo isn't as broken as I thought it was this morning. my understanding of it was just off. #906 is still an issue though.
+
+1533766796
+MajorLag
+anyways, off to a thing.
+

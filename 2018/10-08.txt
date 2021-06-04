@@ -1,0 +1,868 @@
+1539014205
+pancake
+ive created a hello world using --release-small
+
+1539014218
+pancake
+but the generated bin is full of functions that are never called or even referenced
+
+1539014227
+pancake
+isnt zig using lto?
+
+1539014318
+andrewrk
+pancake, one of the issues is this one:
+
+1539014335
+andrewrk
+pretty simple, if we link against memcpy.a instead of memcpy.o then we don't get memcpy if we don't need it
+
+1539014344
+pancake
+its fpu code what im seeing
+
+1539014440
+andrewrk
+pancake, is this what you see?
+
+1539014669
+pancake
+
+
+1539014721
+andrewrk
+most of those functions are compiler_rt. this is
+
+1539014740
+andrewrk
+we're linking compiler_rt.o. if we link compiler_rt.a then dead functions will be omitted
+
+1539014744
+pancake
+oh ok
+
+1539014751
+pancake
+so its "known" :)
+
+1539014783
+andrewrk
+also, try this hello world:
+
+1539014804
+andrewrk
+if you use !void as the return type, the code that calls main will print an error message to stderr, which was the cause of some of the code
+
+1539014819
+andrewrk
+this modified version just does exit(0) or exit(1) which generates smaller code
+
+1539014824
+pancake
+well my hello world is doing a getenv and so on, so its not just a hello world
+
+1539014834
+andrewrk
+I see
+
+1539014848
+andrewrk
+anyway I'm aware of all the stuff that makes hello world larger than theoretical. some of it is llvm issues unfortunately
+
+1539014921
+pancake
+this is 3KB smaller, but still contains those udiv things
+
+1539014930
+pancake
+thanks
+
+1539014945
+andrewrk
+I'll look into #54 briefly today. it may be a quick fix
+
+1539014967
+pancake
+awesome :)
+
+1539015136
+pancake
+btw it is possible to use ASAN with Zig?
+
+1539015225
+andrewrk
+not yet
+
+1539015233
+andrewrk
+you can use valgrind though
+
+1539015246
+pancake
+not in mac, but yeah
+
+1539015272
+andrewrk
+the plan is to have the equivalent of ASAN always on in debug builds
+
+1539015293
+pancake
+main problem i see is the memory usage
+
+1539015304
+andrewrk
+yeah it's 2x right?
+
+1539015310
+pancake
+no
+
+1539015312
+pancake
+much worst
+
+1539015317
+pancake
+all allocations are never freed
+
+1539015322
+pancake
+to keep track of doublefrees and usafs
+
+1539015323
+pancake
+uafs
+
+1539015332
+pancake
+so its always growing
+
+1539015349
+andrewrk
+ah I see that is indeed a problem
+
+1539015378
+andrewrk
+ok we'll need a more sophisticated plan for ASAN support
+
+1539020867
+DutchGh0st
+andrewrk, you there?
+
+1539020990
+andrewrk
+yep
+
+1539021046
+DutchGh0st
+I dont know if I missed some of the documentation on async functions, but compling this:
+
+1539021149
+andrewrk
+can't open my web browser until this llvm debug build finishes linking
+
+1539021250
+DutchGh0st
+ohh hahaha, well the basic idea is that I have a simple async function, it has a loop running 10 times, each time suspending, and then it returns a u32,
+
+1539021300
+DutchGh0st
+I also have a `map` function, which is supposed to take a promise, await that promise, and then call a function with the result of the promise, just like the normal .map() would do
+
+1539021506
+DutchGh0st
+btw, I like the videos you put up on youtube! they're informative :)
+
+1539021942
+andrewrk
+glad to hear you're getting something out of them
+
+1539021951
+andrewrk
+looks like your code isn't following the rules about how coroutines work
+
+1539021984
+andrewrk
+DutchGh0st, every async must be matched with an await, or a cancel. every suspend must be matched with a resume, or a cancel.
+
+1539022020
+andrewrk
+your call to slow_action () is unconditionally leaking, because it never calls cancel
+
+1539022036
+DutchGh0st
+o.O
+
+1539022052
+andrewrk
+`resume mapped` is undefined behavior, you can't `resume` a handle that has not suspended
+
+1539022055
+DutchGh0st
+so where should I cancel it then?
+
+1539022173
+DutchGh0st
+and does that mean the first line of every async fn must be 'suspend' if you want to do map, filter, select, and join etc?
+
+1539022219
+andrewrk
+I think you're best waiting for the coroutine rewrite that I'm working on
+
+1539022243
+andrewrk
+the generator use case isn't really solved with status quo
+
+1539022344
+DutchGh0st
+A way to check if a generator is done is to pass like a reference to a bool, and set that to true when the async fn is about to return?
+
+1539022400
+wilsonk
+any ETA on the coro re-write andrewrk? Or is there still some unsolved/difficult stuff that might take a significant amount of time?
+
+1539022459
+andrewrk
+wilsonk, it's in progress right now. I had to solve async function pointers, which turned out to be related to normal function pointers and stack growth
+
+1539022484
+andrewrk
+I believe I have something workable, so I'm pushing forward on the implementation
+
+1539022552
+wilsonk
+right, I saw the function pointer stuff being talked about. Glad to hear you seem to have a solution
+
+1539022583
+andrewrk
+bottom line, is that in the rewrite, `async` can't fail\
+
+1539022603
+andrewrk
+and coroutines are used to solve recursion
+
+1539022763
+andrewrk
+DutchGh0st, I didn't test this, but here's how you would do a generator with status quo:
+
+1539023223
+DutchGh0st
+sooo in fn main(), how would you get out the returned value?
+
+1539023234
+DutchGh0st
+is there a '.output' field on a promise?
+
+1539023369
+andrewrk
+nope, you have to await it which requires being in an async function
+
+1539023400
+andrewrk
+I think it would make sense if you could get the returned value if you could assert that the async function returned
+
+1539023408
+andrewrk
+but that is currently not possible
+
+1539023472
+DutchGh0st
+mhh, yeah, you could indicate it with an enum,
+
+1539024348
+DutchGh0st
+
+
+1539024358
+DutchGh0st
+that does not crash, not sure if it violates any rules
+
+1539032726
+tom1998
+heyo
+
+1539032745
+tom1998
+I'm trying to put an enum in a packed struct, but it's telling me I can't put it in, is this normal?
+
+1539032805
+tom1998
+This is the code, i'm trying to create a packet struct to write some networking data to a socket, then cast it back out the other end:
+
+1539032819
+tom1998
+This is the error I'm getting:
+
+1539032820
+tom1998
+/home/tom/dev/Practice/zig/zigmog/src/packet/packet.zig:16:9: error: packed structs cannot contain fields of type 'PacketType'
+
+1539032823
+tom1998
+type: PacketType,
+
+1539032849
+andrewrk
+hi tom1998
+
+1539032858
+andrewrk
+you'll need to make the enum packed as well
+
+1539032878
+tom1998
+Yeah, with 'packed enum' right?
+
+1539032880
+tom1998
+that's what I did
+
+1539032882
+andrewrk
+and I think that means you have to supply an explicit integer type to the enum
+
+1539032896
+tom1998
+ahhhhh ok, hang on
+
+1539032918
+andrewrk
+looks like the error message could be improved to include that information
+
+1539032932
+tom1998
+So if i do enum(u8), and i go over 256 items in the enum, I assume that's gonna shout at me?
+
+1539032947
+andrewrk
+right
+
+1539032952
+tom1998
+It's just that it's not automatic when the enum is packed, i assume for clarity
+
+1539032954
+tom1998
+ok, cool!
+
+1539032956
+andrewrk
+or if you assign a value out of range to one of the tags
+
+1539032981
+tom1998
+brilliant, it compiles!
+
+1539032983
+tom1998
+Thanks<3
+
+1539032988
+andrewrk
+no problem
+
+1539033077
+unique_id
+Andrew, if you remember I had a need for "extern enum" for controling the layout for cache purposes, but of course "extern enum" requires all structs within to also be extern enum. I have another use case now, a struct contains 9 fields of the same type, and also other fields. Some algos would do better to treat those 9 fields as an array, requiring something like "extern enum" to make sure they're all together. Though I don't know
+
+1539033078
+unique_id
+what kind of aliasing or other UB stuff I'd be walking into.
+
+1539033105
+unique_id
+The alternative might be to use a union but that may require syntax changes and such all over the place
+
+1539033569
+euantor
+It looks like the checksum for 0.2.0's Linux package on
+
+1539033591
+euantor
+It's listed as `f8429d6c3288041cdc7cdd5df51b7c44cb94403ac3f0641ebfba9d34ef73b082` but I'm getting `209c6fb745d42474c0a73d6f291c7ae3a38b6a1b6b641eea285a7f840cc1a890`
+
+1539033621
+euantor
+Either the page is wrong or my internet connection is screwed up :P
+
+1539033745
+andrewrk
+euantor, I'm getting the same checksum as you
+
+1539033763
+andrewrk
+will fix
+
+1539033781
+euantor
+Cheers. I'm putting some docker containers together and caught it in my build script
+
+1539033802
+andrewrk
+0.2.0 doesn't have runtime libc detection
+
+1539033807
+andrewrk
+it's nearly useless
+
+1539033866
+euantor
+Fair enough, I'm just trying to automate the creation of the containers as far as I can so I always have one up to date
+
+1539033897
+euantor
+And for that matter it would be nice to have a file on the web site that lists version numbers with checksums in a way that's script readable
+
+1539033899
+andrewrk
+fixed
+
+1539033903
+euantor
+thanks
+
+1539034175
+andrewrk
+euantor, if your script trusts the https connection to download the tarball and read the checksum from the site, why not just calculate the checksum?
+
+1539034199
+andrewrk
+the checksum is for cross-checking with mirrors
+
+1539034265
+euantor
+My current script just reads a versions file:
+
+1539034282
+euantor
+Resulting in a repository like
+
+1539034298
+andrewrk
+why have a docker file for zig when we have static builds?
+
+1539034300
+euantor
+it's not the cleanest way to do it, but it works for me for now
+
+1539034309
+andrewrk
+
+
+1539034353
+andrewrk
+it seems to me that static builds are strictly better than docker images
+
+1539034356
+euantor
+I work on windows and target linux fairly often. It's easy for me to do `docker run euantorano/zig build-exe`
+
+1539034374
+andrewrk
+easier than `zig.exe build-exe` ?
+
+1539034385
+andrewrk
+zig.exe build-exe --target-os linux --target-arch x86_64
+
+1539034392
+euantor
+Well, TIL
+
+1539034426
+andrewrk
+wow you went through a lot of work to accomplish something that is a basic feature :)
+
+1539034443
+euantor
+I never knew cross compilation was that easy. I'm used to having to muck about with stuff to get that kind of thing working
+
+1539034451
+andrewrk
+yeah. that's one of the features of zig!
+
+1539034479
+tom1998
+heyo, back again
+
+1539034482
+euantor
+I have some other plans with Docker anyway, such as a playground type site. So my work shouldn't end up being in vain
+
+1539034517
+andrewrk
+euantor, still - inside the docker image you can just wget the static binary and run it. no need for a zig docker image
+
+1539034535
+andrewrk
+a zig docker image is just an unnecessary waste of bytes
+
+1539034541
+euantor
+I'll give that a go some time, thanks
+
+1539034545
+tom1998
+I'm switching on an enum and getting a type from that, then casting a []u8 to a pointer of that type. This works when inline in the main function, but doesn't when in another function - here's an example of the two
+
+1539034584
+tom1998
+I'm assuming this breaks some comptime rule, but I was surprised to see the inline version work
+
+1539034677
+andrewrk
+tom1998, give me a minute
+
+1539035321
+andrewrk
+tom1998, your first example, you're trying to return a type (which you can only do at compile time) from a function which accepts a runtime enum value
+
+1539035384
+tom1998
+yep, i figured that would be it, how come inlining this is fine though
+
+1539035434
+tom1998
+In the inline example , you put in a runtime value, and get out a type
+
+1539035502
+tom1998
+Are there any plans to implement macros? This would solve a lot of these issues, 'cause I  could just inline the switch, this makes packet handling code pretty brutal with a huge switch statement
+
+1539035507
+andrewrk
+tom1998, your second example crashes the compiler
+
+1539035516
+tom1998
+._.
+
+1539035526
+andrewrk
+I believe you are using a build with assertions off
+
+1539035562
+tom1998
+Oh hang on, it crashes mine too, but was working earlier - i must have broken it when formatting into the same file with the comments, 2 secs
+
+1539035634
+tom1998
+oh or maybe i didn't?
+
+1539035657
+tom1998
+Tbf that does make sense, i was pretty surprised - when you comment out he var x : T = undefined line it works fine
+
+1539035834
+tom1998
+Ok, regardless, you can use the type in an @intToPtr() call, which is super useful for packet handlinf
+
+1539035856
+tom1998
+as in, without it segfaulting
+
+1539035868
+tom1998
+Will this just become a compile error in future?
+
+1539035931
+andrewrk
+what code?
+
+1539035938
+andrewrk
+the assertion failure?
+
+1539035959
+tom1998
+the act of switching on an enum to produce a type
+
+1539035980
+andrewrk
+yeah, the compile error is switching on a runtime value and then having the expression return a value with a type that requires comptime
+
+1539035996
+andrewrk
+you can fix it with putting `comptime` before `var my_enum`
+
+1539036004
+tom1998
+ok, but I can use that type in @intToPtr
+
+1539036010
+tom1998
+without a compile error, and it works
+
+1539036024
+tom1998
+it seems like it works so long as you don't need to know the size of the type at runtime, which makes sense
+
+1539036039
+andrewrk
+sorry I'm looking at a few things at once, what code are you talking about now?
+
+1539036061
+tom1998
+hang on, it's hard to write an example, let me just paste you the actual code that prompted this
+
+1539036120
+tom1998
+
+
+1539036165
+tom1998
+So, i'm receiving a network packet where the first few bytes are the enum which tells me the type of the packet, and the remaining bytes are the bytes of the struct that I want to cast a pointer to
+
+1539036201
+tom1998
+packet_data_ptr is the *u8 containing the data, packet_type is the enum at the start of the packet, and ThisPacketType is the type we get from switching on the enum value
+
+1539036230
+tom1998
+ThisPacketType then gets passed into @intToPtr(), and I get a working pointer to the right type of packet that I can use & do whatever with
+
+1539036247
+andrewrk
+there's probably a much safer way to do this without using @intToPtr and @ptrToInt
+
+1539036265
+tom1998
+The compiler complains about alignment with @ptrCast
+
+1539036278
+andrewrk
+that's an important complaint
+
+1539036290
+andrewrk
+if you ignore it, then you move the complaint to runtime instead of compile time
+
+1539036302
+tom1998
+Yeah, but the packet is allocated with malloc() which is aligned properly
+
+1539036331
+andrewrk
+if you use std.heap.c_allocator it usess malloc() and knows about alignments
+
+1539036354
+tom1998
+i receive the *u8 from a C library
+
+1539036355
+andrewrk
+you can use @alignCast
+
+1539036400
+tom1998
+What does that do, the docs weren't too clear
+
+1539036402
+andrewrk
+you could also fix the extern declaration for the C library to include the alignment in the pointers
+
+1539036419
+tom1998
+hang on, is the alignment encoded in the type?
+
+1539036428
+andrewrk
+yes it is
+
+1539036446
+andrewrk
+that's fair, it would be good to add an example to these docs
+
+1539036449
+tom1998
+I thought it was just inferred, i.e. a *u8 will always have no alignment
+
+1539036469
+andrewrk
+`*align(4) u8` is a pointer to a single u8, 4 byte aligned
+
+1539036488
+andrewrk
+if the alignment matches the abi alignment you can leave it off
+
+1539036496
+tom1998
+ohhhhhhh
+
+1539036516
+tom1998
+so i can @alignCast(4, my_ptr) and I'll get an *align(4) u8?
+
+1539036516
+andrewrk
+and you can always cast down from higher alignment to lower
+
+1539036521
+andrewrk
+that's right
+
+1539036534
+tom1998
+I see, and the alignment safety check is omitted when building with releasefast?
+
+1539036606
+andrewrk
+right
+
+1539036636
+andrewrk
+even better; instead of checking, it simply informs the optimizer that situation is impossible and lets the optimizer use that information if it can
+
+1539036647
+tom1998
+ohhhhh i understand what you were saying about the extern declaration in the C library now
+
+1539036665
+tom1998
+so i can just add it to the declaration of the c library, then it'll force it past the typesystem?
+
+1539036666
+andrewrk
+yes - extern fn foo(ptr: *align(4) u8) void; // or something
+
+1539036677
+tom1998
+ahhh cool
+
+1539036722
+tom1998
+Back to switchin on a runtime value to produce a type - is this an error that isn't getting thrown that happens to work for some reason and will be removed in a future version?
+
+1539036725
+andrewrk
+unfortunately .h files do not include this metadata
+
+1539036751
+andrewrk
+it's only working because your switch only has 1 prong
+
+1539036764
+andrewrk
+the @panic doesn't count
+
+1539036785
+andrewrk
+if you add another one it will either do the correct thing which is a compile error, or crash the compiler (which is a compiler bug)
+
+1539036787
+tom1998
+hang on, let me test that
+
+1539036838
+andrewrk
+types are only available at compile time
+
+1539036850
+andrewrk
+you can't use a condition which is only known at runtime to determine what type to use
+
+1539036853
+tom1998
+Thaaaaaaaaaaaaat makes sense, yeah i get a segfault adding another branch
+
+1539036870
+tom1998
+Okay, that's good to know, ta!
+
+1539036903
+tom1998
+Regarding macros;) Is that ever gonna be a feature or are you keeping it simple?
+
+1539036922
+andrewrk
+macros will not be in the language
+
+1539036956
+tom1998
+A'ight, that's cool, ta for the info
+
+1539036992
+andrewrk
+partial compilation (inlining loops and comptime variables) should be sufficient. consider that this works for zig to implement formatted printing in the standard library
+
+1539037017
+andrewrk
+meanwhile rust has macros, but the formatted printing macro is still hard coded into the compiler - they didn't do it in userland for some reason
+
+1539037035
+andrewrk
+idk the details, but I'd call this a point in favor of zig's alternative to macros
+
+1539037048
+tom1998
+Yeah that is pretty dumb, macros can simplify a lot of code though, like this switching on types stuff
+
+1539037085
+tom1998
+The comptime stuff is cool, but it'd be REALLY powerful if you could write something like 'foreach item in this enum, create this code'
+
+1539037117
+andrewrk
+I would argue that the code you're about to be forced to write instead of using macros, is more readable to a high degree
+
+1539037132
+andrewrk
+nobody wants to read anybody else's macro code
+
+1539037161
+tom1998
+Depends on the scale, 1k line files which are just switch statements with extra pointer manipulation code sucks too
+
+1539037165
+unique_id
+Why does -Drelease-safe take much longer than -Drelease-fast? I would have thought it would be the reverse.
+
+1539037183
+andrewrk
+unique_id, release-fast omits safety checks, so the optimizer has less to do
+
+1539037201
+andrewrk
+with release-safe, the optimizer is trying to do stuff but has to work around all the safety checks
+
+1539037253
+andrewrk
+the debug build is the only one we're trying to make build fast
+
+1539037265
+andrewrk
+and most of the techniques to do that will be in stage2 and not stage1
+
+1539037317
+andrewrk
+on the other hand, if release modes build time gets out of control, we can introduce some kind of sliding scale where you can choose to dial down the optimization in exchange for less compilation requirements (less memory, less time)
+
+1539037366
+andrewrk
+there's one more trick up our sleeves too; there is some low hanging fruit where zig can omit safety checks in a lot of places
+
+1539037376
+andrewrk
+this will speed up release-safe build times as well as debug build times
+
+1539037394
+andrewrk
+e.g. for loops, no need to check the bounds on every iteration
+
+1539037454
+unique_id
+Ok I see. I'm doing some data processing and I see very little runtime difference between release-fast and release-safe, so that's pretty cool. 70 million data points processed in a few seconds.
+
+1539037476
+andrewrk
+llvm probably figured out how to remove a lot of the safety checks, and that's what took so long
+
+1539037509
+andrewrk
+(or maybe your hot path didn't trigger any safety checks)
+
+1539037553
+unique_id
+sure
+
