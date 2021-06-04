@@ -1,0 +1,424 @@
+1566086445
+andrewrk
+supposedly linux ignores the stack size from the ELF file and uses a hard coded value, but in this case we can simply mmap more stack memory upon startup to fix it.
+
+1566086487
+andrewrk
+if the kernel doesn't want to perform its duties, we can clean up its mess
+
+1566086824
+shachaf
+whoa, I had no idea. I'll look at what that does to the ELF file when I get back to my computer.
+
+1566086875
+shachaf
+The Linux behavior is quite odd, I remember -- it maps more stack memory (up to the rlimit?) when you reach the end of the stack. No idea why they do that.
+
+1566086977
+shachaf
+It would be nice if you could also get stack information when called from a C function, but I guess statically bounding it is the best you can do.
+
+1566087368
+shachaf
+Oh, --stack is a mingw linker option. Maybe this is just a PE thing.
+
+1566087587
+shachaf
+It looks like ELF files don't have a way to specify this at all?
+
+1566087760
+shachaf
+Oh, GNU_STACK nominally lets you specify it. But Linux ignores it like you said.
+
+1566094445
+daurnimator
+if you use `usingnamespace` does it import method? and what happens to where those methods take a @This()?
+
+1566094584
+daurnimator
+==> I'm trying to figure out how to share some methods between two structures without writing them out twice
+
+1566095560
+mikdusan
+afaict `usingnamespace` and even manual `const myfunc = Other.myfunc;` does work for methods .... well the latter makes the fn lookup there, but invoking it like a non-object func generates expected mismatched error type
+
+1566095606
+mikdusan
+err.. typo.
+
+1566096382
+marler8997
+it looks like, in order to get zig to behave like a normal C compiler, we just have to add the arguments for libc....does that sound right?
+
+1566096511
+mikdusan
+daurnimator: also seems if using comptime to create a new fn and adding to struct, the `object.method()` syntax doesn't work; ie: it's only recognized for regular fn call syntax
+
+1566096925
+mikdusan
+i guess a wrapper can be made for method syntax:
+
+1566099917
+marler8997
+hmmmm, looks like it's more complex, zig is building libc dynamically
+
+1566105367
+marler8997
+how would I do a "zig build-obj --c-source foo.c"? It can't find the C header files unless I add --library c, but then if I add that then it tries to link libc into the object file
+
+1566117056
+komu
+I hadn't fully grokked the implications of files been structs in zig until I saw
+
+1566117072
+komu
+pretty nifty
+
+1566131793
+daurnimator
+what do we do for older kernels that don't have new syscalls?
+
+1566131816
+daurnimator
+like.... should we check for ENOSYS and try other options?
+
+1566131843
+daurnimator
+e.g. I have code that calls pwritev2. Should I check for ENOSYS and
+
+1566135661
+Tetralux
+Can you do what you want without the syscall?
+
+1566135692
+Tetralux
+My first thought would be to avoid the need for syscalls that I don't absolutely need, instead of calling multiple different ones.
+
+1566135726
+Tetralux
+If you have to have it, I'd probably just use the most commonly available one.
+
+1566135773
+Tetralux
+If the v1 syscall is on more systems, and it does not suffer from security problems, then I'd try to get away with that one.
+
+1566136176
+daurnimator
+Tetralux: the new syscall is much faster. you can do it on older systems but it requires multiple syscalls and a lock
+
+1566136219
+Tetralux
+Ahhh. I see. One of those.
+
+1566136341
+Tetralux
+I'd check ENOSYS and fallback for the rest of the program probably, yeah.
+
+1566136383
+Tetralux
+At least, I would if I
+
+1566136401
+Tetralux
+I don't know what the availablity of that syscall is though.
+
+1566136441
+daurnimator
+4.6+ I think but the flags I want are 4.14+
+
+1566136474
+Tetralux
+The flags came in before the call that takes them?
+
+1566136494
+Tetralux
+They apply to multiple things?
+
+1566136496
+daurnimator
+no the call was in 4.6+; then they added more flags in 4.14
+
+1566136506
+daurnimator
+and yes the flags also apply to multiple things...
+
+1566136518
+daurnimator
+According to the zig support table we target Linux 3.16+
+
+1566136527
+daurnimator
+so I need some solution for older kernels...
+
+1566136658
+Tetralux
+Man I'm tired
+
+1566136665
+Tetralux
+I just realised that 14 > 6.
+
+1566136677
+Tetralux
+I was reading it as 4.6 and 4.1.6 xD
+
+1566136681
+Tetralux
+I'm a moron.
+
+1566136700
+Tetralux
+4.1.4*
+
+1566136747
+daurnimator
+There's also the question of how to check for flag support...
+
+1566136797
+daurnimator
+kernels >4.6 <4.14 will just return EINVAL..... but if I do it with actual user input then I won't know if the EINVAL is from them or me...
+
+1566136819
+daurnimator
+So do I check for syscall support in an .init() method somehow?
+
+1566136899
+Tetralux
+Hmmmm.
+
+1566136907
+Tetralux
+I can't think of anything better xD
+
+1566136936
+Tetralux
+Perhaps there should be a syscall you can make where you can query what is available.
+
+1566136945
+Tetralux
+And what parameters it takes.
+
+1566136948
+Tetralux
+That'd be handy.
+
+1566136963
+daurnimator
+Maybe a global variable "kernel version" or something? they we could use it for more than just this one case?
+
+1566136979
+Tetralux
+Maybe.
+
+1566137031
+Tetralux
+Maybe there's a way to abstract away the syscall, such that you basically just say "Hey Kernel, I want [this] behavior. Here's the args for it. Can you figure it out please and tell me how you did?"
+
+1566137052
+daurnimator
+uh, no. that's not how syscalls work :p
+
+1566137101
+Tetralux
+I realise that isn't how it works - I'm saying it may help to have a way to have the kernel figure it out and not you. xD
+
+1566137127
+daurnimator
+how would the kernel "figure it out"
+
+1566137200
+Tetralux
+Essentially, you ask for new syscall, the kernel realises it doesn't have it, but you passed the MAKE_IT_WORK flag, so it performs the old, slower way of doing it with the info you gave it.
+
+1566137208
+Tetralux
+(and tells you that it did that.)
+
+1566137234
+daurnimator
+but that doesn't exist... because the kernel is old and it doesn't know what $NEW_THING is
+
+1566137313
+Tetralux
+True. Hmm.
+
+1566137386
+daurnimator
+in such cases its often up to libc to make it work on old kernels... and in case of zig that means our std lib. so.... we should have an answer :P
+
+1566137419
+Tetralux
+I just get the feeling that there's a more imaginative, better way to solve this problem.
+
+1566137431
+Tetralux
+But yes - there should definitely be an answer to it.
+
+1566137504
+Tetralux
+Even though you might expect only a higher level kernel stdlib interface to do that kind of thing, it would still be handy for the people actually using the syscalls to have a way to determine these things.
+
+1566137785
+Tetralux
+Does pwritev effectively the same as writing a rope string to a fd?
+
+1566137790
+Tetralux
+Is that essentially what it does?
+
+1566137803
+Tetralux
+If so, that's kinda interesting.
+
+1566137847
+daurnimator
+yeah. and you also get to provide the offset (so you don't need to e.g. seek).
+
+1566137891
+daurnimator
+then RWF_NOWAIT lets you know when a read/write can't be done instantly and should be sent to a thread pool
+
+1566137903
+daurnimator
+RWF_APPEND lets you have per-write O_APPEND
+
+1566138294
+Tetralux
+It appends the rope string in the same way as if it was one single buffer as in write?
+
+1566138300
+daurnimator
+yes
+
+1566138313
+Tetralux
+That's handy xD
+
+1566142962
+marler8997
+Looks like an empty zig file built with "zig build-obj" comes out to 518K? touch foo.zig && zig build-obj foo.zig
+
+1566151636
+gonz_
+marler8997: Are you including `--strip` & using `strip` after on the executable?
+
+1566151653
+gonz_
+AFAIK that's primarily how you'd get the size down
+
+1566151953
+curtisf
+I'm hitting a segmentation fault when running a test, but not sure why
+
+1566151983
+curtisf
+`literals` is defined a s a global: `var literals: [100]Literal = [_]Literal{undefined} ** 100;` and all of the others are plain integers, so not sure how this should be segfaulting
+
+1566152013
+curtisf
+I'm guessing related to location result branch since this was working before I updated?
+
+1566152075
+fengb
+Try creating a temporary const and copying it over? That should work around copy elision
+
+1566152113
+fengb
+And if that’s the case, probably log a bug to track it
+
+1566152159
+curtisf
+Ah, that does fix it, thanks
+
+1566154695
+gonz_
+Are full optimizations available to zig when there is a comptime struct of function pointers being passed to a function for use?
+
+1566154806
+gonz_
+Since it forces all the functions to be known at compile time it should be as easy as compiling them into the function that uses them without overhead, right?
+
+1566154872
+mq32
+i think if the parameter is comptime, the evaluation should be fast
+
+1566154876
+mq32
+but i don't know
+
+1566154909
+Tetralux
+They mean "do these fn ptrs turn into static function calls because the array is comptime" IIUC.
+
+1566154940
+Tetralux
+I would be sad if that was not the case, however I do not know if it actually does do that.
+
+1566154952
+gonz_
+I find it to be a very nice pattern; specifying an interface that is passed to a more generic function but still hopefully preserving the same performance characteristics of a specialized function using those functions inline
+
+1566154975
+gonz_
+I can't come up with any reason it shouldn't be able to, but the question is whether or not we are doing it atm.
+
+1566155102
+mq32
+brainfart: stuff like that should go into the language specification
+
+1566155119
+mq32
+"if values are passed comptime, it's guaranteed that …"
+
+1566158741
+gonz_
+Yeah, it seems to be generating a call near relative when you specify `comptime` on the interface struct
+
+1566158751
+gonz_
+(`e8 ...`)
+
+1566158774
+gonz_
+Whereas otherwise it'll do `ff ...`
+
+1566158803
+gonz_
+On amd64, that is
+
+1566164075
+gonz_
+Has anyone used Binary Ninja with zig executables?
+
+1566164088
+gonz_
+It doesn't automatically manage to demangle names, it seems
+
+1566164120
+gonz_
+They say they're reading PDB files automatically from the same directory as the executable too
+
+1566164132
+gonz_
+I don't really know what to expect since it's the first time I use it overall
+
+1566166190
+Sahnvour
+gonz_: I thought zig symbols weren't mangled
+
+1566166224
+gonz_
+I don't even know what BinaryNinja is doing. It's like they're purposefully
+
+1566166231
+gonz_
+They're right there in the file
+
+1566166241
+gonz_
+I don't know how they can even fail in reading the names at that point
+
+1566166328
+Sahnvour
+no idea, never used it
+

@@ -1,0 +1,740 @@
+1553646972
+daurnimator
+andrewrk: allocating stack on demand -> instead the zig way is a @ensureStack() builtin?
+
+1553647030
+daurnimator
+andrewrk: note that allocating stack of demand is the
+
+1553647783
+scientes
+daur.....gone
+
+1553651807
+scientes
+wow, I was writing a exit_group() patch at the same time......
+
+1553651983
+scientes
+and i never saw the bug
+
+1553653545
+daurnimator
+scientes: sometimes you've got to be quick around here ;)
+
+1553662251
+mikdusan
+A command-line tool written in Zig to measure the performance of various UTF8 decoders.
+
+1553664647
+emekankurumeh[m]
+andrewrk:
+
+1553664676
+emekankurumeh[m]
+why do we have this line when building on windows?
+
+1553701744
+andrewrk
+mikdusan, out of curiosity, why is clang --version provided in the README file?
+
+1553701870
+andrewrk
+also I had to add +    exe.linkSystemLibrary("c"); to the build.zig file to make it work
+
+1553701934
+andrewrk
+emekankurumeh[m], I don't remember
+
+1553701952
+andrewrk
+you could try git blame
+
+1553702527
+mikdusan
+andrewrk: only to indicate what zig was built with
+
+1553702556
+andrewrk
+ah
+
+1553702612
+mikdusan
+which platform did u need libc. linux?
+
+1553702655
+andrewrk
+yes
+
+1553702672
+andrewrk
+ahh I see. if you test only on macos libc is always available
+
+1553702748
+mikdusan
+so logic basically could then be… if not macos add libc <— better than if linux add libc ?
+
+1553702763
+mikdusan
+(for my build.zig file)
+
+1553702797
+andrewrk
+mikdusan, you can unconditionally add it to your build.zig and that would be correct
+
+1553702851
+andrewrk
+mikdusan, oh you might not actually depend on libc. this is the error I get:
+
+1553702865
+andrewrk
+atom.hoehrmann.zig:20:9: error: dependency on library c must be explicitly specified in the build command
+
+1553702879
+andrewrk
+it's because you have extern "c" fn atom_hoehrmann_spin
+
+1553702892
+andrewrk
+which actually communicates that you expect to find atom_hoehrmann_spin in libc
+
+1553702905
+mikdusan
+oh. i thought it was a cheap way to avoid importing a .h
+
+1553702916
+andrewrk
+you should remove the "c" since it's found in your own .c file
+
+1553702922
+andrewrk
+I can see how what is confusing
+
+1553702937
+andrewrk
+pub extern fn atom_hoehrmann_spin
+
+1553702986
+andrewrk
+mikdusan, it's just the "c". I changed all the `extern "c"` to `extern` and now it doesn't need libc
+
+1553703038
+andrewrk
+
+
+1553703275
+mikdusan
+👍 that patch looks strangely byte-for-byte identical to my push
+
+1553703582
+andrewrk
+the extern "foo" feature is useful on Windows to generate dependencies on kernel32.dll, ntdll.dll, etc
+
+1553703876
+mikdusan
+so it’s a mechanism to indicate to linker which libs symbs are actually used instead of blanket lib linking. there’s no equiv in C, correct?
+
+1553705326
+andrewrk
+correct
+
+1553707651
+Hejsil
+andrewrk, currently working on
+
+1553707707
+andrewrk
+hi Hejsil, I think that assert might not be necessary. where is the assert?
+
+1553707734
+andrewrk
+oh, is this a new assert you added?
+
+1553707740
+Hejsil
+analyze.cpp:527
+
+1553707759
+Hejsil
+No
+
+1553707793
+andrewrk
+ok, in this context, byte_alignment == 0 means that the pointer type has ABI alignment and therefore an explicit align(x) is not required in the pointer type
+
+1553707864
+andrewrk
+thinking out loud here, alignment for a zero bit type doesn't make sense because there is no address, so alignment is not relevant in any way
+
+1553707886
+Hejsil
+Makes sense
+
+1553707924
+Hejsil
+Btw, the `([*]align(alignment) T)(undefined)[0..0]` is on mem.zig:101
+
+1553707927
+Hejsil
+For more context
+
+1553707943
+Hejsil
+In alignedAlloc
+
+1553707982
+andrewrk
+let me see if I can trigger that assert in master branch
+
+1553708067
+Hejsil
+Well, it is my changes that have caused this. It happens because with the new changes, slicing [0..0] gives you *[0]T but this ptr has an explicit alignment which kinda breaks this "cast"
+
+1553708156
+andrewrk
+Hejsil, here's a clue: in ir_analyze_instruction_ptr_type there is logic that says if (!type_has_bits(child_type)) align_bytes = 0
+
+1553708171
+andrewrk
+so that's why `var x: *align(4) void = {}` doesn't crash in master branch
+
+1553708184
+Hejsil
+Aah, I see
+
+1553708215
+andrewrk
+I think it does make sense for a zero bit type to "destroy" alignment information in the pointer, because there is no address
+
+1553708232
+andrewrk
+and you won't be able to @ptrCast back to a non zero bit type
+
+1553708274
+andrewrk
+however I think that a 0 len slice is allowed to have a pointer with aligned address as long as the element type has bits
+
+1553708343
+andrewrk
+I also think this should be allowed: *align(4) [0]u8
+
+1553708359
+andrewrk
+that could be, for example, the "end" pointer address of a block of memory
+
+1553708380
+andrewrk
+Hejsil, does that help?
+
+1553708434
+Hejsil
+I'll try work from here :)
+
+1553708456
+andrewrk
+hmm. the *align(4) [0]u8 thing contradicts master branch
+
+1553708480
+andrewrk
+I think that requires more thought
+
+1553708492
+Hejsil
+Actually, shouldn't we keep the alignment information for implicit cast?
+
+1553708519
+Hejsil
+like *align(4) const [0]T -> []align(4) const []T
+
+1553708519
+andrewrk
+the thing that makes sense to me is not keeping alignment information if there is no address
+
+1553708548
+andrewrk
+e.g. if @ptrToInt would give "error: pointer to size 0 type has no address" then alignment shouldn't be possible
+
+1553708574
+andrewrk
+if we keep alignment information, we better keep the pointer address too
+
+1553708581
+Hejsil
+Hmmmm
+
+1553708613
+Hejsil
+Let me see when I hit a roadblock next, then I'll think about it some more. I'll try to throw away alignment for now
+
+1553708618
+andrewrk
+ok
+
+1553708643
+andrewrk
+yes this may be an orthogonal problem you have run into, that doesn't have to be solved with your work on 863
+
+1553708683
+Hejsil
+It might have to, as alignedAlloc relies on this cast :)
+
+1553708700
+andrewrk
+for the new_n == 0 case?
+
+1553708735
+Hejsil
+Alright, I should stop talking until I actually hit the problem I'm thinking of, lol
+
+1553708741
+Hejsil
+More coding less talking!
+
+1553708744
+andrewrk
+haha
+
+1553708863
+Hejsil
+My terminal exploded with compiler errors, but not the errors I expected
+
+1553708880
+Hejsil
+zig compiler errors, not cpp compiler erros
+
+1553709369
+Hejsil
+The type system should alway use the instructions type and not the ConstExprValue's type for typechecking yes?
+
+1553709446
+andrewrk
+the ConstExprValue type tells how the data is stored in the ConstExprValue data structure. the instruction's type is the user-visible type according to zig semantics
+
+1553709466
+andrewrk
+I think that's a "yes"
+
+1553709496
+Hejsil
+Alright, then I think I've hit a but along the way. Let me make sure I'm correct here
+
+1553712417
+dd10
+Hello everyone, I'm just discovering Zig-lang, am I correct if I say that “zig-general-purpose-allocator” (
+
+1553712422
+dd10
+But the on-going work let me think that Zig would like to improve this?
+
+1553712452
+andrewrk
+dd10, not at compile time
+
+1553712467
+andrewrk
+zig is not a safe language
+
+1553712479
+andrewrk
+and it's not planned to ever be
+
+1553712522
+andrewrk
+your first comment got cut off at "Rust prom-"
+
+1553712576
+dd10
+ok, it's clear now =)
+
+1553712588
+dd10
+the comment was: According to some searches on the web, Zig is not considered like a "safe" language (I mean as Rust promises).
+
+1553712655
+dd10
+thanks for responses
+
+1553712693
+andrewrk
+dd10, no problem. zig tries to make it more difficult to cause undefined behavior than other unsafe languages, but it cannot be guaranteed at compile time, and some kinds of undefined behavior cannot be caught at runtime either
+
+1553712888
+mikdusan
+i gotta say discovering the pleasant benefits for something as rudimentary as slices combined with “strings” that are not null terminated.
+
+1553712943
+mikdusan
+the othe day  i wrote a fn to split a string on EOF boundries (lines) and was dreading it. but it turned out to be real easy thanks to slices, and didn’t need to alloc memory for the lines either because no null termination.
+
+1553712997
+Akuli
+speaking of that
+
+1553713019
+Akuli
+how should i call a c function that expects a 0-terminated string? do i need this:
+
+1553713084
+andrewrk
+mikdusan, you can use std.mem.tokenize or std.mem.separate for that
+
+1553713101
+mikdusan
+even easier
+
+1553713133
+andrewrk
+var it = std.mem.tokenize(buffer, "\n\r"); while (it.next()) |line| doSomething(line);
+
+1553713193
+andrewrk
+Akuli, you may find std.Buffer helpful
+
+1553713220
+Akuli
+i think my main question was whether i really need an allocation each time, because this function is called very often
+
+1553713346
+andrewrk
+in this case why not make mvaddstr take a [*]const u8?
+
+1553713377
+Akuli
+what's that :D
+
+1553713404
+Akuli
+let me look it up from the reference
+
+1553713442
+andrewrk
+it's the type of cstr.ptr, the type that you're creating to pass to mvwaddstr
+
+1553713466
+Akuli
+how would i call the function then? would i need to use c strings everywhere in the rest of the program?
+
+1553713478
+Akuli
+hmm you know what i should do
+
+1553713489
+Akuli
+i should use mvwaddnstr instead, it takes the length of the string as an argument
+
+1553713509
+andrewrk
+you're calling a C function that expects a C string, and you don't want to convert from slices, so that would make sense wouldn't it?
+
+1553713523
+andrewrk
+now that's a much better solution
+
+1553713645
+andrewrk
+after
+
+1553713685
+andrewrk
+oops. *const [N]null u8
+
+1553718773
+mikdusan
+andrewrk: apologies at this basic question; but why is `@typeOf(“hello”)` → `[5]u8` and not `[5]const u8` ?
+
+1553718797
+andrewrk
+`[5]const u8` isn't a type
+
+1553718829
+andrewrk
+`const` is a pointer attribute
+
+1553718835
+andrewrk
+and the array type isn't a pointer
+
+1553718875
+mikdusan
+ok so whenever i see const it’s only about pointer.
+
+1553718900
+andrewrk
+right. even on variables - you can think of `const` as meaning that if you take the address you'll get a const pointer
+
+1553718917
+andrewrk
+after
+
+1553718935
+mikdusan
+yes 265 was what made me ask this. my head is spinning a bit.
+
+1553719124
+mikdusan
+re: literals will be points; so “hello” would have typeof `[]const u8` without the need for slicing syntax?
+
+1553719247
+andrewrk
+`@typeOf("hello")` will be `*const [5]null u8` which implicitly casts to `[]const u8`
+
+1553719296
+andrewrk
+status quo string literals cast to `[]const u8` without the need for slicing syntax. but it's a bit of a hack. we'll be removing a possible footgun by changing it
+
+1553719331
+mikdusan
+ah. i see *const.
+
+1553719466
+andrewrk
+reading `*const [5]null u8` from left to right: "pointer to one 5-element array, which has an extra 0 element not counted in the length, of u8s"
+
+1553719500
+mikdusan
+i think it’s a good decision to not count nullz.
+
+1553719525
+andrewrk
+oops, forgot to add "immutable" in there
+
+1553719578
+andrewrk
+reading `[]const u8`: from left to right: "pointer to a number of elements known at runtime of immutable u8s"
+
+1553719630
+mikdusan
+not entirely clear from 265, if c-literals are going away, what is syntax to specify a literal string with nullz ?
+
+1553719643
+andrewrk
+all string literals will have a null byte after them
+
+1553719662
+andrewrk
+that's why `@typeOf("hello")` will be `*const [5]null u8` -  it has the `null` in there
+
+1553719723
+mikdusan
+like “hello” vs. “hello”z
+
+1553719732
+andrewrk
+so 265 lets us delete syntax from the language. string literals will cast to `[]const u8` (zig-preferred byte slice) as well as `[*]null const u8` (C strings)
+
+1553719761
+andrewrk
+why would you want to do that? to shave off a few bytes from your program size?
+
+1553719835
+mikdusan
+i guess that’s all it saves
+
+1553719906
+andrewrk
+if that's an issue, zig can probably detect when a string literal is never casted to `[*]null const u8` and omit the null byte
+
+1553719944
+andrewrk
+I don't think anyone will find that necessary. C programs already have the null byte for every string literal, and nobody cares about that
+
+1553719954
+mikdusan
+and the guarantee is only that there is nullz, and there is NO guarantee about bytes before nullz; ie: if someone is setting other spots to zero
+
+1553719963
+andrewrk
+correct
+
+1553720051
+tgschultz
+I remember raising the same objection, but withdrew it after I realized that you can use a comptime function call to turn any `*const [N]null u8` into a `[N]u8` if that's really what you want.
+
+1553720100
+mikdusan
+save-a-nullz-byte-optimizer-pass
+
+1553720938
+scientes
+why pub const abi = Abi.gnu; and pub const link_libc = false; ?
+
+1553720983
+scientes
+why isn't that abi=Abi.none ?
+
+1553722645
+andrewrk
+scientes, it specifies the ABI of extern functions and structs
+
+1553723187
+andrewrk
+scientes, I don't think you need to do that pthread_self stuff. there's a simple way to make this work and there is an established pattern: if (builtin.link_libc) then use pthread mutexes rather than zig's own implementation
+
+1553723209
+andrewrk
+see for example the implementation of std.os.abort, std.os.exit, std.os.spawnThread
+
+1553723257
+scientes
+I need it to do robust mutexes that can be shared between 32-bit and 64-bit
+
+1553723293
+scientes
+but I will have to investigate if it can co-exist with musl or glibc pthreads
+
+1553723581
+andrewrk
+ok. you might consider opening an issue to discuss your use case if you want this merged into the standard library, because it sounds kinda weird
+
+1553723610
+scientes
+there is an issue
+
+1553723637
+andrewrk
+
+
+1553723644
+scientes
+
+
+1553723650
+andrewrk
+the implementation of this issue will be what I said with regards to linking libc and using pthreads
+
+1553723654
+scientes
+see the use case:
+
+1553723697
+scientes
+it won't work with pthread_mutex_t, but I would like the same thread to be able to run musl or glibc thread code and pthread locks, and also zig code and locks
+
+1553723775
+scientes
+however the offset that glibc uses that we have to match to make THAT work, is 24 bytes, which is also a little bigger than I would like the SharedMutex struct to be
+
+1553723784
+andrewrk
+right so I'm not familiar with this use case, and I haven't read that URL yet, and I consider this to be a different issue than #1455. so I'm just giving you a heads up, this isn't an obvious "cool, done, merged" situation. I'll need to understand it first
+
+1553723791
+scientes
+so maybe it would be forbidden to use zig threading and pthread threading from the same thread
+
+1553723834
+scientes
+yes, I C. here is the use case: sometimes you need locking between a client and server, and that server might run 64-bit while the client is 32-bits
+
+1553723846
+andrewrk
+I'll read the logs - gotta run
+
+1553723990
+wrl
+scientes: do you just need to do this on linux?
+
+1553724056
+scientes
+I don't know anything about locking on other platforms
+
+1553724096
+wrl
+use eventfd if you can
+
+1553724106
+wrl
+like if you can build the primitive you need with it
+
+1553724429
+scientes
+A use code would be pulseaudio
+
+1553724445
+scientes
+which currently is slow from 32-bit clients on a 64-bit system (I don't have benchmarks), because of the lack of this
+
+1553724494
+wrl
+well jack uses sem_t
+
+1553724510
+wrl
+in shared memory segments
+
+1553724529
+scientes
+thats the same problem
+
+1553724546
+scientes
+pthread can't handle mixed-arch use-cases
+
+1553724645
+wrl
+jack does though
+
+1553724651
+wrl
+so check how they're doing it
+
+1553724658
+scientes
+it is probably using a UNIX socket like pulse does
+
+1553724672
+wrl
+are you going to make me look this up
+
+1553724701
+scientes
+I mean pulseaudio is amazing with how it works over the IP with mDNS
+
+1553724735
+scientes
+eek, it uses TCP though, instead of fancy UDP
+
+1553724760
+scientes
+fine for some use-cases
+
+1553724773
+wrl
+jack appears to use raw futexes in shared memory segments
+
+1553724803
+scientes
+does it use set_robust_list() ?
+
+1553724848
+scientes
+nope, which means that if jack crashes, your client applications will lock up
+
+1553724860
+scientes
+so again, another use case for zig adding this feature
+
+1553724874
+wrl
+cool
+
+1553724877
+wrl
+well, happy to help
+
+1553724953
+scientes
+oh pulseaudio supports RTP, which is over UDP, so that use-case is covered
+
+1553731152
+daurnimator
+scientes: robust mutexes are only good for one thing: when you want to get notified that a thread died
+
+1553731174
+daurnimator
+(because... on linux; it's the
+
+1553731193
+scientes
+when you are using locks that is pretty useful information
+

@@ -1,0 +1,1088 @@
+1558225015
+tgschultz
+man, errorsets are so broken. It's hard to make any significant changes to the interface pattern because of it.
+
+1558225045
+tgschultz
+can't be inferred if they're empty. can't be inferred sometimes for no apparent reason. Sometimes they just assert the compiler.
+
+1558225238
+tgschultz
+to be fair, some of these are just comptime related type checking errors. Like they way it likes to assert when it encounters an undefined symbol
+
+1558227134
+tgschultz
+great, integration tests won't even give me traces with a debug build.
+
+1558229442
+tgschultz
+narrowed the problem down to combining error sets in a return type. Which is great, since I can't refer them.
+
+1558229446
+tgschultz
+*infer
+
+1558229464
+tgschultz
+I think I'm just going to have to take a break from working on zig before I start hating it.
+
+1558229573
+andrewrk
+tgschultz, I think the problem is you're trying to improve zig while avoiding bug fixing. it's not really possible at this stage of maturity
+
+1558229593
+andrewrk
+I wouldn't be able to do any significant features/improvement without fixing bugs along the way either
+
+1558229602
+andrewrk
+I mean I don't blame you
+
+1558229613
+andrewrk
+but that's why it's not working
+
+1558229654
+andrewrk
+bugs also meaning design flaws such as the empty error sets situation that you identified
+
+1558229655
+tgschultz
+I'd fix the bugs if I could. I just don't have the familiarity with how compilers are structured so I can't really follow what's going in.
+
+1558229673
+tgschultz
+yeah, I know, it's nobody's fault really, zig is still early days, it's just frustrating.
+
+1558229682
+andrewrk
+yeah, big time
+
+1558229691
+andrewrk
+even I'm frustrated that I can't progress as fast as I want to
+
+1558229708
+andrewrk
+I wish I could hire somebody
+
+1558229736
+scientes
+I'm having the same problems with coding LLVM, but its that I can write the feature far faster than I can write it in a maintainable way
+
+1558229748
+scientes
+and a reviewable way
+
+1558230558
+tgschultz
+ok this is strange. stage1.zig in `stage2_render_ast` it appears to have switch prongs that I can't tell where they're coming from. It should only be possible for the errorset of COutStream or Allocator to be produced from its call to render(). I don't think it is a coincidence that this is where the assertion failure happens
+
+1558231060
+tgschultz
+ah, ok. It's my fault for making a bad assumption about the error set of COutStream.
+
+1558231087
+tgschultz
+I'm ok with this. I can accept problems that are my fault as long as they make sense.
+
+1558234443
+tgschultz
+well I'm feeling a lot better now that I'm making progress again. that'll probably change when I have to deal with async allocators again, but I've got a good feeling about plan C for tackling them. worst case I'll just not rewrite Allocator until after coroutines are redone.
+
+1558271450
+Aransentin
+I have questions ( or perhaps complaints :) ) about epoll in Zig's standard library. I wanted to make an event loop with it on Linux for my program, so I used std.os.linuxEpollCreate and friends:
+
+1558271457
+Aransentin
+1. Why are they located in std.os and named linuxFOO? Seems odd to me when there's os.linux.
+
+1558271463
+Aransentin
+2. linuxEpollWait catches EINTR and restarts the loop with the same timeout, which was kinda unexpected. If SIGINT is raised I wanted it to quit so I can quickly cleanup my resources, not have to wait twice as long (worst case) for the timeout to expire.
+
+1558271470
+Aransentin
+3. linuxEpollWait calls posix.epoll_wait and handles a few errors, but I'd like to use seccomp which can (in theory, though I only want EPERM) return any error.
+
+1558271474
+Aransentin
+4. posix.epoll_wait then actually calls linux.epoll_pwait! If I can't guarantee that only the syscalls I want are emitted I can't make reliable seccomp filters, and this makes me sad :(
+
+1558271482
+Aransentin
+Basically the ideal thing for me would be to have a fairly thin Zig wrapper around all the kernel syscalls that converts any returned errors to Zig errors. Is something like that planned?
+
+1558275061
+tgschultz
+Aransentin: std.os.linux should directly expose the syscall. It won't convert the errors, but you could use
+
+1558275092
+Aransentin
+Ah, that's nice
+
+1558275166
+Aransentin
+As for directly exposing syscalls, check out e.g.
+
+1558275179
+Aransentin
+epoll_wait simply calls epoll_pwait
+
+1558275245
+Aransentin
+Which for normal usage would be okay, but I'd like to be able to predict exactly what the program will do :)
+
+1558275246
+tgschultz
+I'm not sure the reasoning for that, sorry.
+
+1558275332
+tgschultz
+you should be able to call syscallN(SYS_epoll_wait, ...) though.
+
+1558275540
+scientes
+Aransentin, arm64 doesn't even have epoll_wait, so that is my fault
+
+1558275552
+scientes
+Aransentin, and glibc also won't call those syscalls
+
+1558275556
+Aransentin
+Just pwait? Aha.
+
+1558275562
+scientes
+like it will use openat() if you use open()
+
+1558275589
+scientes
+its kinda annoying in strace, but its the way things are
+
+1558275672
+scientes
+the code could be patched up, but it would required fixing some bugs
+
+1558278104
+BitPuffin
+is there short hand syntax for initializing a struct to zero
+
+1558278248
+emekankurumeh[m]
+no, you have to std.mem.secureZero(&struct_instance)
+
+1558278275
+emekankurumeh[m]
+there you used to a zeros keyword, but it was removed
+
+1558278298
+BitPuffin
+hmm, but that doesn't really work well with nested literals
+
+1558278350
+mikdusan
+BitPuffin: is your intention to really init zero? or simply undefined until filling in real values later?
+
+1558278366
+BitPuffin
+really init zero
+
+1558278375
+mikdusan
+(just checking) :)
+
+1558278381
+BitPuffin
+:)
+
+1558278418
+BitPuffin
+but my workaround now is just to not use the struct init syntax then because that's a pain
+
+1558278425
+BitPuffin
+so I'm gonna set fields individually
+
+1558278439
+BitPuffin
+which lets me do zero
+
+1558278448
+BitPuffin
+mikdusan: but usually I code so that zero is initialization as much as possible
+
+1558278901
+BitPuffin
+emekankurumeh: doesn't seem to quite work
+
+1558278915
+BitPuffin
+since the secureZero function returns *T
+
+1558278918
+BitPuffin
+rather than []T
+
+1558278948
+mikdusan
+std.mem.set(u8, dst, 0);
+
+1558278979
+mikdusan
+but secureZero reutrns void. ?
+
+1558278998
+BitPuffin
+yes it does
+
+1558279055
+BitPuffin
+set has the same problem it seems
+
+1558279398
+BitPuffin
+so I guess the question is how do I get a slice from a single struct
+
+1558279898
+mikdusan
+BitPuffin: maybe this?
+
+1558280169
+BitPuffin
+mikdusan: yes, is that [0..] necessary?
+
+1558280171
+BitPuffin
+Either way
+
+1558280183
+BitPuffin
+can just wrap this into a function and it should be handy
+
+1558280244
+mikdusan
+yes because []Foo{ foo } is an array of size 1 -> [1]Foo; and to convert that to slice the syntax is array[0..] or array[0..array.len-1] equiv. or your range choice.
+
+1558280357
+mikdusan
+iirc there was talk of making []Foo{ foo} syntax change to avoid confusion. it's really just a convenience and this is equiv [1]Foo{ foo }; but by inferring array size it's a bit confusing looks like slice
+
+1558280415
+BitPuffin
+hmm I thought zig did implicit cast where it was safe and unambiguous
+
+1558280466
+BitPuffin
+also doesn't foo get copied into the array in your version maybe
+
+1558280753
+mikdusan
+BitPuffin: i think you're right. i'm an idiot.
+
+1558281235
+BitPuffin
+Everyone makes mistakes :)
+
+1558281251
+mikdusan
+BitPuffin: this just really copies what secureZero does for a standalone (ie. without slice).
+
+1558281257
+BitPuffin
+But yeah I wonder why zeroes was removed
+
+1558281918
+BitPuffin
+mikdusan: maybe I should make a proc that takes a type and does zero init and returns the struct
+
+1558282124
+Aransentin
+Question about build.zig: I'm running a (slow) external tool to preprocess a couple of files. Can you get a addSystemCommand step to only run when some specific file(s) have changed?
+
+1558289135
+scientes
+Aransentin, I don't use builder, but that sounds like a feature that ninja has
+
+1558289149
+scientes
+I never understood why Zig has to have to much NIH
+
+1558289156
+scientes
+*so
+
+1558289172
+Aransentin
+Yeah, nautrally I could use a makefile or something
+
+1558289180
+scientes
+Make is really bad
+
+1558289238
+scientes
+but IMHO builder should really use ninja
+
+1558289246
+Aransentin
+Eh, make works well enough. I know how to use it fairly well too, which is a big plus :)
+
+1558289266
+scientes
+but i guess builder has higher aspirations
+
+1558289307
+scientes
+Zig is structured a little differn't where the whole source is compiled at once
+
+1558289346
+scientes
+so it kind of has to do its own build system, and it will need alot of work in LLVM to do multi-threaded compiles
+
+1558289382
+scientes
+like C has header files to reduce memory usage, but computers don't really need that any more
+
+1558289428
+scientes
+zig's approach makes sense, but it means alot has to be redone
+
+1558289473
+scientes
+perhaps it could still use ninja to build c stuff.
+
+1558289505
+Aransentin
+Ah, okay. I'm fairly ignorant how builder works under the hood, mostly mashing together examples I found on github right now
+
+1558289508
+scientes
+Like I think zig could benifit a bunch if glibc's libm was make usable without glibc
+
+1558289552
+scientes
+I've never used it, I can just use build-exe
+
+1558292768
+BitPuffin
+scientes: once you make a programming language you've already swallowed the NIH pill :)
+
+1558294108
+Aransentin
+Another question: Can you force-import a file that has some test/export that you want to run, but you don't want to do anything with directly?
+
+1558294113
+Aransentin
+(since the files are lazy-loaded means the "export" function in it will never be parsed)
+
+1558294120
+Aransentin
+I guess I can put and call some noop() function in it that'll get optimized away in the end, but there has to be a nicer way of solving it
+
+1558294348
+andrewrk
+hi Aransentin
+
+1558294381
+andrewrk
+this is the pattern that I've been doing for now:
+
+1558294415
+andrewrk
+if you want to unconditionally import, replace `test "std"` with `comptime`
+
+1558294459
+Aransentin
+Yep, that worked brilliantly
+
+1558294478
+Aransentin
+Thanks!
+
+1558294657
+andrewrk
+Aransentin, as for your question about epoll earlier - I have an in progress very breaking (sorry!) change to address that which is so far  29 files changed, 3510 insertions(+), 3224 deletions. See
+
+1558294689
+scientes
+yeah I did some of that too, but it wasn't ready for release
+
+1558294725
+scientes
+but I felt it should use @typeMember() so that the all the syscalls still work
+
+1558294741
+andrewrk
+scientes, yes I'm solving that problem as well
+
+1558294827
+andrewrk
+scientes, I recognize it's not really fair - if you had submitted exactly these changes as a PR, it would have been very difficult to review & merge
+
+1558294853
+scientes
+yes I realized that as well
+
+1558294915
+scientes
+I also wanted to fix getError's excessiveness, in most syscalls (but not mmap()) you can just do < 0
+
+1558294929
+scientes
+or rather a direct switch()
+
+1558294935
+andrewrk
+I'm fixing that too
+
+1558294936
+scientes
+cause success always returns 0
+
+1558294959
+andrewrk
+here I'll push my wip branch
+
+1558294967
+scientes
+and then I do want to do mapping of zig errors to errno, but that is tricky to do cleanly
+
+1558294985
+andrewrk
+that's a whole separate proposal which may or may not work
+
+1558295052
+BitPuffin
+andrewrk: how come zeroes was removed?
+
+1558295079
+andrewrk
+scientes, this is wip, but here's the posix.zig file:
+
+1558295098
+andrewrk
+`system` is mapped to `c` when linking libc
+
+1558295164
+scientes
+andrewrk, that write() bug actually isn't like that, I looked at the source code
+
+1558295174
+scientes
+i will accept any value, but only write/read that much
+
+1558295185
+andrewrk
+BitPuffin, zero initialization makes the not-always-correct assumption that the bit pattern of all 0's is a useful and valid state
+
+1558295186
+scientes
+so there is nothing to fix
+
+1558295200
+scientes
+if it did exist, it was only like <2.6.32
+
+1558295227
+andrewrk
+scientes, that's good to know, thanks
+
+1558295252
+BitPuffin
+andrewrk: well it's very useful to code that assumes zero is initialization. Partially because it's very cheap to init to zero
+
+1558295261
+andrewrk
+BitPuffin, for example if you had any pointers in your struct, and you initialized it to zeroes, your pointers which are never supposed to be null are now null
+
+1558295275
+BitPuffin
+Yeah it doesn't work for pointers
+
+1558295276
+andrewrk
+init to undefined is even cheaper
+
+1558295294
+andrewrk
+plus, if you init to undefined, zig can provide safety protection
+
+1558295299
+BitPuffin
+Yeah but you can't write code that assumes undefined is properly initialized
+
+1558295309
+andrewrk
+well yeah that's entirely the point
+
+1558295320
+scientes
+it will never be slower to explicitely initialize
+
+1558295332
+BitPuffin
+However I can write programs where most objects can be valid when initialized to zero
+
+1558295342
+scientes
+because if hardware shows up that initializes it for you (and there are proposals as such) the compiler will optimize out the initializations
+
+1558295359
+BitPuffin
+Either way. It's a surmountable thing
+
+1558295370
+TheLemonMan
+andrewrk, you probably want to pull the trigger on #2493 too
+
+1558295381
+scientes
+well, actually I don't think the compiler knows that mmap() returns zero-initialized data.....
+
+1558295384
+BitPuffin
+Can just make a function that inits a struct to zero from a comptime type argument
+
+1558295399
+andrewrk
+TheLemonMan, yeah, sorry I wanted to try to finish up my PR and then do around of reviews
+
+1558295407
+andrewrk
+if it's blocking you I can take a look
+
+1558295465
+andrewrk
+TheLemonMan, oh neat did you use ir_print_instruction in the debugger?
+
+1558295492
+TheLemonMan
+yup
+
+1558295573
+andrewrk
+to make you aware, ConstPtrMutRuntimeVar & friends are a flawed way to represent comptime mutability. I believe the "root cause" fix is going to be representing this information with scopes:
+
+1558295613
+andrewrk
+this fix is good though, thanks! trigger pulled
+
+1558295633
+BitPuffin
+andrewrk: can even compile time refuse to init to zero if the type contains non nullable pointers I think :)
+
+1558295658
+TheLemonMan
+comptime pointers are a hassle in pretty much every language I've worked on heh
+
+1558295743
+andrewrk
+TheLemonMan, do you have a project you're working on in zig or are you contributing to the compiler for its own sake?
+
+1558295840
+TheLemonMan
+I like to work on compilers, for me it's a way to relieve some stress while doing something productive heh
+
+1558295856
+andrewrk
+well your contributions have been very valuable so thanks
+
+1558295877
+andrewrk
+BitPuffin, in summary: zig has scopes for variables, which is compile-time enforcement of only using a value when it is well-defined and intended to be used. however this is coarse grained - sometimes it's only known at runtime whether a value is well-defined or not
+
+1558295903
+andrewrk
+for this case we have the concept of `undefined`. you can assign `undefined` to a value and then zig's runtime safety mechanisms can help prevent accidental use
+
+1558295922
+andrewrk
+there are some such safety mechanisms in place already - writing 0xaa, valgrind-aware annotations - but more are planned
+
+1558295962
+scientes
+its also using llvm's UndefValue if it gets that far, on --release-fast mode
+
+1558295970
+andrewrk
+`zeroes` is in conflict with these safety protections. it comes down to one of the "zen" statements: Communicate intent precisely.
+
+1558296005
+andrewrk
+this precision gives both safety/debuggability in the safe build modes and performance in the unsafe build modes
+
+1558296067
+andrewrk
+btw has anyone checked out this project?
+
+1558296156
+TheLemonMan
+noice
+
+1558296407
+TheLemonMan
+andrewrk, what was the problem with stack probes on osx?
+
+1558296442
+andrewrk
+TheLemonMan, my mind is somewhere else, can you remind me of the context?
+
+1558296541
+TheLemonMan
+hmm, you've disabled them in a7346ea4
+
+1558296558
+andrewrk
+ahh
+
+1558296573
+andrewrk
+did you see the commit message? looks like I explained it there
+
+1558296659
+TheLemonMan
+yep, but what are the steps to reproduce the failure? I'll probably have a look at lld source code sometimes soon
+
+1558296763
+andrewrk
+in build.zig, remove the logic that treats macos separately in addLibUserlandStep
+
+1558296793
+andrewrk
+TheLemonMan, also remove this
+
+1558296815
+andrewrk
+if you could solve this, it would probably solve everything:
+
+1558296941
+tgschultz
+speaking of unusable files, re: DOS and freestanding generating elfs, objcopy can convert to a format I can almost use, but it doesn't seem to translate the relocation table (either that or the PE capable DMPI loader I'm usuing doesn't pay any attention to them). That's ok, I don't need relocation, but I don't know how to tell the compiler to output everything without relocation and assuming a base address.
+
+1558297007
+tgschultz
+--disable-pic didn't seem to work
+
+1558297088
+andrewrk
+tgschultz, what are you looking at to determine that it is in fact generating PIC?
+
+1558297132
+andrewrk
+can I see the linker line that it ends up using?
+
+1558297196
+tgschultz
+the disassembly of the result. the addresses it references are not valid. I don't usually work at this level so I may be doing one or several things wrong.
+
+1558297200
+tgschultz
+How would I determine that?
+
+1558297278
+tgschultz
+lld -error-limit=0 --gc-sections -m elf_i386 -static -o .\dos .\dos.o C:\Users\Tanner Schultz\AppData\Local\zig\stage1\o\S1QNaJtAnGiI6LpiK4Nh1SOa-mVbGPsrF5ZK_dGjYrxhM6T1hvKmjCU-OLn9T0UH\libbuiltin.a C:\Users\Tanner Schultz\AppData\Local\zig\stage1\o\3Zxob99r1bdyo8gdIX4a9Nvr3VpLpxceWgBbftcpgvy_1jKy99qj3it6-mbfGAeF\libcompiler_rt.a --allow-shlib-undefined
+
+1558297279
+andrewrk
+are you looking at the output of build-obj or build-exe?
+
+1558297288
+scientes
+look at objdump --all tgschultz
+
+1558297393
+andrewrk
+looks like you're using build-obj which is going to produce a relocatable object. I don't think it's possible to create a non-relocatable object. try using build-exe
+
+1558297397
+tgschultz
+andrewrk: build-exe, though the .o file doesn't seem any different. scientes: objdump just says file format elf32-i386
+
+1558297406
+andrewrk
+ah my mistake
+
+1558297412
+scientes
+--all
+
+1558297445
+scientes
+that gives you a high-level overview of the contents of an elf
+
+1558297490
+tgschultz
+scientes that was with all, there's only one file, which is a very short bit of assembly to call DPMI and switch to protected mode... In fact, the zig file I'm using is completely empty so I'm only engaging the assembler.
+
+1558297515
+tgschultz
+I suspect there's something relatively obvious I'm missing about all this
+
+1558297527
+andrewrk
+that could easily be true but I don't see it either
+
+1558297535
+scientes
+then you could try --disassemble
+
+1558297542
+andrewrk
+my approach would be to try to come up with an example that does work, and try to see what's different about it
+
+1558297553
+scientes
+--disassemble --all
+
+1558297560
+andrewrk
+e.g. with msvc or whatever other people do to make these dos exes
+
+1558297596
+tgschultz
+well for starters they don't output ELFs.
+
+1558297648
+tgschultz
+but yeah, I'm still looking in to how this is supposed to work. Once I get get into protected mode and verify I can talk to the DPMI host, then thigns should go more smoothly (I hope).
+
+1558297652
+andrewrk
+they output COFFs?
+
+1558297655
+andrewrk
+I think we can do that
+
+1558297751
+tgschultz
+I'm not sure what the object format would be, but the end result is a DOS MZ (not PE) exe I think. I've found surprisingly little documentation about 32bit dos programs.
+
+1558297772
+tgschultz
+But I do think starting with COFF output instead of ELF would probably be smoother.
+
+1558297817
+scientes
+tgschultz, what are you trying to do?
+
+1558297841
+tgschultz
+scientes: my bad, I used -all  instead of --all, I am indeed getting a more informative dump.
+
+1558297908
+tgschultz
+scientes: a side project, exploring the ability to build 32bit DOS programs with zig. Possibly even stdlib support. Personally I'd just like to make a DOS game with it, mode 13h and all that.
+
+1558297968
+scientes
+cause DOS can't run without an emulator on 64-bit machines
+
+1558297973
+scientes
+its kinda dead
+
+1558298073
+tgschultz
+I'm aware of that.
+
+1558298098
+tgschultz
+I'm using a debuger enabled build of DOSBox for now
+
+1558298113
+tgschultz
+I'll switch to a serious emulator later on
+
+1558298125
+tgschultz
+like qemu
+
+1558298143
+scientes
+do those work with games?
+
+1558298155
+scientes
+I thought DOS games had timing stuff that didn't work with emulators
+
+1558298276
+tgschultz
+Old DOS games used a lot of tricks, though according to the demoscene, who would know, DOSBox is actually not very good at emulating a lot of the trickier things. I just mean using a more complete emulator to prove to myself that it is likely to work on real hardware, well, without lugging out some hardware I have that actually runs DOS anyway.
+
+1558298303
+scientes
+but this is new development.....
+
+1558298310
+scientes
+maybe you should do baremetal ARM
+
+1558298325
+tgschultz
+That's not intereting to me at this time.
+
+1558298327
+scientes
+or AVR-8, llvm has some support for that (although gcc's is better
+
+1558298341
+scientes
+ok, it not my business
+
+1558298402
+tgschultz
+This is really just for my personal amusement, though if it becomes reasonable to do so, it's possible zig could support DOS-i386 as a target. There's a surprising amount of DOS still running in the world.
+
+1558298469
+scientes
+Zig on baremetal is really exciting for real work...
+
+1558298480
+scientes
+so anyone hacking on it can push zig forward
+
+1558298554
+tgschultz
+Eventually I'd like to do that, but there's nothing about that right now that really interests me. If a completely open platform comes along, I may be interested in building a new OS on it, but that seems unlikely in the near future. RISC-V is taking off, apparently, but there's no such thing as an open GPU for instance.
+
+1558298591
+scientes
+ARM-M is pretty good, there are a bunch of proprietary implementations of it
+
+1558298601
+scientes
+well actually not the M version, more the high-power versions
+
+1558298626
+scientes
+there are like 4 differn't high-performance completely independent implementations of ARMv8 instruction set
+
+1558298662
+scientes
+and Mali open driver just got merged into Linux kernel
+
+1558298669
+scientes
+or maybe the next one, its in drm tree
+
+1558298682
+tgschultz
+the driver is open, but Mali isn't.
+
+1558298745
+tgschultz
+and if I was using the linux kernel then it wouldn't be bare metal anyway.
+
+1558298854
+scientes
+doing 3d bare meta would be pretty intense
+
+1558298866
+scientes
+i don't think anyone could pull that off
+
+1558298868
+jjido_
+...
+
+1558299001
+scientes
+anyways, a MMU is nice
+
+1558299484
+andrewrk
+tgschultz, something to try: hack up codegen.cpp init() function. look for LLVMSetTarget. hack that triple_str to be "i686-unknown-none-coff" and see if that changes anything
+
+1558299485
+BitPuffin
+andrewrk: Yeah that makes sense. Especially with the emphasis on safety. While I do think there is room for a version of zero init that only allows it when it is safe to do so. I don't think it's strictly necessary to have it as an officially supported thing as it appears I can just make a procedure that does exactly what I want.
+
+1558299529
+scientes
+BitPuffin, you can just wrap an allocator
+
+1558299531
+scientes
+its quite simple
+
+1558299573
+scientes
+and if you use arena allocator...oh wait I think we write 0xaa now...
+
+1558299579
+BitPuffin
+Since I mainly wanna use Zig for games (and surprisingly maybe some web dev for fun) my concern skews a bit towards getting out of my way more than safety at times.
+
+1558299619
+BitPuffin
+scientes: can't I just instantiate a struct on the stack from a type parameter and return it?
+
+1558299623
+andrewrk
+"safety" also means "find your bugs quickly so you can iterate faster"
+
+1558299636
+scientes
+low level stuff really needs to get this right
+
+1558299645
+BitPuffin
+Yeah and the times when it does I'm really happy about it
+
+1558299660
+BitPuffin
+Which is part of why I'm excited about zig
+
+1558299693
+andrewrk
+BitPuffin, I think this will solve your use case:
+
+1558299704
+BitPuffin
+Cuz it seems like more than rust it seems to buy time thanks to safety without costing time fighting with the safety mechanisms
+
+1558299749
+BitPuffin
+andrewrk: true! Except when I'm interacting with C types :)
+
+1558299760
+scientes
+you can do that with c types
+
+1558299773
+scientes
+there is no reason it wouldn't work with c types
+
+1558299786
+andrewrk
+scientes, in auto generated @cImport output you don't have access to the definitions
+
+1558299798
+scientes
+but you could just redefine it
+
+1558299809
+scientes
+with an extern
+
+1558299817
+andrewrk
+the type?
+
+1558299820
+scientes
+yes
+
+1558299834
+scientes
+C code does this all the time
+
+1558299855
+scientes
+not so much in C++, because its so complicated
+
+1558299863
+BitPuffin
+Yeah but I don't wanna redefine them
+
+1558299870
+BitPuffin
+That's friction I can live without
+
+1558300074
+scientes
+BitPuffin, you might be able to do it with @typeInfo so that it is safe
+
+1558300122
+BitPuffin
+The super handy interop with C is a killer feature for me. One of the main reasons I hopped from nim is because I don't wanna sit there writing bindings or fighting with c2nim
+
+1558300137
+scientes
+this could be totally automatic
+
+1558300148
+scientes
+you could just iterate through the namespace and add initializers
+
+1558300157
+BitPuffin
+scientes: yep exactly my thinking. Basically any plain scalar type can safely init to zero I think
+
+1558300158
+scientes
+requires fixing a few bugs
+
+1558300214
+BitPuffin
+Hmm didn't know I could mutate namespace at compile time
+
+1558300229
+andrewrk
+I'm not aware of that being possible
+
+1558300244
+tgschultz
+writing a metafunction that iterates through a struct's member and sets everything to a reasonable "zero" value where it makes sense to do so is possible. Look at serializer/deserializer for how it inspects a type all the way down to the primitives, then just set them to 0 instead of writing/reading them from a stream.
+
+1558300246
+scientes
+oh, i thought you could monkey patch
+
+1558300249
+scientes
+guess i hadn't tried it
+
+1558300278
+andrewrk
+if it were possible to monkey patch, I would change things so that it became not possible
+
+1558300302
+BitPuffin
+Macro hater :p
+
+1558300306
+andrewrk
+yes
+
+1558300312
+scientes
+that is a good thing
+
+1558300397
+BitPuffin
+So other than monkey patch. Can you make new code?
+
+1558300472
+andrewrk
+BitPuffin, have you read about how formatted printing works?
+
+1558300522
+andrewrk
+
+
+1558306559
+coolreader18
+andrewrk: I made a PR for TI-Nspire support #2513, would you be able to check it out?
+
+1558306598
+andrewrk
+coolreader18, yes, apologies for the delay. After I finish up this branch I'm working on, I'll do around of PR review
+
+1558306855
+coolreader18
+👍
+
+1558307330
+scientes
+coolreader18, it would be alot cooler if you didn't use the c libraries
+
+1558307348
+scientes
+but non-the-less cool
+

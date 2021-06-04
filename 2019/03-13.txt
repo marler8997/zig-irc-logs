@@ -1,0 +1,848 @@
+1552439249
+wink_
+@andrewrk, a while ago you said you had to "use the same compiler to build llvm, clang, and zig" (
+
+1552439274
+wink_
+If my recolection is correct, do you still have that link?
+
+1552450031
+diltsman
+What file is builtin.Arch in?
+
+1552452809
+andrewrk
+wink_, I don't remember, sorry
+
+1552452822
+andrewrk
+diltsman, `zig builtin` shows you the contents of @import("builtin")
+
+1552453092
+daurnimator
+huh... a see some sort of magic `__zig_test_fn_slice` in there
+
+1552453133
+andrewrk
+yeah that's a bit magic. has to do with how `zig test` is implemented.
+
+1552453338
+daurnimator
+andrewrk: wow; that musl merge is huge!
+
+1552453691
+daurnimator
+andrewrk: so I don't quite understand: why are we bundling musl?
+
+1552453903
+daurnimator
+it does seem weird to me that my zig package now contains all the .c files for musl....
+
+1552453941
+daurnimator
+would it make more sense to include precompiled libc.a files for each target?
+
+1552475523
+gamester
+andrewrk: I found an issue :)
+
+1552485174
+andrewrk
+gamester, what's the issue?
+
+1552485449
+gamester
+andrewrk: isn't there supposed to be a compile error when trying to pass an i32 to a function that takes a [*c]i32 ?
+
+1552485582
+gamester
+the function ends up interpreting the integer as a pointer
+
+1552485899
+andrewrk
+[*c] pointers are dangerous
+
+1552485913
+andrewrk
+if should be an error if it would be an error in C
+
+1552486157
+andrewrk
+I just checked, in C it's allowed, but you get a warning
+
+1552486170
+andrewrk
+I think we can maybe tighten up the rules a bit
+
+1552486878
+gamester
+ah, I was under the mistaken impression that c pointers were introduced only to solve the issue of pointer-to-one vs pointer-to-many and perhaps null vs not-null
+
+1552486897
+gamester
+in auto translated code
+
+1552486914
+andrewrk
+gamester, their purpose is to have the same semantics as C pointers. I'm opening an issue for your example, just a sec
+
+1552487227
+andrewrk
+gamester,
+
+1552488242
+andrewrk
+daurnimator, see my comment here:
+
+1552488479
+gamester
+andrewrk: for me, gcc also complains by default: "incompatible integer to pointer conversion passing 'int' to parameter of type 'int *'; take the address with & [-Wint-conversion]"
+
+1552488495
+gamester
+(it's a warning)
+
+1552488612
+andrewrk
+gamester, right, so I think we can have an error for that. Thanks for the test case, and apologies for getting a little defensive at first :)
+
+1552488662
+gamester
+np
+
+1552489374
+gamester
+It's interesting how default warnings change the C spec without changing it :)
+
+1552489449
+gamester
+it seems to be a solution for modernizing such an old language without breaking anything
+
+1552489846
+andrewrk
+yeah
+
+1552490704
+wink_
+andrewrk: Txs for trying to remember, let me ask more directly; why is zig broken when NOT using  "the same compiler to build llvm, clang, and zig"?
+
+1552490809
+andrewrk
+clang and gcc have incompatible C++ ABIs across some combination of versions
+
+1552490986
+wink_
+txs!
+
+1552494404
+man213
+Hi guys. Newbie and grateful zig user here. Today I downloaded compiler master build (2019-03-12) and noticed that my program produces different results depending on build option: i.e. --release-safe and debug builds produce correct results, but --release-small and --release-safe produce incorrect result. I wonder if it is a known issue? Is there any simpler way to test this behaviour than my program (mine is a raytracer). I'm a windows
+
+1552494494
+andrewrk
+hi man213
+
+1552494608
+andrewrk
+is your code open source?
+
+1552494613
+Akuli
+how am i supposed to run zig test under valgrind? in older zig versions, i could do 'valgrind zig-cache/test', but now it's something like 'valgrind zig-cache/o/oiasjfoaijsfioajsfio/test'
+
+1552494662
+andrewrk
+man213, I don't think there are any known bugs with diverging debug/release behavior. it could potentially be undetected undefined behavior:
+
+1552494681
+andrewrk
+if it turns out to be a problem with zig's codegen though, that's a high priority bug
+
+1552494919
+andrewrk
+Akuli, if your test fails it prints the path. or you can use `--output-dir zig-cache` to get the old behavior
+
+1552494932
+andrewrk
+but note that there was a bug with this that I just pushed a fix to master branch for
+
+1552494945
+Akuli
+ok let me update my zig
+
+1552495105
+Akuli
+ummm... how do i do that with zig build?
+
+1552495118
+Akuli
+lx
+
+1552495119
+andrewrk
+foo.setOutputDir()
+
+1552495120
+Akuli
+oops
+
+1552495135
+Akuli
+i think i'll add a valgrinding thing to my build.zig
+
+1552495151
+andrewrk
+if you use setOutputDir to zig build then you can use getOutputPath() and friends
+
+1552495157
+andrewrk
+s/to/in/
+
+1552495272
+man213
+andrewrk, yes, you can get it here:
+
+1552495360
+andrewrk
+man213, what's std.winapi? do you have a patched zig standard library?
+
+1552495497
+man213
+andrewrk, damn, not really. I just placed slightly modified winapi bindings into zig's folder. Forgot to move it to my project's dir. Gonna fix it
+
+1552495982
+man213
+andrewrk, fixed. Now everything should be fine
+
+1552496549
+andrewrk
+man213, is this a regression from a previous version of zig? was there a version where release-fast / release-small had expected behavior?
+
+1552497080
+man213
+andrewrk, I'm not sure. Just noticed it today. I upgrade the compiler from time to time (and upgraded it today) with master build and often do release-fast and release-small builds to check executable size before committing. Yesterday everything was ok.
+
+1552497164
+man213
+andrewrk, is there any previous master builds for me to check it or it is replaced completely by a newer master build?
+
+1552497315
+andrewrk
+man213, here are all the windows builds from this month:
+
+1552497325
+andrewrk
+I deleted everything before Mar 1
+
+1552497466
+andrewrk
+man213, if we had
+
+1552497572
+andrewrk
+oh - in your case @setRuntimeSafety should do the trick. you could try a release-fast build, with @setRuntimeSafety(true) in some places to see where it fixes it
+
+1552497600
+andrewrk
+I'm not suggesting this as a workaround, but to help discover the nature of the problem
+
+1552497774
+man213
+andrewrk, Just rolled back two commits earlier and release-fast build produces exactly the same result as the debug build. Hmm... Ok, I'll play with @setRuntimeSafety and do some more research. Thank you, Andrew.
+
+1552497802
+andrewrk
+man213, two commits earlier - what version is that?
+
+1552497828
+andrewrk
+in your own code or two versions of zig?
+
+1552497846
+man213
+andrewrk, two commits earlier - I meant my code, not zig
+
+1552497923
+andrewrk
+ah ok- in that case it's probably undetected undefined behavior. if you figure out what it is, I'm interested to know, because as far as zig is concerned we either need to (1) add runtime checks to detect that, or (2) document it as something zig cannot detect:
+
+1552497955
+andrewrk
+(for (1) I mean runtime checks for Debug/ReleaseSafe builds)
+
+1552498109
+man213
+andrewrk, ok, I'll play with @setRuntimeSafety and other stuff in case if the issue is my fault and let You know.
+
+1552498249
+andrewrk
+sounds good, happy hacking
+
+1552498287
+man213
+andrewrk, btw,
+
+1552498326
+andrewrk
+what happens when you try to access it?
+
+1552498497
+man213
+andrewrk, Chrome says that this site can't be reached. Ping says that "ping:
+
+1552498546
+andrewrk
+maybe you are experiencing DNS issues?
+
+1552498633
+man213
+andrewrk, nevermind. Opened the link from the other machine. Maybe it's an issue with my VPN
+
+1552499133
+man213
+andrewrk, How @setRuntimeSafety should be used? Do I need to place it in the beginning of my function's body or something? (couldn't figure out it from the docs)
+
+1552499368
+andrewrk
+man213, I'll improve the docs and then see if that answers your question :)
+
+1552499875
+man213
+andrewrk, ok :)
+
+1552499887
+andrewrk
+man213, I found a bug - @setRuntimeSafety is not correctly overriding the build mode. pushing a fix shortly.
+
+1552500035
+man213
+andrewrk, fine, otherwise I was about to spray @setRuntimeSafety
+
+1552500928
+andrewrk
+man213, it's probably going to take all day for this fix to make it through the CI
+
+1552500934
+andrewrk
+there's already a bit of a queue
+
+1552501144
+man213
+andrewrk, may be it's the good time for me to do a build myself
+
+1552501285
+andrewrk
+daurnimator, the latest zig source tarball is still less than 5 MiB
+
+1552501508
+andrewrk
+consider that llvm-7.0.1.src.tar.xz + cfe-7.0.1.src.tar.xz is 39 MiB. That gives a rough estimate of how big zig-1.0.0-bootstrap.tar.xz will be, and the new musl source code is a tiny fraction of it
+
+1552502856
+andrewrk
+man213,
+
+1552502887
+andrewrk
+there's a new example in the docs now too
+
+1552502898
+Akuli
+how do i write a zig build step that runs a command?
+
+1552502935
+Akuli
+i tried all kinds of things and got created some poo that compiles, but segfaults the build system
+
+1552502942
+andrewrk
+Akuli, a system command or an executable built with the build system?
+
+1552502958
+Akuli
+an executable built with the build system, under valgrind
+
+1552502961
+Akuli
+i.e. a system command
+
+1552503070
+andrewrk
+const cmd = b.addSystemCommand([][]const u8{"valgrind"}); cmd.addArtifactArg(exe); const valgrind = b.step("valgrind", "Run the thing in valgrind"); valgrind.dependOn(&cmd.step);
+
+1552503082
+Akuli
+you make that look so easy :DD
+
+1552503104
+andrewrk
+yeah the main problem is lack of documentation
+
+1552503122
+Akuli
+woot
+
+1552503124
+Akuli
+that worked on the first try
+
+1552503156
+andrewrk
+😎
+
+1552503277
+man213
+andrewrk, roger that
+
+1552503499
+Akuli
+ok so i have a very difficult to debug bug
+
+1552503515
+Akuli
+it doesn't happen with 'zig test'
+
+1552503535
+Akuli
+if i add a line that is seemingly unrelated to other stuff i have, i get a bunch of valgrind errors from lines before the line i added
+
+1552503579
+andrewrk
+generally if you get any valgrind errors, the first one is the one to look at
+
+1552503585
+Akuli
+i know
+
+1552503612
+andrewrk
+this is in debug mode?
+
+1552503622
+Akuli
+i think so, whatever is the default
+
+1552503626
+andrewrk
+yes that's debug
+
+1552503628
+Akuli
+ok i managed to get something reproducing i think
+
+1552503657
+Akuli
+let me create an issue
+
+1552503777
+Akuli
+
+
+1552503854
+andrewrk
+that new `error: dependency on library c must be explicitly specified in the build command` is nice
+
+1552503870
+Akuli
+yes, but that's not the error i'm getting
+
+1552503871
+Akuli
+:D
+
+1552504155
+andrewrk
+weird, if I don't link libc then I don't get the valgrind errors
+
+1552504371
+Akuli
+it seems to only happen with c_allocator
+
+1552504393
+Akuli
+if i replace it with DirectAllocator.init() and link with libc anyway, it will work
+
+1552504465
+andrewrk
+I'm getting the valgrind errors with --library c but the allocator line deleted
+
+1552504490
+Akuli
+:DDDD
+
+1552504526
+Akuli
+same
+
+1552504571
+Akuli
+but it works with DirectAllocator and --library c!
+
+1552504579
+Akuli
+adding the DirectAllocator fixes it
+
+1552504603
+andrewrk
+what do you mean adding it?
+
+1552504617
+Akuli
+replace the allocator line with that
+
+1552504630
+andrewrk
+so not even using it
+
+1552504637
+Akuli
+yes
+
+1552504804
+Akuli
+lets guess: something is calculating stack sizes or indexes or whatever incorrectly, and adding a large enough object on the stack happens to "fix" it so that valgrind doesn't notice that anything is wrong
+
+1552504828
+andrewrk
+this is either a bug in zig or a bug in valgrind
+
+1552504840
+Akuli
+i still don't know what --library c has to do with this
+
+1552504850
+Akuli
+it fixes it every time, somehow
+
+1552504919
+andrewrk
+it's the opposite for me. --library c makes the valgrind errors show up
+
+1552504924
+Akuli
+umm yes
+
+1552504932
+Akuli
+more like, deleting it fixes the stuff
+
+1552505020
+andrewrk
+Akuli, do you know about --disable-valgrind?
+
+1552505026
+Akuli
+no
+
+1552505075
+andrewrk
+that turns off the thing where zig teaches valgrind what `foo = undefined;` means
+
+1552505112
+Akuli
+errors seem to be coming anyway
+
+1552505149
+andrewrk
+right. so that points to a bug in valgrind rather than zig
+
+1552505279
+Akuli
+i first noticed this when a random number generator generated the same random numbers every time
+
+1552505284
+Akuli
+when not running under valgrind
+
+1552505292
+Akuli
+then i valgrinded it and it was reading uninitialized memory
+
+1552505297
+Akuli
+maybe i was doing something else wrong then
+
+1552505326
+andrewrk
+your example in #2061 looks fine
+
+1552505363
+andrewrk
+uh oh
+
+1552505367
+andrewrk
+I know what this is :(
+
+1552505456
+andrewrk
+
+
+1552505510
+andrewrk
+this is one of the 2 documented design flaws of zig
+
+1552505534
+andrewrk
+which is planned to be fixed somehow
+
+1552505562
+andrewrk
+related to no-copy semantics changes coming soon
+
+1552505725
+Akuli
+so which member variable is the problem? is it Lel.rnd?
+
+1552505798
+Akuli
+or does the compiler think that default_prng isn't needed anymore after something happens?
+
+1552507473
+man213
+andrewrk, zig builds from sources in two minutes on my machine, wow (I do not take llvm build time into account, huh)
+
+1552507584
+andrewrk
+man213,  if you build the (work in progress) self hosted compiler along with that, it adds about 10 more seconds to the build ;)
+
+1552507611
+andrewrk
+Akuli, did you see the diff? the problem is copying the Random interface field
+
+1552507627
+andrewrk
+I think this will be fixed with a way to annotate fields as "nocopy"
+
+1552507665
+Akuli
+i thought that it's just a pointer so it doesn't matter?
+
+1552508039
+andrewrk
+#591 explains it
+
+1552508049
+andrewrk
+it's not a pointer
+
+1552508351
+Akuli
+so the problem is on the line where i get the .random into a local variable?
+
+1552508373
+Akuli
+would this fix?  const rnd = &default_prng.random;
+
+1552508376
+Akuli
+with & in the front
+
+1552508376
+andrewrk
+yes, did you see the diff ?
+
+1552508389
+andrewrk
+
+
+1552508401
+Akuli
+umm lol nevermind
+
+1552508410
+Akuli
+i didn't notice that you edited the comment
+
+1552508424
+andrewrk
+ah, apologies. should have made a new comment
+
+1552508442
+Akuli
+thanks for all this! :D
+
+1552508453
+Akuli
+this would have taken me a looooong time to notice what's wrong
+
+1552508475
+andrewrk
+it's planned for a compile error to catch this in the future. hopefully in the 0.5.0 release
+
+1552508479
+Akuli
+but now that i see this i can see why it could be wrong
+
+1552508507
+Akuli
+in c++ (ewww), this would implicitly invoke the copy constructor
+
+1552508516
+andrewrk
+right
+
+1552508562
+emekankurumeh[m]
+wouldn't this be solved by a different interface pattern?
+
+1552508618
+emekankurumeh[m]
+on a side note would that nocopy annotations be similar to pin/unpin in rust?
+
+1552508622
+andrewrk
+emekankurumeh[m], see
+
+1552511111
+man213
+andrewrk, I've managed to break debug build too, yay!
+
+1552511129
+man213
+andrewrk, The trouble hides somewhere in std.rand
+
+1552511145
+man213
+Or I'm doing something incorrect with it
+
+1552511190
+man213
+Need to research further but I'm 90% sure that it has nothing to do with runtime safety checks
+
+1552511208
+andrewrk
+man213, I believe it's exactly the same issue that Akuli just ran into above
+
+1552511221
+andrewrk
+
+
+1552511251
+man213
+andrewrk, yeah, that is it
+
+1552511253
+andrewrk
+have a look at
+
+1552511319
+andrewrk
+sorry about the design flaw; know that I definitely consider it really important and I have high confidence it will be fixed in 0.5.0
+
+1552517462
+diltsman
+How would I replace exe.setTarget(builtin.Arch.armv7m, builtin.Os.freestanding, builtin.Environ.eabi); when building with HEAD?
+
+1552517887
+daurnimator
+andrewrk: heh. I was the one that pointed you to midipix I think
+
+1552517894
+daurnimator
+oh he's not in the channel any more :(
+
+1552517993
+andrewrk
+diltsman,  exe.setTarget(builtin.Arch {.arm = builtin.Arch.Arm64.v7m}, builtin.Os.freestanding, builtin.Abi.eabi)
+
+1552518033
+andrewrk
+this will make that a lot more convenient:
+
+1552518041
+andrewrk
+daurnimator, I must have missed it before
+
+1552518442
+daurnimator
+andrewrk: re: #591. I had the same idea as
+
+1552518511
+andrewrk
+yeah that's a good proposal
+
+1552518704
+daurnimator
+I was going to call it `nocopy` instead of `fixed` :P
+
+1552519001
+Flaminator
+IMO `fixed` and `nocopy` mean 2 different things.
+
+1552519039
+andrewrk
+Flaminator, explain?
+
+1552519041
+daurnimator
+Flaminator: which one means "this member is not allowed to be copied"
+
+1552519227
+Flaminator
+That would be nocopy daurnimator. For me fixed would mean it's stuck and you can't move it around but you can make a copy of it, while nocopy means you can move it around you just can't make an extra copy of it.
+
+1552519305
+daurnimator
+Flaminator: what does 'move it around' mean?
+
+1552519327
+daurnimator
+in a computer; moving
+
+1552519570
+Flaminator
+Bad analogy incoming: imagine a room, there is a box on the floor and a pilar that is stuck to the floor and the ceiling. You can move the box around from one position in the room to another while the pilar is fixed in that same position and can't be moved around.
+
+1552519618
+daurnimator
+Flaminator: I'm not sure what is the box/room/pillar in this analogy
+
+1552519754
+Flaminator
+The room is for example 200 bytes of memory and the box and the pillar are a byte each located in those 200 byes.
+
+1552519788
+daurnimator
+Flaminator: struct layout is static in zig: members don't move around the struct.
+
+1552519818
+daurnimator
+(it's undefined
+
+1552519863
+andrewrk
+if you copy bytes, then treat the newly copied bytes (which are in a different location) as a valid object, then according to the perspective of that object, it has moved
+
+1552519936
+andrewrk
+if you put me in a cloning chamber, and then when the clone of me walks out of the other cloning chamber, he's going to think he teleported
+
+1552519963
+Flaminator
+I don't really know what the nocopy/fixed thing is for though, was only saying that the words have a different meaning too me.
+
+1552520046
+diltsman
+It appears that build results are now in zig-cache/o/<CRAZY STUFFS!>/
+
+1552520860
+andrewrk
+diltsman, is it working ok for you? you can override it
+
+1552520914
+diltsman
+New behavior.  Just was unexpected.
+
+1552520930
+andrewrk
+if you try your `zig build` commands a few times in a row you should see that everything is cached
+
+1552520943
+diltsman
+Right.
+
+1552520960
+andrewrk
+and try making a change in any file - .zig, .h, or use a different version of zig, anything!  - and only what needs to get rebuilt will
+

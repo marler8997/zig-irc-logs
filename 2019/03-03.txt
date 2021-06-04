@@ -1,0 +1,356 @@
+1551576508
+gamester
+Hmm. I'm doing "const Foo = builder.addStaticLibrary("Foo", null);", then "Foo.addCSourceFile", then "exe.linkLibrary(Foo)" but when running the executable it needs a libFoo.so shared library
+
+1551576524
+gamester
+.so.0
+
+1551578131
+andrewrk
+gamester, oh! I forgot about that.
+
+1551578162
+andrewrk
+I can fix that soon. it's just a matter of sending some args to clang
+
+1551578206
+andrewrk
+
+
+1551610316
+gamester
+No problem. Also in case you missed it: "const a: ?[*c]i32 = null" crashes the compiler.
+
+1551628067
+andrewrk
+fixed
+
+1551640480
+oats
+howdy! is it possible to utilize pointers that are defined in a C header library as macros?
+
+1551640521
+oats
+as in, #define foo (uint32_t *)0xb1a4bla4
+
+1551640558
+andrewrk
+hi oats. that may already work now. if it doesn't it's just a few improvements in translate-c.cpp away from working
+
+1551640584
+oats
+sweet
+
+1551640619
+oats
+I'm using the libopencm3 library
+
+1551640848
+oats
+tangentally related, how's the self-hosted compiler coming along?
+
+1551640861
+oats
+been a while since I've kept up with development
+
+1551641104
+andrewrk
+it's on pause, blocking on a couple major language changes
+
+1551641188
+andrewrk
+starting the self hosted compiler served an important purpose which was to try out using coroutines / event based programming. and indeed it needs a rewrite. so I'll do that and then pick the self hosted compiler back up
+
+1551641233
+andrewrk
+the self hosted compiler is actually going to be a pretty good proof-of-concept for a server, since that's what it will be
+
+1551641367
+oats
+a server?
+
+1551641369
+oats
+that's interesting
+
+1551641645
+Akuli
+is there an std library for dealing with paths? ideally something cross-platform
+
+1551641669
+Akuli
+wooooooooot os.path.join
+
+1551641674
+Akuli
+just like in python
+
+1551642007
+Sahnvour
+hi, andrewrk, regarding your last comment on
+
+1551642133
+andrewrk
+Sahnvour, I'm having trouble articulating it, but think about it like this: the machine code gets inlined, but the return address is still pointing to the same machine code
+
+1551642151
+andrewrk
+the return address gets inlined too
+
+1551642522
+daurnimator
+andrewrk: say you have: x = 1; add(&x, 1); warn(getLineInfo()); add(&x, 1);
+
+1551642527
+daurnimator
+and `add` is inlined.
+
+1551642552
+daurnimator
+and due to lack of side effects, the adds are coalesced
+
+1551642572
+daurnimator
+does the warn still print the right line number?
+
+1551642586
+daurnimator
+I think it does. but I'm not 100% sure.
+
+1551642599
+andrewrk
+the return address is pointing to the "end" of the thing we are interested in. we don't care about what happens after getLineInfo(), we care about the source that getLineInfo() occurs in
+
+1551642624
+andrewrk
+so you subtract  1 from the address before looking up the debug info
+
+1551642679
+andrewrk
+this is what stack trace printing code does, since the stack contains return addresses
+
+1551642750
+daurnimator
+k
+
+1551642778
+daurnimator
+andrewrk: would you say
+
+1551642792
+Sahnvour
+but as I understand it, there's no guarantee that the result of @returnAddress isn't an instruction that got inlined into the outer caller, and then debug info would give us the function one level higher than desired (in the call tree seen at compile time)
+
+1551642804
+andrewrk
+daurnimator, read Sahnvour's comments in #2029
+
+1551642815
+daurnimator
+andrewrk: i did.
+
+1551642866
+andrewrk
+Sahnvour, I don't think that's possible. can you make a proof of concept? It should be just a dozen lines of code with std.debug.printSourceAtAddress
+
+1551642889
+Sahnvour
+will try
+
+1551642920
+andrewrk
+try it in debug mode with forced inlining. our debug info code doesn't handle optimizations very well yet
+
+1551643119
+__Myst__
+does zig have a language server?
+
+1551643154
+andrewrk
+__Myst__, no but it's planned:
+
+1551643201
+__Myst__
+andrewrk: that last comment worries me
+
+1551643214
+__Myst__
+"custom protocol" -> unusable in most editors
+
+1551643215
+oats
+what's the difference between --library-path and --object?
+
+1551643227
+oats
+(I still don't have a great grasp on how the linker works)
+
+1551643301
+andrewrk
+__Myst__, it'll be fine. same backend, multiple protocols
+
+1551643311
+daurnimator
+__Myst__: see the other bit though: having a proxy of some type that translates to LSP
+
+1551643324
+__Myst__
+daurnimator: that'll be double the work though
+
+1551643329
+__Myst__
+pretty easy to drop it
+
+1551643350
+andrewrk
+won't be double the work. the backend is the bulk of the work. the protocol is a tiny sliver of work
+
+1551643366
+daurnimator
+__Myst__: *shrug*. if they think it's less work and are willing to do it then I have no problem with it
+
+1551643368
+andrewrk
+oats, --library-path gives additional search paths to the linker for --library arguments
+
+1551643388
+andrewrk
+--object is for passing .o files or .a files (.obj .lib on windows)
+
+1551643401
+andrewrk
+I'll clean up the CLI names for these soon
+
+1551643404
+oats
+ah, ok
+
+1551643418
+__Myst__
+/shrug
+
+1551643430
+oats
+so I want just want to use --object /....../libopencm3_stm32f0.a
+
+1551643432
+Akuli
+what is setNoRoSegment() called nowadays? or has the valgrind bug been fixed?
+
+1551643445
+andrewrk
+Akuli, it was fixed in valgrind
+
+1551643456
+Sahnvour
+andrewrk: my worrying is that maybe @returnAddress() will give consistent results, but that these very results would be in "ranges" of instructions that are associated with the caller function (and not the inlined one)
+
+1551643462
+Akuli
+andrewrk, umm... do i need a newer valgrind if i want to valgrind my zig code?
+
+1551643482
+andrewrk
+I don't know what version it was fixed in, but I have 3.14.0
+
+1551643496
+Akuli
+i have 3.12.0 from my package manager :(
+
+1551643513
+Akuli
+and it sure gives lots of question marks without the setNoRoSegment
+
+1551643515
+__Myst__
+Akuli: it is time to compile from source
+
+1551643515
+andrewrk
+valgrind is pretty  straightforward to compile from source. it doesn't depend on anything afaik
+
+1551643764
+daurnimator
+Akuli: what distro do you use?
+
+1551643788
+Akuli
+devuan
+
+1551643791
+Akuli
+i just compiled valgrind
+
+1551643793
+Akuli
+lets see if it works
+
+1551643875
+Akuli
+works! :D
+
+1551643879
+Akuli
+thanks :)
+
+1551644227
+oats
+does @cInclude recursively resolve #includes?
+
+1551644323
+Sahnvour
+andrewrk:
+
+1551644459
+daurnimator
+Sahnvour: thanks for the example :)
+
+1551644499
+Sahnvour
+(the warn in foo is most probably irrelevant)
+
+1551654286
+Sahnvour
+andrewrk: I'm leaving, please answer on the issue if you find some time to look at my example :) bye everyone
+
+1551655379
+oats
+
+
+1551655401
+oats
+I'm trying to compile this little program for my little arm microcontroller, an STM32F0discovery
+
+1551655428
+oats
+
+
+1551655433
+oats
+that's the build command I'm using
+
+1551655458
+oats
+
+
+1551655463
+oats
+and here's some errors I'm getting!
+
+1551655524
+oats
+I'm especially confused about it not finding the definition of "puts"
+
+1551656203
+oats
+hmm, I get a different set of errors if I include the object /usr/arm-none-eabi/lib/libc.a
+
+1551656225
+oats
+I don't know if those are new errors or pre-existing errors covered up by the old errors
+
+1551656247
+oats
+I'm punching way above my ability level here :(
+

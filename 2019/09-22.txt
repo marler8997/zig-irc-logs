@@ -1,0 +1,2544 @@
+1569114911
+andrewrk
+oh my god this is so much test coverage
+
+1569114929
+andrewrk
+excited about this next commit
+
+1569117670
+andrewrk
+
+
+1569117724
+andrewrk
+zig cross compiles the behavior tests, producing an aarch64 binary that is dynamically linked against glibc. I run it with qemu with -L path of a glibc for aarch64 that I happened to have sitting around
+
+1569117940
+andrewrk
+this directory passed with -L is produced by the instructions at
+
+1569118317
+fraktor
+So I know that there isn't currently a general-purpose allocator for Zig, and that one is in the works.  In the meantime, what should I use?  I know that ArenaAllocator can be good for parts of programs, but even that has to use another allocator under the hood.
+
+1569118357
+andrewrk
+fraktor,
+
+1569118443
+fraktor
+Good to know. By the way, is ArenaAllocator thread-safe?
+
+1569118550
+andrewrk
+no
+
+1569119438
+stratact
+andrewrk: btw, as of today, Zig was finally added to the FreeBSD ports tree.
+
+1569119478
+andrewrk
+neat
+
+1569125654
+andrewrk
+good news for ARM zig users:
+
+1569127595
+daurnimator
+I wonder how long that will make PR tests take...
+
+1569127652
+andrewrk
+should be shorter since I disabled release builds for non-native
+
+1569127668
+daurnimator
+andrewrk: why do we have all the e.g. `isNetBSD()` functions instead of just having people write: `std.getOs() == .netbsd`
+
+1569127699
+andrewrk
+fair point. it started with isDarwin
+
+1569127712
+daurnimator
+I feel like we're encouraging people to end up writing: `if (isNetBSD()) {} else if (isLinux()) {} else if (isUefi()) { ..... }` instead of the switch like they should
+
+1569127867
+andrewrk
+man. that was the least interesting part of the patch
+
+1569127887
+daurnimator
+I'm reading chunk-by-chunk :P
+
+1569128106
+andrewrk
+the linux ci build is about to start the qemu part
+
+1569128255
+andrewrk
+there it goes - aarch64. so beautiful
+
+1569128259
+andrewrk
+oh no
+
+1569128282
+andrewrk
+qemu: unsupported syscall: 278
+
+1569128352
+andrewrk
+that's SYS_getrandom
+
+1569128385
+andrewrk
+huh. so getrandom isn't available on linux ci qemu for some reason
+
+1569128408
+andrewrk
+need a newer qemu
+
+1569128478
+daurnimator
+off_t appearing is interesting.
+
+1569128520
+fraktor
+Hey, so I know this isn't the LLVM channel, but I'm running into an issue where trying to compile LLVM 9 is exhausting all 16GB of ram that I have. Any ideas on how I can compile it / past versions of Zig I could use so I could use LLVM 8, which is available in my package manager?
+
+1569128598
+andrewrk
+fraktor, yes, do a release build of llvm and clang
+
+1569128602
+andrewrk
+and don't use -j
+
+1569128612
+fraktor
+There's my mistake; how did you know?
+
+1569128622
+andrewrk
+because I have crashed my computer countless times compiling llvm
+
+1569128623
+daurnimator
+andrewrk: SYS_getrandom was added in linux 3.17. doens't zig support linux 3.16?
+
+1569128628
+fraktor
+Also, how do I do a release build?
+
+1569128637
+fraktor
+(As opposed to debug I assume)
+
+1569128642
+andrewrk
+daurnimator, yes, we handle ENOSYS correctly
+
+1569128664
+andrewrk
+fraktor,
+
+1569128692
+fraktor
+Man I really need to learn to RTFM
+
+1569128693
+daurnimator
+andrewrk: the issue is that qemu doesn't return ENOSYS?
+
+1569128695
+fraktor
+Thanks andrewrk
+
+1569128705
+andrewrk
+daurnimator, yeah according to the CI log it returned NoDevice
+
+1569128742
+andrewrk
+daurnimator, oh wait, look at the traceback - it fell back to /dev/urandom and got ENODEV for opening that
+
+1569128770
+daurnimator
+andrewrk: heh. sounds like you need the infamous fallback after that.
+
+1569128813
+daurnimator
+(conceptually. we haven't implemented it)
+
+1569128893
+andrewrk
+oh, it's this thing that euantor added:     if (!S_ISCHR(st.mode)) {      return error.NoDevice;   }
+
+1569128911
+andrewrk
+if I just delete that check it will work. I'm not fully convinced this check makes sense
+
+1569129003
+daurnimator
+andrewrk: it's to prevent an exploit where someone replaces /dev/urandom with a file with known contents
+
+1569129045
+andrewrk
+so they have root? that's not an interesting attack vector
+
+1569129138
+daurnimator
+andrewrk: at one point it was a common attack for rootkits.
+
+1569129158
+andrewrk
+yeah I'm not interested in combating a root kit. if they have a root kit they win
+
+1569129193
+daurnimator
+andrewrk: what does qemu present instead of a character device?
+
+1569129244
+andrewrk
+this isn't related to qemu. qemu returned ENOSYS for getrandom, and so we fell back to reading /dev/urandom
+
+1569129264
+andrewrk
+previously we weren't falling back to reading /dev/urandom on linux ci because getrandom was working
+
+1569129274
+daurnimator
+andrewrk: but why did `if (!S_ISCHR(st.mode))` fail?
+
+1569129296
+andrewrk
+that's a good question. I don't know
+
+1569129325
+wilsonk
+fraktor: another hint...if you build clang-9 with and older GCC (my system had 5.4 as the default!)  then rebuild clang with itself before working on zig. This move saves me about %20 on zig compiler build times (which adds up to a lot when working on the compiler)
+
+1569129348
+andrewrk
+wilsonk, oh nice, maybe I should do that
+
+1569129352
+andrewrk
+do you use lld too?
+
+1569129358
+wilsonk
+yes to lld!
+
+1569129420
+fraktor
+wilsonk: Thank you! I'm using clang (I believe, if cmake took advantage of it).
+
+1569129424
+wilsonk
+must use...saves about 8% on rebuilding llvm/clang over ld  (that is on my big server with 64 cores and 128GB ram so YMMV)
+
+1569129429
+fraktor
+Although I'm more of a user than a kernel developer.
+
+1569129448
+fraktor
+s/kernel/compiler/
+
+1569129473
+wilsonk
+fraktor: ah, ok...but even if you build many other programs on your system then it still helps a lot in the end
+
+1569129521
+andrewrk
+I have no idea what's going on with this -faddrsig thing on freebsd
+
+1569129900
+mikdusan
+which test is failing?
+
+1569129976
+andrewrk
+mikdusan,
+
+1569130079
+andrewrk
+this smells like a system dependency sneaking into somewhere it doesn't belong
+
+1569130134
+mikdusan
+
+
+1569130191
+andrewrk
+what specifically are you pointing at here?
+
+1569130399
+mikdusan
+freebsd 12.0 ddefault clang is old. version 6.0.1
+
+1569130494
+mikdusan
+pass --verbose to zig cc command line that is failing and replace "/usr/bin/cc -cc1...." command line that contains -faddrsig with a ports installed "clang80 -cc1..."
+
+1569130536
+stratact
+that's why I use freebsd-stable
+
+1569130561
+mikdusan
+this is 12.0 stable.
+
+1569130604
+stratact
+no, stable != release
+
+1569130608
+mikdusan
+ugh sorry
+
+1569130617
+mikdusan
+please help me get up to speed on freebsd terminology
+
+1569130695
+mikdusan
+i have 12.0 release installed. nothing special and all defaults. then did some pkg installs for llvm80, git, cmake, etc.
+
+1569130710
+stratact
+RELEASE is the official release, it doesn't update it's a frozen snapshot of a revision, CURRENT is the latest changes from the head of svn which can be breaking or not, STABLE only gets the necessary non-breaking changes and bug fixes from CURRENT
+
+1569130727
+mikdusan
+so how does one opt-in for "stable"
+
+1569130755
+mikdusan
+is it a re-install?
+
+1569130783
+stratact
+You can reinstall as that could be faster, but from a release install, you wanted to clone the stable directory from the svn repository and rebuild the OS like I did yesterday
+
+1569130875
+stratact
+Usually you'd want to clone the stable repository in /usr/src
+
+1569130906
+stratact
+After you done that, you'd want to follow these directions:
+
+1569131007
+mikdusan
+ah ok. i'll backup my vm first.
+
+1569131159
+andrewrk
+mikdusan, but it's not using system clang, it's using zig cc
+
+1569131206
+andrewrk
+it's supposed to be completely isolated from the native system
+
+1569132020
+mikdusan
+i am able to get the same error here:
+
+1569132119
+mikdusan
+maybe i built something wrong. it looks like clang is calling /usr/bin/cc to link. is that normal?
+
+1569132216
+stratact
+Hmm for me, both clang and cc are individual statically link binaries
+
+1569132257
+mikdusan
+i may misunderstand but i thought zig used embedded lld on all plats except macOS
+
+1569132275
+andrewrk
+all plats, even macos
+
+1569132332
+andrewrk
+mikdusan, that call to /usr/bin/cc is rogue, it's not supposed to happen
+
+1569132351
+andrewrk
+it should be invoking itself with -cc1
+
+1569132370
+andrewrk
+/opt/zig/bin/zig -cc1 -triple x86_64-unknown-freebsd12.0 ...
+
+1569132391
+andrewrk
+this must be something inside clang deciding to execute /usr/bin/cc and we need to stop it
+
+1569132424
+andrewrk
+good night
+
+1569132439
+stratact
+night o/
+
+1569132805
+stratact
+I need to figure out if I need to import unlinkat from FreeBSD or not, std/os/linux.zig already has it though but for FreeBSD it seems that it's part of the libc than a syscall function from the man page
+
+1569135843
+daurnimator
+stratact: on bsds everything is part of libc and not a syscall
+
+1569135926
+daurnimator
+stratact: simplest option is probably to just add unlinkat to std/c.zig
+
+1569136308
+euantor
+andrewrk: just saw your message regarding the S_ISCHR issue. I have no idea what QEMU is doing if that check fails, but that’s the recommended way to use /dev/urandom according to the libsodium authors (who generally tend to know what they’re talking about)
+
+1569136448
+euantor
+I’ll spin up a Linux ARM build on sr.ht today and check what the file is being presented as out of interest
+
+1569136479
+daurnimator
+euantor: try under qemu locally to see what you get...
+
+1569136533
+euantor
+daurnimator: I’m on Mac, I’m not sure what the QEMU setup process is there and how painful it would be
+
+1569136541
+daurnimator
+ah
+
+1569136556
+daurnimator
+would be best to test qemu on a x86_64 host
+
+1569136568
+daurnimator
+*linux x86_64
+
+1569136588
+euantor
+Unfortunately I don’t have one of those lying around at the minute
+
+1569137782
+stratact
+Ah fantastic, that makes life easier.
+
+1569140171
+stratact
+And now that I added bindings for SetFileInformationByHandle from Windows, I have zero clue how I'm going to implement the os-agnostic version of unlinkat in std/os.zig using that function when Windows is the target.
+
+1569140378
+daurnimator
+stratact: probably similarly to how rename in std/os.zig works
+
+1569141553
+stratact
+daurnimator: question, can the flags parameter for unlinkat be used for the FILE_INFO_BY_HANDLE_CLASS parameter from SetFileInformationByHandle? Although Window documentation says its an enum but Zig defines it as a u32 which is in the same ballpark as the `flags` parameter.
+
+1569141729
+stratact
+oh wait, I don't want that...
+
+1569141770
+stratact
+I want to get the FileDispositionInfo variant of that enumb
+
+1569141774
+stratact
+*enum
+
+1569141941
+stratact
+Okay, it's number `4`... better make a comment on that
+
+1569142771
+stratact
+daurnimator:
+
+1569152521
+_Vi
+"Zero Bit Types"   "* A union with only 1 field which is a zero bit type."     What about raw (non-tagged) union with two zero-bit fields?
+
+1569155039
+_Vi
+Are `comptime`things guaranteed to execute the same regardless of host and target platform?
+
+1569155078
+_Vi
+Or there can be issues e.g. when cross-compiling from little to big endian?
+
+1569155622
+_Vi
+"Case Study: printf in Zig"  This documentation section speaks about `printf`, but shows `warn` in some examples without explaining anything.
+
+1569155695
+_Vi
+As if `warn` was called `printf` in the past and only automatically checked parts got updated during the rename.
+
+1569156532
+rohlem
+_Vi, regarding unions, packed unions are documented to "use exactly the bit width of [their largest member]" when used as a field within a packed struct. This would mean if their largest member has 0 bits, the packed union has 0 bits.
+
+1569156566
+rohlem
+I believe the same holds true when used on their own, and the documentation is just a little disorganized in that regard, though that is not explicitly stated.
+
+1569156583
+_Vi
+rohlem, OK. The list is just not closed.
+
+1569156652
+rohlem
+extern unions are guaranteed to be (C-)ABI-compatible. The C behaviour is similar, but the concept of "0 bit types" in general doesn't quite exist in C iirc, so it's probably an outright error to have a 0-bit member (=> non-ABI-compatible member) in an extern union. So that scenario effectively doesn't apply.
+
+1569156740
+_Vi
+`C` does get unit and bottom types right, so no surprise such types do not work well with C-compatible ABI mode.
+
+1569156846
+rohlem
+_Vi, from what I remember `comptime` fills in the target architecture's details on target-dependent matters like endianness, see section "Compile Variables" in the documentation.
+
+1569156869
+rohlem
+So for any target, your comptime code is guaranteed to execute in those regards as your runtime code would.
+
+1569156920
+rohlem
+Also from what I remember comptime execution tries to be deterministic in that all undefined behaviour leads to a direct error (as checked undefined behaviour in a safe build mode should during runtime), so in that sense they're equivalent too.
+
+1569157002
+rohlem
+And, of course, defined behaviour should be equivalent as well. So generally speaking if something works at comptime but not at runtime or vice versa, that's a bug. Although there are a couple of open bugs regarding comptime open already, so don't be surprised that not everything imaginable works yet.
+
+1569157048
+_Vi
+OK.
+
+1569157230
+rohlem
+_Vi regarding `printf`, that is the (in)famous name of the C function for formatting output according to a format string (
+
+1569157330
+_Vi
+rohlem, I mean the lack of bridge between `debug.warn` and `printf`. The example does well for showing off `comptime` features, but (if I am correct) it is the first time output text formatting is mentioned in the documentation.
+
+1569157368
+rohlem
+As it's meant to be a case study, "how would you implement a printf-like function in Zig", it's meant to show the power of comptime, not more.
+
+1569157378
+rohlem
+I agree that it's not the best introduction for "how to format text in Zig".
+
+1569157394
+_Vi
+For example, the suggested filename is called `printf.zig`, yet there is no `printf` inside, just `debug.warn`.
+
+1569157495
+rohlem
+Which is, as a topic, more of a standard library than a language feature. That is probably planned to be better covered as part of the (auto-html-ified) standard library documentation, see issues # 965 and #21 .
+
+1569157506
+_Vi
+Maybe that example should just avoid `debug.warn` at all and manually specify `OutStream` for the defined `printf`?
+
+1569157674
+rohlem
+I think the scope is deliberately limited to just that one function to showcase an inline while state-machine going through a comptime character array. I agree it would be easier understandable with more context about OutStream; I assume that was probably deemed too long.
+
+1569157951
+rohlem
+Oh wait, I think I see what you mean: only the second code block defines the printf function, and the initial code block doesn't refer to it directly. The semantic connection is only made in text.
+
+1569157983
+_Vi
+rohlem, Yes. And the lack of that bridge is not even mentioned in the text. As if it were obvious how `warn` becomes `printf`.
+
+1569158022
+_Vi
+(I'm trying to reconstruct the example without `warn`, but don't know where that `OutStream` is actually defined)
+
+1569158040
+rohlem
+"Let's crack open the implementation _of this_" - it indeed implies that `printf = @import("std").debug.warn`.
+
+1569158089
+_Vi
+And it has both different name and different signature.
+
+1569158109
+_Vi
+Shall a Github issue be opening about this documentation section?
+
+1569158114
+_Vi
+*opening
+
+1569158116
+_Vi
+*opened
+
+1569158397
+rohlem
+The type is defined here:
+
+1569158397
+rohlem
+self.print("{}", arg)`.
+
+1569158447
+rohlem
+To be fair, the docs do say it is a "proof of concept", but I agree that a compilable example would have its benefits.
+
+1569158489
+_Vi
+rohlem, `printValue` is part of the documentation example, in the next snippet.
+
+1569158519
+rohlem
+ah, right
+
+1569158528
+_Vi
+rohlem, Non-compilable snippet in documentation => bit rot when language changes and automatic tests don't catch that doc is not relevant anymore.
+
+1569158618
+rohlem
+True. 99.9% are already automatically tested, but those couple of code blocks aren't.
+
+1569158637
+_Vi
+Maybe it would be simpler with `sprintf` analogue? No output stream, just a memory buffer.
+
+1569158722
+rohlem
+The output stream is an abstraction though, and allows a memory buffer implementation. I'm not sure a memory/slice-only interface would be cleaner.
+
+1569158943
+_Vi
+Abstractions in general are also not discussed much when reaching this place in the documentation.
+
+1569158994
+rohlem
+Well, it's not meant as an introduction to programming in general.
+
+1569159341
+_Vi
+I mean how abstraction is done in Zig. Interfaces/traits/classes/whatever.
+
+1569160469
+rohlem
+_Vi, I think the main reason that is not part of the documentation is that it hasn't been decided yet. See issues # 1829 and # 130 .
+
+1569160682
+rohlem
+I think currently the std uses a per-object vtable member, see interface
+
+1569160718
+rohlem
+(via `@fieldParentPtr`, there's open issues for safety and ergonomics around that if you search for it)
+
+1569162044
+_Vi
+How does Zig's async compare to: 1. Rust's async, 2. JavaScript's async?
+
+1569163156
+rohlem
+_Vi, I know neither of them, so I'm not the right person to make a direct comparison, but if you have a question about Zig's semantics, I think I understand them well enough to answer.
+
+1569163314
+rohlem
+The basic idea is that, for every suspending function, imagine its stack were a struct, with every stack variable becoming a member of that struct. Then first calling the function with `async` constructs that struct (on the caller's stack) and runs until the first suspend point. Every subsequent resume passes that struct as stack for the function
+
+1569163315
+rohlem
+to run on.
+
+1569163433
+rohlem
+Scheduling them to run on separate threads etc. would all be done in userspace. If you need an async function call to outlive (be resumed/awaited after the initial caller has already returned), you need to explicitly allocate (and eventually deallocate) its frame (available as anonymous type via `@Frame(afunction)`).
+
+1569163543
+rohlem
+The standard library will eventually provide a default event loop, `std.event.loop` I believe, and for use cases like async IO, I believe it will subscribe the async handler you submit into that queue, so that it is run when the OS signals completion. But I'm not actually familiar with any of the OS-level details regarding that.
+
+1569163641
+rohlem
+(s/outlive/outlive its caller)
+
+1569163740
+andrewrk
+euantor, I won't merge until we figure out what's going on
+
+1569163774
+euantor
+No problem, I'm trying to have a look into it and see if I can work it out
+
+1569163783
+andrewrk
+but I believe the issue could be reproduced by simply open("/dev/urandom") followed by fstat, IS_CHR
+
+1569163789
+andrewrk
+on the linux ci, not freebsd ci
+
+1569163834
+euantor
+You can even just do `file /dev/urandom` and if it doesn't return `character special` then there's a problem
+
+1569163946
+andrewrk
+one thing that would explain this is if the stat structure is not exactly correct on aarch64
+
+1569163960
+euantor
+yeah
+
+1569164208
+andrewrk
+mode and nlink were swapped. I think that might have been it
+
+1569164226
+andrewrk
+solving problems in the morning is easy
+
+1569164453
+companion_cube
+hey, just realized that a syntax for anon struct initialization is also the perfect solution to named parameters, innit?
+
+1569164479
+TheLemonMan
+andrewrk, at a quick glance it seems that some other fields have been swapped (and there's a missing padding field)
+
+1569164484
+companion_cube
+self.foo(.{.lat: 42, .lon: 0.5 })
+
+1569164529
+andrewrk
+TheLemonMan, here are my local modifications:
+
+1569164548
+andrewrk
+I got this with: zig translate-c foo.c -lc -target aarch64v8-linux-musl
+
+1569164556
+andrewrk
+where foo.c is #include <sys/stat.h>
+
+1569164578
+euantor
+nice one
+
+1569164579
+TheLemonMan
+nice, musl stat is my reference
+
+1569164586
+fengb
+companion_cube: that means named parameters don’t need to exist; we can just use anon structs 🙃
+
+1569164596
+andrewrk
+companion_cube, yes
+
+1569164602
+companion_cube
+fengb: yeah
+
+1569164612
+andrewrk
+and default parameters
+
+1569164619
+companion_cube
+I meant, a solution to the use case of named parameters
+
+1569164906
+Sahnvour
+andrewrk: I'm interested in adding support for vcpkg libs in build.zig, iiuc this boils down to finding vcpkg's root, and adding include/lib/path dirs. Where do you advise to plug this ? Into `Builder` directly ?
+
+1569164947
+andrewrk
+Sahnvour, yes, I think either linkSystemLibrary or similar function should do this
+
+1569164969
+andrewrk
+and then eventually we will move some of this logic into stage1 via the userland thing
+
+1569165149
+Sahnvour
+assuming we have something like `Builder.useVcpkg()`, do you think it should be available to any LibExeObjtStep by default, or explicitely enabled ?
+
+1569165212
+andrewrk
+I was thinking that either linkSystemLibrary will automatically check vc pkg first, if it is available, or there would be a function LibExeObjStep.linkVcPkg(name)
+
+1569165255
+andrewrk
+oh I think I understand your question now - do you globally opt in to vc pkg via the Builder API?
+
+1569165284
+andrewrk
+my first instinct is, if it works well, I would have it on by default, with the ability to disable it via the Builder API
+
+1569165291
+Sahnvour
+yes
+
+1569165347
+andrewrk
+similarly I think that linkSystemLibrary could be augmented on a linux distribution, to suggest to install a particular package
+
+1569165400
+Sahnvour
+if it's on by default, why not do the same for conan, etc. => may be better to leave the choice to the build script
+
+1569165464
+andrewrk
+I do think there can be a choice - but by default, if it is unambiguous, I say use it
+
+1569165476
+Sahnvour
+I have little experience on this topic, just used vcpkg to get a few C packages easily
+
+1569165476
+andrewrk
+why not indeed do the same for conan, etc?
+
+1569165530
+andrewrk
+linkSystemLibrary is already into the territory where we have unpredictability of different people's systems at play. at this point the goal is "just work"
+
+1569165546
+andrewrk
+when someone wants more tight control over their dependencies they'll use the package manager, not a system dependency
+
+1569165629
+andrewrk
+oh wow mikdusan you solved the cc thing
+
+1569165761
+_Vi
+rohlem, [about sync] Transferring local variables to a struct feels like a Rust approach. The rest I'll probably understand when time comes.
+
+1569165816
+_Vi
+rohlem, What does `resume;` (without any code inside that block) does? Is it supposed to be used in actual code?
+
+1569165865
+_Vi
+rohlem, Correction: the `suspend;`.
+
+1569165869
+andrewrk
+_Vi, you might find it interesting to view the behavioral test cases:
+
+1569165876
+rohlem
+_Vi, note that nothing is "transferred", I used the "struct" for exposition only. The async function is always called with the same memory buffer as ("local/private") stack.
+
+1569165894
+_Vi
+rohlem, How things just before `suspend{}` block are different from things that are inside `suspend{}` block?
+
+1569165922
+rohlem
+So from the first execution until the `async foo()` returns it's already using the same stack as in subsequent resumes.
+
+1569165946
+Tetralux
+It suspends, then runs the block.
+
+1569165970
+Tetralux
+Func hasnt suspended before suspend keywords is reached
+
+1569165985
+Tetralux
+This means the block can resume itself.
+
+1569165994
+_Vi
+How true is this clause: "every reasonable async function should call `@frame in all its suspend{} blocks and store it somewhere, otherwise the caller can't resume them"?
+
+1569165998
+andrewrk
+it has to do with race conditions. inside the suspend block it is safe to resume (possibly even from another thread)
+
+1569165998
+rohlem
+Tetralux, the suspension only takes place once the end of the suspend block is reached.
+
+1569166053
+Tetralux
+rohlem: If that was the case, you could not resume from within the function.
+
+1569166061
+Tetralux
+And that's the only use of it I've seen so far.
+
+1569166064
+Tetralux
+So it must work.
+
+1569166092
+rohlem
+Tetralux, my understanding was that that is a semantic "edge case" (sort of), note the documentation explicitly states it
+
+1569166110
+_Vi
+Is self-resuming (`resume @frame();`) just a curiosity fact or a technique that is supposed to be used in actual code?
+
+1569166127
+rohlem
+_Vi, `@frame` is used to access the current frame's pointer. If it's the async function's responsibility to subscribe itself to a wakeup call, it will use that within the suspend block.
+
+1569166156
+andrewrk
+TheLemonMan, the switch thing is fixed in trunk, yes?
+
+1569166177
+andrewrk
+I'll ask them to merge it into the 9.0.1 branch
+
+1569166179
+Tetralux
+I think we need to do away with contrived examples, and actually give real examples of usage.
+
+1569166186
+Tetralux
+Because none of this makes much sense otherwise.
+
+1569166193
+rohlem
+_Vi, Depending on how your registration / wakeup works, maybe it's safe to assume you only need to register once to be resumed several times in succession; in that case maybe only the first `suspend` block needs to access the pointer. Of course then your subsequent wakeups need to be synchronized in a sensible fashion.
+
+1569166241
+rohlem
+Tetralux, In my understanding "actually suspending" means returning to the `async func()` caller. So you can't suspend, then cancel within the suspend-block; that would give you two concurrent threads of execution.
+
+1569166322
+Tetralux
+You can resume in the suspend block, and you can't resume before suspended, no?
+
+1569166340
+rohlem
+Entering the suspend block signals "I am ready to be resumed, either internally (by  `resume @frame`) or externally". Reaching the end of the suspend block (a non-block suspend statement) actually triggers the suspension i.e. return to `async func() / resume handle` caller.
+
+1569166340
+_Vi
+Is there an example of two async functions running in parallel? E.g. one prints `"A\n"` in a loop, the other prints "B\n" in a loop and async magic makes the whole program print "A\nB\nA\nB\n..."?
+
+1569166420
+TheLemonMan
+andrewrk, yeah
+
+1569166420
+rohlem
+_Vi, that's not quite the use case of `async`. "Asynchronous" in this context doesn't mean asynchronous execution, but "decoupled call and return (with N resumes and N+1 suspends in between)".
+
+1569166421
+_Vi
+What happens to content of `suspend{}` block after `resume @frame();` call? E.g. in `suspend { resume @frame(); warn!("Hello from nowhere\n"); }`?
+
+1569166469
+_Vi
+async/await/epoll/... and coroutines/generators are usually related.
+
+1569166500
+rohlem
+_Vi, If you want concurrent execution just start two Zigs and give one the A-, the other the B-loop-function.
+
+1569166511
+rohlem
+s/Zigs/threads
+
+1569166529
+_Vi
+rohlem, That's not coroutines, that's OS-level parallelism.
+
+1569166531
+companion_cube
+please don't name threads "zigs" :D
+
+1569166540
+companion_cube
+std.concurrent.zig
+
+1569166582
+rohlem
+_Vi, exactly. `async` is not about parallelism, it's purely about decoupling the start and using the result of function call.
+
+1569166610
+rohlem
+Using that can be a useful building block in parallelism, but it doesn't start several new threads of execution on its own.
+
+1569166699
+andrewrk
+there are a few lingering issues with missed spills, but I believe there is only 1 issue left before we can really start to take advantage of async/await. And it's this thing I'm observing with segfaults on the stack that I haven't quite figured out yet
+
+1569166701
+_Vi
+If functions can pack their belongings (local stack vars) to a bag and store it somewhere, then it is invitation for coroutines.
+
+1569166728
+fengb
+lol... async used to be called Coroutines
+
+1569166741
+andrewrk
+
+
+1569166742
+TheLemonMan
+andrewrk, what's the matter with the stack size & the GNU_STACK section?
+
+1569166746
+andrewrk
+(planning on updating this section soon)
+
+1569166768
+andrewrk
+TheLemonMan, ah yes I would love to pick your brain on that. Let me quickly put together an example for you
+
+1569167006
+_Vi
+Shall there be Rust's `dbg!(x)` thing in Zig; for printf debugging? It should print filename, line, "x" name and value to stderr, then return "x", allowing debugging without introducing separate labeled block with `break :blk x;`.
+
+1569167199
+_Vi
+It may be restricted to `--sloppy` mode only, but should not require any imports and so on to be useful.
+
+1569167226
+companion_cube
+
+
+1569167253
+rohlem
+_Vi, I think you can already print a stack trace using std.debug.something
+
+1569167298
+_Vi
+Even with easier blocks, `{warn("myfile.c:123 v*2+3={}", v*2+3); v*2+3}` is still more cumbersome than `dbg(v*2+3)`.
+
+1569167410
+andrewrk
+TheLemonMan, the main deal is that we want the ability to specify the stack size when we link, because zig does a lot of work to keep track of stack sizes
+
+1569167429
+Sahnvour
+_Vi: zig has no macros, I think the closest for now is this proposal
+
+1569167443
+rohlem
+_Vi, `fn dbg(x: var) void {@import("std").debug.dumpCurrentStackTrace(null); @import("std").debug.warn("{}", x);}` should do the trick
+
+1569167447
+andrewrk
+linux gives us `ulimit -s` regardless of how much the elf file asks for
+
+1569167469
+andrewrk
+which is a silly restriction, but that's beside the point
+
+1569167470
+_Vi
+rohlem, `void` return type bad for this.
+
+1569167503
+_Vi
+rohlem, It should be usable in debugging switch arms without introducing intermediate variables and blocks.
+
+1569167522
+rohlem
+_Vi, then just do `@typeOf(x)` and add a `return x;`. et voila.
+
+1569167535
+_Vi
+Is there a proper `identity` function in Zig?  `dbg` should be that identity function, but also with debugging trace.
+
+1569167552
+rohlem
+_Vi, `fn identity(x: var) @typeOf(x) {return x;}`
+
+1569167609
+_Vi
+OK, with this identity function + stack querying it is almost there. The only missing piece is printing the citation from source code (`v*2+3` in my example).
+
+1569167609
+andrewrk
+TheLemonMan, hmm I actually can't reproduce the issue I was having before
+
+1569167634
+andrewrk
+I wonder if it was a different bug that got solved in the last 2 weeks
+
+1569167641
+_Vi
+Probably it should be just Zig compiler built-in to work really well in all cases.
+
+1569167658
+andrewrk
+huh, well that's exciting then. so for async/await purposes, have a look at this project:
+
+1569167672
+andrewrk
+currently have to use the gethostname branch of zig (I'll get that merged soon)
+
+1569167680
+TheLemonMan
+hah, that's cool
+
+1569167695
+andrewrk
+specifically the example/nox.zig
+
+1569167728
+andrewrk
+if you build that with `zig build nox` and then run `zig-cache/bin/nox` you can see it print OK, which was basically a pure zig x11 connecting to the default display
+
+1569167737
+andrewrk
+look at the strace of that
+
+1569167747
+andrewrk
+and then change 1 line: pub const io_mode = .evented; to pub const io_mode = .blocking;
+
+1569167759
+andrewrk
+and build, run, & look at strace again
+
+1569167797
+TheLemonMan
+oh god Xproto, I'm getting second hand PSTD heh
+
+1569167801
+andrewrk
+haha
+
+1569167819
+andrewrk
+but anyway an issue we will run into eventually is that we
+
+1569167848
+rohlem
+_Vi, with # 2029 you could comptime slice the line `@getSourceInfo().line`out of `@embedFile(@getSourceInfo().file)` and output that
+
+1569167868
+andrewrk
+so we would have to set that up with GNU_STACK before main(). unfortunately I don't have a plan for if you need a lot of stack size in a library to be used by non-zig other than to document that requirement
+
+1569167917
+andrewrk
+oh right, also if you link libc, libc is in control of startup code before main() and no libcs will give more stack
+
+1569167944
+_Vi
+rohlem, How to make a userland-implemented function available for all code without any imports?
+
+1569167948
+andrewrk
+we could insert
+
+1569167969
+andrewrk
+this might have to be an area where we fight against the status quo a bit... it's reasonable to want more stack space if you've done static analysis
+
+1569167979
+fengb
+_Vi: nothing is available without imports, not even stdlib
+
+1569167982
+TheLemonMan
+hmm, have you checked out LLVM's segmented stack?
+
+1569167984
+rohlem
+_Vi, would a single line `const dbg = @import("mydbg.zig");` really be a deal breaker to you?
+
+1569168015
+andrewrk
+TheLemonMan, a long time ago. that's a good point, zig in the library case could take a similar strategy
+
+1569168024
+_Vi
+rohlem, Such function may be debugging/"sloppy mode"-only, so this import may look always-unused in real code.
+
+1569168035
+andrewrk
+basically every exported function will know if it needs "more than normal" amount of stack space and does its thing on entry point
+
+1569168042
+rohlem
+_Vi, I guess you could hack a preprocessing step into the build system to add your "no import"-imports to the beginning of every source file in your repository. Or maybe you hook up your editor/IDE to auto-insert the line on new file. That doesn't sound like a concern of the Zig language.
+
+1569168075
+_Vi
+rohlem, Maybe. I'll probably file a proposal issue on Github for further discussion.
+
+1569168081
+rohlem
+_Vi, Zig uses lazy evaluation. Unused code doesn't get included in compilation, hence doesn't trigger "unreachable/unused code" errors. That's how the platform-specific code is "hidden" in the std lib.
+
+1569168094
+TheLemonMan
+what's up with the heavy stack usage? is it because the frames are allocated on-stack?
+
+1569168117
+andrewrk
+TheLemonMan, imagine a lot of functions that call each other and don't even care whether they are async or not
+
+1569168123
+andrewrk
+that's a call graph
+
+1569168155
+andrewrk
+the way it will work is that the frame of a is in b, frame of b is in c, etc, until at the top you have basically a struct in the frame that is the entire call stack of the call graph below it
+
+1569168186
+TheLemonMan
+oh so the compiler takes the worst case approach and spills every local?
+
+1569168192
+andrewrk
+nah I fixed that
+
+1569168221
+andrewrk
+there is also this:
+
+1569168252
+andrewrk
+async function pointers would either need to heap allocate the space, or "guess" how much space is needed
+
+1569168265
+andrewrk
+(this is safety protected)
+
+1569168363
+andrewrk
+I also added a tool for figuring out where frame sizes come from
+
+1569168389
+andrewrk
+-fstack-report
+
+1569168398
+andrewrk
+it outputs json which you can view in a nice gui way with firefox
+
+1569168518
+andrewrk
+oh, TheLemonMan - I reproduced the issue I was having before. master branch of zig, try this code:
+
+1569168526
+andrewrk
+it segfaults instead of printing stack trace
+
+1569168547
+andrewrk
+it segfaults in the stack probe function
+
+1569168557
+TheLemonMan
+nice and tidy heh
+
+1569168682
+andrewrk
+TheLemonMan, when I was messing with this, I printed the top of the stack pointer at main() and it appeared that the address it was segfaulting on was still within the 8 MiB stack, so that's why I was confused
+
+1569168729
+andrewrk
+and when I uncommented that code in start.zig that mmaps a separate stack it did fix the segfault. but then stack traces had a test failure in release builds
+
+1569168741
+andrewrk
+so, lots of mysteries to solve here
+
+1569168753
+andrewrk
+my x window example is working though
+
+1569169415
+FireFox317
+Are you gonna release zig 0.5 anyways andrewrk? Instead of waiting on these async fixes
+
+1569169438
+andrewrk
+yeah
+
+1569169735
+andrewrk
+the only thing I would delay the release for is if anyone's actively developed project (oxid, zootdeck, pluto, etc) is failing to build with the release candidate
+
+1569169761
+TheLemonMan
+andrewrk, shit hits the fan when parseDie calls parseFormValue
+
+1569169794
+andrewrk
+I noticed that
+
+1569169805
+andrewrk
+the stack frame for parseFormValue is 4 MiB right?
+
+1569169809
+TheLemonMan
+yep
+
+1569169821
+andrewrk
+but that should be fine
+
+1569170066
+TheLemonMan
+nah, we just hit the 8mb limit
+
+1569170084
+TheLemonMan
+when we segfault the stack is exactly 8mb
+
+1569170097
+andrewrk
+oh. ok well that's a really simple explanation
+
+1569170125
+andrewrk
+so this is where I did
+
+1569170127
+TheLemonMan
+ulimit -s unlimited
+
+1569170131
+TheLemonMan
+and it works
+
+1569170145
+andrewrk
+oh!
+
+1569170208
+andrewrk
+wait a minute... one can do `ulimit -s unlimited` without root. can't we just do that syscall at main() ?
+
+1569171375
+TheLemonMan
+eh, letting the stack size grow without any boundary is quite scary
+
+1569171408
+andrewrk
+right in our case increase it to GNU_STACK size
+
+1569171425
+andrewrk
+which is the value chosen at link time
+
+1569171547
+TheLemonMan
+is this strategy portable to the BSDs too?
+
+1569171584
+andrewrk
+good question. I haven't investigated that yet. It may be that those kernels actually respect the requested stack size in the ELF file
+
+1569171590
+andrewrk
+that would be the best case scenario
+
+1569171869
+TheLemonMan
+I wonder why the kernel doesn't give a damn about the GNU_STACK size
+
+1569171898
+TheLemonMan
+the FDPIC ELF loader does take it into account tho while the regular ELF one doesn't
+
+1569172906
+andrewrk
+the next thing that  #3290 has revealed is that cross compiled macos binaries don't work if they rely on TLS
+
+1569172934
+andrewrk
+I wonder if this is another LLD linker deficiency
+
+1569173245
+TheLemonMan
+do you have a minimal test case?
+
+1569173267
+andrewrk
+I can make one
+
+1569173277
+andrewrk
+I mean the behavior tests is the example I'm looking at
+
+1569173291
+andrewrk
+`./zig test ../test/stage1/behavior.zig -target x86_64-macos` will repro it
+
+1569173317
+andrewrk
+a binary is produced. when run: dyld: symbol not found: __tlv_bootstrap
+
+1569173401
+andrewrk
+minimal test case: threadlocal var x: i32 = 1; test "" { x += 1; }
+
+1569173419
+andrewrk
+it works without -target arg (native) causes issue with -target arg (cross compiled)
+
+1569173749
+andrewrk
+this might be another linker limitation
+
+1569174561
+stratact
+daurnimator: *pokes*, actually I don't see the need for unlinkat(), considering that I still need the fullpath to open the directory to get the file descriptor needed for it.
+
+1569174710
+stratact
+So I don't know how I would solve the mount-on-mount path length issue without dynamic allocation
+
+1569174860
+stratact
+I'm starting to regret doing that issue
+
+1569175086
+Tetralux
+stratact: You need the allocator because you need to alloc a fullpath string?
+
+1569175197
+stratact
+Well not usually, but from a discussion I had with daurnimator, he said that PATH_MAX is a lie and I would need to account for the possibility of longer path sizes especially when people mount-on-mount
+
+1569175219
+Tetralux
+16k seems enough to me.
+
+1569175229
+stratact
+16K it is then
+
+1569175315
+Tetralux
+But no, more seriously, I'd try using a FixedBufferAllocator on a stack-based fixed-size array to alloc the path.
+
+1569175358
+Tetralux
+I don't know if 4k is enough for all cases, but 16k probably should be xD
+
+1569175362
+Tetralux
+'Less I'm missing something.
+
+1569175368
+TheLemonMan
+andrewrk, ping
+
+1569175385
+andrewrk
+hi
+
+1569175498
+TheLemonMan
+andrewrk, can you check out if
+
+1569175526
+andrewrk
+TheLemonMan, I tried something similar, putting it in compiler_rt and it had no effect. I'll try your example too though
+
+1569175546
+TheLemonMan
+the dynamic linker should replace it once it loads the macho image
+
+1569175575
+_Vi
+Why no underscores in numeric literals? `var q : u32 = 5000_000;`
+
+1569175620
+andrewrk
+TheLemonMan, ok that actually worked, I must have used too many underscores. now it's saying dyld: Symbol not f ound: ___error
+
+1569175646
+TheLemonMan
+tell dyld to go pound sand then
+
+1569175710
+TheLemonMan
+yeah, you need one less underscore because of the symbol mangling
+
+1569175730
+TheLemonMan
+and, iirc, if you prefix the name with \1 you can disable the mangling in LLVM
+
+1569175733
+andrewrk
+with the same trick for __error, now it's symbol not found: dyld_stub_binder
+
+1569175744
+andrewrk
+yeah we'll have to use that \1 trick for this one
+
+1569175844
+andrewrk
+I exploited a bug in zig, doing @"\x01dyld_stub_binder" and now it's hitting an assert in LLD/lib/ReaderWriter/MachO/StubsPass.cpp
+
+1569175889
+TheLemonMan
+hmm, dyld_stub_binder comes from libSystem
+
+1569175898
+TheLemonMan
+you shouldn't really define it, I guess
+
+1569175906
+andrewrk
+I think the linker expects -lSystem to be on the linker line
+
+1569175925
+andrewrk
+if you use the system linker with the original test case you get "dynamic main executables must link with libSystem.dylib for architecture x86_64"
+
+1569175952
+andrewrk
+this is zig trying to add the cross compilation use case where the existing tools aren't used to having that use case
+
+1569175987
+TheLemonMan
+this is apple being shitheads and having their own linker instead of using lld
+
+1569176001
+andrewrk
+I can't disagree with you there
+
+1569176028
+andrewrk
+eventually...
+
+1569176502
+Tetralux
+It's kinda odd than linking takes so long.
+
+1569176503
+Tetralux
+Like
+
+1569176510
+Tetralux
+It's not exactly doing rocket science.
+
+1569176524
+Tetralux
+"What functions are we trying to call and where are they?"
+
+1569176557
+Tetralux
+Like - one pass to find all the places to fill in and make a list of them; go over the list and populate them all (which you found in the first pass)
+
+1569176610
+andrewrk
+if you're linking against debug llvm that's 2 passes over multiple GiB of data
+
+1569176641
+Tetralux
+Second pass is only the places that need filling thou gh.
+
+1569176654
+Tetralux
+And memory is >>2GB/s.
+
+1569176668
+Tetralux
+I suspect there's many missed opportunities for speed.
+
+1569176694
+Tetralux
+Like - even calling the linker takes >0.1s.
+
+1569176706
+Tetralux
+>0.7s*
+
+1569176757
+Tetralux
+And you could probably even not need to do the first pass at all -- Zig would already know all the functions that are called.
+
+1569176782
+Tetralux
+If Zig was directly in control of the linking process, you could just emit the machine code with the relocations already applied.
+
+1569176837
+mq32
+hey
+
+1569176842
+Tetralux
+mq32: o/
+
+1569176845
+mq32
+a quick question: does zig right now supports building for android
+
+1569176847
+mq32
+hey Tetralux!
+
+1569176864
+Tetralux
+Hey, MQ :)(
+
+1569176869
+Tetralux
+:) *
+
+1569176876
+mq32
+my ui system is now in a "functional" state with defined API :)
+
+1569176944
+Tetralux
+Seems good :D
+
+1569176990
+andrewrk
+mq32, android support is experimental at this time
+
+1569176993
+andrewrk
+related:
+
+1569177080
+mq32
+andrewrk, cool!
+
+1569178334
+TheLemonMan
+andrewrk, if you're in for some more glibc-related hair pulling there's #3291 for you
+
+1569178342
+TheLemonMan
+cross compilation is _hard_!
+
+1569178405
+andrewrk
+I plan to have a look at that before the release
+
+1569178432
+andrewrk
+yeah it is. it's a great feature though, I have no regrets embracing it as a first class use case
+
+1569178469
+andrewrk
+zig is in the business of reducing difficult dependencies
+
+1569178756
+TheLemonMan
+just got a Zig binary running on my mips32 router, yay
+
+1569178779
+andrewrk
+woah
+
+1569178786
+andrewrk
+are you using --release-small?
+
+1569178821
+TheLemonMan
+not really, there's plenty of space on this router
+
+1569178826
+andrewrk
+nice
+
+1569178838
+TheLemonMan
+too bad new ones are ARM based :(
+
+1569178852
+andrewrk
+why's that?
+
+1569178901
+TheLemonMan
+because ARM runs the world heh
+
+1569178907
+TheLemonMan
+for better or worse
+
+1569178909
+andrewrk
+man. I have so much release notes to type up right now
+
+1569178917
+andrewrk
+tbh that's the biggest danger of delaying the release
+
+1569178940
+andrewrk
+I'm just going to be typing furiously into a keyboard for a week straight
+
+1569178943
+TheLemonMan
+slap `git log` into a file and call it a day
+
+1569178973
+andrewrk
+I think it's worth it though
+
+1569178988
+andrewrk
+It's pretty nice having
+
+1569179035
+andrewrk
+I gotta think of something spicy to say for this release >:-] for last one it was "Zig intends to be so practical that people find themselves using it even if they dislike it."
+
+1569179147
+TheLemonMan
+"A language so good not even reddit has anything bad to say about it"
+
+1569179160
+mikdusan
+oh don't say that. that's a challenge
+
+1569179239
+_Vi
+Is there `pub(crate)` analogue in Zig? Means item that can be access from other files/modules within a project, but not from other projects?
+
+1569179292
+mikdusan
+"If Betamax used Zig it would have won the videotape format war."
+
+1569179374
+TheLemonMan
+you gotta be controversial if you aim to the frontpage
+
+1569179383
+mikdusan
+true
+
+1569179466
+mikdusan
+(unrelated; that grin you get when shunting-yard algorithm
+
+1569179497
+andrewrk
+wow, impressive
+
+1569179506
+andrewrk
+that seems like it has a lot of little details
+
+1569179535
+TheLemonMan
+damn, Oxid is such a time sink, so simple yet so good
+
+1569179823
+andrewrk
+I get discouraged after the first death, no patience to power back up
+
+1569180116
+andrewrk
+damn the only remaining test failure for #3290 is windows and I can't reproduce it locally
+
+1569180135
+andrewrk
+previously we weren't testing cross compiling x86_64-linux-gnu in the CI
+
+1569180608
+andrewrk
+let's try msvc 2019
+
+1569181730
+andrewrk
+"D:\a\1\s\std\debug.zig(227,9): error GD01FD524: invalid builtin function: 'atomicRmw'" - weird, I wonder if hashmap is getting miscompiled with msvc 2019
+
+1569181756
+andrewrk
+oh, dimenus found this already:
+
+1569182104
+Tetralux
+Interesting. 22.27905 always worked for me.
+
+1569182114
+Tetralux
+I've tried both RelWithDebInfo and Release.
+
+1569182119
+Tetralux
+Both always worked for me.
+
+1569182678
+nrdmn
+today I ductaped freetype, zig and uefi together
+
+1569182692
+nrdmn
+terrible but it works
+
+1569182806
+andrewrk
+wow
+
+1569182809
+andrewrk
+pic?
+
+1569182832
+nrdmn
+
+
+1569182938
+andrewrk
+neat!
+
+1569183386
+andrewrk
+can anyone reproduce this assertion on windows? ./zig test ../test/stage1/behavior.zig -lc -target x86_64-linux-gnu --override-std-dir ../std
+
+1569183397
+andrewrk
+it passes for me locally but it's asserting in the CI
+
+1569183422
+andrewrk
+sorry, got the slashes wrong. bin\zig.exe test ..\test\stage1\behavior.zig -lc -target x86_64-linux-gnu --override-std-dir ..\std
+
+1569183551
+Tetralux
+From the build directory with a release mode zig?
+
+1569183583
+andrewrk
+that is what the ci is doing
+
+1569183616
+Tetralux
+For me, from my relwithdebinfo build directory, that skips exactly one test (because non-native) and quits normally.
+
+1569183623
+Tetralux
+Doesn't run anything.
+
+1569183627
+Tetralux
+(any tests, that is.)
+
+1569183645
+Tetralux
+I'm 0.4.0+8a15537c6
+
+1569183679
+Tetralux
+
+
+1569183693
+Tetralux
+Yep - same outcome.
+
+1569183706
+andrewrk
+that means it's working, it's producing a binary. the CI is tripping an assertion
+
+1569185709
+ceymard
+can zig infer comptime type parameters ?
+
+1569185778
+andrewrk
+ceymard, use `var` for the type
+
+1569185791
+ceymard
+isn't var going to be deprecated ?
+
+1569185801
+andrewrk
+what makes you say that?
+
+1569185931
+ceymard
+I don't know, I remember seeing some IRC log or github issue where I saw you say that
+
+1569185941
+ceymard
+I may be mistaken
+
+1569185956
+andrewrk
+that feature is pretty stable
+
+1569185957
+stratact
+ceymard: var won't be deprecated, it would only error when used improperly.
+
+1569185981
+andrewrk
+var is an overloaded keyword
+
+1569185989
+andrewrk
+in this context it means that any parameter type is allowed
+
+1569186033
+ceymard
+ok
+
+1569186043
+ceymard
+how may I std.debug.warn its type ?
+
+1569186086
+andrewrk
+
+
+1569186096
+ceymard
+nevermind
+
+1569186102
+ceymard
+@typeName of @typeOf ?
+
+1569186114
+andrewrk
+or even: @compileLog(@typeOf(x))
+
+1569186138
+ceymard
+ooh, nice
+
+1569186214
+ceymard
+so I've got a good one ; how may I switch (@typeOf(myvar)) on a fixed-size array (where I obviously don't know the size)
+
+1569186221
+ceymard
+[_]u8 does not work
+
+1569186260
+Tetralux
+You want to pattern-match the N in [N]u8?
+
+1569186263
+ceymard
+yes
+
+1569186272
+andrewrk
+I might recommend to accept the element type as a comptime parameter and then as your second parameter a slice. comptime E: type, arg2: []E
+
+1569186275
+ceymard
+I don't care about the N, I care about matching the type
+
+1569186285
+nrdmn
+andrewrk: is there a comptime fmt.bufPrint that I can use to convert comptime information into strings?
+
+1569186307
+andrewrk
+nrdmn, is `comptime fmt.bufPrint()` not working?
+
+1569186313
+ceymard
+andrewrk: it works that way, but I find it not as elegant
+
+1569186319
+Tetralux
+ceymard: So you want to know its an array, but not a slice.
+
+1569186325
+Tetralux
+You wanna be able to tell the difference?
+
+1569186331
+ceymard
+array or slice is the same to me in this case
+
+1569186347
+ceymard
+I want to match whatever, because I'm using &v[0] and its .len
+
+1569186348
+Tetralux
+For [N]T, you can switch(@typeInfo(T)) and check against .Array
+
+1569186358
+ceymard
+oh.
+
+1569186366
+ceymard
+that could work
+
+1569186385
+Tetralux
+(Whereas slices come out as `.Pointer => |info| { ... }` and then `info.size == .Slice`
+
+1569186387
+ceymard
+for reference, I'm toying with napi node extensions in zig and (trying) to write a nice zig-like wrapper
+
+1569186393
+ceymard
+for napi
+
+1569186425
+Tetralux
+What's that?
+
+1569186427
+ceymard
+I'm trying to have a createValue() function that does what it's asked without having to specify the type
+
+1569186436
+ceymard
+a C library to write nodejs native extensions
+
+1569186441
+ceymard
+it's pretty well written imho
+
+1569186458
+ceymard
+and a massive improvement on the C++ libraries that existed until then
+
+1569186468
+nrdmn
+andrewrk: I thought there might be a builtin for that that doesn't require a fixed-size buffer
+
+1569186475
+Tetralux
+I've come across the same situation.
+
+1569186504
+Tetralux
+nrdmn: bufPrint does not take a slice???
+
+1569186505
+ceymard
+so, I want to have createValue("some string") and createValue(32) to create a javascript value in node
+
+1569186523
+Tetralux
+ceymard: std.meta may help you with basic stuff
+
+1569186528
+Tetralux
+Like "is it a type of slice"
+
+1569186579
+Tetralux
+Or @typeId(T) == .Array might work too actually.
+
+1569186668
+nrdmn
+Tetralux: isn't []u8 a slice? see
+
+1569186685
+Tetralux
+nrdmn: Yep it is. So it's not fixed-size.
+
+1569186707
+Tetralux
+It's dynamically-sized.
+
+1569186729
+ceymard
+shouldn't there be a way to match arrays in switch(T) expressions though ?
+
+1569186734
+ceymard
+I mean slices are fine
+
+1569186739
+ceymard
+why can't arrays be ?
+
+1569186751
+Tetralux
+ceymard: Ah!
+
+1569186767
+Tetralux
+Yeah, without being able to fill in the N, I don't know how.
+
+1569186770
+ceymard
+[_]MyType could work ?
+
+1569186782
+Tetralux
+That's not a bad idea though.
+
+1569186789
+ceymard
+yeah but how about
+
+1569186798
+ceymard
+var.len gives it to you anyway
+
+1569186810
+Tetralux
+Seems reasonable to me.
+
+1569186818
+nrdmn
+by "fixed-size" I meant that I'd have to choose a size for the buffer while a builtin @format(comptime fmt: []u8, comptime args: ...) could do that automatically
+
+1569186822
+ceymard
+switch (@typeOf(v)) { [_]u8 => v.len ... }
+
+1569186828
+Tetralux
+Since [_]T gives you an array by default, it would make sense to have that work for matching it.
+
+1569186841
+ceymard
+yes it would keep consistency
+
+1569186843
+Tetralux
+nrdmn: see allocPrint.
+
+1569186877
+andrewrk
+nrdmn, we don't have a comptime allocator yet
+
+1569186905
+nrdmn
+hm, okay
+
+1569186944
+ceymard
+should I open an issue ?
+
+1569186965
+andrewrk
+nrdmn, it's a bit verbose but you could use bufPrint at comptime to count the letters, then declare an anon struct with a global inside it with an array len equal to the count, then use that as your buf for bufPrint
+
+1569186994
+ceymard
+also, is that related to the fact that I've never been able to specify an array as an argument to a function ?
+
+1569187015
+andrewrk
+ceymard, I don't think there's an issue here
+
+1569187032
+ceymard
+ok
+
+1569187033
+andrewrk
+zig doesn't have pattern matching
+
+1569187048
+Tetralux
+andrewrk: Should you not be able to switch on a 'type' and have an arm for an array?
+
+1569187051
+ceymard
+yes I figured that much
+
+1569187064
+andrewrk
+Tetralux, that already works. also arrays in parameter types works
+
+1569187065
+ceymard
+that's why I was talking of reusing the [_] construct
+
+1569187070
+companion_cube
+you mean, `switch`? :D
+
+1569187087
+Tetralux
+andrewrk: What's the syntax for matching an array?
+
+1569187107
+andrewrk
+have a look at the output of `zig builtin`, the TypeInfo type
+
+1569187222
+Tetralux
+We're talking about switching on a type, not TypeInfo.
+
+1569187263
+ceymard
+andrewrk: `switch (@typeOf(v)) { [_]u8 => v.len ... }`
+
+1569187269
+ceymard
+like that, more or les
+
+1569187291
+ceymard
+does var imply comptime btw ?
+
+1569187304
+Tetralux
+andrewrk:
+
+1569187348
+Tetralux
+ceymard: No.
+
+1569187355
+andrewrk
+ceymard,
+
+1569187365
+Tetralux
+It means the
+
+1569187383
+ceymard
+Tetralux: in the array branch, you could always do x.len
+
+1569187411
+Tetralux
+ceymard: Indeed - still would need Zig to accept [_]T as an array though.
+
+1569187432
+ceymard
+yes
+
+1569187533
+Tetralux
+Seems like a reasonable idea to me.
+
+1569187546
+Tetralux
+And seems easier to read than using typeinfo honestly.
+
+1569187574
+ceymard
+sooo easier
+
+1569187592
+Tetralux
+Well - it gets a little more complicated if it could be any type.
+
+1569187610
+Tetralux
+Because to use the array type as the arm's value, you have to provide the eltype
+
+1569187619
+Tetralux
+Which you obviously would not have if it's not an array.
+
+1569187632
+ceymard
+so when I use var and @typeOf, does this mean that the result of this expression is inlined ?
+
+1569187655
+Tetralux
+The switch is comptime-known and will not be in the exe.
+
+1569187672
+Tetralux
+You'll have a copy of the function for every type of value you pass to it.
+
+1569187690
+Tetralux
+So if you only ever pass [N]u8, you'll have only one copy.
+
+1569187704
+Tetralux
+If you pass 1000 different types to it, you'll get 1000 specializations of it.
+
+1569187729
+Tetralux
+Which is the reason the stdlib generally uses 'comptime T: type' instead of this.
+
+1569187743
+Tetralux
+.. Smaller code size.
+
+1569187842
+andrewrk
+the main reason is slices are a better type to implicit cast to
+
+1569187892
+Tetralux
+You can implicit----oh you mean `([]u8)buf` where buf is [N]u8 don't you.
+
+1569187904
+Tetralux
+I always get confused about explicit-implict-casts xD
+
+1569187920
+Tetralux
+ie. implicit casts like that, where you explicit give the type.
+
+1569187955
+ceymard
+([]u8)"my string" does not work though ?
+
+1569187976
+Tetralux
+ceymard: try ([]const u8)
+
+1569187990
+fraktor
+Hmm. I'm trying to build Zig using llvm 9 that I got from the Github mirror, but even adding '-DCMAKE_PREFIX_PATH=$HOME/local' doesn't seem to work; zig can't find llvm.
+
+1569188082
+andrewrk
+fraktor, what os?
+
+1569188087
+fraktor
+Debian
+
+1569188101
+fraktor
+I made sure that I built LLVM so it would go in $HOME/local.
+
+1569188109
+ceymard
+Tetralux: no dice
+
+1569188133
+Tetralux
+ceymard: Hmmm.
+
+1569188247
+andrewrk
+fraktor, try
+
+1569188270
+via_
+is there a better way to keep up on news/changes to the lang other than reading through the git/pr history? if, say, i miss weeks of conversation here
+
+1569188295
+andrewrk
+fraktor, I'm confused, did you get it from the github mirror (what github mirror?) or did you build it from source?
+
+1569188329
+andrewrk
+via, 0.5.0 release notes will catch you up from 0.4.0
+
+1569188336
+andrewrk
+sept 30
+
+1569188347
+via
+wow, thats soon
+
+1569188374
+via
+yeah, release notes will, but i mean even things like the finishing of the coroutine rewrite, etc
+
+1569188745
+fraktor
+andrewrk: I got it from here and then checked out 9.0.0:
+
+1569188756
+fraktor
+I'll try adding the repo tho, that's more convenient
+
+1569188855
+Tetralux
+For reference, I downloaded LLVM and Clang 9
+
+1569188858
+Tetralux
+It worked fine.
+
+1569188867
+Tetralux
+Requires 16 gig of RAM though :)
+
+1569189028
+fraktor
+That's what I've got, but I'd rather let someone else do that for me. :P
+
+1569189309
+fraktor
+Also, how do I change the installation path for zig?  I'd like to put it somewhere other than ~/local.
+
+1569189393
+andrewrk
+fraktor, the official repo is
+
+1569189417
+fraktor
+I... why was I using the other one?  Thank you.
+
+1569189429
+andrewrk
+I recommend apt.llvm.org
+
+1569189453
+andrewrk
+if you build from source for development purposes I recommend leaving it in the default location, which is the build folder
+
+1569189533
+fraktor
+I'm doing it for the purpose of writing stuff with zig, not attempting to modify zig itself.  I want to put it in $HOME/.local/zig
+
+1569189611
+andrewrk
+sounds like you want to set -DCMAKE_INSTALL_PREFIX to your preferred install folder
+
+1569189650
+fraktor
+Thank you.  I'm not familiar with all of cmake's install variables.
+
+1569189668
+andrewrk
+oh my god, I know why the tests are failing on windows ci for #3290
+
+1569189678
+andrewrk
+they have git configured to mangle text files
+
+1569189685
+ceymard
+Tetralux: no dice
+
+1569189687
+ceymard
+oops
+
+1569189704
+Tetralux
+ceymard: xD
+
+1569189711
+Tetralux
+Yeah, I do that all the time
+
+1569189750
+ceymard
+haha
+
+1569189810
+Aransentin
+...is there something subtle messing with my nested `while` loops? I'm confused:
+
+1569189835
+Aransentin
+Check the asm output. I assumed it would be 100
+
+1569189851
+fengb
+You don’t reset x for the inner loop
+
+1569189877
+Aransentin
+Ah shit
+
+1569189893
+Aransentin
+🙃
+
+1569190069
+Aransentin
+Man... the for-loops are probably the worst part of Zig for me. Either you keep a function-wide `i` and share it between loops, or you wrap every loop in a new scope. So ugly.
+
+1569190104
+Tetralux
+Yeah, I feel ya
+
+1569194061
+nrdmn
+
+
+1569194282
+andrewrk
+nrdmn, did you try using zig instead of clang to build the C files?
+
+1569194333
+andrewrk
+that would be 1 less system dependency
+
+1569195059
+nrdmn
+andrewrk: yes, I tried, but Zig doesn't convert the C code to Zig correctly. See this example:
+
+1569195100
+nrdmn
+zig converts `if ( !memory )` in ftbase.c to `if(!FT_Memory)` and complains (correctly) about FT_Memory being a type
+
+1569195126
+Tetralux
+I suspect andrewrk meant to use `zig cc`
+
+1569195155
+Tetralux
+meant about using*
+
+1569195319
+daurnimator
+stratact: you don't need the full path to open the directory. you use `openat` for subdirectories.
+
+1569195464
+andrewrk
+nrdmn, in your build.zig you can do something similar to this:
+
+1569195531
+andrewrk
+you can also do it with the .lib approach if you want, you'll just addStaticLibrary and then addCSourceFile and then linkLibrary
+
+1569195588
+nrdmn
+hmm, clang treats stddef.h as a builtin, zig cc doesn't.
+
+1569195621
+andrewrk
+nrdmn, don't use `zig cc` directly, use the build.zig integrations or the higher level CLI
+
+1569195641
+andrewrk
+see also
+
+1569195641
+nrdmn
+ok, let me try that...
+
+1569195686
+andrewrk
+for CLI see the  --c-source parameter
+
+1569196481
+nrdmn
+the addStaticLibrary + addCSourceFile approach works \o/
+
+1569196531
+andrewrk
+and now you don't require clang installed to build
+

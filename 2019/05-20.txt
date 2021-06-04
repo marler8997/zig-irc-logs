@@ -1,0 +1,780 @@
+1558311095
+daurnimator
+andrewrk: an idea I had about linux errors: lets make 4095 errors, and have all the low level syscall wrappers return that error set? would make it so the e.g. `try linux.mmap()` is the resolution to the MAP_FAILED thing.
+
+1558311146
+daurnimator
+would also let us annotate the syscall return values better. e.g. that mmap actually returns a `[*]align(4096)u8` instead of a usize that the caller always has to cast.
+
+1558311299
+scientes
+daurnimator, yeah I already proposed that
+
+1558311352
+scientes
+the problem is that setting error values requires that the compiler know about those error values
+
+1558311359
+scientes
+but it can be done
+
+1558311371
+daurnimator
+scientes: linux only has 4096 error codes.
+
+1558311379
+daurnimator
+we can just enumerate them all
+
+1558311386
+scientes
+yes
+
+1558311395
+scientes
+but that has to be done in the compiler
+
+1558311400
+scientes
+because of the way errors work in zig
+
+1558311472
+andrewrk
+doesn't that defeat the purpose of error sets? I don't want errors in the error sets that are not actually possible
+
+1558311500
+daurnimator
+andrewrk: a raw linux syscall can return any error with use of e.g. syscall-bpf
+
+1558311505
+scientes
+andrewrk, but we can't control Linux
+
+1558311529
+daurnimator
+andrewrk: we then should wrap the syscalls in high level function that have `unexpected` or @panic for undocumented errors
+
+1558311561
+andrewrk
+we already do that
+
+1558311570
+andrewrk
+I do like the idea of @panic instead of Unexpected for some cases though
+
+1558311618
+daurnimator
+fn linuxError(syscall_result: usize) !void { switch(syscall_result) { 1=> return error.EPERM, 2=>return error.ENOENT, ..... etc. 4095=>error.UnknownErrno4095, else => break } }
+
+1558311672
+daurnimator
+fn close(fd: i32) !void { const ret = syscall1(SYS_close, @bitcast(usize, fd)) try linuxError(ret); }
+
+1558311682
+scientes
+even with the switch optimization i am working on for LLVM that would take 8KB per syscall
+
+1558311691
+daurnimator
+^refactor the 'low level' operation to something like that?
+
+1558311712
+daurnimator
+scientes: huh?
+
+1558311720
+scientes
+daurnimator, LLVM can't optimize that yet
+
+1558311727
+scientes
+it would have to be written
+
+1558311742
+scientes
+large switches
+
+1558311749
+scientes
+with lots of redundancy
+
+1558311778
+scientes
+well actually it would work fine, you just can't write it that way
+
+1558311928
+daurnimator
+scientes: can it be written as a lookup table instead? `const errortbl = []error{error.EPERM, error.ENOENT, .....}` fn linuxError(sr: usize) !void { if (sr < std.math.maxInt(usize)-4096); return errortbl[std.math.maxInt(usize)-4096];  }
+
+1558311944
+scientes
+daurnimator, thats what my optimization is doing
+
+1558312079
+scientes
+but you still have to peel the low and high end off
+
+1558312080
+daurnimator
+^ code there is wrong; I copy pasted the wrong bit. but you should get the point :P
+
+1558312080
+scientes
+or you end up with 8KB per switch (2 bits each)
+
+1558312080
+scientes
+anyways, I'll probably write that optimization so it wont matter, but you wouldn't write it that way anyways.
+
+1558312080
+daurnimator
+scientes: "peel off"?
+
+1558312224
+daurnimator
+andrewrk: so if e.g. linux.close() was that example above, posix.close could be: `fn close(fd: i32) (error.EBADF||error.EINTR||error.EIO)!void { switch (builtin.os) { .linux => linux.close(fd) catch |err| switch(err) { error.EBADF,error.EINTR,error.EIO => return err; else @panic("unexpected error from linux syscall"); } else . ....... }
+
+1558313053
+tgschultz
+I don't think there's any reasonable way to account for things like syscall-bpf. You can arbitrarily return errors for things that are invalid and for things that "can't" fail. If the system is intent on lying to the program, I think @panic is not an inappropriate response.
+
+1558313296
+daurnimator
+tgschultz: yeah. though syscall-bpf is just the most blatent case. often new functionality gets added (e.g. new file desciptor types or new file systems) that introduce new returnable errors for some calls
+
+1558313375
+scientes
+^^^
+
+1558313383
+scientes
+we have to tolerate new errors for most syscalls
+
+1558313489
+daurnimator
+I think @panic is a fine behaviour for unexpected errors. but unreachable isn't.
+
+1558313538
+scientes
+generally unreachable will just be 0 in the LLVM too for switches, so it will think it succeeded
+
+1558313550
+scientes
+there is no speed benifit
+
+1558313568
+daurnimator
+are @panic strings de-duped?
+
+1558313572
+scientes
+yes
+
+1558313596
+scientes
+the linker does that
+
+1558313598
+daurnimator
+scientes: so only thing you think we're missing to make this work well is optimizing switches on errors?
+
+1558313628
+scientes
+no, if we match the error codes it won't need much optimizing
+
+1558313637
+scientes
+cause we are just passing the error through
+
+1558313687
+daurnimator
+scientes: yep. Is there a way (and it is worth it?) to tell the compiler that it would be "really good" if EBADF is represented internally as error number 1?
+
+1558313705
+scientes
+actually error numer -1
+
+1558313745
+scientes
+i think it is
+
+1558316079
+scientes
+coolreader18, I couldn't find any documentation which version of arm they have
+
+1558316090
+scientes
+is it armv4t, armv5t???
+
+1558316301
+coolreader18
+It's an ARM926EJ-S (
+
+1558316338
+scientes
+coolreader18, oh, llvm and gcc both dropped support for OABI arm
+
+1558316346
+scientes
+which means we really can't merge it....
+
+1558316431
+coolreader18
+I'm pretty sure it's eabi, the GCC that the ndless toolchain uses is arm-none-eabi-gcc
+
+1558316444
+scientes
+its using the OABI calling convention
+
+1558316484
+scientes
+oh no, that is EABI my bad
+
+1558316487
+scientes
+yeah EABI is fine
+
+1558316508
+scientes
+yeah you can just use linux.syscall1, 2, 3
+
+1558316522
+scientes
+we just have to add linux for arm32
+
+1558316607
+scientes
+sorry i get confused when i read assembly
+
+1558316645
+scientes
+its using r0 to return, like EABI, but swi NR, so it is its own calling convention
+
+1558316822
+scientes
+#define e_strcmp 26
+
+1558316822
+scientes
+strange
+
+1558316884
+scientes
+there are whole libraries available via syscalls
+
+1558317102
+scientes
+with 64 MB of ram you could  put linux on that thing!
+
+1558317222
+coolreader18
+> there are whole libraries available via syscalls
+
+1558317231
+coolreader18
+Yeah, I think a lot of libc capability is probably implemented in the ndless jailbreak itself, maybe for convenience or something
+
+1558317251
+coolreader18
+I think there is a project to port linux to it, lemme try to find it
+
+1558317257
+scientes
+it makes it more crash prone
+
+1558317270
+scientes
+cause that thing has a MMU
+
+1558317330
+coolreader18
+
+
+1558317500
+scientes
+and the syscall ABI is horrible
+
+1558317511
+scientes
+especially when they export so many features
+
+1558317533
+scientes
+as the syscall number is in the instruction stream, so you dynamically change which syscall you use
+
+1558317546
+scientes
+*you cannot
+
+1558322357
+tgschultz
+oh hey, someone changed DirectAllocator on Windows to use VirtualAlloc now. I was wondering why it suddenly didn't need state.
+
+1558322448
+andrewrk
+Sahnvour did that
+
+1558324347
+hryx
+The stage1 translate-c `Context` contains 3 maps: decl_table, macro_table, global_table -
+
+1558324362
+hryx
+The stage2 one so far only has a decl_table
+
+1558324392
+hryx
+I'm messing around with porting the #define translation and it's apparent these other maps are needed
+
+1558324393
+andrewrk
+hryx, yes, I think it became a bit of a mess in stage1 - I was hoping to re-evaluate the usage of those tables
+
+1558324417
+hryx
+andrewrk: currently I'm struggling to understand the exact role of decl_table vs global_table
+
+1558324603
+andrewrk
+let me take a look and refresh my memory
+
+1558324683
+hryx
+thanks. I'm cool with rethinking the tables entirely, or only adding things as needed, rather than blindly porting over the C++ source. just need to grasp the requirements a little better
+
+1558324711
+hryx
+does translate-c only work on one translation unit? or rather, does one Context correspond to one translation unit?
+
+1558324797
+andrewrk
+yes, if my understanding that translation unit means "object file"
+
+1558324802
+andrewrk
+*if my understanding is correct
+
+1558324823
+hryx
+'tis my understanding too
+
+1558324950
+hryx
+(BRB in 15 minutes)
+
+1558325984
+tgschultz
+...I have some concerns with how how DirectAllocator handles alignments with VirtualAlloc, but I'm not sure it's actually a problem or my understanding of how it works is incorrect. I'll get back to you.
+
+1558327074
+daurnimator
+Has anyone looked into non-exhaustive enums for zig?
+
+1558327675
+hryx
+oops, I gotta go - no worries about the translate-c thing for tonight, I'll approach it with a fresh head in the next couple nights!
+
+1558361164
+tgschultz
+never mind about my DirectAllocator/VirtualAlloc concerns. I was too tired to see that the race condition was accounted for by a retry loop.
+
+1558363158
+daurnimator
+freebsd mirror down?
+
+1558363506
+shritesh
+Seems like it. All tests have been failing for some time.
+
+1558370324
+andrewrk
+I'm taking a 2 day vacation to celebrate my 2-year anniversary with Alee. See ya'll later
+
+1558370345
+scientes
+this helped me understand co-routines
+
+1558370349
+scientes
+they don't have to be that complicated
+
+1558370402
+donpdonp
+andrewrk: sounds fantastic. thanks for all the zig-ing you do every day.
+
+1558375087
+TheLemonMan
+is any osx user willing to sacrifice a few minutes of time for a good cause?
+
+1558376323
+jjido
+TheLemonMan I am still standing
+
+1558376356
+jjido
+what do you need?
+
+1558377186
+TheLemonMan
+jjido, can you try building zig from `git clone -b archive-fmt-osx
+
+1558377193
+TheLemonMan
+at some point it should fail
+
+1558377230
+TheLemonMan
+and it'd be sweet if you could send me somehow the .a and .o files mentioned in the last few lines before the grim reaper takes the process away
+
+1558377245
+jjido
+33%
+
+1558377297
+TheLemonMan
+at some point it will print a line saying `ar rcs ...`, that's what I need
+
+1558377403
+jjido
+do I need to install cmake?
+
+1558377419
+TheLemonMan
+yup
+
+1558377448
+jjido
+sorry, that will be a minute
+
+1558377478
+TheLemonMan
+no problem, take your time
+
+1558377577
+jjido
+huh it does not take the system llvm. Installing it through brew
+
+1558377618
+TheLemonMan
+yeah you need llvm-8
+
+1558378414
+jjido
+it's installed llvm.
+
+1558378506
+jjido
+still getting:   unable to find llvm-config
+
+1558378515
+jjido
+:-(
+
+1558378595
+shritesh
+jjido: did you pass in -DCMAKE_PREFIX_PATH?
+
+1558378602
+jjido
+
+
+1558378608
+jjido
+no didn't
+
+1558378679
+shritesh
+You probably need to. The instructions on the Git readme used to work for me
+
+1558378818
+jjido
+CMAKE_PREFIX_PATH worked. Now I run build.zig?
+
+1558378836
+shritesh
+make install
+
+1558378865
+marijnfs
+how does one add a c-include path? I tried addNativeSystemIncludeDir but doesn't seem to work
+
+1558379041
+jjido
+TheLemonMan no error yet
+
+1558379174
+TheLemonMan
+jjido, it should fail at the very end of the process
+
+1558379473
+jjido
+ok
+
+1558379476
+jjido
+[100%] Linking CXX executable zig
+
+1558379476
+jjido
+Undefined symbols for architecture x86_64:
+
+1558379489
+TheLemonMan
+nice
+
+1558379508
+TheLemonMan
+a few lines above that you should see something like `ar rcs ...`
+
+1558379518
+TheLemonMan
+I need those files
+
+1558379617
+jjido
+
+
+1558379660
+jjido
+enjoy!
+
+1558379688
+TheLemonMan
+hmm, I need the libuserland.a libuserland.o and compiler_rt.o files
+
+1558379779
+jjido
+yeah they are the ones in the ar command
+
+1558379858
+TheLemonMan
+can you upload those somewhere?
+
+1558380827
+tgschultz
+ah, that moment where you've finished changing all the things, but haven't started the integration test yet so you're still blissfully ignorant of all the stuff you unwittingly broke.
+
+1558380972
+TheLemonMan
+just rm the failing tests and you're good to go
+
+1558381054
+jjido
+TheLemonMan are you fixing the linker errors?
+
+1558381314
+TheLemonMan
+yup, I'm trying to understand what's wrong
+
+1558383819
+donpdonp
+for (str) |char, idx| { var s = switch(char) { ... values of type 'comptime_int' must be comptime known
+
+1558383841
+donpdonp
+im not sure where the comptime_int is coming into play. str is []const u8.
+
+1558384112
+marijnfs
+Hi, can anyone point me to how to add a c-include directory? I have headers in a place other than /usr/local/include
+
+1558384548
+donpdonp
+marijnfs: build.zig const exe = b.addExecutable("main", "src/main.zig"); exe.addIncludeDir("/usr/include/cairo");
+
+1558384615
+marijnfs
+donpdonp: thanks, that addExecutable doesn't directly start compiling i guess? Otherwise that order wouldn't to work?
+
+1558384893
+marijnfs
+donpdonp: it works! But I'm confused how the order exactly works when a exe is built
+
+1558386510
+donpdonp
+how do i get a []u8 from a []const u8
+
+1558386547
+donpdonp
+i think i have to alloc then mem.copy
+
+1558389018
+tgschultz
+It's possible to drop a const from a pointer, but I wouldn't recommend it unless you're very sure.
+
+1558389450
+donpdonp
+heh yeah im fine going with safe but not-as-efficient.
+
+1558389455
+donpdonp
+mem.dupe() looks to do the thing.
+
+1558389798
+Aransentin_
+Struggled a while with making WebAssembly imports/exports work... until I noticed that it's all been fixed a few days ago and I hadn't updated. Nice :)
+
+1558389984
+Aransentin_
+Also may I recommend supporting the wasm bulk memory extension? It works in Chromium (and Firefox soon) and makes memcpy and friends sanic fast
+
+1558390979
+shritesh
+Aransentin_: that sounds cool. I will take a stab at it.
+
+1558391126
+Aransentin_
+Oh, nice. Thanks a bunch!
+
+1558391235
+shritesh
+We might have to wait for LLVM to add support for those instructions first 😅
+
+1558391340
+shritesh
+Ooh. Looks like it’s already there (along with other proposals).
+
+1558391340
+Aransentin_
+I've been using it with C+clang with the "-mbulk-memory" flag... Through admittedly on llvm 9!
+
+1558391651
+shritesh
+Gotcha
+
+1558391855
+shritesh
+Have you tried out any of the SIMD stuff? It might just work out of the box
+
+1558392124
+Aransentin_
+Not sure, I don't think I do anything SIMD-ish that would trigger it just yet
+
+1558392481
+scientes
+shritesh, simd needs alot of work
+
+1558392498
+scientes
+it generally doesn't work with zig
+
+1558392516
+scientes
+some stuff just works
+
+1558392543
+scientes
+and wasm does have simd
+
+1558392654
+shritesh
+Yeah. The tests for LLVM Wasm simd looked the same as regular SIMD.
+
+1558392788
+shritesh
+So once Zig has good support for SIMD, it might work right away with WASM
+
+1558392834
+scientes
+but even LLVM support for SIMD is meh meh, but has alot of promise
+
+1558392857
+scientes
+in the long run using a compiler is def better than hand rolling
+
+1558392915
+scientes
+but since this stuff is generally only used in performance critical chunks it is hard to get the momentum behind strong compiler support
+
+1558393225
+shritesh
+It is fair to expect that you’ll have to drop down to raw assembly for not-meh SIMD?
+
+1558393494
+scientes
+not at all
+
+1558393501
+scientes
+the compiler should generate better simd
+
+1558393515
+scientes
+unless you heavily tune it
+
+1558393521
+scientes
+because it can do alot of optimizations
+
+1558393529
+scientes
+and reduce the amount of work required
+
+1558393630
+scientes
+what i'm saying is that the status of the optimizations is meh
+
+1558393635
+scientes
+and also the register allocator is meh
+
+1558393656
+scientes
+actually the register allocator is absolutely horrible in some cases
+
+1558393672
+shritesh
+hmm
+
+1558393690
+scientes
+
+
+1558393710
+scientes
+if you use addition it is fine
+
+1558393731
+scientes
+and awesome how it can automatically use a smaller width
+
+1558394004
+Aransentin_
+😉:
+
+1558394299
+scientes
+sweet Aransentin_
+
+1558394306
+scientes
+now get me one of those machines
+
+1558394335
+scientes
+I wanted to do tokenizing of invalid zig source bytes with cannonlake
+
+1558394341
+scientes
+you can do it at like 5GB/s
+
+1558394402
+scientes
+Aransentin_, do you know where i can get a cannonlake VPS?
+
+1558394437
+Aransentin_
+Hehe, not really
+
+1558394487
+scientes
+like here is my WIP
+
+1558394511
+scientes
+but clang produces crap code
+
+1558394526
+scientes
+and yes, i am using duffs device
+

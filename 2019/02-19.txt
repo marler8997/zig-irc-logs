@@ -1,0 +1,488 @@
+1550534413
+andrewrk
+copy elision take 3 will be much more focused and educated
+
+1550534422
+andrewrk
+I know everything that went wrong last time
+
+1550534818
+daurnimator
+second system syndrome overcome..... third-system-syndrome now starts? :P
+
+1550535136
+andrewrk
+this third attempt will be much more focused. not going to attempt error union/optional special handling in this pass
+
+1550535173
+andrewrk
+that will be enough for the coroutine rewrite though. we just need `a = b;` to allow the b expression to receive the memory for `a`
+
+1550543000
+mattmcal
+andrewrk: I saw your reply to #265 (null-terminated pointers)
+
+1550543017
+mattmcal
+I'm wondering if my proposal might be at odds with the principal that you should be able to do seamless C interop without importing std
+
+1550543065
+mattmcal
+Unless perhaps you wanted to add implicit imports, i.e. a "prelude"
+
+1550543079
+andrewrk
+hi mattmcal
+
+1550543125
+mattmcal
+Howdy :)
+
+1550543164
+andrewrk
+one reason we have explicit @import even for "std" and "builtin" is for discoverability of the language. one of the design principles is that zig should be readable, even to people who have never even heard of zig before
+
+1550543527
+mattmcal
+Sure, that makes enough sense. Though, thinking about kt, I'm not sure there's not much difference in this regard between having c_int, c_char etc. as builtin types versus making them automatically imported typedefs
+
+1550543551
+mattmcal
+*not sure there's much
+
+1550543570
+mattmcal
+Not that I'm proposing that
+
+1550544106
+daurnimator
+yeah I wouldn't see any problems if there was e.g. a @import("c")
+
+1550544121
+daurnimator
+then use c.int, c.char, etc.
+
+1550544241
+mattmcal
+Mostly I just thought that functionality related to null-terminated strings should be implemented as actual zig code
+
+1550544280
+mattmcal
+e.g. instead of a [*]null u8 to []u8 cast implicitly generating a for loop, you'd have an actual function like cstrToSlice that does it
+
+1550544301
+mattmcal
+Better yet if you can just do my_str.toSlice()
+
+1550544398
+andrewrk
+mattmcal, I wasn't planning on implementing `for` to work on null terminated pointers
+
+1550544420
+andrewrk
+but now that you mentioned it, I'm on the fence about it
+
+1550544614
+mattmcal
+Actually, I was referring to a comment,
+
+1550544665
+mattmcal
+You mentioned that casting to []null u8 would do a linear search
+
+1550544682
+mattmcal
+Though I suppose you probably meant a builtin function cast, not implicit
+
+1550544702
+andrewrk
+that's dubious, I have a lot of reservations about a language-generated linear search
+
+1550544704
+daurnimator
+mattmcal: andrewrk: I assume the "generate a loop" here is in reference to inserting a `strlen` call
+
+1550544756
+mattmcal
+Fair enough
+
+1550544759
+andrewrk
+I understand that my own comment contradicts what I'm saying right now
+
+1550544780
+andrewrk
+to be fair it is over a year old and I've had a lot more time to think about this stuff since then
+
+1550544780
+mattmcal
+Yeah, sorry, I wasn't trying to read too deeply into one comment, just alluding to it
+
+1550544941
+mattmcal
+Another issue I thought about is casting []null u8 to []u8
+
+1550544949
+mattmcal
+Should it include the null byte or not?
+
+1550544987
+daurnimator
+no.
+
+1550544999
+daurnimator
+(why would it?)
+
+1550545208
+mattmcal
+I actually dunno exactly, maybe you're writing a binary serializer that interops with C code? Kinda niche I guess
+
+1550545262
+mattmcal
+I just wanted to suggest it would be nice to be able to say something like "my_str.toSliceNul()" to accomplish that
+
+1550545479
+daurnimator
+mattmcal: would it not be `mynullarray[0..mynullarray.len]`? --> you know there is a null at the end :P
+
+1550545518
+andrewrk
+mattmcal, I think that answer is clear: the len is the len without the null
+
+1550545643
+andrewrk
+the semantic meaning of `[]null u8` is: here is a pointer and a length. it is guaranteed the value at ptr[len] is null
+
+1550545802
+mattmcal
+That's sort of dictated by the semantics of regular slices, as otherwise you'd get a surprise null byte in your strings
+
+1550545822
+andrewrk
+how so?
+
+1550545874
+mattmcal
+Well, I mean that it would be surprising if std.debug.warn("{}", null_slice) printed a nul char at the end, assuming there was a cast there
+
+1550545903
+mattmcal
+I should say slice-based strings rather than "regular slices"
+
+1550545928
+daurnimator
+yeah. also if you iterated over the slice, you wouldn't want the null to appear
+
+1550545932
+mattmcal
+Though daurnimator I think your example would be mynullarray[0..mynullarray.len + 1] then
+
+1550545934
+daurnimator
+the null is part of the 'framing'
+
+1550545955
+daurnimator
+mattmcal: no, the last element is len-1. len is past the end
+
+1550545980
+mattmcal
+But that truncates the nul byte then
+
+1550546002
+andrewrk
+that's the reason it's in the type! the type is how you know there's an extra nul byte
+
+1550546114
+andrewrk
+so if you did: var a = "ab";  var s: []null u8 = &a; assert(s.ptr[0] == 'a'); assert(s.ptr[1] == 'b'); assert(s.ptr[2] == 0);
+
+1550546135
+andrewrk
+assert(s[2] == 0); // up for debate whether this is OK, or triggers out of bounds
+
+1550546158
+mattmcal
+Isn't the upper bound in slice[0..len] exclusive?
+
+1550546248
+andrewrk
+(also, oops, forgot to make the array have the null type)
+
+1550546260
+andrewrk
+mattmcal, yes
+
+1550546266
+mattmcal
+Sorry, but I think I'm starting to distract with talk of basic C concepts :S
+
+1550546281
+andrewrk
+in zig `a..b` is start inclusive, end exclusive
+
+1550546304
+andrewrk
+so for a normal slice, ptr[len] is exactly one item out of bounds
+
+1550546329
+mattmcal
+Right, so if you wanted to create a slice
+
+1550546397
+andrewrk
+sorry are you talking about status quo zig or if we did #265?
+
+1550546420
+mattmcal
+Sorry, nullslice has type []null u8
+
+1550547003
+mattmcal
+Anyways, it seems like I've done a good job sewing general confusion
+
+1550547103
+mattmcal
+To wrap up, my suggestion sort of assumed that one would actually
+
+1550547142
+mattmcal
+If that's not the case, it may not be a particularly good idea
+
+1550547278
+andrewrk
+if you wanted to create a slice with the null byte included, and no longer with the "null" annotation, you would do this: nullslice.ptr[0..nullslice.len + 1]
+
+1550547337
+andrewrk
+nullslice[nullslice.len] // up for debate whether this is OK, or triggers out of bounds
+
+1550547640
+daurnimator
+andrewrk: I think for a null slice it should be allowed
+
+1550547667
+daurnimator
+You'd expect that with null slice you could iterate until you hit null
+
+1550547685
+daurnimator
+which means that indexing to get the null needs to be defined behaviour
+
+1550547790
+andrewrk
+that's my thought as well
+
+1550547812
+daurnimator
+note that IMO `nullslice.len`
+
+1550547822
+daurnimator
+i.e. .len on a null slice is potentially an "expensive" operation
+
+1550547877
+andrewrk
+no, the type `[]null T` has an explicit length as well as a guaranteed null value at the len index
+
+1550547901
+andrewrk
+and `[*]null T` does not have a `len` property
+
+1550547947
+daurnimator
+I'm... not so sure about that
+
+1550547971
+daurnimator
+by making 'nullslice.len' use the cached value, it opens up difficult/complex behaviour around the array possibly containing nulls itself
+
+1550548004
+daurnimator
+by making .len invoke strlen, you get to skip the "tricky" definitions, and I think it would make sense to someone glancing at the code
+
+1550548016
+mattmcal
+See, that's what sort of made me question whether []null u8 to []u8 should include the nul
+
+1550548029
+mattmcal
+I thought []null u8 == []u8 but with last byte 0
+
+1550548076
+andrewrk
+daurnimator, cached? why do you say cached?
+
+1550548094
+daurnimator
+andrewrk: if it has an explicit length, then it is stored somewhere, right?
+
+1550548109
+andrewrk
+[]u8 is struct { ptr: [*]u8, len: usize}
+
+1550548123
+andrewrk
+[]null u8 is struct { ptr: [*]null u8, len: usize}
+
+1550548166
+andrewrk
+the only difference is whether or not there is guaranteed to be a null byte at ptr[len]
+
+1550548170
+daurnimator
+I think []null u8 should be: struct { ptr: [*]null u8, fn len(self: @This()) usize { return strlen(self.ptr); } }
+
+1550548198
+daurnimator
+(imagining if 'len' is sufficiently "magic")
+
+1550548204
+andrewrk
+why would you use that type and not [*]u8
+
+1550548212
+andrewrk
+sorry, [*]null u8
+
+1550548282
+daurnimator
+I guess if that
+
+1550548385
+andrewrk
+it would be the return type of std.Buffer.toSlice()
+
+1550548406
+daurnimator
+?
+
+1550548424
+andrewrk
+no, the type `[]
+
+1550548425
+andrewrk
+oops
+
+1550548428
+andrewrk
+
+
+1550548489
+andrewrk
+it's as simple as this: a slice has a pointer as one of its fields. so it can have all the pointer properties that a pointer can have
+
+1550548505
+daurnimator
+sorry, I got confused about slice syntax.
+
+1550548519
+daurnimator
+let me try again
+
+1550548561
+daurnimator
+`[]null u8` (null slice) should be `struct { ptr: [*]u8, fn len(self: @This()) usize { return strlen(self.ptr); } }`
+
+1550548583
+daurnimator
+I think `[*]null u8` may not need to exist?
+
+1550548634
+daurnimator
+normally a slice, `[]T` is pointer to runtime-known number of items. Supports index syntax: slice[i]. Supports slice syntax: slice[start..end]. Supports len property: slice.len.
+
+1550548681
+daurnimator
+a null slice `[]null T` is a pointer to a null terminated number of items. Supports index syntax: slice[i]. Supports slice syntax: slice[start..end]. Supports len method: `slice.len()`.
+
+1550548794
+andrewrk
+`[*]null u8` is the type of the parameter to strlen
+
+1550548871
+andrewrk
+I'm sad that this is causing so much confusion. if people don't understand the type right away, it kind of defeats the purpose
+
+1550548900
+daurnimator
+say I do `nullslice[0] = 0` --> I would expect that nullslice.len would now be 0.
+
+1550548926
+andrewrk
+the null pointer attribute means, exactly this, nothing more, nothing less: at the element one past the logical last element, the value is null
+
+1550548954
+daurnimator
+andrewrk: I invert that definition: the logical last element is the one with null after it.
+
+1550548975
+daurnimator
+null gets set/inserted? the logical last element is a different one.
+
+1550549022
+andrewrk
+daurnimator, you're referring to
+
+1550549053
+andrewrk
+good night
+
+1550549740
+daurnimator
+replied on the issue.
+
+1550555317
+daurnimator
+and further bulked out my reply on the issue (via edit; in case anyone here is trying to keep up)
+
+1550583703
+andrewrk
+daurnimator, it appears the valgrind bug is gone now. I didn't notice it get fixed
+
+1550608584
+andrewrk
+as of 10 seconds ago, all pull requests are either merged, or labeled as work-in-progress
+
+1550608925
+emekankurumeh[m]
+how are we supposed to handle flags to function like `socket` in pure zig?
+
+1550609069
+andrewrk
+emekankurumeh[m], how about like this?
+
+1550609083
+andrewrk
+example with socket
+
+1550609221
+emekankurumeh[m]
+i mean if you making a zig interface to those lower level functions. for example in a hypothetical `std.os.socket` library what would be the "zig way" to handle those flags?
+
+1550609519
+emekankurumeh[m]
+i was working on a socket module but got stuck because i couldn't of how to design that part.
+
+1550610852
+andrewrk
+using an unsigned integer for flags is fine. you could also experiment with a packed struct
+
+1550612437
+schme245
+is there any way to pass generic functions as function pointers?
+
+1550612472
+schme245
+here's a short gist with an example of what I mean:
+
+1550612563
+schme245
+I'm trying to figure out if there is a way to avoid defining a `greaterThan` function for u8, u32, u64 and so on, when I want to that function as a function pointer
+
+1550614943
+daurnimator
+andrewrk: did my null terminated proposal make sense?
+

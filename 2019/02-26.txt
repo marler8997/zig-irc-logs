@@ -1,0 +1,960 @@
+1551139926
+andrewrk
+mouldysammich, fix pushed to master. a new build should be available on ziglang.org/download in ~2 hours
+
+1551140138
+mouldysammich
+fantastic, thanks so much!
+
+1551140149
+andrewrk
+thanks for troubleshooting with me :)
+
+1551141143
+shachaf
+Is there a place that says what the plan for coroutines is?
+
+1551141174
+shachaf
+I remember it was discussed here but I'm still not sure how it's planned to work.
+
+1551141223
+andrewrk
+shachaf, no, the plans for coroutines are really disorganized
+
+1551141242
+andrewrk
+I'm happy to chat a little bit about it if you like
+
+1551141327
+shachaf
+Hmm. I think I might be mixing it up with some things I read about LLVM coroutines, also.
+
+1551141378
+shachaf
+Is there any example code and approximately what kind of thing it should generate, or something like that?
+
+1551141464
+andrewrk
+post-rewrite, it will be as if you split your function into an array of function pointers that each take a pointer to a struct which has all the local variables
+
+1551141527
+shachaf
+All the local variables or only the ones that are live at a particular point in the function?
+
+1551141565
+andrewrk
+only the ones that are live on both sides of any suspend point
+
+1551141610
+andrewrk
+also I haven't solved how coroutine function pointers will work yet. that will probably just be a compile error for a while
+
+1551141644
+shachaf
+This struct is effectively a stack frame, right?
+
+1551141647
+andrewrk
+yes
+
+1551141660
+shachaf
+Why do you need the array?
+
+1551141675
+shachaf
+And also how is it used? The function returns an index into it when it yields?
+
+1551141698
+andrewrk
+the two methods are usually (1) switch statement with enum to decide which case to jump to, or (2) array of function pointers with index of which one to call
+
+1551141742
+andrewrk
+above I described (2). it doesn't matter to the zig coder so much, but my reasoning for choosing one over the other is that LLVM chose (2) and they probably made that decision with knowledge of what LLVM is better at optimizing
+
+1551141798
+shachaf
+So if this is just a struct, are these parameterized by an allocator? I think they were.
+
+1551141815
+andrewrk
+pre-rewrite they are. post-rewrite coroutines are non-allocating
+
+1551141827
+shachaf
+OK, that makes more sense to me.
+
+1551141886
+andrewrk
+if you want a coroutine to go on the heap, then you'd have to do it yourself, like this: const ptr = a.create(@Frame(doTheThing)); ptr.* = doTheThing(); // doTheThing is a coroutine
+
+1551141888
+shachaf
+Why doesn't the struct just store an instruction pointer for the current state?
+
+1551141910
+andrewrk
+that's a neat idea
+
+1551141927
+develonepi3
+andrewrk, at
+
+1551141929
+andrewrk
+I think the only reason not to would be to make the optimizer able to understand the IR
+
+1551141975
+shachaf
+If you split the coroutine up into separate functions, and you have internal flow control that goes past yield statements, that gets kind of awkward, doesn't it?
+
+1551141993
+shachaf
+I guess the functions could jump directly into each other or something.
+
+1551141995
+andrewrk
+can you give an example of that?
+
+1551142003
+shachaf
+Or maybe I still don't understand the plan.
+
+1551142011
+andrewrk
+oh are you talking about storing an instruction pointer?
+
+1551142018
+shachaf
+No, the other method.
+
+1551142027
+shachaf
+Hm, this would be easier with concrete code.
+
+1551142050
+andrewrk
+one thing to note: these coroutines are "stackless", aka, they operate on exactly one stack frame. so "yielding" is in machine code terms, a return instruction
+
+1551142062
+shachaf
+Right.
+
+1551142067
+andrewrk
+and "resuming" in machine code terms, a call instruction
+
+1551142092
+shachaf
+Yep.
+
+1551142119
+shachaf
+I did want to talk about how to nest these things but first I should figure out how they work.
+
+1551142140
+shachaf
+Is there any example code I can refer to? Even something very simple.
+
+1551142382
+shachaf
+I'm trying to write something but now I need to figure out how to write basic things in Zig.
+
+1551142508
+andrewrk
+shachaf, what kind of example code?
+
+1551142521
+andrewrk
+status quo coroutine usage?
+
+1551142574
+shachaf
+No, the planned thing.
+
+1551142614
+andrewrk
+here's something:
+
+1551142775
+andrewrk
+this is still a "research" proposal though. I haven't done a proof of concept yet
+
+1551142803
+andrewrk
+even the planned coroutine rewrite is a bit researchy. It's going to require some exploratory code
+
+1551142825
+andrewrk
+I did status quo coroutines, learned a bunch, and it's not quite right. time for a second iteration
+
+1551142894
+shachaf
+There aren't many implementations of coroutines out there that are as efficient as they could be.
+
+1551143109
+andrewrk
+agreed
+
+1551143112
+shachaf
+I'm a bit confused by this code.
+
+1551143117
+shachaf
+Let me see if I can figure it out.
+
+1551143162
+andrewrk
+shachaf, if you had something specific in mind, I'm all ears. especially if you typed out a nice proposal with examples and made it easy to understand
+
+1551143214
+shachaf
+I'm thinking about how to make things like this work! That's why I'm asking.
+
+1551143505
+shachaf
+This is all kind of implicit, is what was confusing me, I think.
+
+1551143557
+shachaf
+Are things like asynchronous I/O (presumably with some kind of scheduler) the expected use case for this thing? If so I'll figure out an example based on that.
+
+1551143684
+andrewrk
+yes, asynchronous I/O is a big use case for coroutines. I would even say the primary use case
+
+1551143724
+wrl
+andrewrk: you can model DSP process callbacks as a coroutine ;)
+
+1551143757
+andrewrk
+that's something I'll be sure to explore as well
+
+1551143758
+shachaf
+You can model lots of things as coroutines. But they call for different kinds of implementations.
+
+1551147489
+shachaf
+andrewrk: So what happens when an async function wants to call another async function?
+
+1551147533
+shachaf
+Does it just put the other function's state in its frame struct, and then each time it's resumed it goes down the stack to the currently active frame?
+
+1551147544
+andrewrk
+shachaf, and in this example, it wants to resolve the "promise" right away, yes?
+
+1551147601
+shachaf
+What do you mean?
+
+1551147672
+shachaf
+In your example, say queueFsWrite was an async function instead of a thing that takes @handle()
+
+1551148065
+andrewrk
+shachaf, sometimes you would want to kick off async operation A and async operation B, and then "wait" until both of them are done before proceeding. but you're talking about the non-parallel case where you just want to kick off and "wait" for an async function at the same time
+
+1551148078
+andrewrk
+is that correct?
+
+1551148093
+andrewrk
+because this case can be optimized better
+
+1551148102
+shachaf
+Hmm, I'm interested in both, but thinking about the latter right now.
+
+1551148344
+andrewrk
+you will be able to control where the frame of the coroutine goes when you call the coroutine, like this:  a = theCoroutine();
+
+1551148399
+andrewrk
+after copy elision work is done, this expression is interpreted in the following way: 'a' represents a "result location". this result location is passed to the function call expression. when you call a coroutine, the active result location is used as the coroutine frame
+
+1551148467
+andrewrk
+so if `a` represents stack memory (e.g. with `var a = theCoroutine()`) then the coroutine goes into the callsite's stack frame (which could be a coroutine frame)
+
+1551148484
+andrewrk
+or if it's a pointer dereference, that could make it go into the heap: `ptr.* = theCoroutine()`
+
+1551148561
+strmpnk
+I take it that some forms of recursion (non-tail calls at least) would prevent this sinking. I assume these would require explicit frame allocation?
+
+1551148625
+shachaf
+Man, just ban recursion and require a known stack size.
+
+1551148631
+andrewrk
+yes, recursion and function pointers are an active area of research. the first implementation will probably just be a compile error if there is a (indirect or direct) call graph dependency
+
+1551148633
+shachaf
+Or let people specify a maximum size if they want.
+
+1551148664
+strmpnk
+But how will async ackermann work? (joking).
+
+1551148669
+andrewrk
+:)
+
+1551148675
+strmpnk
+Problems with max size is the same with stack overflows.
+
+1551148684
+andrewrk
+agreed
+
+1551148698
+andrewrk
+I'll be careful with whatever the solution is to recursion/ function pointers because it could easily be a new footgun that zig introduces that even C doesn't have
+
+1551148703
+andrewrk
+(if I wasn't careful)
+
+1551148711
+shachaf
+It'd be nice if every function was tagged with the maximum stack depth when there are no cycles.
+
+1551148724
+andrewrk
+it's planned for zig to do that in generated .h files
+
+1551148753
+shachaf
+I was also thinking of a thing the other where each function can have a different "calling convention" depending on how many registers it needs, and that's specified in the type.
+
+1551148766
+shachaf
+WIth the regular calling convention being a conservative version that always works.
+
+1551148782
+andrewrk
+that might require some cooperation with LLVM
+
+1551148806
+shachaf
+Yes, I don't know of any compiler backends that support that kind of thing.
+
+1551148817
+shachaf
+But having all sorts of metadata like that would be nice.
+
+1551148851
+shachaf
+Anyway there are two kind of different uses of coroutines that I've been thinking of. One is where the coroutine schedules its own resume, as in async I/O or something.
+
+1551148878
+shachaf
+And the other is where the caller can resume it. As in iterators maybe? There are lots of uses.
+
+1551148890
+shachaf
+But the API seems kind of different to me.
+
+1551149135
+shachaf
+The other day I was using snprintf and I was annoyed that if it runs out of space, you have to call it again from the beginning.
+
+1551149152
+shachaf
+Rather than, say, flush the buffer it was writing to and then asking it to continue from where it left off.
+
+1551149176
+shachaf
+It could be nice if that kind of thing was a coroutine? Its frame would be pretty small.
+
+1551149191
+shachaf
+Or maybe that's too much complexity, I have no idea.
+
+1551149258
+andrewrk
+that's an interesting idea
+
+1551149296
+andrewrk
+I agree that there are a couple other use cases like the one you described
+
+1551149325
+shachaf
+Anyway that's a different kind of coroutine use from async I/O. Mostly because it doesn't really use a scheduler, I guess?
+
+1551149333
+andrewrk
+I don't have a perfect answer yet to how all the use cases will get solved. I'm trying to take a bottom-up approach, starting with foundations that I know are solid, and then slowly building up
+
+1551149372
+shachaf
+Right.
+
+1551149417
+shachaf
+I've worked on an implementation of coroutines for C++ that did full stack switching, but those are presumably less efficient than whatever Zig will end up with.
+
+1551149430
+shachaf
+I mean, it was effectively userspace threads.
+
+1551149457
+andrewrk
+I'm not a fan of that approach
+
+1551149469
+shachaf
+It does support nesting in a pretty nice way.
+
+1551149500
+andrewrk
+yes, there are some places where it fits in perfectly
+
+1551149514
+shachaf
+And the stacks can relatively small for threads, 8KB or something. Of course that's much bigger than it needs to be.
+
+1551149542
+shachaf
+And an annoying thing is that when you switch stacks, you take a bunch of cache misses on the new stack, even for things that don't need to be saved.
+
+1551149558
+andrewrk
+but I think it leaves performance on the table, because concurrency has to be expressed in terms of "actors" (threads). Rather than what you would do in a non-blocking paradigm, where you think about the dependency graph of everything, kick off operations as soon as possible, collect results when they're all done
+
+1551149590
+shachaf
+Yes, there's also that.
+
+1551149623
+andrewrk
+with #1778, if it worked really well, you could theoretically even do profile guided optimization that would  determine how much to use the expressed concurrency from the source
+
+1551149641
+andrewrk
+e.g. the source expresses that A and B can be done simultaneously, but it is also legal for the optimizer to just make it blocking
+
+1551149651
+andrewrk
+that could potentially be incredibly powerful
+
+1551149675
+shachaf
+In practice I think the code had "big" things written in terms of these lightweight threads, which could start a bunch of "small" async operations that weren't threads. Or something like that.
+
+1551149694
+strmpnk
+The nice thing about the fibers is that the async fn -> sync fn -> async fn call interleaving can work w/o threading transformations into the sync code. There is a little more yield overhead and of course guard pages and stack growth is a pain (or expensive if you allocate large stacks).
+
+1551149721
+shachaf
+One of the things you want, by the way, is for operations that might or might not block to be able to return immediately without going through the scheduler.
+
+1551149739
+strmpnk
+This would be a bigger issue if you needed to call C code which called back to Zig code for example.
+
+1551149740
+shachaf
+strmpnk: It's nice but I'm not sure it's worth the cost.
+
+1551149754
+strmpnk
+Having used both, I'd say it depends on the application.
+
+1551149775
+andrewrk
+what do you mean the scheduler? the proof-of-concept event loop I made in zig std lib has no scheduler
+
+1551149807
+shachaf
+I mean "event_loop.queueFsWrite(@handle(), &msg);" or whatever.
+
+1551149834
+strmpnk
+Same deal with actors. Supporting selective receive is kind of like a frame retained and stacked across yield (Erlang style actors). Pony on the other hand doesn't allow this but it explodes actor state machine complexity.
+
+1551149837
+andrewrk
+ah. non blocking file system is unfortunate. there are several problems with it
+
+1551149840
+shachaf
+Never mind the word scheduler. I mean, you should be able to do it without suspending.
+
+1551149867
+shachaf
+Say you have a cache in memory, and you have an async operation which either gives you the thing in the cache or issues an async read call.
+
+1551149895
+andrewrk
+that's even true with status quo coroutines/event loop. aside from file system on linux, which for some weird reason does not support non-blocking, when you do async operations it won't suspend unless EAGAIN is returned
+
+1551149911
+andrewrk
+strmpnk, I'm eyeing that too
+
+1551149940
+shachaf
+whoa, Linux is up to 5? I clearly haven't been keeping track.
+
+1551149958
+andrewrk
+linus doesn't take the major version seriously. it's not semver
+
+1551149963
+shachaf
+I know.
+
+1551149980
+strmpnk
+I'm with Linus, people should lean on change logs more than magic version interpretation.
+
+1551150019
+strmpnk
+Semantic versioning ends up being a wishful stance but it's solution creates just as many problems as it solves.
+
+1551150027
+andrewrk
+shachaf, post-rewrite coroutines, when you call an async function and "resolve" it in the same expression, and it does not suspend, it is 100% equivalent to a function call
+
+1551150074
+shachaf
+I didn't see "resolve" mentioned.
+
+1551150101
+andrewrk
+sorry "await" not "resolve"
+
+1551150126
+shachaf
+Anyway depending on how nesting works that kind of thing could be automatic.
+
+1551150134
+shachaf
+Though of course you don't want it to be, in some cases.
+
+1551150142
+andrewrk
+strmpnk, I have some interesting things planned for package management. I'm still planning to embrace semver, but there will be other tools as well. planning to do a big writeup shortly after 0.4.0 release
+
+1551150185
+shachaf
+Does async disk I/O on Linux still require O_DIRECT?
+
+1551150217
+strmpnk
+andrewrk: I'll avoid rambling about versioning but while rebar3 has rough edges, I really like the version resolution rules. Easy to control and no odd action at a distance problems when upgrading packages.
+
+1551150273
+strmpnk
+The other odd issue is the case of multiple versions in one compilation target. I'm not a fan but it's interesting to see cargo adopt it after all of npm's complexity.
+
+1551150290
+andrewrk
+shachaf, I don't think there is any such thing as async disk I/O on linux
+
+1551150296
+shachaf
+Oh well.
+
+1551150311
+andrewrk
+that's why strmpnk and I are keeping an eye on uring
+
+1551150511
+strmpnk
+I haven't checked up on the mailing list thread but it seems Al Viro's SCM_RIGHTS ref-cycle scenario was addressed so hopefully there aren't other big blockers.
+
+1551150584
+andrewrk
+strmpnk, oh interesting I didn't know rust did that. zig package manager is planned to do that as well, when the semver major versions disagree. There will also be a tool that shows a sort of "audit" display where it shows the full dependency graph, and where there is duplication, to help you be aware of bloat
+
+1551150615
+strmpnk
+How will you work with exported symbols?
+
+1551150640
+strmpnk
+I assume that will require symbols resolve to the same package every time.
+
+1551150662
+andrewrk
+I'll note that exported symbols don't necessarily constitute the public API of a zig package
+
+1551150663
+andrewrk
+most zig packages will have 0 exported symbols
+
+1551150686
+strmpnk
+True, though this will also be an interaction to sort out with C code.
+
+1551150727
+andrewrk
+indeed, that's another interesting thing. I fully intend zig package manager to be a C package manager as well
+
+1551150747
+andrewrk
+you'll have to ditch the build system and use zig build in order to make a C package, but I think it'll be worth it
+
+1551150772
+andrewrk
+to be have a C library dependency graph, that works on every target, and you can cross compile for every target, with no system dependencies
+
+1551150780
+andrewrk
+this is quickly becoming a reality
+
+1551150810
+AlexMax
+i have had to deal with far more cmake than I had ever hoped to in the past week or so
+
+1551150815
+andrewrk
+then we just need fast incremental builds in order to facilitate a deep dependency tree :)
+
+1551150825
+AlexMax
+so that sounds incredibly appealing to me
+
+1551150896
+andrewrk
+we're just getting started. the tooling around zig is going to be out of this world
+
+1551150921
+shachaf
+Man. The more I think about this the less I'm sure I've ever seen an implementation of coroutines that actually does what you would want, in any language.
+
+1551150946
+andrewrk
+shachaf, I hope you'll speak up if you see me going down a bad road
+
+1551150964
+shachaf
+I might be saying nonsense. :-)
+
+1551151040
+andrewrk
+I tried asking the rust team how their coroutines work, and I wasn't able to fully understand it. it had something to do with polling, which was confusing to me
+
+1551151070
+andrewrk
+it is my understanding that in rust coroutines, when you "create" one, it's empty and doesn't start running yet
+
+1551151079
+andrewrk
+until you try to await it, then it starts running
+
+1551151130
+strmpnk
+Futures are like descriptions of work but they don't actually embody the execution. Tasks do that, which is where the allocation happens.
+
+1551151137
+strmpnk
+(in Rust)
+
+1551151202
+strmpnk
+the cold until polled is an interesting design decision but it reminds me of a lot of the problems I encountered with F# in larger scale apps.
+
+1551151257
+strmpnk
+You end up wanting to allocate tasks far more often than just the top-level one to do things like pipelining I/O.
+
+1551151310
+shachaf
+There are a bunch of implementation of these things that want to call allocators for some reason.
+
+1551151315
+strmpnk
+My Rust Futures experience is limited to tokio though, I can't speak to std::futures and std::tasks, nor the async syntax (which still is getting sorted AFAICT).
+
+1551151316
+shachaf
+Which was never quite clear to me.
+
+1551151369
+strmpnk
+It's clear when you see the kinds of stream processing loops that are common on I/O. You don't always know how much work you will be doing.
+
+1551151413
+strmpnk
+But F#'s Async is the closest thing to Rust's polled Future's that I've actually used.
+
+1551151444
+strmpnk
+It's great if you like combinators I guess.
+
+1551151522
+shachaf
+Hmm, this Rust approach is maybe reasonable?
+
+1551151526
+shachaf
+I'll read about it some more.
+
+1551151634
+strmpnk
+It's not bad. I'm still waiting to see how it works once more of it is completed:
+
+1551151723
+strmpnk
+The impl Future<...> stuff is definitely the only sane way to deal with the types though. Those error messages can yield huge type chains for each generic trait implementation.
+
+1551154001
+shachaf
+So are coroutines that are resumed by the caller just a different kind of thing from coroutines that request their own resumption based on an event?
+
+1551154029
+shachaf
+Or are they both the same sort of thing?
+
+1551154730
+strmpnk
+Coroutines are resumed by a task which is distinct from the caller.
+
+1551154734
+strmpnk
+(in rust)
+
+1551154778
+strmpnk
+The caller is just a piece of code in this case and it doesn't run w/o the task calling poll or a waker telling task to try calling poll again.
+
+1551154813
+strmpnk
+There are some articles out there but it didn't click for me until I tried to write some code and try some things.
+
+1551154872
+shachaf
+I don't mean the Rust thing, I mean in general.
+
+1551154907
+strmpnk
+It depends on the implementation.
+
+1551154925
+strmpnk
+The callback based systems are popular with event loop based reactors.
+
+1551154946
+strmpnk
+That can reschedule when a wait handle of some sort has been triggered.
+
+1551154946
+shachaf
+Where do callbacks get into it?
+
+1551154971
+shachaf
+I mean, sure, you can issue an operation and get notified when it's done and wake up.
+
+1551154980
+strmpnk
+So the coroutine is one half of things. Somewhere at the top you need to tell your I/O scheduler to hold onto it.
+
+1551154999
+shachaf
+Right. But that's not a language feature, just a library.
+
+1551155073
+strmpnk
+In F# it's something like `myAsyncThing |> Async.RunSynchronously` and that will either dispatch to a thread which will juggle at yieldpoints or to a thread pool. It's just a library (FSharp.Core is worth a read if you want to avoid digging into reactors that hook up to epoll and the like).
+
+1551155106
+strmpnk
+(`|>` is function application as a pipeline operator there if you haven't seen it, lots of languages have copied it from F# since)
+
+1551155149
+strmpnk
+Same deal with Lua for example. You can create a coroutine but the asymmetric interface still means the caller needs to wire it up when it yields.
+
+1551155237
+strmpnk
+In contrast, let's use C#'s Tasks for an example of hot execution. Once you get a task handle, it already exists as a working item in some pool. It also has executed up to the first yield point before returning to the creator of the task IIRC, which Rust doesn't do.
+
+1551155291
+strmpnk
+That implementation is also callback based in the scheduling sense. Internally it uses the state machine transformation with case labels to control reentry.
+
+1551155349
+strmpnk
+Rust's use of waker's sidesteps callbacks in a traditional sense but poll() itself is a callback.
+
+1551155401
+strmpnk
+I'm probably not explaining it well. Perhaps I'll try to draw something up at some point as it's come up with others I've discussed this with recently.
+
+1551155534
+strmpnk
+Erlang is probably the most unique in that it uses green threads but they are not native stacks (similar to Lua here). The reduction counters offers a sort of user-space preemption system that is independent of yielding. While it's not "fast" it can lead to very responsive systems.
+
+1551155652
+strmpnk
+I'm more interested in state machine representations right now than the implementation of a pollset + eventloop system in Zig. If it can be competitive with performance and retain clear allocation patterns then I think the I/O stuff will follow through naturally. I'd almost discourage the use of the keyword `async` for this reason, but it's practical and familiar.
+
+1551194468
+gamester
+So I could compile all my C dependencies with zig, and therefore lose the dependency on glibc later on, therefore making shipping binaries on linux easier?
+
+1551194615
+andrewrk
+gamester, yep exactly. that will require
+
+1551194675
+andrewrk
+and then we're going to want the fast incremental compiler (still W.I.P.) as lines of code explodes due to people taking advantage of this
+
+1551194749
+andrewrk
+(I don't see lines of code as a bad thing. Complicated software has a lot of dependencies, and it is a perfectly valid use case of zig to iterate quickly on a project which has compile millions of line of code)
+
+1551194772
+andrewrk
+it'll take some time before zig can handle that use case though
+
+1551195286
+gamester
+andrewrk: why would the lines of code explode? it's c code though which the incremental compiler doesn't compile?
+
+1551195345
+gamester
+don't you just cache object files for c code?
+
+1551195462
+andrewrk
+gamester, I'm predicting human behavior -  if dependencies are easy then people will use them, and thus projects start to have more lines of code
+
+1551195480
+andrewrk
+we don't cache object files for C code yet, and we don't cache object files for zig code yet either
+
+1551195492
+andrewrk
+you can enable that with `--cache on` but it's not integrated into the build system yet
+
+1551196198
+gamester
+okay I understand now, I just read that wrong
+
+1551202647
+emekankurumeh[m]
+when you say "build system" do you mean build.zig files.
+
+1551202722
+andrewrk
+emekankurumeh[m], yes, and I also mean that the stage1 compiler does not do any object-level caching, unlike the stage2 compiler
+
+1551202860
+emekankurumeh[m]
+hmm, I could have sworn that I've seen object files in the zig-cache directory.
+
+1551202923
+andrewrk
+those aren't cached, they are created every time
+
+1551202948
+andrewrk
+it's important to leave them lying around, for example, on macos so that stack traces can work
+
+1551206720
+emekankurumeh[m]
+is there any particular reason that the build system doesn't cache object files?
+
+1551207014
+andrewrk
+
+
+1551210801
+emekankurumeh[m]
+so `--cache on` is a WIP feature?
+
+1551211700
+andrewrk
+no, `--cache on` is fully functional and has no known bugs
+
+1551211724
+andrewrk
+it's on by default for `zig run`
+
+1551211745
+andrewrk
+it caches the final result and does a full rebuild if the cache is invalidated
+
+1551211799
+andrewrk
+build system caching is a different layer; it operates at the "step" abstraction level. so if your build script creates 2 executables for example, build system caching would be the thing that only rebuilds 1 of them if only 1 changed
+
+1551211811
+andrewrk
+that effort hasn't begun yet
+
+1551211840
+andrewrk
+and finally the stage2 incremental builds is an entirely separate layer. I've done a simple proof of concept of it, but that's on hold until coroutines rewrite is done
+
+1551214813
+andrewrk
+I just pushed a breaking change regarding --target-* args, let me know if anyone has any questions
+
+1551222768
+andrewrk
+build.zig gains builder.addFmt API:
+
+1551222804
+andrewrk
+runs zig fmt on a set of files/directories
+
+1551225186
+gamester
+andrewrk: I was asking around on #wayland and it seems that the platform's (like Ubuntu) libwayland-client has to be dynamically linked to use Wayland. Probably no static linking and definitely no implementing the protocol yourself. So it's like windows' system libraries essentially. For why, see the pastebin which expires in 1 week:
+
+1551225210
+andrewrk
+gamester, I agree with your reasoning in this paste
+
+1551225217
+andrewrk
+I've run into similar issues when looking into this as well
+
+1551225226
+andrewrk
+so here's what it means for zig and for you using zig
+
+1551225261
+andrewrk
+(side note, I also agree with your frustration that nobody seems to care that the interface is the C library and not the actual protocol)
+
+1551225275
+andrewrk
+I think the interface should be the protocol, not the C library.
+
+1551225313
+andrewrk
+anyway, what it means for zig is that we recognize dynamic glibc as a target. for example:  -target x86_64-linux-gnu
+
+1551225354
+andrewrk
+after
+
+1551225449
+andrewrk
+for other applications that do not need to dynamically link glibc, they can use the default linux C abi. an example target triple with this is `-target x86_64-linux` (the abi is left off and will default to "musl")
+

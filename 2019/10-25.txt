@@ -1,0 +1,1424 @@
+1571961637
+andrewrk
+3005?
+
+1571961668
+daurnimator
+yep
+
+1571961715
+andrewrk
+I'm waiting for you to tell me you tried the test case that I pointed out, as having degraded behavior and performance from master branch
+
+1571961737
+daurnimator
+andrewrk:
+
+1571961762
+andrewrk
+you're testing the debug code with the debug symbols stripped?
+
+1571961776
+Snektron
+daurnimator: it doesnt need to be very extensive so ill probably just fashion something small that operates on a buffer
+
+1571961785
+daurnimator
+andrewrk: my libllvm is stripped; my zig isn't.
+
+1571961788
+Snektron
+I had a look at libexpat before and im not a fan thouvh
+
+1571961798
+andrewrk
+daurnimator, ok I'll try again
+
+1571961802
+Snektron
+Looks annoying to deal with all those callbacks
+
+1571961816
+daurnimator
+Snektron: there are only 2 correct xml parsers in the world: libxml2 and libexpat. and libxml2 is
+
+1571961840
+Snektron
+It doesnt need to be correct, it just needs to parse vk.xml basically
+
+1571961861
+daurnimator
+Snektron: please please be correct. I've dealt with far too many bad xml parsers
+
+1571961871
+Snektron
+So anything that parses a loose form of xml is good enough
+
+1571961901
+daurnimator
+until e.g. someone tries to add comments to their xml doc; and breaks everything...
+
+1571961924
+Snektron
+Like i said, its pretty much just for vk.xml
+
+1571961940
+Snektron
+I really dispise xml in general, i would never use it voluntarily
+
+1571961959
+daurnimator
+andrewrk: server should be up now
+
+1571961985
+mikdusan
+what's the cpu GHz on this arm?
+
+1571962017
+daurnimator
+mikdusan: 3.3GHz.
+
+1571962209
+daurnimator
+andrewrk: can you confirm you're into the box?
+
+1571962274
+andrewrk
+confirmed, thanks!
+
+1571962284
+andrewrk
+how do I get it to be 32 bit arm?
+
+1571962320
+andrewrk
+uname -m: aarch64
+
+1571962328
+andrewrk
+wanted: uname -m: arm
+
+1571962373
+daurnimator
+andrewrk: arm64 can run arm32 I think; main missing piece would be a 32bit libc for debian I sort of know how to install that; but nixos you're the expert :P
+
+1571962416
+andrewrk
+what I need is to run `docker build` in an environment that thinks it is 32 bit arm
+
+1571962443
+andrewrk
+that could actually be done with qemu probably. even if it takes all day, it's just every 6 months
+
+1571962461
+andrewrk
+it is nice to have arm64 hardware to test with though
+
+1571962545
+daurnimator
+so quick story... I once tried running docker on an arm64 box; but someone had mislabelled a 32bit arm image as arm64. suprisingly it worked without me realising for ages.
+
+1571962570
+daurnimator
+now how to
+
+1571962619
+daurnimator
+andrewrk:
+
+1571962727
+daurnimator
+TL;DR: setarch
+
+1571963388
+andrewrk
+hmm. I'm confused as to why the -lc behavior tests are passing on the arm CI. pessimistically it probably means static linking didn't work
+
+1571963717
+andrewrk
+dammit. I suspected this might happen. docker does not properly namespace based on architecture
+
+1571963741
+scientes
+so &a[2] doesn't crash anymore
+
+1571963745
+scientes
+and i'm working on making it work
+
+1571963750
+scientes
+*on vectors
+
+1571963754
+daurnimator
+andrewrk: did you swap out docker for an arm32 docker binary as the link above does?
+
+1571963783
+andrewrk
+I'm probably not going to have time for arm32 today
+
+1571964210
+daurnimator
+andrewrk: okay. you want me to leave that server up for you?
+
+1571964215
+tgschultz
+andrewrk, re streams and errorsets: It seems to me that what I'd normally do is write a ton of data and then call flush() at the end. Those writes could have errored almost immediately but I didn't know that and all that data is now in fairy land. Although, I suppose that just means calling flush a lot to check for errors?
+
+1571964257
+andrewrk
+daurnimator, yeah is there any reason not keep it up?
+
+1571964268
+daurnimator
+tgschultz: re: flushing .... it can get confusing when there are multiple layers (which there almost always is)
+
+1571964279
+andrewrk
+tgschultz, right, you'd call flush when you want to check for errors
+
+1571964283
+daurnimator
+tgschultz: e.g. does "flush" mean pushed down to the next layer? or all the way?
+
+1571964295
+andrewrk
+that's defined by what the underlying stream of the buffered stream is
+
+1571964307
+daurnimator
+andrewrk: it might not be in zig....
+
+1571964318
+tgschultz
+One thing that will work out for this plan: bitstreams are already buffered by necessity.
+
+1571964351
+daurnimator
+e.g. stream -> TLS wraper (e.g. openssl) -> TCP socket -> kernel main buffering -> network device buffering
+
+1571964360
+daurnimator
+there is a "flush to next layer" at all points
+
+1571964403
+daurnimator
+IMO the "best" answer is to automaticaly attempt flushing to the next layer if its cheap or you're full.
+
+1571964429
+daurnimator
+but then also offer a flush() call for each layer
+
+1571964483
+tgschultz
+So this would mean you're leaning towards interfaces being anyerror? I'm in favor of that, it was much simpler to work with.
+
+1571964499
+andrewrk
+tgschultz, yes it's fair to say I'm leaning towards that
+
+1571964656
+andrewrk
+this one might actually succeed:
+
+1571964670
+daurnimator
+tgschultz: note that if an "autoflush" fails then you don't have to report it immediately: you can save it for the next flush() call. write() can just return error.BufferFull or something
+
+1571964726
+tgschultz
+I think the idea is that write would not fail at all, it would just eat the data. Which is probably ok.
+
+1571964753
+daurnimator
+tgschultz: the write should definently fail...
+
+1571964778
+tgschultz
+well that is an option anyway, we could have a small set of generic errors and you have to ask for more complete information
+
+1571964812
+daurnimator
+tgschultz: I would say that flush() is per-"layer" and could report exact errors. write() would be generic and just tell you to call flush() for actual error info
+
+1571964885
+tgschultz
+I think that makes sense, so write can return generic errors or "error in lower layer".
+
+1571965000
+daurnimator
+tgschultz: now what I haven't figured out yet, is a way to indicate that a given buffer is long-lived and doesn't e.g. need to be copied
+
+1571965019
+daurnimator
+I think for the sake of progress I might have to ignore that optimization :(
+
+1571965096
+daurnimator
+Though for certain use cases that's... annoying
+
+1571965170
+daurnimator
+though with "autoflush" we can make it okay for many use cases: if there is nothing in your buffer you can try and call the write() syscall immediately; and then only add it to your buffer if you get a partial write or EAGAIN
+
+1571965276
+daurnimator
+Though there are times where you don't want that. I've solved it before with an argument to write() of "buffering mode" -> pass an enum of .AutoFlush/.NoFlush
+
+1571965353
+daurnimator
+andrewrk: sorry didn't answer your question: I would shut it down if you don't think you'd get back to it for a few days. at $1 an hour idling for 3 days is.... a waste of resources.
+
+1571965475
+andrewrk
+ok didn't realize you were paying $1/hour for it. it's more convenient for me to pay for my own so that I don't depend on anyone to get it up or down
+
+1571965515
+daurnimator
+andrewrk: I'm not paying; it's donated from the arm foundation/packet.net.
+
+1571965558
+andrewrk
+ok well same thing goes, it's not useful to me if I have to ping someone to gain access
+
+1571965564
+andrewrk
+I appreciate your efforts
+
+1571965587
+daurnimator
+andrewrk: right. hence me asking to add you as a person that can spin up servers. hopefully they'll get back to me today
+
+1571965629
+daurnimator
+andrewrk: as long as you expect to get back to things in the next 1-5 days I'm fine to leave it running
+
+1571965694
+andrewrk
+yeah leave it up for a couple days then please, I'll try to figure out this child process stdout EBADF thing
+
+1571965856
+daurnimator
+k
+
+1571965899
+muffindrake
+Is there a scanf equivalent function in the standard library?
+
+1571965921
+muffindrake
+I've already looked at fmt.zig, unless I missed something.
+
+1571966296
+tgschultz
+I don't believe there is
+
+1571966356
+andrewrk
+muffindrake, depending on your use case, mem.separate or mem.tokenize might be what you want
+
+1571966471
+muffindrake
+Indeed, some use cases may be covered by those functions, but they're still no real replacement for scanf
+
+1571966606
+andrewrk
+scanf is possible with zig's language facilities but nobody has written the std lib code for it
+
+1571966628
+daurnimator
+I still wish someone would port a PEG library to zig. Maybe that someone will end up being me
+
+1571966686
+daurnimator
+alternatively, something Ragel-like
+
+1571966692
+daurnimator
+maybe even Ragel itself
+
+1571966943
+andrewrk
+
+
+1571966963
+andrewrk
+haha it even works in qemu on x86_64
+
+1571967130
+muffindrake
+I noticed some else => unreachable cases in formatBytes in fmt.zig. Shouldn't that be @compileErrors?
+
+1571968876
+traviss
+muffindrake an example of using sscanf from zig incase you need it:
+
+1571970113
+andrewrk
+traviss, if we improve translate-c we can remove that _NO_CRT_STDIO_INLINE hack too
+
+1571970215
+diltsman
+My code was compiling on Windows.  Then I upgraded my VS2019 community installation to the latest patch/build release.  After that it fails to find the libc installation.  Any ideas?
+
+1571970279
+daurnimator
+diltsman: there was a recent issue with vs2019 optimisations. I think we commited a fix to turn off some optimizations in vs2019
+
+1571970302
+diltsman
+So,getting the latest Zig build might fix it?
+
+1571970312
+daurnimator
+diltsman: indeed.
+
+1571970528
+mikdusan
+"fails to find the libc installation" <-- looks like `zig-cache/native_libc.txt` needs to be updated?
+
+1571970759
+pixelherodev
+What's the correct way to compare enum members? In C, I'd just do `>=`/`<=` (e.g. to check if something is a valid letter, `>= A and <= Z', but that's apparently not valid in Zig
+
+1571970974
+daurnimator
+pixelherodev: enum members don't have ordering
+
+1571970990
+daurnimator
+pixelherodev: however if you're actually assigning values, you can use @enumToInt
+
+1571971818
+pixelherodev
+Yeah that's what I thought
+
+1571971824
+pixelherodev
+Wasn't sure if there was a better option though
+
+1571971850
+pixelherodev
+Having to specify that on every use gets annoying, but much better than e.g. equality checking twenty different values in an unordered list
+
+1571971862
+daurnimator
+pixelherodev: given letters are ordered... they aren't a good match for an enum
+
+1571972227
+scientes
+andrewrk, so you found the writing-back-to-stack ugly in my patch, but that was caused by your decision to not stack allocate vectors, which turned out to be a poor decision, but that is only blocking &a[3] like gcc-9 does
+
+1571972514
+andrewrk
+scientes, when you say stack allocating, in zig compiler internals you mean making handle_is_ptr true for vectors, right?
+
+1571972542
+scientes
+yep
+
+1571972543
+andrewrk
+let's discuss this, but also, related, I've been pondering how to implement array indexing of vectors and I had an idea today at the gym of how to do it
+
+1571972555
+scientes
+oh wait
+
+1571972566
+scientes
+handle_is_ptr(Int) returns false
+
+1571972568
+scientes
+so maybe not
+
+1571972580
+andrewrk
+I think it will be clean and nice for users, and it allows x[y] syntax, with y as possibly comptime or not
+
+1571972582
+scientes
+I mean like ints
+
+1571972585
+scientes
+which are stack allocated
+
+1571972599
+andrewrk
+vectors are stack allocated the same way ints are
+
+1571972622
+scientes
+oh, then how do i access the result-loc?
+
+1571972647
+scientes
+I guess I was just having difficulty with the result-loc stuff
+
+1571972651
+scientes
+ResultLoc
+
+1571972674
+andrewrk
+yeah. it's the worst part of the compiler internals at the moment :(
+
+1571972678
+scientes
+as that is part of stack allocating
+
+1571972694
+andrewrk
+vectors shouldn't be affected much by result loc stuff though
+
+1571972715
+andrewrk
+anyway my idea for this is to make there be a type, like I explained earlier, analogous to when you do &x.y of packed structs
+
+1571972735
+scientes
+but that doesn't allow the flexibility that gcc-9 allows
+
+1571972736
+andrewrk
+however, there will also be a type for when the element index is runtime known.
+
+1571972739
+scientes
+and i think it is fundamentally wrong
+
+1571972749
+scientes
+the pointer should just point to the stack allocation
+
+1571972809
+andrewrk
+and so when you see this runtime known element index type, if you have for some reason access to the runtime value (e.g. if the instruction id happens to be VectorElemPtr) then you do the operation. otherwise fail with a compile error
+
+1571972812
+scientes
+so it doesn't work with u7, but it does with u8 and u24
+
+1571972829
+andrewrk
+let me take your branch and try to work this into it, and see if you like it
+
+1571972851
+scientes
+it just means that the pointer is excessively typed
+
+1571972859
+scientes
+and lacks all the flexibility of pointers, so its hardly a pointer
+
+1571972880
+scientes
+I feel all these weird pointers should just be replaced by bit-granularity pointers
+
+1571972883
+scientes
+if we want that
+
+1571972905
+andrewrk
+come up with a list of code examples that you think should work re: vector indexing (you can probably pull them all from your test cases) and I'll show you that they'll all pass with my strategy
+
+1571972917
+scientes
+yeah, good idea
+
+1571972964
+diltsman
+daurnimator, that didn't work.  mikdusan, I deleted zig-cache before building.
+
+1571972997
+andrewrk
+diltsman, can you observe this problem with `zig.exe libc`?
+
+1571973020
+diltsman
+Unable to determine vcruntime.h path
+
+1571973051
+andrewrk
+sounds like msvc detection needs to be improved. you can work around this with a libc.txt file in the meantime
+
+1571973066
+andrewrk
+the sooner we get away from depending on msvc the better... we're actually pretty close
+
+1571973075
+diltsman
+Documentation for that is hwere?
+
+1571973088
+andrewrk
+
+
+1571973106
+andrewrk
+the documentation is that this code does not use any C++ features
+
+1571973143
+diltsman
+How does that document libc.txt?
+
+1571973193
+andrewrk
+
+
+1571974068
+diltsman
+andrewrk, where do I put libc.txt?
+
+1571975996
+daurnimator
+diltsman: pass the path to it as an argument to zig
+
+1571977188
+pixelherodev
+daurnimator, not an enum of letters; it's keycodes for my kernel :P
+
+1571977246
+pixelherodev
+Codes are translated from raw input from the keyboard into the internal list; if they match certain patterns (letter, number, etc) then characters are appended to an additional "raw text" buffer that can be read via /dev/stdin
+
+1571978578
+andrewrk
+diltsman, how it's supposed to work is you run `zig libc` and it gives you a template, that you can replace the contents of. since it's not working for you, here's one:
+
+1571978603
+andrewrk
+to be clear: if `zig.exe libc` does not find your msvc installation, it is an issue with zig
+
+1571980480
+daurnimator
+pixelherodev: sounds like you just want e.g. u8/u32. zig's switch statement takes ranges.
+
+1571980747
+pixelherodev
+Yes, but that's impossible to maintain
+
+1571980757
+pixelherodev
+daurnimator, imagine encoding ~120 values like that in your head
+
+1571981544
+pixelherodev
+What I really want is just labeled u8s, so enum + @enumToInt is more than adequate
+
+1571986511
+bgiannan
+did someone already set up a CI for a zig project?
+
+1571986586
+andrewrk
+I remember seeing
+
+1571986673
+bgiannan
+ah great i'll look into it
+
+1571986819
+andrewrk
+hmmmmmm. why would `git name-rev --tags` on one machine return `aa2607a10` and on another `aa2607a1`. Both git 2.23.0
+
+1571986888
+bgiannan
+do both have fetched everything?
+
+1571986995
+andrewrk
+yes
+
+1571987132
+andrewrk
+aha, I got it. the one with the 0 is older
+
+1571992574
+euantor
+RE CI for a Zig project, see here for how I'm doing it:
+
+1571992574
+euantor
+pull euantorano/zig:master`)
+
+1571992648
+bgiannan
+euantor, awesome!
+
+1571992884
+euantor
+Note that the GitHub Actions one is a bit behind as they changed the syntax a bunch fairly recently and I haven't gotten around to updating it yet
+
+1571992906
+bgiannan
+Circle-CI is fine
+
+1572014935
+pixelherodev
+Was the compiler crashing if no `builtin` is declared in the root source file a deliberate decision?
+
+1572014949
+pixelherodev
+Line 9098 of codegen.cpp: `assert(builtin_tld != nullptr);`
+
+1572015059
+pixelherodev
+I believe it was added in commit 17eb24a7e
+
+1572015195
+pixelherodev
+... oh wait. My bad, sorry - this is failing if there's no
+
+1572015195
+pixelherodev
+That makes way more sense
+
+1572017945
+pixelherodev
+Okay, more problematic problem: am i crazy or should this assertion pass?
+
+1572018462
+pixelherodev
+No clue where six bytes of that are coming from
+
+1572018738
+pixelherodev
+5 u32 + 2 u8 + 1 u48 + 1 u64 is showing up as
+
+1572018759
+pixelherodev
+(Same result happens if arrays are replaced with uNN types)
+
+1572018770
+pixelherodev
+5 * 32 + 2 * 8 + 48 + 64 = 288 bits; 288 / 8 = 36 bytes
+
+1572018795
+pixelherodev
+I have no idea what to do, because I copied the relevant structs into a standalone file and ran the tests
+
+1572018823
+pixelherodev
+... wait, no, it
+
+1572018839
+pixelherodev
+Probably never actually accessed the struct so lazy resolving meant it never mattered
+
+1572018963
+pixelherodev
+
+
+1572018966
+pixelherodev
+Minimal example
+
+1572018991
+pixelherodev
+I have no idea where to so much as
+
+1572019017
+pixelherodev
+And disabling the assertion causes compilation to work, but I don't need to explain why it's a bad idea
+
+1572019421
+pixelherodev
+@panic("This makes no sense!")
+
+1572019518
+mikdusan
+i think the
+
+1572019530
+mikdusan
+here is a related issue:
+
+1572019557
+pixelherodev
+This is a byte alignment issue, not a big alignment issue
+
+1572019563
+pixelherodev
+More to the point, the compiler is
+
+1572019567
+pixelherodev
+It's
+
+1572019586
+pixelherodev
+line 7846 of analyze.cpp in the stage1 compiler
+
+1572019632
+pixelherodev
+But while i can easily find the location where the error happens, I've almost no familiarity with the stage1 compiler code base, so I can't figure out what's causing it in anything resembling a reasonable timef rame
+
+1572019637
+pixelherodev
+s/timef rame/time frame
+
+1572019713
+mikdusan
+
+
+1572019738
+pixelherodev
+...
+
+1572019745
+pixelherodev
+Seriously, thanks a bunch
+
+1572019855
+mikdusan
+i'd put money down that implementing #3133 will fix #2627
+
+1572020064
+pixelherodev
+Sure, but that's not exactly
+
+1572022006
+mikdusan
+andrewrk: `ir_build_const_import()` doesn't seem to be used anywhere. can I nuke it?
+
+1572022457
+andrewrk
+mikdusan, yes
+
+1572022470
+mikdusan
+ugh sorry my grep-fu failed. it's actually referenced
+
+1572022816
+pixelherodev
+Hmm, it's detecting the bit count correctly
+
+1572022848
+pixelherodev
+had it dump some debug values to files named after their structs, this is coming in handy
+
+1572023127
+pixelherodev
+u48 apparently isn't registering as byte-aligned
+
+1572023217
+pixelherodev
+As a result, it thinks it's mis-aligned, and packs it
+
+1572023228
+pixelherodev
+I think I might be able to send a fix for this today
+
+1572023275
+pixelherodev
+Yeah, it's rounding up to u64, which has
+
+1572024905
+pixelherodev
+So, as a temporary workaround, avoiding non-native integer sizes seems to fix the problem - the real problem is that e.g. `[5]u8` is turned into a u64
+
+1572024927
+pixelherodev
+Splitting into two arrays, a `[4]` and a `[1]` in this example, "fixes" the problem
+
+1572026964
+riba
+hi :D
+
+1572027030
+andrewrk
+welcome back riba :)
+
+1572027067
+scientes
+pixelherodev,  the real problem is that e.g. `[5]u8` is turned into a u64
+
+1572027068
+scientes
+wut
+
+1572031116
+mq32
+scientes: sounds like a good optimization to me
+
+1572033395
+andrewrk
+idea: if the root source file has `pub const os = struct {...};` then std.os will do `usingnamespace root.os;`
+
+1572033433
+andrewrk
+this simple thing accomplishes 2 things: (1) you can fill in extra OS definitions that are not present in the zig standard library yet
+
+1572033451
+andrewrk
+(2) freestanding targets can supply implementations and then take advantage of std lib code or other packages which want to use os functions
+
+1572033494
+mq32
++2
+
+1572033690
+dingenskirchen
+related, is there a summary of all the STL "magic" root pub const's available somwhere?
+
+1572034699
+andrewrk
+no but that's planned to be here:
+
+1572034753
+andrewrk
+you can search for @import("root") in the std lib. there are only 6 hits
+
+1572035802
+pixelherodev
+"idea: if the root source file has `pub const os = struct {...};` then std.os will do `usingnamespace root.os;`" ... gah! So many interesting things I want to work on, so little time!
+
+1572036230
+tgschultz
+2 sounds like a great idea.
+
+1572036238
+pixelherodev
+Compiler bug is higher priority for me though
+
+1572036273
+pixelherodev
+I already have an acceptable mod of the standard lib for my project, so fixing up upstream stdlib isn't high priority for me personally (though of course I would
+
+1572036294
+pixelherodev
+A compiler bug that directly affects me to the point that I have a workaround in a very basic piece of code bothers me far more
+
+1572036318
+andrewrk
+pixelherodev, which issue is that?
+
+1572036335
+pixelherodev
+2627
+
+1572036348
+tgschultz
+You know, for magic names like this, and like those used by serialize/deserialize and fmt, it would be nice to somehow indicate what namespace they are intended to be consumbed by, in order to avoid conflicts and make the code easier to follow
+
+1572036354
+pixelherodev
+I've largely tracked down the issue, I just need to get more familiar with the code before I can fix it
+
+1572036358
+andrewrk
+I agree tgschultz
+
+1572036388
+andrewrk
+pixelherodev, ah packed structs. I should just go ahead and do
+
+1572036407
+pixelherodev
+Well if that's not done by Sunday I'll probably have my own fix ready :)
+
+1572036417
+andrewrk
+that's handy
+
+1572036421
+andrewrk
+so much to do
+
+1572036452
+andrewrk
+I think to optimize for long term success of zig project I might need to focus my efforts on language stabilization
+
+1572036460
+pixelherodev
+I completely agree
+
+1572036472
+pixelherodev
+Stability is one of the most important properties a language can have
+
+1572036721
+andrewrk
+aarch64-linux builds are now available on ziglang.org/download
+
+1572037420
+scientes
+oh waoh
+
+1572037425
+scientes
+does that mean the C ABI went in?
+
+1572037541
+emekankurumeh[m]
+how do we get the build OS now?
+
+1572037613
+emekankurumeh[m]
+nevermind
+
+1572037861
+andrewrk
+std.Target.current.os
+
+1572037871
+andrewrk
+builtin.os still works
+
+1572037902
+emekankurumeh[m]
+i was importing "std" instead of "builtin"
+
+1572037921
+andrewrk
+scientes, I did enough with regards to C ABI to get zig to build
+
+1572037973
+andrewrk
+currently only behavior tests are enabled on CI testing but I'm running some tests to see what passes to increase coverage, and then make sure issues are open for what is disabled
+
+1572038038
+andrewrk
+back to the root file os thing - this starts to show a way that zig can provide support for operating systems via third party packages and for hobby OS's rather than having to upstream everything
+
+1572038137
+andrewrk
+because you could, for example, depend on a zig package and use it like this: `pub const os = @import("MyHobbyOS-std-os");`
+
+1572038242
+pixelherodev
+... I take back what I said about liking that idea. I'm now
+
+1572038283
+andrewrk
+so now you can make your hobby os and provide official zig std lib integrations
+
+1572038295
+andrewrk
+without having to get them merged into zig itself
+
+1572038297
+emekankurumeh[m]
+i did something like that in my hobby os
+
+1572038303
+pixelherodev
+Yours is pluto?
+
+1572038317
+emekankurumeh[m]
+you just need to add it as a library and it just "hooks" in
+
+1572038337
+emekankurumeh[m]
+no, something much less advanced:
+
+1572038384
+pixelherodev
+...yeaaaah... i see what you mean :P
+
+1572038497
+emekankurumeh[m]
+but can your's even bootstrap? /s
+
+1572038571
+pixelherodev
+No, but it almost has SATA capability. Almost.
+
+1572038592
+pixelherodev
+:P
+
+1572038609
+emekankurumeh[m]
+that's ... rather impressive
+
+1572038611
+pixelherodev
+Definitely got the most advanced PCI support of any Zig kernel
+
+1572038620
+pixelherodev
+It can list
+
+1572038623
+pixelherodev
+*Any*.
+
+1572038630
+andrewrk
+pixelherodev, what arch are you targeting so far?
+
+1572038642
+pixelherodev
+x86, though I'm planning on shifting the focus to amd64 later
+
+1572038649
+pixelherodev
+I embedded the PCI IDs file used by lspci and wrote a simplistic parser
+
+1572038664
+andrewrk
+damn. I was going to ask you to write an xbox 360 controller driver for me if it was arm, so I could use it in clashos :P
+
+1572038698
+andrewrk
+that also involves USB, which I understand to be the stuff of nightmares
+
+1572038699
+pixelherodev
+Heh, sorry. Might be worth trying if I ever get an HDMI->VGA adapter; I'm stuck on a VGA monitor but I have a RPi 3 that someone gifted me :P
+
+1572038707
+pixelherodev
+I'm actually planning on getting USB support in soonish
+
+1572038712
+emekankurumeh[m]
+be careful, zig is good enough that your os could start the singularity...
+
+1572038735
+andrewrk
+ha, don't worry it's not a general purpose OS. just a bare metal video game
+
+1572038746
+pixelherodev
+I know, I saw; I was rather impressed honestly
+
+1572038758
+pixelherodev
+I'd heard bare metal on an RPi could be a pain due to the convoluted GPU loading
+
+1572038766
+andrewrk
+most of that work was markfirmware
+
+1572038768
+pixelherodev
+s/loading/bootloading
+
+1572038776
+andrewrk
+oh, the bootloading was my work
+
+1572038814
+pixelherodev
+The one place pluto will probably always have me beat: I have no plan of writing a bootloader; after I switch primary target to amd64, I plan on implementing the EFI stub so that it can be loaded by the firmware
+
+1572038857
+pixelherodev
+For now, QEMU's more than adequate
+
+1572038864
+pixelherodev
+s/QEMU's/QEMU is
+
+1572038900
+jaredmm
+Is the expectation that "all" of the Windows API will eventually be contained within a Windows namespace/package? I know that when including Windows.h, there are issues with the insanity of certain macros or defines.
+
+1572038947
+andrewrk
+jaredmm, I don't think the standard library will ever have fully complete windows API definitions, but it will have the most common ones. I foresee a third party package that does usingnamespace and then fills in the gaps.
+
+1572038971
+jaredmm
+Something like what raulgrell was doing with zig-window?
+
+1572038980
+andrewrk
+I'm not familiar with that
+
+1572039003
+jaredmm
+
+
+1572039050
+jaredmm
+(win32_types may be a better example, but I'm not sure what was auto-generated vs manual).
+
+1572039129
+andrewrk
+ah I see. yes something like that
+
+1572039129
+emekankurumeh[m]
+windows header's are actually crazy, if you use @cImport you get mountains of errors from redefines depending on what you import
+
+1572039150
+andrewrk
+some of that is translate-c's fault. but yeah windows.h is not exactly the most straightforward c code
+
+1572039369
+jaredmm
+Yeah, even things that seem straightforward can given errors. #defines that reference other #defines. I wasn't sure if the direction was to improve the handling of C in Zig or if it should be handled with a reimplementation of the APIs in Zig.
+
+1572039391
+pixelherodev
+The hardest part of the kernel is that I insist on documenting all the values instead of just writing the hex values and forgetting what they mean :P
+
+1572039713
+pixelherodev
+Also, holy
+
+1572039722
+pixelherodev
+And this is just revision *1.0*!
+
+1572039741
+pixelherodev
+I'm going to just implement on an as-needed basis for now ;P
+
+1572039883
+tgschultz
+There's a reason there haven't really been any viable new OSs since the 90s.
+
+1572039899
+pixelherodev
+I'm well aware, it's why I'm doing this for fun
+
+1572039917
+pixelherodev
+If I ever decide I want to do this for real (highly unlikely), I'd at the
+
+1572039921
+pixelherodev
+s/module/modules/
+
+1572039940
+pixelherodev
+Graphics drivers alone are absolutely impossible otherwise
+
+1572039941
+tgschultz
+Yeah, I know, I'm just expressing my dissapointment in the state of technology
+
+1572039952
+pixelherodev
+I completely agree, but I also recognize it won't change
+
+1572039985
+andrewrk
+I have hope
+
+1572039986
+pixelherodev
+If the goal is a viable OS, it's actually not impossible, it just requires more than a few volunteers and the willingness to cut corners for the legitimately impossible drivers
+
+1572040008
+pixelherodev
+Hardware wise, backwards compatibility is given far too much important to go away any time soon
+
+1572040041
+tgschultz
+Less than that I think, if you specifically choose to only support one set of hardware. Of course it has to be so much of an improvement that people are willing to buy new hardware.
+
+1572040055
+pixelherodev
+True, but I was talking more generally usable
+
+1572040080
+emekankurumeh[m]
+is supposed to allow modifying the return value of a function that's immediately bound in an optional block?
+
+1572040087
+pixelherodev
+Seriously, two dozen people working full-time for a year even should be able to make a loooot of headway, especially on a well-managed project
+
+1572040166
+pixelherodev
+But that's not going to happen, because the funding doesn't exist, and for the most part volunteers need day jobs, and the number of qualified people is already pretty low
+
+1572040226
+andrewrk
+such an organization could start by targeting only very specific hardware at first
+
+1572040272
+pixelherodev
+True - honestly, in this channel alone we probably have enough people to do it, if we could all afford to spend time on it
+
+1572040308
+pixelherodev
+Plus, the requirement for specific hardware means that the full team would have to agree on what hardware to target, and that's another potential point of contention
+
+1572040321
+tgschultz
+There's the other problem: when discussing this sort of thing with others I find that people have rather vastly different ideas of what they want. You'd need the right people, all heading towards the same goal.
+
+1572040329
+pixelherodev
+Exactly
+
+1572040352
+pixelherodev
+A lot of software projects can produce acceptable results with a fractured team, but an OS requires cohesion
+
+1572040363
+pixelherodev
+The barriers of entry are simply too high without it
+
+1572040398
+pixelherodev
+Honestly, I'm going to focus on a lot of the building blocks in my kernel - individual, low-level drivers for x86/x64 - and I'll decide where to go from there
+
+1572040423
+mikdusan
+emekankurumeh[m]: #3527, I believe `zig build ...` takes more than one target. how does that work with passing additional args via `-- ...` ?
+
+1572040499
+andrewrk
+tgschultz, I do think if zig succeeds it will help make this goal in general more possible though, because there would be proliferation of zig packages
+
+1572040517
+pixelherodev
+^ that's one of the amazing benefits Zig offers
+
+1572040530
+pixelherodev
+AFAIK The
+
+1572040552
+pixelherodev
+No weird config hacks, no custom cross-compilers, no loss of the standard library...
+
+1572040574
+tgschultz
+well, parts of the standard library obviously don't work
+
+1572040603
+pixelherodev
+True, but a ton of it does
+
+1572040608
+tgschultz
+at least today, sounds like andrew has a plan for that
+
+1572040624
+pixelherodev
+Most of it works actually
+
+1572040651
+pixelherodev
+Even I/O and FS stuff wouldn't be hard to integrate even
+
+1572041030
+mq32
+pixelherodev: as you're writing a hobby OS: do you know Týndur?
+
+1572041057
+mq32
+german project site:
+
+1572041077
+pixelherodev
+Vaguely, why?
+
+1572041077
+mq32
+it is in a "usable" state as in: "someone ported SDL 1 games, gcc, ... to tyndur"
+
+1572041087
+mq32
+it has the CDI, common driver interface
+
+1572041110
+mq32
+could be a potential thing for you, having some pre-written drivers already available with a simple interface
+
+1572041168
+pixelherodev
+Neat, thanks for that!
+
+1572041175
+mq32
+you're welcome
+
+1572041186
+mq32
+best documentation is probably euirc.net/#lost
+
+1572041186
+pixelherodev
+Do you have an active link?
+
+1572041227
+mq32
+
+
+1572041253
+pixelherodev
+Thanks!
+
+1572041358
+mq32
+i'll probably nag you a bit tomorrow, want to create some "OS" for i386 with zig as well
+
+1572041382
+mq32
+but not as in "general purpose OS" but more as in "pico-8-clone on bare x86 metal"
+
+1572041423
+pixelherodev
+Heh, that's actually hilarious - not your idea, but because my kernel was originally going to be a VM for a different FC, and likely still will be :)
+
+1572041462
+mq32
+"FC as in Fake Computer"?
+
+1572041463
+mq32
+:D
+
+1572041474
+mq32
+/Console
+
+1572041544
+mq32
+still have to make some concept on how that thing should run in the end (how the user controls it), but the hardware case is fixed already :D
+
+1572041734
+pixelherodev
+Fantasy Console, yeah
+
+1572041819
+mq32
+ah yeah. people do cool stuff with those... :)
+
+1572041830
+mq32
+pico-8 has a quite active demo scene
+
+1572042407
+emekankurumeh[m]
+mikdusan: i hadn't really thought about that, perhaps that would be up to the user?
+
+1572043521
+Snektron
+Why is a range in slice-syntax with two dots but a range in a switch with 3?
+
+1572043533
+Snektron
+Seems like a strange inconsistency
+
+1572043560
+pixelherodev
+Going to just ACPICA for now (though I'll leave the rest of the code as is so I can come back to it later)
+
+1572043565
+pixelherodev
+s/just/just use/
+
+1572043766
+mikdusan
+another way to look at it wrt intervals, the 10 is open: `[0..10]`, and `'a'...'z'` the z is closed; so 'a'..'z' would be inconsistent from that perspective
+
+1572044074
+Snektron
+oh yes, i didnt realize that
+

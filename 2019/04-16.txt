@@ -1,0 +1,2144 @@
+1555372919
+andrewrk
+on the other hand if zig's fast development pace can solve the use cases before others and react to changes faster, that could give us a big advantage
+
+1555372933
+shritesh
+that's the plan
+
+1555372933
+andrewrk
+ruby was made popular by rails
+
+1555372974
+Xe
+i'm working on making the olin patch for zig support at the least all of the olin system calls zig needs
+
+1555372985
+Xe
+wonder if i can make it have better support than wasi
+
+1555373017
+andrewrk
+Xe, zig's lazy analysis should help with that. e.g. if you are only building hello world, then only write() and exit() are needed (plus the stuff depended on by default panic handler, if not overridden)
+
+1555373048
+shritesh
+I think zig also has a chance in mobile if we have a good cross-compilation story.
+
+1555373050
+Xe
+andrewrk: yeah, i just wanna be able to make HTTP calls from zig in webassembly
+
+1555373061
+Xe
+i have most of the stuff done for it
+
+1555373074
+Xe
+(my concept of file descriptors includes enough room for a HTTP client)
+
+1555373144
+Xe
+actually, question that is related
+
+1555373197
+Xe
+
+
+1555373231
+andrewrk
+Xe, that invokes unchecked undefined behavior
+
+1555373290
+andrewrk
+the memory of `buf` belongs to the stack frame, and so when `get` returns the pointer to `buf` is invalid
+
+1555373363
+andrewrk
+I'd like to figure out how to safety-protect that, but haven't yet
+
+1555373510
+shritesh
+Off topic: I really appreciate how the for(i = 0; i < n; ++i) pattern in zig is a while loop instead and for loop is strictly for iteration. Tiny things like this make Zig so fun.
+
+1555373586
+andrewrk
+that's funny, I get a lot of the opposite sentiment about while/for
+
+1555373607
+hryx
+I absolutely love for and while in zig
+
+1555373613
+andrewrk
+people want all kinds of fancy syntax sugar for iteration
+
+1555373642
+shritesh
+range objects for iteration is overkill
+
+1555373656
+andrewrk
+wow, Xe, I fixed the bug with your test case, but it uncovered a deadlock race condition in LLD
+
+1555373663
+hryx
+honestly I think it's so much better without the sugar. simple & orthogonal tools, and it's not even that verbose at all
+
+1555373670
+Xe
+andrewrk: that's incredible
+
+1555373714
+hobomatic
+iteration is what has turned me off of rust
+
+1555373723
+hobomatic
+its just too much
+
+1555373894
+hobomatic
+the standard library is heaving with iterators and iterator transformers. No completion tools can even keep up with it.
+
+1555373938
+shritesh
+Iterator adapters are powerful but overused imo. I was following burntsushi's code (of ripgrep fame) during AoC2018 and I noticed he never uses any of those, just regular old mutable variables and for loops with manual indexing into stack allocated arrays
+
+1555373964
+andrewrk
+shritesh, a WASI interpreter in zig is going to be worth it for the test coverage alone that it brings to the wasm target
+
+1555374015
+andrewrk
+Xe, I'm getting the deadlock race condition in LLD about 1 / 6 times with your example. I'll open a new issue and report it to LLD too
+
+1555374021
+shritesh
+I agree. I'll work on it after like 2 weeks. Need to graduate college first lol
+
+1555374135
+Xe
+andrewrk: i'll follow the bug tracker
+
+1555375399
+andrewrk
+alright we'll just pass --no-threads until LLD fixes their shit
+
+1555375714
+shritesh
+Noob question: Are 0 sized slices a thing?
+
+1555375793
+andrewrk
+yes
+
+1555375828
+andrewrk
+also 0 sized arrays
+
+1555375875
+shritesh
+I have a pointer that i need to convert to an u8 slice of len 0. I'm getting an error: slice of single-item pointer
+
+1555375904
+shritesh
+@intToPtr(u8, @intCast(usize, mem_size(0)) * WASM_PAGE_SIZE)[0..0] is probably not the best way to do things :D
+
+1555376062
+hryx
+progress report on recursive stage2 parser: +1,824 lines, 131 instances of // TODO, 66 instances of `return error.NotImplemented`
+
+1555376250
+andrewrk
+hryx, it's a massive endeavor
+
+1555376309
+andrewrk
+shritesh, what's the original source of information?
+
+1555376320
+hryx
+sure is! but it's going pretty well so far I'd say
+
+1555376321
+andrewrk
+calling a wasi function?
+
+1555376335
+shritesh
+Yes. It returns a number of pages (mem_size(0)
+
+1555376356
+andrewrk
+why is the @intCast to usize needed?
+
+1555376365
+shritesh
+mem_size(0) returns an i32
+
+1555376373
+shritesh
+It's the current page number
+
+1555376375
+andrewrk
+what does negative mean?
+
+1555376392
+shritesh
+WASM only has {i,f}{32,64}
+
+1555376402
+shritesh
+It can never be negative
+
+1555376448
+andrewrk
+hmm. I think you can make it `u32` then because i32 and u32 are guaranteed to have the same bit pattern in the C ABI
+
+1555376455
+andrewrk
+and then that cast isn't needed
+
+1555376486
+shritesh
+okay. but how to I instantiate a zero slice?
+
+1555376560
+Xe
+shritesh: wait, what wasi functions operate on the memory info?
+
+1555376576
+andrewrk
+I would do the multiplication by page size first, and then choose the pointer type [*]u8 rather than *u8 as the @intToPtr result type
+
+1555376589
+andrewrk
+shritesh, also don't forget to update std.os.page_size for wasm!
+
+1555376590
+shritesh
+Xe: @"llvm.wasm.memory.size.i32" and @"llvm.wasm.memory.grow.i32"
+
+1555376600
+andrewrk
+I hope our comptime-ness of that decl isn't violated?
+
+1555376640
+shritesh
+This is not even WASI, this is WASM. WASM the architecture itself has malloc
+
+1555376653
+Xe
+ah okay
+
+1555376684
+andrewrk
+well more like sbrk
+
+1555376696
+shritesh
+Yes :D
+
+1555376734
+andrewrk
+shritesh, I continue to be impressed with your ability to find specifications for wasm, my searches keep leading me in circles
+
+1555376774
+Xe
+shritesh: can you do us all a favor and make a webpage centralizing all your links?
+
+1555376783
+Xe
+please and thank you
+
+1555376880
+shritesh
+Most of it came from reading the commits in rustc that added wasm support.
+
+1555376894
+shritesh
+But yeah, I will
+
+1555377346
+andrewrk
+hmm I didn't find WASM_PAGE_SIZE. where does that come from?
+
+1555377400
+andrewrk
+it's important whether or not that is a hard coded constant or not
+
+1555377427
+shritesh
+Its fixed 64 KB
+
+1555377524
+shritesh
+Background info: WASM has fixed linear memory that starts at 0. The memory can only grow. "realloc" isn't even a thing. Growing might return an error but that's it. Growing usually returns the last page size and you multiply by the page size to get effective address of your new memory.
+
+1555377551
+shritesh
+Growing returns the last page number*
+
+1555377633
+shritesh
+So WasmAllocator is technically a FixedBufferAllocator that calls the grow intrinsic when needed
+
+1555377660
+andrewrk
+ok I updated std.os.page_size
+
+1555377735
+andrewrk
+that's ok for a first pass - we're going to probably have to back that with a general purpose allocator so that free() can work
+
+1555377775
+shritesh
+I'm trying to wrap my head around alignment. I've never dealt with it before
+
+1555378052
+shritesh
+Also what do you think of #2273?
+
+1555378256
+andrewrk
+it took me a while to grok alignment too. I can fast-forward the learning process if you want, feel free to ask any questions about it
+
+1555378437
+shritesh
+Umm wait. I think what I'm trying to do won't work
+
+1555378478
+shritesh
+the allocator assumes that it owns the full linear memory
+
+1555378496
+shritesh
+But it may not. There might be multiple instances of WasmAllocators
+
+1555378517
+shritesh
+or some code somewhere else might have grown
+
+1555378630
+shritesh
+So, I think the easiest cop-out would be for WasmAllocator to take in number of pages during init and create a buffer and hand everything else to FixedBufferAllocator
+
+1555378737
+andrewrk
+yeah that's what I meant with my comments here:
+
+1555378755
+shritesh
+Ah! Now i get it
+
+1555378871
+andrewrk
+what I think this will look like once the dust settles is: when linking libc: problem solved, std.heap.c_allocator is the "direct allocator" as well as the "global system allocator"
+
+1555378988
+andrewrk
+when not linking libc, nothing overridden in root source file: zig will have a general purpose allocator. an instance is created to be the "global system allocator" and has sole ownership of wasm grow/shrink functions. DirectAllocator on wasm targets will use this system global allocator
+
+1555379025
+andrewrk
+root source files will be able to override this and specify their own allocator as the "global system allocator"
+
+1555379048
+shritesh
+makes sense
+
+1555379092
+andrewrk
+side note - my work in progress general purpose allocator actually doesn't solve the problem of transforming a grow/shrink (sbrk) API into a malloc/free API, so that's another problem to solve
+
+1555379125
+andrewrk
+this would actually be pretty interesting as well because you could also use it to create an allocator based on a buffer much like FixedBufferAllocator but that actually managed free space and reused bytes
+
+1555379356
+shritesh
+But we'll have to deal with fragmentation and such right?
+
+1555379359
+andrewrk
+right
+
+1555379381
+andrewrk
+it may be that a general purpose allocator based on grow/shrink API would have a completely different implementation
+
+1555379825
+shritesh
+I need to double check if the execution environment can grow/shrink the memory in wasm. If it cannot, things might get easier.
+
+1555380415
+andrewrk
+it seems pretty likely that that will be possible, if not now, then in the future
+
+1555380425
+andrewrk
+it's just an obvious thing that people will ask for
+
+1555380503
+shritesh
+So I'm conflicted about the WasmAllocator. Should this even go to std?
+
+1555380556
+shritesh
+A better API would be to expose wasm.grow that returns a buffer that can be used explicity with FixedBufferAllocator
+
+1555380619
+andrewrk
+I think we should do something that is the most compatible with the "when the dust settles" thing that I described above, and then work our way towards it
+
+1555380665
+andrewrk
+I don't think wasm.grow that returns a buffer to be used with FixedBufferAllocator would necessarily be a better API. it doesn't support free()
+
+1555380699
+shritesh
+That's true. Should I name this FixedWasmAllocator?
+
+1555380714
+shritesh
+So that in case we remove it later, things don't break silently
+
+1555380732
+shritesh
+or WasmFixedAllocator
+
+1555380767
+andrewrk
+I would make all the state global variables rather than giving it a type, and then expose a pointer as `std.heap.wasm_allocator`
+
+1555380780
+andrewrk
+it's a singleton
+
+1555380820
+shritesh
+so much like c_allocator
+
+1555380822
+andrewrk
+the meaning of this declaration is: this is the global system allocator when targeting web assembly
+
+1555380832
+andrewrk
+in fact when linking libc, std.heap.c_allocator == std.heap.wasm_allocator
+
+1555380861
+andrewrk
+because presumably the libc is doing wasm.grow/wasm.shrink in the implementation of malloc/free
+
+1555380912
+andrewrk
+until some improvements are made, std.heap.wasm_allocator.free() actually doesn't give back memory. but you're supposed to free stuff according to the API
+
+1555380924
+andrewrk
+so that would start working at some future date
+
+1555380952
+andrewrk
+DirectAllocator would either: compile error on web assembly targets, or use std.heap.wasm_allocator. I'm not sure which is better
+
+1555380982
+andrewrk
+we'll need to clarify the semantic meaning of choosing std.heap.DirectAllocator in order to resolve that question
+
+1555381059
+andrewrk
+also, everywhere that you do some semantics that assumes single-threaded (a valid assumption for wasm currently) don't forget to put `comptime assert(builtin.single_threaded);`
+
+1555381095
+andrewrk
+so that if it ever changed someone would get a compile error, and you would have written a nice comment explaining why the nearby code depends on --single-threaded, saving countless hours of some future person's time
+
+1555381250
+shritesh
+I will keep that in mind
+
+1555381330
+andrewrk
+I'll tackle an allocator based on sbrk/ grow/shrink after my other GeneralPurposeAllocator project, it should be fun :)
+
+1555381420
+shritesh
+PR in
+
+1555381491
+shritesh
+Going with the global allocator idea, will it be undefined behavior if someone else does "llvm.wasm.memory.grow.i32"?
+
+1555381669
+keveman
+Hello,
+
+1555381705
+keveman
+Hello, I am attempting to compile Zig for a custom ISA.. I have LLVM built for it..
+
+1555381737
+andrewrk
+shritesh, I think that will be your choice, which you can document with your implementation. since wasm is single threaded, you theoretically could check mem size and find out the "holes" that were created by third parties. but that's pretty strange, I personally would document it as undefined behavior if any third party did that
+
+1555381763
+andrewrk
+shritesh, probably in debug/release-safe modes there would be some check to at least panic if it were detected
+
+1555381768
+andrewrk
+hi keveman
+
+1555381775
+keveman
+I am don't want to target any other backends.. but the cmake/Findllvm.cmake seems not to allow me to do that
+
+1555381826
+andrewrk
+that's correct. upstream zig is guaranteed to have all the targets in it. however you are free to fork zig and remove this guarantee. it is as simple as commenting out some cmake lines
+
+1555381860
+andrewrk
+look for NEED_TARGET
+
+1555381869
+keveman
+Hi Andrew, right.. yes, that's what I am attempting..
+
+1555381944
+keveman
+I have the llvm-config in the `build-llvm` directory.. build-llvm/bin/llvm-config.. this is the directory where I ran cmake for llvm..
+
+1555381962
+shritesh
+andrewrk: Alright. I'll modify my PR to make it global, allow dynamic growing and document the undefined behavior
+
+1555381972
+andrewrk
+shritesh, alright I will look at your PR first thing tomorrow, I need to focus on my talk for the next couple hours
+
+1555381992
+shritesh
+Thanks. Good luck
+
+1555382001
+keveman
+If I set LLVM_CONFIG_EXE to build-llvm/bin/llvm-config, the compilation is not able to find llvm/Config/llvm-config.h..
+
+1555382063
+keveman
+so I was wondering if there is a special way to install LLVM (with the custom backend) such that I can point LLVM_CONFIG_EXE to the llvm-config in the install directory instead of the build directory..
+
+1555382066
+andrewrk
+keveman, I recommend using the CMAKE_INSTALL_PREFIX feature when building LLVM/clang and the CMAKE_PREFIX_PATH feature when building Zig to detect llvm/clang
+
+1555382076
+andrewrk
+for example:
+
+1555382083
+andrewrk
+this process is tested frequently
+
+1555382139
+andrewrk
+I'm going afk for a while but I will be available tomorrow to provide assistance. good bye
+
+1555382153
+keveman
+excellent.. will try that.. thanks
+
+1555392812
+daurnimator
+Xe: did you see
+
+1555393339
+tyler569
+is there a way to cInclude a header in my source directory?  @cInclude seems to only want to do system headers with <path.h>
+
+1555393452
+tyler569
+specifically, I'm trying to compile freestanding but include other headers in the same project to create a .o file and link it in
+
+1555393804
+hryx
+tyler569: yes, @cInclude any .h should definitely be possible (though I probably can't help troubleshoot with my current experience)
+
+1555393870
+hryx
+is your header file path is relative to your root .zig file?
+
+1555393873
+tyler569
+doesn't seem to be working though, I get a note about libc headers not being available, even if I @cInclude("./path.h")
+
+1555393876
+tyler569
+yes
+
+1555393886
+hryx
+I see
+
+1555393889
+tyler569
+oh header file path, let me check that
+
+1555393945
+hryx
+by the way, I think you don't need the ./ prefix to relative paths for built-in functions
+
+1555393958
+hryx
+not sure if they are even allowed, actually. I've never checked
+
+1555393965
+tyler569
+good call, adding '-isystem .' caused it to find the file
+
+1555393975
+hryx
+oh, awesome!
+
+1555394017
+tyler569
+though it's still doing weird things, seems to be defining
+
+1555394131
+hryx
+ok. I'm not sure who here has experience with freestanding, but Andrew (zig author) will be available here probably tomorrow
+
+1555394142
+hryx
+and can help with that
+
+1555394236
+tyler569
+ok, awesome
+
+1555394247
+tyler569
+works though! I got my kernel to print Hello from zig!
+
+1555394252
+tyler569
+thanks for your help!
+
+1555394300
+hryx
+super slick tyler569
+
+1555394307
+hryx
+is your project online somewhere?
+
+1555394312
+hryx
+would be cool to check it out
+
+1555394379
+tyler569
+totally, it's here:
+
+1555394389
+tyler569
+just pushed to the 'zig-support' branch ^.^
+
+1555394468
+hryx
+wow, very exciting! BTW I am also in SF if you are ever around for a meetup/zig chat. (you can DM me if so)
+
+1555394592
+tyler569
+totally! (dm'd)
+
+1555394690
+daurnimator
+I'm in SF every couple of months, so let me know when you plan on a zig meetup there :)
+
+1555394737
+hryx
+daurnimator: definitely hit me up when you're in town. I have a great spot for co-working and hacking! :>
+
+1555394757
+hryx
+what part of the world are you in usually?
+
+1555394777
+daurnimator
+melbourne, australia
+
+1555394789
+daurnimator
+today I'm in south africa.... flying home in a few hours
+
+1555394802
+sanxiyn
+Hello from Seoul, South Korea
+
+1555394817
+hryx
+damn we got friendos all over this globe
+
+1555394821
+hryx
+greetings sanxiyn
+
+1555394853
+sanxiyn
+Melbourne is roughly in the same time zone with Seoul (1 hour difference), so that's great
+
+1555394866
+sanxiyn
+Usually nobody is in the nearby time zone...
+
+1555400687
+telemach
+huh, i'm in sydney, australia, hi timezone fellows
+
+1555400792
+hryx
+👋
+
+1555400804
+hryx
+(not me per se)
+
+1555417604
+Xe
+daurnimator: I have now
+
+1555417889
+shritesh
+andrewrk: After seeing
+
+1555418448
+bketelsen
+shritesh: hello - good timing, I joined yesterday
+
+1555418465
+bketelsen
+it's been a
+
+1555418526
+shritesh
+It's literally my first time
+
+1555418568
+shritesh
+First of all welcome, bketelsen
+
+1555418580
+bketelsen
+thank you!
+
+1555418665
+shritesh
+You said you had ideas for a zig/wasm bridge. Can you tell me more?
+
+1555418704
+bketelsen
+i have several loosely organized thoughts.  I'll freeform them, if that's ok.
+
+1555418713
+shritesh
+Sure!
+
+1555418748
+bketelsen
+wasm_bindgen in Rust is a really nice experience.  A few annotations and you get generated JS and rewritten rust functions.
+
+1555418758
+bketelsen
+That experience uses macros.
+
+1555418823
+bketelsen
+in contrast, Go's wasm support uses a lot of compiler hacks/tricks.  For example returning a string in Go actually returns a stack pointer, where there are variables that include the address of the string, the length, etc.
+
+1555418890
+bketelsen
+I think the Rust route is nicer for everyone because it's got less magic, and has more potential to evolve as the wasm spec does, especially when host bindings to the DOM appear.
+
+1555418948
+bketelsen
+zig needs two things to succeed on client-side/web wasm:  an easy to use bridge between js/wasm, and a dom library callable from zig code
+
+1555418989
+bketelsen
+for the bridge, I tried exploring compile-time programming, but really couldn't find enough information to understand what I needed to do.
+
+1555419009
+bketelsen
+It sounds from your message above to andrew that this is something that's well within the realm of possibility though.
+
+1555419010
+meowray
+
+
+1555419065
+bketelsen
+once the bridge is in place, creating an idiomatic dom library shouldn't be complicated.
+
+1555419140
+shritesh
+re: Go and strings: Zig doesn't have "strings" per se, they're just u8 arrays. So I don't think that could be made better (maybe more stdlib functions) but Zig is still in it's early stazes.
+
+1555419155
+bketelsen
+one thing we should target with bridge is helping with retrieving "strings"
+
+1555419169
+bketelsen
+I can return a []u8, but unless it
+
+1555419173
+shritesh
+Ah
+
+1555419183
+bketelsen
+is null terminated, it's hard to retrieve it from JS.
+
+1555419195
+bketelsen
+so I was using c-strings, which works but looks ugly
+
+1555419220
+shritesh
+I agree.
+
+1555419258
+shritesh
+The js-header file will definitely help with that
+
+1555419285
+bketelsen
+
+
+1555419293
+bketelsen
+returning a []u8 here
+
+1555419323
+bketelsen
+parsing it here:
+
+1555419331
+bketelsen
+this depends on the null termination
+
+1555419354
+bketelsen
+and I don't know zig well enough to figure out a different way.
+
+1555419362
+shritesh
+Gotcha. Maybe we can overload the `export` keyword to be wasm aware and work with slices.
+
+1555419416
+shritesh
+Again, I'm just thinking out loud here. :D
+
+1555419429
+bketelsen
+I read an interesting article last night that showed how to rewrite WASM AST to support multiple return values.  They rewrote the WASM AST programmatically to make return values globals
+
+1555419464
+bketelsen
+and as I was drifting to sleep i had the idea that something like that might work, where there was a global lookup table of pointers and lengths for "strings"
+
+1555419475
+bketelsen
+but I'm afraid of the concurrency problems it might create
+
+1555419536
+bketelsen
+another option, more complicated, but easier for programmers in the long-run: create a set of one or more structs/types that work over the bridge
+
+1555419561
+bketelsen
+return pointers to them, and teach the JS side how to read the memory to hydrate them.
+
+1555419621
+bketelsen
+the experience with zig + wasm has been simply amazing.  It compiles so quickly and makes such tiny wasm binaries.
+
+1555419627
+shritesh
+Yes. We also need to think about how to accomodate non-web embeddings, WASI (and other runtimes) that do not follow JS's semantics
+
+1555419633
+bketelsen
+I'm over the moon excited to take this somewhere fun.
+
+1555419673
+shritesh
+That's what I love about Zig. It's such a joy to use.
+
+1555419674
+bketelsen
+I'm less worried about wasi because there's an abi to follow
+
+1555419727
+bketelsen
+wasm is sort of "everyone for themselves".  So the idea that we create a specification for communicating between zig/wasm and js, then generate code on both sides to meet that spec is appealing.
+
+1555419729
+shritesh
+P.S. We are planning on having a WASM/WASI interpreter in the stdlib so that we can run tests inside webassembly without leaving Zig
+
+1555419736
+bketelsen
+wow
+
+1555419743
+bketelsen
+i'm in <3
+
+1555419748
+shritesh
+^_^
+
+1555419797
+bketelsen
+can you describe the process you talked about above with .h files?
+
+1555419805
+bketelsen
+generating code at compile-time?
+
+1555419814
+shritesh
+So zig has amazing interop with C
+
+1555419883
+shritesh
+And can generate .h files that lets C (or any C ABI compatible language) to use Zig libraries
+
+1555419912
+shritesh
+It's a step in the compiler's code generation phase
+
+1555419930
+shritesh
+We should be able to generate .js files the same way as the information is already there
+
+1555419968
+bketelsen
+can you point me to this code?
+
+1555420025
+shritesh
+
+
+1555420103
+bketelsen
+oh goody, c++
+
+1555420147
+shritesh
+Stage 2 compiler is being written in Zig. This is just so that we can bootstrap.
+
+1555420196
+bketelsen
+I understand, I've just never done c++
+
+1555420226
+bketelsen
+but I'm not afraid.
+
+1555420228
+bketelsen
+much
+
+1555420241
+shritesh
+!!!
+
+1555420318
+shritesh
+But going back to the idea of autogenerating string interfaces, I think the first step would be figuring out how slices can be "returned" across JS<->Zig
+
+1555420366
+bketelsen
+can the compiler make new code that is included in the current build?
+
+1555420378
+shritesh
+The executable?
+
+1555420380
+bketelsen
+yes
+
+1555420408
+shritesh
+What would that new code be?
+
+1555420410
+bheads____
+Something like D's mixins?  Where you build a string in comptime then compile that code
+
+1555420419
+bketelsen
+stubs that the JS library calls
+
+1555420494
+bketelsen
+if we have a func that returns []u8, we could generate a stub function that makes the JS interop easier.
+
+1555420514
+shritesh
+We do have powerful compile time code execution (and that's how generics and printf are implemented). We can probably do something similar
+
+1555420566
+shritesh
+We can always add more builtins to the compiler tho
+
+1555420568
+bheads____
+its nice but not as good as mixins (
+
+1555420579
+bketelsen
+are there limitations as to what return values are legal when building wasm?
+
+1555420605
+shritesh
+I have the spec open in a tab lemme check :D
+
+1555420650
+shritesh
+At present, it can only return one "result".
+
+1555420654
+bketelsen
+one simple way to resolve this would be to create a set of types that we use for all interop
+
+1555420664
+bketelsen
+so for example a "String" struct
+
+1555420674
+bketelsen
+that has a pointer to the actual string, and a length field
+
+1555420687
+bketelsen
+then we build the bridge against those types.
+
+1555420691
+shritesh
+Yes. That would be a slice in zig.
+
+1555420692
+bheads____
+a Fat pointer
+
+1555420704
+bketelsen
+ok!
+
+1555420817
+shritesh
+I like where this is headed.
+
+1555420852
+bketelsen
+i tried returning a []u8 from a function and get an error message that that's not allowed with calling convention ccc
+
+1555420858
+bketelsen
+am I declaring the return type wrong?
+
+1555420887
+shritesh
+No. []u8 is a slice made up of a pointer and len. C calling convention doesn't have a notion similar to that
+
+1555420907
+bheads____
+would need to use [*c]u8
+
+1555421015
+Xe
+o/ bketelsen
+
+1555421031
+bketelsen
+hi Xe!
+
+1555421038
+bketelsen
+
+
+1555421056
+bketelsen
+error: expected type '[*c]u8', found '[]const u8'
+
+1555421064
+bketelsen
+clearly I am new in zig
+
+1555421079
+bheads____
+return slice.ptr;
+
+1555421104
+bheads____
+but you dont have the length and the string is not null terminated
+
+1555421110
+shritesh
+BTW Xe: Zig will get a WasmAllocator soon ;)
+
+1555421124
+bheads____
+you could just     return c"<div>Hello Brian</div>";
+
+1555421142
+bheads____
+that would return a proper null terminated c string
+
+1555421207
+bketelsen
+I used the c"stuff", but don't feel like it's a pretty developer experience
+
+1555421238
+bketelsen
+that's what's working now though,
+
+1555421286
+bketelsen
+i found "mem.len" yesterday, and thought maybe we could have an exported function in wasm that JS calls to get the string length
+
+1555421292
+bketelsen
+but that feels pretty hacky too
+
+1555421324
+bketelsen
+if we returned a pointer to a String struct with fixed alignment, we could always be able to read the slice and the length from JS
+
+1555421363
+bketelsen
+generally, I think that's my favorite approach, known types that we can read from JS
+
+1555421408
+shritesh
+what about functions that take in pointers to a memory address and len and that gets shimmed at the JS level?
+
+1555421427
+bheads____
+not sure how mem.len would work.. you need to pass the ptr and len togeather
+
+1555421443
+bketelsen
+wasm can only return one value from a function, right?
+
+1555421453
+shritesh
+As of now, yes.
+
+1555421453
+bheads____
+zig can only return a single value
+
+1555421456
+Xe
+shritesh: i saw, i was going to comment on the unused import :)
+
+1555421463
+bketelsen
+oh, we could call one from zig
+
+1555421469
+bketelsen
+an exported JS function
+
+1555421472
+Xe
+bketelsen: this is why i've been using the unix style of pointer, length syscalls
+
+1555421474
+bketelsen
+ohhhh
+
+1555421489
+bheads____
+you maye want to make cstring struct that is a fat pointer
+
+1555421508
+shritesh
+Xe: The llvm intrinsics? I couldn't figure out how to conditionally do that
+
+1555421520
+bheads____
+const cstring = packed struct {  ptr: [*c]u8, len: usize }
+
+1555421584
+bheads____
+add an init function    fn init(slice: []const u8) cstring { return cstring{ .ptr = slice.ptr, .len = slice.len }; }
+
+1555421633
+Xe
+shritesh: either way, i'm a fan
+
+1555421687
+bheads____
+it should be  extern struct
+
+1555421689
+Xe
+the lack of reusing freed memory kind of worries me though
+
+1555421692
+bheads____
+not packed struct
+
+1555421726
+shritesh
+andrewrk talked about this on the channel last night. We'll have a global allocator that uses wasm_allocator as backing allocator and would do that
+
+1555421768
+shritesh
+general allocator*
+
+1555421779
+Xe
+ah
+
+1555421790
+Xe
+:+1: would like to play with it
+
+1555421814
+bheads____
+Are you trying to build a GWT like system in zig?
+
+1555421857
+shritesh
+Who was this question for? :D
+
+1555421878
+bheads____
+the WASM crew
+
+1555421928
+shritesh
+Not necessarily, we've still much to do before we can ergonomically interact with the DOM. I'll work on the stdlib next
+
+1555421932
+Xe
+i'm actually doing server side webassembly compute
+
+1555421934
+bketelsen
+
+
+1555421942
+bketelsen
+"cast discards const qualifier"
+
+1555421950
+bketelsen
+at the .ptr assignment
+
+1555421952
+Xe
+i have a demo in the browser if you like
+
+1555421995
+bketelsen
+I'm trying to never have to write javascript again.
+
+1555421999
+bketelsen
+that's my motivation.
+
+1555422001
+shritesh
+Same
+
+1555422024
+bheads____
+nice
+
+1555422043
+bheads____
+bketelsen: make the slice non-const then  []u8
+
+1555422100
+bketelsen
+how do I make it non-const?
+
+1555422148
+bketelsen
+in the declaration `  var h = "<div>Hello Brian</div>";`?
+
+1555422156
+bheads____
+
+
+1555422185
+Xe
+oh no lol the console doesn't have fixed width output
+
+1555422209
+bketelsen
+ohh coredump!
+
+1555422227
+bheads____
+
+
+1555422236
+tgschultz
+you could also make your field const: ptr: [*c]const u8,
+
+1555422237
+bheads____
+you could also make the pointer const in cstring
+
+1555422265
+Xe
+oh it works fine in chrome:
+
+1555422292
+tgschultz
+wiat, why is this cstring struct necessary? it is identical to the slice struct.
+
+1555422314
+bheads____
+you cant return a slice in C
+
+1555422623
+desperek
+hi. basically, is there some sort of networking library?
+
+1555422643
+desperek
+i know theres std/net.zig but thats just parsing ip
+
+1555422656
+bheads____
+not in the stdlib right now
+
+1555422670
+bheads____
+zig is in alpha
+
+1555422726
+bheads____
+one of the goals for the next release is the zig package manager which requires client side http
+
+1555422730
+shritesh
+bketelsen: I'll play around with this and try to improve the interop and the deverloper experience. I'll keep you posted with updates. Again, welcome to the community!
+
+1555422730
+desperek
+right
+
+1555422764
+bketelsen
+thanks!
+
+1555422770
+desperek
+bheads____, but well, https is built on top of other networking, no?
+
+1555422779
+bheads____
+on tcp
+
+1555422794
+bheads____
+I am guessing basic udp will be added as well
+
+1555422805
+desperek
+bheads____, so is there tcp
+
+1555422873
+bheads____
+Not sure, might only have sockets right now
+
+1555422907
+bheads____
+
+
+1555422921
+bheads____
+that looks like tcp
+
+1555422951
+shritesh
+there be dragons in std.event until the coroutines rewrite
+
+1555422958
+bheads____
+this is all built on async which is going to change
+
+1555422961
+bheads____
+right
+
+1555423000
+desperek
+right. thanks.
+
+1555423034
+Xe
+there will still be a non-async way to do I/O, right?
+
+1555423058
+shritesh
+Xe: yes
+
+1555423089
+Xe
+:+1:
+
+1555423235
+shritesh
+Xe: Also, now that I think about it. In my PR, the extern import might never be imported until it gets referenced. Lazy semantics and all.
+
+1555423284
+Xe
+shritesh: i'm partially thinking about it because i'm used to unused imports being compile failures, but if it's really not a problem then it's all good
+
+1555423425
+shritesh
+I have also deliberately not aliased it to a local name so that we don't forget about coming up with a solution to the intrinsics problem :D
+
+1555423520
+bheads____
+@andrewk, I wrote a CRC library over the weekend that has over 130 different crcs
+
+1555423526
+bheads____
+do you want it for the stdlib?
+
+1555423681
+shritesh
+bheads____: I think the policy is to have everything reasonable int std and there'll be review when 1.0 happens.
+
+1555424395
+Xe
+shritesh:
+
+1555425526
+shritesh
+Xe: That's awesome. What does wasm_exec.js provide?
+
+1555425561
+Xe
+shritesh: the ABI that olin uses, the same binary also works with olin's `cwa` interpreter
+
+1555425611
+shritesh
+I think Zig can accomodate wasm32-olin ;)
+
+1555425633
+Xe
+oh don't worry, i'm working on a PR
+
+1555425639
+Xe
+i'm just making sure it's feature complete first
+
+1555425641
+shritesh
+Ooooh!!!
+
+1555425687
+Xe
+i'm working on the runtime metadata stuff now (env, args, etc), the allocator stuff is gonna help unblock it
+
+1555425727
+shritesh
+I'm glad. Can a WASI runtime (theoretically) be able to run odin binaries? Maybe under a shim or something
+
+1555425833
+bketelsen
+@shritesh: the wasm_exec.js in Go provides the common ABI for the js/wasm interop
+
+1555425843
+Xe
+yeah, it's designed to be pretty unixy and is similar to the wasi system calls by coincidence, i might clone their idea of copying the env into the child process though (olin's getenv works like getenv() in C)
+
+1555425859
+Xe
+bketelsen: i have a hacked version of the tinygo hacked version for that page
+
+1555425929
+shritesh
+bketelsen: Gotcha.
+
+1555426001
+bketelsen
+for example, all the js functions to interop with wasm memory are here:
+
+1555426029
+Xe
+i should do a blogpost on the Go ABI at some point
+
+1555426038
+Xe
+it's a bit of a mind-bender
+
+1555426301
+shritesh
+bketelsen: That's not a lot of code
+
+1555426312
+bketelsen
+nope
+
+1555426329
+bketelsen
+
+
+1555426333
+bketelsen
+that's the Go side
+
+1555426381
+bketelsen
+most of the interop revolves around using pointers to JS objects wrapped in a Go type called Value
+
+1555426385
+shritesh
+Thanks. I'll see if something similar can be done.
+
+1555426392
+bketelsen
+\o/
+
+1555427333
+shritesh
+How does Zig's formatter running inside the browser sound? ;)
+
+1555427470
+Xe
+shritesh: if i had my way, zig's entire compiler would be running in the browser
+
+1555427493
+bketelsen
+sounds like wasm is awesome
+
+1555427497
+shritesh
+With wasi-sdkroot, it should be theoretically possible
+
+1555427535
+shritesh
+Except the sheer insanity of it, I don't see why LLVM cannot be compiled for WASM
+
+1555429843
+andrewrk
+related:
+
+1555429872
+andrewrk
+one thing that I don't understand how it would work is the filesystem. zig depends on a file system, how would that work in the browser?
+
+1555430046
+shritesh_
+Emscripten solved the FS problem a very long time ago
+
+1555430082
+shritesh_
+There's an API too now
+
+1555430163
+hio
+HTML5 even has a filesystem api but that's not what emscripten uses
+
+1555430177
+hio
+afaik
+
+1555430327
+andrewrk
+so would you link with libemscripten or something to make that work?
+
+1555430353
+shritesh_
+emscripten has a POSIX filesystem layer somewhere
+
+1555430364
+shritesh_
+*implements a
+
+1555431667
+shritesh_
+andrewrk: Opinions on providing a .js header file to be used with wasm?
+
+1555431719
+andrewrk
+can you elaborate? my head is in a different space right now
+
+1555431965
+shritesh_
+Sorry. Like how we provide a .h for easy interop with C. We can provide a .js so that slices (strings, objects?, json?) are easily inter-op'd from the JS side
+
+1555431984
+shritesh_
+..and memory, imports, etc are handled
+
+1555432039
+shritesh_
+It's something Rust, Go, and possibly others do. But I'm hoping we can do that without changing the semantics of Zig itself and pushing the ffi outwards to this file instead
+
+1555432119
+andrewrk
+I see. that's not an easy design question
+
+1555432163
+andrewrk
+it's the kind of thing I would want to put off solving until the use cases for it become clearer
+
+1555432171
+shritesh_
+I agree. I prefer not to have JS types bleeding into Zig.
+
+1555432194
+shritesh_
+I'm working on getting Zig's formatter working on the browser. Will report the experience of passing strings across dynamic memory
+
+1555432221
+andrewrk
+that's a great wasm project idea
+
+1555432239
+shritesh_
+once #2286 is merged ;)
+
+1555432351
+bketelsen
+I'm strongly in favor of it shritesh_, if it's not obvious.  I also recognize that my vote is small :)
+
+1555432704
+shritesh_
+I also figured it's hard to come up with a solution that works for all use cases. We don't have a global allocator (yet) and will never have GC. JS can grow / access memory anytime and that'll break the invariants of the (primitive) WasmAllocator. Strings are hard. Let's see where this formatter project ends up.
+
+1555432859
+daurnimator
+Xe: any thoughts?
+
+1555433895
+Sahnvour
+andrewrk, how should errors be handled in an allocator's `shrink` implementation ?
+
+1555434003
+Xe
+daurnimator: COM and other forms of RPC may have some hints, i'm treating file descriptors kinda like generic streams in olin. One of the stream types is HTTP.
+
+1555434042
+andrewrk
+Sahnvour, what kind of errors? according to the interface, shrink must not fail
+
+1555434065
+Sahnvour
+yep, I'm talking internal errors
+
+1555434082
+andrewrk
+not allowed, you have to design that to be impossible
+
+1555434082
+Sahnvour
+for example posix.munmap fails
+
+1555434096
+andrewrk
+I don't think that's actually possible
+
+1555434129
+Sahnvour
+man says `Upon successful completion, munmap() shall return 0; otherwise, it shall return -1 and set errno to indicate the error.`
+
+1555434146
+Sahnvour
+I'm actually looking at a windows API, but this is equivalent
+
+1555434181
+andrewrk
+what error do you think is possible for munmap or windows free API to return?
+
+1555434219
+andrewrk
+note that e.g. EINVAL/EBADF doesn't count; that's invalid parameters sent to the syscall, which we can assert will not happen
+
+1555434240
+Sahnvour
+I don't know really, just wondering since that is listed in the manual
+
+1555434342
+andrewrk
+in zig std lib we assert that munmap does not fail
+
+1555434561
+Sahnvour
+well, looking at DirectAllocator code, we do not check the return value
+
+1555434595
+Sahnvour
+wait, we do, but only in alloc (not shrink)
+
+1555434881
+andrewrk
+I really think it's a bug in linux/windows if munmap/HeapFree returns an error (other than for invalid parameters)
+
+1555434902
+Sahnvour
+right, so here's a PR
+
+1555435010
+andrewrk
+ah, my mistake, I expected HeapRealloc to free memory when dwBytes is 0
+
+1555435065
+Sahnvour
+no problem, that's a lot to keep in mind
+
+1555435653
+andrewrk
+shritesh_, ready for merge?
+
+1555435668
+shritesh_
+andrewrk: Aye aye captain!
+
+1555435845
+keveman
+I am attempting to target zig for a custom LLVM backend.. I was able to get everything compiled.. it was relatively painless :)
+
+1555435883
+andrewrk
+nice keveman
+
+1555435885
+keveman
+I am trying to compile a relatively simple program :
+
+1555435890
+keveman
+var x: i16;  pub fn main() void {   x = 42; }
+
+1555435948
+tgschultz
+andrewrk, why can't slices be in a packed struct?
+
+1555435966
+keveman
+I get errors like : "else => @compileError("Unsupported OS"),'
+
+1555435975
+andrewrk
+tgschultz, currently slices do not have a guaranteed in memory representation
+
+1555435984
+tgschultz
+ah, ok
+
+1555435995
+andrewrk
+I think there may be a proposal for that though
+
+1555436002
+keveman
+is there a way to not compile in the std library..
+
+1555436031
+andrewrk
+keveman, what is your target?
+
+1555436060
+keveman
+A custom LLVM target (not upstreamed yet).. it looks like a microcontroller..
+
+1555436063
+andrewrk
+what file/ line number is that error in
+
+1555436093
+keveman
+"build/lib/zig/std/os.zig:205:17: error: Unsupported OS"
+
+1555436099
+Sahnvour
+tgschultz,
+
+1555436158
+andrewrk
+keveman, that looks like it's either in abort() or exit(). if you're using `pub fn main` then you're relying on the code in std/special/bootstrap.zig which is going to call exit()
+
+1555436185
+andrewrk
+I suggest that you directly `export fn foo() void {}` where `foo` is your entry function that the micro controller expects
+
+1555436505
+keveman
+This is the program I am trying to compile now : `export fn foo() void {}`, with command `zig build-obj main.zig -target <redacted>`
+
+1555436542
+keveman
+I still get the same error: `build/lib/zig/std/os.zig:205:17: error: Unsupported OS`
+
+1555436745
+andrewrk
+keveman, did you perhaps use the posix/windows default panic handler rather than the freestanding one?
+
+1555436758
+andrewrk
+look at std/special/panic.zig
+
+1555436795
+andrewrk
+you can override this on a per-application basis by defining pub fn panic, or you can modify the default in your fork of zig
+
+1555436851
+andrewrk
+if you put pub fn panic next to your export fn foo, you'll override the panic function in this object only, or you can change std/special/panic.zig (and don't forget to make install)
+
+1555436970
+TheLemonMan
+hello andrewrk, do you have a minute to talk about unwinders & stack traces?
+
+1555436990
+andrewrk
+hi TheLemonMan
+
+1555437010
+andrewrk
+yes - by the way nice work on your pull request
+
+1555437207
+TheLemonMan
+speaking of that, I've integrated libunwind since it was readily available but I don't know if you're ok with having such an external dependency considering you're already parsing the DWARF sections by hand
+
+1555437361
+andrewrk
+I do want to look into it a little bit, at least reading all the code of the libunwind code
+
+1555437368
+TheLemonMan
+a pure-Zig solution is of course feasible (got a WIP that's working just fine on x86_64) but I figured it'd be quite burdensome to support and fix it for different OS/platforms, at least at this point in time
+
+1555437370
+andrewrk
+if it calls malloc for example, that would be a problem
+
+1555437420
+andrewrk
+for some targets zig provides its own libunwind code, but on others, this would be making a dynamic library call to code that could have anything in it
+
+1555437447
+andrewrk
+that's worth considering. if it's a pure zig solution, we can be sure that we know the code that is being run
+
+1555437468
+andrewrk
+and we could do neat tricks such as still being able to print a stack trace on a stack overflow, even though the stack space has run out
+
+1555437519
+TheLemonMan
+cool, I'll try to iron out the remaining kinks in the next few days then
+
+1555437541
+andrewrk
+also the things you're allowed to do inside a signal handler such as SIGSEGV is limited; easier to avoid problems if we control all the code, for e.g.
+
+1555437562
+andrewrk
+so that's why I didn't just merge your PR right away
+
+1555437583
+andrewrk
+despite the clear utility of stack traces working in release modes
+
+1555437600
+TheLemonMan
+nm, I love the fact you don't just blindly merge stuff heh
+
+1555437717
+andrewrk
+so far all of zig fits in my head. maybe someday that won't be the case. or maybe it will!
+
+1555437717
+TheLemonMan
+one more question, I need dl_iterate_phdr but that's 1) coming from libc 2) a glibc-ism/linux-ism (but widely supported)... can I just add a wrapper to os.zig and call it a day?
+
+1555437749
+TheLemonMan
+re-implementing it avoids libc but may turn out to be a pita (especially wrt portability)
+
+1555437802
+andrewrk
+this is a missing feature, started in std/dynamic_library.zig but not very far along. how it's going to work is the same way as the pattern set by abort(), that is - if linking libc, use the libc functions, otherwise zig provides its own implementation
+
+1555437816
+andrewrk
+for your particular use case right now, does it link against libc?
+
+1555437893
+andrewrk
+if so then I recommend, for now, adding the dl functions to std/c.zig and calling them directly
+
+1555437973
+TheLemonMan
+nope, but I guess that's fine as a starting point
+
+1555438034
+andrewrk
+ah. yeah, then unfortunately it's a missing feature that is blocking you
+
+1555438065
+andrewrk
+I'll open an issue
+
+1555438471
+andrewrk
+TheLemonMan, here's an issue to track this:
+
+1555438557
+TheLemonMan
+awesome!
+
+1555438639
+tyler569
+You're too efficient Andrew, I was going to try my hand at fixing the ffreestanding bug I reported :P
+
+1555438658
+tyler569
+thanks for the quick responce though
+
+1555438864
+andrewrk
+:) you're welcome
+
+1555438916
+andrewrk
+alright I gotta close IRC and get some more of my talk done
+
+1555440290
+hobo
+yeah andrew is a beast :P
+
+1555444743
+shritesh
+I think I've figured out how the Js<->Wasm interop can work. Zig's global allocator will own the memory and JS will alloc and free by calling exposed functions. It's undefined behavior if the embedding environment manually manipulates the memory. I'm still leaning towards POSIX style fn(ptr, len) convention for slices and keeping Zig JS-convention free. Most of the ergonomics will be provided by the helper js.
+
+1555444881
+shritesh
+Will be posting a WIP of what I'm talking about (hopefully) in the next day or two.
+
+1555445134
+keveman
+andrewrk, sorry I was afk. But thanks for the suggestion.. I was able to make some progress. I place an implementation of panic in the same source file..
+
+1555445158
+keveman
+It looks like: `pub fn panic(msg: []const u8, error_return_trace: ?*builtin.StackTrace) noreturn {}`
+
+1555445185
+keveman
+But now I get this error: `build/test/main.zig:4:82: error: expected type 'noreturn', found 'void'` which is strange, because I clearly have noreturn
+
+1555445289
+keveman
+ah, never mind.. the error is because of type inference thinking the return type should be void..
+
+1555445839
+Xe
+ls
+
+1555445841
+Xe
+oops
+
+1555447578
+andrewrk
+oh my god, I can't believe this works
+
+1555447584
+andrewrk
+exciting PR incoming
+
+1555447620
+andrewrk
+keveman, your function isn't allowed to return, but it is returning. put while(true){} in there
+
+1555447621
+hryx
+on the edge of my seat
+
+1555448341
+andrewrk
+
+
+1555448549
+hryx
+CoooooooooooL
+
+1555448577
+hryx
+the implications have not sunken in for me ....... yet
+
+1555448643
+bheads____
+libcompiler.a is llvm and clang?
+
+1555448689
+bheads____
+libuserland.a is the cpp zig compiler code?
+
+1555448791
+bheads____
+or is userland stdlib in that case?
+
+1555448796
+andrewrk
+Cmakelists.txt has the answers to these questions
+
+1555448870
+keveman
+I have zig connected to the custom backend.. it's working wonderfully! I am especially liking what I see with packed structs containing bitfields..
+
+1555448904
+andrewrk
+keveman: good to hear that
+
+1555449177
+shritesh
+This is so cool
+
+1555449223
+hryx
+does this mean stage1 will be able to do anything stage2 can do?
+
+1555449361
+Sahnvour
+this is really nice
+
+1555449382
+andrewrk
+hryx, Yes, as long as the implementation in stage2 doesn't depend on it
+
+1555449413
+andrewrk
+E.g. we can do translate-c in userland because the translate-c implementation does not use @cImport
+
+1555449441
+hryx
+neat!
+
+1555449458
+andrewrk
+It also means we can use the zig std lib for stuff... So instead of assertion failed we could start getting stack traces
+
+1555449672
+andrewrk
+It also has implications for generating documentation
+
+1555449772
+andrewrk
+The results of the semantic analysis are in c++ but userland code could do the processing and HTML generation
+
+1555449772
+hryx
+oh shoot, you're right! Very relevant to my interests (after the parser rewrite is done)
+
+1555449849
+andrewrk
+Anyway, it's a nice step towards self hosting
+
+1555449868
+andrewrk
+Which hopefully can save a lot of duplicate effort
+
+1555450179
+andrewrk
+wow. if this PR passes all the CI tests first try, I'm going to go find a microphone and drop it
+
+1555450192
+andrewrk
+I didn't test on mac windows or freebsd before pushing
+
+1555450259
+shritesh
+FreeBSD passed :D
+
+1555450278
+Sahnvour
+live dangerously: skip CI, and drop the mic once it works on users' boxes!
+
+1555450382
+Sahnvour
+this also implies that we might start optimizing stage1 too, after all
+
+1555450497
+shritesh
+I'm working on the poster
+
+1555450506
+shritesh
+Installing PowerPoint first lol
+
+1555450515
+shritesh
+Whoops wrong chat
+
+1555450530
+mikdusan
+if i had a nickel…
+
+1555450587
+Sahnvour
+andrewrk, do you have some time now to look at an issue that may be a bit complicated ?
+
+1555450661
+andrewrk
+I'm sorry I actually do not. I have to get my run in at the gym and then I have a social thing this evening, and then I really really need to focus on my talk. tomorrow?
+
+1555450691
+shritesh
+andrewrk: Tests passed on my mac (and felt faster too?)
+
+1555450720
+Sahnvour
+sure, no problem
+
+1555451070
+bwb_
+andrewrk: I'm missing something. what does "userland" mean in a compiler context?
+
+1555454956
+keveman
+Just curious, is there a way to implement compile time "counter" using `comptime`? Something like a function counter() that returns increasing integers every time it is called..
+
+1555455096
+hryx
+keveman: a closure? or just using global state?
+
+1555455303
+keveman
+Oh, there is more than one way ? :)
+
+1555455415
+keveman
+Either one I guess, just want to see an example
+
+1555455615
+hryx
+keveman, not sure if it's possible - maybe this section will help
+

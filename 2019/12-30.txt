@@ -1,0 +1,636 @@
+1577666012
+fengb
+Have fun!
+
+1577668214
+daurnimator
+:( `warning: struct demoted to opaque type - has bitfield` leads to `error: opaque types have unknown size and therefore cannot be directly embedded in structs`
+
+1577694051
+bgiannan
+What's the motivation behind
+
+1577694159
+daurnimator
+bgiannan: what do you mean?
+
+1577694171
+bgiannan
+why do we need the sentinel value?
+
+1577694184
+bgiannan
+and should i use them everywhere ?
+
+1577694196
+daurnimator
+bgiannan: it brings the knowledge that an array is null-terminated into the type system
+
+1577694211
+daurnimator
+which means it can e.g. save you from passing a non-null terminated pointer to the `open` syscall
+
+1577694234
+daurnimator
+bgiannan: in zig code itself you should almost always be using slices (where length is known). null-terminated strings mainly show up in C apis
+
+1577694312
+daurnimator
+bgiannan: one place that you would use them is e.g. your `SDL_LoadBMP` wrapper function.
+
+1577694320
+bgiannan
+ok so i don't get why std.mem.toSlice returns a null terminated pointer then? shouldn't we just make the slice null terminated when passing it to something that needs it?
+
+1577694348
+daurnimator
+bgiannan: mem.toSlice returns a null terminated
+
+1577694360
+daurnimator
+not just a null terminated many-pointer
+
+1577694365
+bgiannan
+right
+
+1577694367
+bgiannan
+the question remains
+
+1577694375
+daurnimator
+that means it has known length, but
+
+1577694397
+bgiannan
+i get what it is i just don't get why we need it there
+
+1577694407
+daurnimator
+it means we can e.g. call open() on it without dupe-ing the string
+
+1577694408
+Dominic[m]
+I have a c string, how can I print/compare it?
+
+1577694436
+daurnimator
+Dominic[m]: std.cstr.cmp?
+
+1577694453
+Dominic[m]
+Well, I have a *c_void which I've cast to a *[]u8, and `warn()` just prints it as a pointer.
+
+1577694471
+bgiannan
+daurnimator, so we imply that most use of std.mem.toSlice() is to make calls that require null terminated slices ?
+
+1577694494
+daurnimator
+Dominic[m]: you probably wanted to cast it to a `[*]u8` and then use `mem.toSlice` on it
+
+1577694550
+bgiannan
+daurnimator, Buffer.toSlice() now returns a null-terminated slice so I have to either propagate that everywhere or make a utility function that only returns a regular slice
+
+1577694578
+daurnimator
+bgiannan: mem.toSlice is for converting a null terminated many-pointer to a slice. that its a null terminated slice is a bonus
+
+1577694599
+daurnimator
+bgiannan: null terminated slices should coerce to non-terminated slices
+
+1577694627
+bgiannan
+they should?
+
+1577694640
+bgiannan
+if they do i'm fine with it
+
+1577694671
+bgiannan
+if have this use case: `var my_slice = if (something) a_buffer.toSlice() else a_slice;`
+
+1577694686
+bgiannan
+-> expected type '[:0]const u8', found '[]const u8'
+
+1577694707
+bgiannan
+i should give my_slice an explicit type i guess
+
+1577694738
+Dominic[m]
+What does mem.toSlice do exactly? it lacks a docstring here:
+
+1577694966
+daurnimator
+Dominic[m]: see the source :P
+
+1577695218
+daurnimator
+bgiannan: in that case its alerting you of a danger: you passed a possibly non-null terminated thing to something that expects a null terminated thing
+
+1577695279
+Dominic[m]
+daurnimator: I had to do `[*:0]u8` as the cast fwiw :)
+
+1577695297
+Dominic[m]
+Bit of a monster: `toSlice(u8, @intToPtr([*:0]u8, @ptrToInt(user_data)))`
+
+1577695299
+daurnimator
+Dominic[m]: ah yep. exactly the thing bgiannan is probably hitting right now :)
+
+1577695315
+daurnimator
+Dominic[m]: uhhhh why are you ptrtoint and back again?
+
+1577695322
+daurnimator
+that's "super bad"
+
+1577695381
+Dominic[m]
+daurnimator: I'll take an alternative, but I think I have to because my input is a `*c_void`
+
+1577695389
+daurnimator
+Dominic[m]: use @ptrCast
+
+1577695412
+Dominic[m]
+I think I did, and it didn't like my going from a singular to plural. That may not apply now there's a sentinel, will try.
+
+1577695420
+daurnimator
+`mem.toSlice(u8, @ptrCast([*:0]u8, user_data))`
+
+1577695501
+Dominic[m]
+Yeah, that works :) Thanks daurnimator! I had problems with `@ptrCast(*[]u8, user_data)`: ` error: cast increases pointer alignment`
+
+1577695528
+Dominic[m]
+I don't think I've properly understood what `*[]` means. Does it actually mean pointer to an empty array or something?
+
+1577695532
+daurnimator
+Dominic[m]: `*[]u8` is a pointer
+
+1577695615
+Dominic[m]
+ah, I see I've misread the docs on pointers now. Thank you :)
+
+1577695690
+daurnimator
+Dominic[m]: a pointer to a slice requires an alignment of your pointer width (probably 8); while your *c_void would have alignment 1
+
+1577695927
+Dominic[m]
+daurnimator: Ah, I see. Thank you for explaining that, it's very helpful.
+
+1577696276
+daurnimator
+bgiannan: shouldn't need to make it explicit on `my_slice` I think? what type is `a_slice`?
+
+1577696326
+bgiannan
+daurnimator, the actual use case was: `a_buffer.append(if (something) another_buffer.toSlice() else a_slice)`
+
+1577696423
+daurnimator
+bgiannan: and what was the issue/error?
+
+1577696462
+bgiannan
+`expected type '[:0]const u8', found '[]const u8'`
+
+1577696515
+daurnimator
+bgiannan: thats odd... what does the compiler note point at?
+
+1577696524
+daurnimator
+is this a weird peer type resolution thing?
+
+1577697608
+Dominic[m]
+Well, here is the result of my playing with zig
+
+1577697738
+bgiannan
+Dominic[m], i'd say @ptrCast should fit all of those
+
+1577697744
+daurnimator
+Dominic[m]: should ptrcast to `[*:0]const u8`
+
+1577697772
+daurnimator
+bgiannan: I don't think it will? if `pa_context_get_sink_info_list` is declared to take a *c_void you won't be able to pass a const pointer into it?
+
+1577697816
+daurnimator
+Dominic[m]: that said, you could pass a pointer to a pointer in instead :)
+
+1577697853
+daurnimator
+(assuming that the callback doesn't outlive the function... which is looks like to me?) `pulse.pa_context_get_sink_info_list(c, get_sink_info_callback, &default_sink_name)`
+
+1577698070
+Dominic[m]
+daurnimator: Do you mean on line 17?
+
+1577698090
+daurnimator
+Dominic[m]: 35
+
+1577698092
+Dominic[m]
+that I should ptrCast to const u8, that is.
+
+1577698165
+Dominic[m]
+`@ptrCast([*:0]const u8, default_sink_name)` gives me `cast discards const qualifier`
+
+1577698210
+daurnimator
+really?
+
+1577698222
+Dominic[m]
+Yeah
+
+1577698349
+Dominic[m]
+`default_sink_name: [*c]const u8,` this is the line in the struct that cimport generated.
+
+1577698523
+daurnimator
+Dominic[m]: that doesn't sound right...
+
+1577698727
+Dominic[m]
+The cast or the generated type?
+
+1577698735
+daurnimator
+that error message...
+
+1577698745
+daurnimator
+paste the code as-is?
+
+1577698795
+Dominic[m]
+
+
+1577698838
+daurnimator
+Dominic[m]: no leave the intToPtr.
+
+1577698851
+daurnimator
+I just meant adding the `const` on 17
+
+1577698916
+Dominic[m]
+Oh :) Okay!
+
+1577699223
+Dominic[m]
+Going to have a play with passing a pointer to the string too, sounds like an interesting idea.
+
+1577700458
+daurnimator
+Dominic[m]: can `sink.*.name` be just `sink.name`?
+
+1577701327
+Dominic[m]
+daurnimator: `error: type '[*c]const .cimport:1:15.struct_pa_sink_info' does not support field access`
+
+1577701351
+daurnimator
+hmm okay.
+
+1577701390
+daurnimator
+Dominic[m]: I think you can declare your callback as taking a ?*const pulse.struct_pa_sink_info instead
+
+1577701612
+Dominic[m]
+daurnimator: I can indeed. And then I can use sink.name! Thanks. Does zig figure out that it needs to do some conversion?
+
+1577701645
+daurnimator
+Dominic[m]: [*c] is for auto-converted C files where we can't tell if its a pointer-to-many or a pointer-to-one.
+
+1577701692
+Dominic[m]
+Ah! That's useful to know.
+
+1577701935
+Dominic[m]
+daurnimator: I'm beat. I don't know how to make the `get_sink_info_callback` code get the default sink when it's passed as a pointer (via `&default_sink`). I've tried making the pointer cast a `*(...)` to say it's a pointer to that, but with no luck. I'm sure it's something obvious :)
+
+1577701992
+daurnimator
+Dominic[m]: paste your latest and I'll throw some ideas at it
+
+1577702064
+Dominic[m]
+Thanks, I appreciate that.
+
+1577702182
+daurnimator
+Dominic[m]: FYI I'm on top of PR #3973 right now. So there's a few related changes for that too
+
+1577702393
+daurnimator
+Dominic[m]: and how do I use the program?
+
+1577702445
+Dominic[m]
+daurnimator: If you're on linux you can build with pulseaudio-devel installed, and just run `./pulse-vol` and it should print out the volume.
+
+1577702465
+daurnimator
+Dominic[m]: it doesn't print anything... just sits there
+
+1577702475
+daurnimator
+strace says its in a `ppoll`
+
+1577702582
+Dominic[m]
+Oh, the version you have won't do anything. The version on GitHub works. Apologies, I sent you my "this is what I was trying" version. You'll need to uncomment line 35, and comment line 36.
+
+1577702806
+Dominic[m]
+The intention is to have this code replace a mixed shell out between pactl and alsactl for use with lemonbar.
+
+1577703372
+daurnimator
+Dominic[m]: nope still hangs....
+
+1577703496
+Dominic[m]
+Hmm. All I can think is that pulseaudio isn't running on your machine?
+
+1577703506
+daurnimator
+I'm listening to spotify right now :P
+
+1577703572
+Dominic[m]
+Just to make sure, this is the line you have? `const o = pulse.pa_context_get_sink_info_list(c, get_sink_info_callback, @intToPtr(*c_void, @ptrToInt(default_sink_name)));`
+
+1577703612
+daurnimator
+`const o = pulse.pa_context_get_sink_info_list(c, get_sink_info_callback, &default_sink_name);`
+
+1577703667
+Dominic[m]
+Sorry, that's what I was trying to describe before. That's the version where it's a pointer to a pointer, and I couldn't figure out how to turn that back into a string.
+
+1577703679
+Dominic[m]
+*is what you want
+
+1577703680
+daurnimator
+No I changed it to: `var default_sink_name = mem.toSliceConst(u8, server_info.default_sink_name);`
+
+1577703767
+Dominic[m]
+I would assume that it's failing the default sink name comparison, I debugged that by having `warn` print out the default sink name.
+
+1577703803
+daurnimator
+Dominic[m]: I see the issue: `get_sink_info_callback` isn't called imediately, so the stack-allocated default_sink_name is invalid
+
+1577703821
+daurnimator
+so you were right: the ptrtoInt/IntToPtr dance is required
+
+1577703875
+Dominic[m]
+Ah I see. Yeah. There's some kind of async dance going on.
+
+1577703878
+daurnimator
+makes me think those _unref calls are incorrect
+
+1577703912
+Dominic[m]
+I took those directly from the pactl source, so I've assumed they're right. But it's something I want to look further into. They don't look right.
+
+1577703954
+Dominic[m]
+I first want to see if I can get pulse's async to work with zig's async. Might clean the code up a bit.
+
+1577703967
+daurnimator
+that's likely to be a lot of work
+
+1577704061
+Dominic[m]
+Why's that?
+
+1577704129
+daurnimator
+maybe not; you'll see I guess
+
+1577704135
+daurnimator
+but zig's async mainloop is quite immature
+
+1577704147
+daurnimator
+Dominic[m]: after it prints my volume should it quit?
+
+1577704317
+Dominic[m]
+daurnimator: try adjusting your volume or changing the default device.
+
+1577704338
+daurnimator
+Dominic[m]: anyway, here is my diff:
+
+1577704351
+daurnimator
+Dominic[m]: ah cool; so it prints on change. makes sense :)
+
+1577704450
+Dominic[m]
+daurnimator: That's great, thanks! I really appreciate you taking the time to do that.
+
+1577704499
+daurnimator
+Dominic[m]: I also noticed that the pulseaudio API abuses enums for flags :(
+
+1577704520
+daurnimator
+Dominic[m]: e.g. trying to print the `sink` structure makes zig panic because the enum field isn't a valid enum
+
+1577704590
+Dominic[m]
+daurnimator: yeah, that gave me some trouble when I was trying to bit cast the flags. Although I didn't know that it was partially because I was just missing an intToEnum around the whole thing at the start.
+
+1577704606
+Dominic[m]
+This is the first language I've played with in a long while, I quite enjoy making beginner mistakes like this :)
+
+1577704629
+daurnimator
+Dominic[m]: zig is good at making flaws in C apis apparent
+
+1577704765
+Dominic[m]
+Yeah.
+
+1577704784
+Dominic[m]
+daurnimator: Are enum literals the reason that `.PA_CONTEXT_READY` works in the comparison?
+
+1577704790
+daurnimator
+Dominic[m]: yes
+
+1577704840
+daurnimator
+Dominic[m]: in #3973 some C gets translated better by the @cImport
+
+1577708871
+Dominic[m]
+daurnimator: Do you use `zig fmt`? I ask because your code formatting looks better to me as the lines are long, but zig fmt puts it back for me, and zig fmt is run automatically on write in vim.
+
+1577708882
+daurnimator
+Dominic[m]: yes
+
+1577708897
+daurnimator
+Dominic[m]: add a trailing comma to get zig fmt to multi-line it
+
+1577708912
+daurnimator
+`myfunc(1,2,3,)` ==> will put one arg per line
+
+1577708931
+Dominic[m]
+ah! that's the missing special symbol.
+
+1577712388
+daurnimator
+uh, how can I add a usize and an isize? I know that the isize is no more negative than the usize is large
+
+1577712457
+daurnimator
+I guess `x %+ @bitCast(usize, y)`.... that's how it works at the cpu level
+
+1577712599
+frmdstryr
+if (isize > 0) usize + @intCast(usize, isize) else usize - @intCast(usize, -isize)
+
+1577712615
+frmdstryr
+that's how I did it anyways
+
+1577712738
+mq32
+daurnimator: you can safely use bitCast then as zig guarantees two's complement
+
+1577712756
+Dominic[m]
+daurnimator: Did you build your version of that diff? I'm not able to get the bitwise-or to compile, I'm getting `invalid operands to binary expression: '.cimport:7:15.enum_pa_subscription_mask' and '.cimport:7:15.enum_pa_subscription_mask'` I'm guessing that's different on #3973 too?
+
+1577712811
+daurnimator
+Dominic[m]: yep
+
+1577721152
+Snektron
+Those casts with arithmetic are kinda annoying tbh
+
+1577726485
+schme245
+what's the easiest way to open a file in the same directory as a source file?
+
+1577726522
+schme245
+I'm looking at the docs but I can't find a way to get a Dir other than `cwd()`?
+
+1577738814
+wilsonk
+schme245: check out lib/std/fs.zig:695 for openFile. That func works with relative paths.  (createFile is a few lines further down, if needed). Hopefully that is what you are looking for
+
+1577740420
+schme245
+wilsonk:
+
+1577740444
+schme245
+wilsonk: hmm... openFile takes a Dir argument, how do I create a Dir for the current path in the first place?
+
+1577740617
+jicksaw
+std.fs.cwd() gives current working Dir
+
+1577740703
+jicksaw
+oh just saw your previous msg
+
+1577740722
+jicksaw
+wouldn't fs.makeDir("path") work?
+
+1577740806
+wilsonk
+you could just do 'const file = try std.fs.cwd().openFIle(file_name, .{});' I think
+
+1577741058
+BaroqueLarouche
+This is how I read image from file in my WIP library:
+
+1577744853
+schme245
+wilsonk: cwd depends on which dir you are running the code in which is not what I'm after in this case
+
+1577744877
+schme245
+BaroqueLarouche: thanks, will check it out!
+
+1577744936
+wilsonk
+oh, I see...the same file as the source file. Just use openFIleAbsolute like BaroqueLarouche says then, I suppose (feed it the directory of the source file)
+
+1577745016
+hryx
+would @embedFile not do what you want?
+
+1577745021
+BaroqueLarouche
+wilsonk: I use path.resolve to get the absolute path
+
+1577745269
+wilsonk
+wow, that @embedFile is just the thing for a different situation I was looking at. Sweet
+
+1577750256
+daurnimator
+Looking back through #173 now that #2431 is closed..... VLAs in zig are
+
+1577750314
+daurnimator
+I realise now that `std.TailQueue` makes no guarantee that your struct will be after the prev/next pointers.
+
+1577750343
+daurnimator
+so you have to use `std.TailQueue(void)` and put your data after manually.
+

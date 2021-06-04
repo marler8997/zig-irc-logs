@@ -1,0 +1,1344 @@
+1556846177
+daurnimator
+andrewrk: I hope my feedback in #2404 is in line with what you would say
+
+1556846240
+daurnimator
+"wantTtyColor" <- ugh, this capitalisation looks terrible.
+
+1556847337
+torque
+I've always eschewed that form of camelcasing and preferred fully capitalized acronyms (controversially, even when they start an identifier)
+
+1556847713
+daurnimator
+andrewrk: watching your stream now. do you know about madvise with MADV_DONTNEED?
+
+1556847840
+daurnimator
+or going further (but needs CAP_SYS_ADMIN): MADV_HWPOISON
+
+1556848189
+mikdusan
+adtac: i might be oblivious but before #2413 was it intentional to have a terse stack trace when color/tty is disabled?
+
+1556848775
+andrewrk
+daurnimator, even better is mmap with MAP_FIXED and PROT_NONE. only 1 syscall to perfectly accomplish the goal
+
+1556848797
+andrewrk
+I agree about wantTtyColor. I think I used that as an example in a style discussion
+
+1556848822
+daurnimator
+andrewrk: hmm? howso? isn't the page already mapped; and instead of munmap to free; I'm saying you could madvise(MADV_REMOVE)
+
+1556848836
+andrewrk
+you would need madvise and then mprotect
+
+1556848874
+daurnimator
+oh right. you want to change protection too.
+
+1556848904
+andrewrk
+
+
+1556849058
+daurnimator
+TIL MADV_FREE
+
+1556849207
+daurnimator
+andrewrk: btw, any top priorities you'd like me to look at? I've got lots of things I want to do with zig; but not sure how to prioritize them :P
+
+1556849255
+andrewrk
+give me a couple hours, I'm typing up a proposal for an epiphany I had while running just now and then I'm grabbing a bite to eat
+
+1556850085
+adtac
+mikdusan: I'm not awarem today is my first day with zig
+
+1556850154
+adtac
+but if that was intentional, I can remove that commit
+
+1556850301
+andrewrk
+I'm afk but I believe I figured out how to make ptrcast, inttoptr, and fieldparentptr safety checked
+
+1556850319
+andrewrk
+If you look at the proposal I just opened
+
+1556850326
+andrewrk
+Alright back in a bit
+
+1556850389
+mikdusan
+adtac: honestly i have no idea; it was just a nagging and probably inconsequential question i had about stack trace behavior
+
+1556850398
+mikdusan
+adtac: probably best forget i asked :)
+
+1556850478
+mikdusan
+MTSBMMS
+
+1556853257
+tgschultz
+andrewrk: I'm a bit confused, isn't the whole point of @ptrCast and @intToPtr to change the type?
+
+1556853348
+tgschultz
+oh wait, I get it. It only safety checks things that have no well-defined memory layout.
+
+1556853535
+daurnimator
+How do we use
+
+1556853537
+tgschultz
+So like, in type-erasure and restore circumstances. That might actually be really helpful in Interface Reform.
+
+1556854465
+tgschultz
+andrewrk: another note, I'm not sure that'll buy much for @fieldParentPtr either. I did my own experimentation with a similar concept when I first started with zig and as I recall the actual behavior of the stack kept data 'valid' a lot longer than I'd have thought. Hmm... is it a terrible idea to overwrite the stack frame with 0xaa on return in debug/safe builds?
+
+1556855215
+daurnimator
+tgschultz: that brings up a related issue I've thought about a few times: writing `undefined` after freeing or deinit-int items
+
+1556855239
+daurnimator
+e.g. I've stared at .deinit methods before and wondered why they don't set fields to undefined
+
+1556855423
+andrewrk
+tgschultz,
+
+1556859359
+andrewrk
+daurnimator, you would do like the example and use inline assembly with that special comment with --emit=asm and then run the llvm-mca command like it says there
+
+1556859481
+emekankurumeh[m]
+i just hope zig debug builds don't become as slow as rust debug builds.
+
+1556859493
+andrewrk
+daurnimator, that's a great point about setting to undefined in deinit. you can see I had the same idea:
+
+1556859502
+andrewrk
+I think it's best practice to do this, but it's not enforced
+
+1556859526
+andrewrk
+emekankurumeh[m], you mean compile time, or run-time?
+
+1556859553
+daurnimator
+andrewrk: heh... I think your link there actually has it wrong!
+
+1556859563
+andrewrk
+how so?
+
+1556859584
+emekankurumeh[m]
+rust is slow on both accounts, but specifically meant run-time
+
+1556859647
+daurnimator
+andrewrk: hrm... so I suppose we conflate two things: IMO there should be a "reset"-like function. that does init on an existing data structure. I guess that's myob.* = MyClass.init()
+
+1556859702
+andrewrk
+right. deinit() in english is "free the associated resources and then set to undefined"
+
+1556859715
+daurnimator
+it's weird how deinit() isn't really the mirror of init()
+
+1556859721
+andrewrk
+isn't it?
+
+1556859739
+andrewrk
+init() operates on undefined memory and makes it into a valid state
+
+1556859747
+andrewrk
+deinit() operates on a valid state and makes it into undefined memory
+
+1556859771
+daurnimator
+it doesn't operate on undefined though; it returns an object by value
+
+1556859811
+daurnimator
+in practice with copy ellision its the same thing
+
+1556859823
+daurnimator
+but... weird not-quite-mirror
+
+1556859836
+andrewrk
+hm I don't see how it's not a mirror
+
+1556859847
+daurnimator
+it would be a mirror if init() took a *Self
+
+1556859882
+andrewrk
+it essentially does. with no-copy semantics it literally does
+
+1556859938
+daurnimator
+right; which i said above
+
+1556860001
+andrewrk
+assignment is initialization
+
+1556860008
+daurnimator
+okay I think I'm convinced: style guide addition?: deinit() methods should end with `self.* = undefined;`
+
+1556860009
+andrewrk
+var x: i32 = undefined; x = 1234; x = undefined;
+
+1556860060
+andrewrk
+that sounds good; though you're inventing a new guide - one that talks about semantics rather than style
+
+1556860067
+andrewrk
+but certainly a useful guide
+
+1556860141
+daurnimator
+andrewrk: going further: `allocator.free(x)` should always be followed by `x = undefined`
+
+1556860190
+mikdusan
+in a release-fast is `x = undefined` a no-op ?
+
+1556860195
+daurnimator
+mikdusan: yes.
+
+1556860197
+andrewrk
+daurnimator, for that one we can put it in the Allocator interface
+
+1556860204
+daurnimator
+andrewrk: howso?
+
+1556860214
+andrewrk
+mikdusan, even better than a no-op - it's a no-op that gives the optimizer more information
+
+1556860224
+mikdusan
+ah true!
+
+1556860226
+daurnimator
+andrewrk: btw, will `self.* = undefined` be a single valgrind request or one for each member?
+
+1556860235
+andrewrk
+single
+
+1556860248
+daurnimator
+awesome :)
+
+1556860270
+andrewrk
+howso -> simple: in free() we put the x = undefined right after the call to shrinkFn
+
+1556860279
+andrewrk
+I honestly expected it to already be there
+
+1556860285
+andrewrk
+I must have forgotten
+
+1556860292
+daurnimator
+andrewrk: but you pass the pointer to free(); not the pointer to your pointer.
+
+1556860336
+andrewrk
+ahh right. I am mistaken. It's the allocator implementation's responsibility to do what it will with the freed memory. it may become unmapped
+
+1556860371
+andrewrk
+I actually don't agree about allocator.free(x); x = undefined;
+
+1556860417
+andrewrk
+I think it's contextual. certainly sometimes, maybe even often, that would be appropriate
+
+1556860428
+daurnimator
+andrewrk: IMO dangling pointers are a hazard
+
+1556860469
+andrewrk
+certainly. I have an idea to completely solve that for stack variables. the GeneralPurposeDebugAllocator is on track to solve that for heap memory
+
+1556860614
+daurnimator
+I still feel like setting them to undefined would be good practice
+
+1556860675
+andrewrk
+I'm not sure we're even disagreeing. I'm just saying it's contextual. For example if you had a ?*T you would simply set it to null
+
+1556860758
+daurnimator
+there's always exceptions to rules like this. e.g. if we have a XOR-linked-list, then we may need to keep the pointer around for a bit to find the next node...
+
+1556860794
+daurnimator
+which is why it's a "guide"; not a compile error ;P
+
+1556861376
+daurnimator
+andrewrk: so... priorities you'd like from e.g. me?
+
+1556861402
+andrewrk
+do any of the contributor friendly labeled issues look good to you?
+
+1556861498
+andrewrk
+daurnimator, ooh, are you interested in this?
+
+1556861515
+andrewrk
+I would love to hand off this issue
+
+1556861553
+andrewrk
+this issue is a good investment because it means that work done on translate-c is the actual real work that will be in the self-hosted compiler
+
+1556861559
+daurnimator
+I don't particularly want to get into the C++ side of development.
+
+1556861569
+daurnimator
+I that issue mainly now translating C++ to zig?
+
+1556861575
+andrewrk
+yes it is
+
+1556861591
+daurnimator
+Is there a WIP branch somewhere?
+
+1556861602
+andrewrk
+it's master. you can look at `zig translate-c-2`
+
+1556861614
+andrewrk
+look at some of those latest commits
+
+1556861632
+andrewrk
+you would have to write a C API wrapper for libclang. other than that it's all .zig code
+
+1556861650
+andrewrk
+so it is a bit of C++ because you have to understand the libclang C++ API
+
+1556861659
+andrewrk
+understood if that's not your jam
+
+1556861693
+daurnimator
+Writing the C wrapper for libclang is the bit I'm not really interested in
+
+1556861698
+andrewrk
+fair
+
+1556861704
+andrewrk
+any of the other contributor friendly issues?
+
+1556861715
+daurnimator
+Many of them seem pretty low priority...
+
+1556861802
+daurnimator
+Could do the hex floating point one... just pinged the user who already said they'd do it
+
+1556861832
+andrewrk
+how about inflate/deflate in the std lib
+
+1556861840
+daurnimator
+You know I'm interested in #2007... but that's mostly blocked on coroutines (and for the parts that aren't... I already have a PR open :) )
+
+1556861862
+andrewrk
+
+
+1556861961
+daurnimator
+andrewrk: could do. pinged other users that have expressed interest.
+
+1556861983
+andrewrk
+I'm pretty confident nobody is working on that
+
+1556862001
+daurnimator
+schmee said they were as recently as March
+
+1556862008
+daurnimator
+I might tackle #480
+
+1556862047
+shachaf
+Oh man, coroutines. I should read what's been going on with that.
+
+1556862059
+andrewrk
+daurnimator, I wouldn't limit yourself to 0.5.0 either
+
+1556862060
+emekankurumeh[m]
+i did a little work somewhat related to #2007, prettying up the apis for networking operations. it's a little stale though:
+
+1556862067
+shachaf
+Looks like it's been written up in the past few days?
+
+1556862072
+andrewrk
+daurnimator, for 480 would you try to do a release mode allocator?
+
+1556862085
+daurnimator
+andrewrk: yes.
+
+1556862088
+andrewrk
+exciting
+
+1556862099
+daurnimator
+obviously with as many safety features as possible
+
+1556862105
+daurnimator
+but nothing that would impact speed
+
+1556862120
+andrewrk
+really? I thought release fast would not care about any safety features
+
+1556862128
+andrewrk
+I guess if it truly did not affect perf
+
+1556862308
+daurnimator
+andrewrk: misc ideas: undefined in the right places; guard pages; alloc/free counter (per bucket?); some catching of double frees.
+
+1556862383
+daurnimator
+can probably also have canaries around non-page sized allocations (where guard pages wouldn't work)
+
+1556862475
+daurnimator
+andrewrk: want me to push orderedRemove now and we debate rename later?
+
+1556862498
+andrewrk
+sounds good
+
+1556862900
+andrewrk
+merged. alright I'm going to bed, good night
+
+1556863186
+daurnimator
+night
+
+1556863214
+daurnimator
+http.headers PR rebased on top of master.
+
+1556863393
+daurnimator
+emekankurumeh[m]: so I've been thinking about a socket library for zig for a while
+
+1556863417
+daurnimator
+emekankurumeh[m]: watching the way things are going... I think we need a higher level abstraction than what you have there; as well as a lower level one....
+
+1556863473
+daurnimator
+emekankurumeh[m]: to explain further: OSes are opening up options to "batch" operations: so that you can e.g. have multiple setsockopt calls in flight at once.
+
+1556863508
+daurnimator
+similarly, you can queue dependant operations; e.g. "setsockopt*5, then listen, then accept"
+
+1556863535
+emekankurumeh[m]
+or perform them asynchronously
+
+1556863565
+daurnimator
+so the API I think I'd want is one where you have a `mysocket.setDesired(sockopt)` and then an optional `mysocket.drainQueue()`
+
+1556863611
+daurnimator
+where a naieve (and portable) implementation just sets up operations in a buffer; and only does the syscalls on drain.
+
+1556863672
+emekankurumeh[m]
+that sounds similar to the builder pattern i nrust
+
+1556863679
+emekankurumeh[m]
+*in rust
+
+1556863699
+emekankurumeh[m]
+
+
+1556863744
+daurnimator
+yeah I've even used such a pattern from C before:
+
+1556863995
+daurnimator
+it stacks well too. e.g. if you queue up a "write" operation, then you can potentially take advantage of TCP fast open
+
+1556864012
+daurnimator
+or if you queue up a "starttls" and then a "write", you can take advantage of TLS early data
+
+1556864128
+emekankurumeh[m]
+or setting socket flags on accept
+
+1556864223
+daurnimator
+and coaleacing operations. e.g. accept() followed by getpeername()? -> use accept4()
+
+1556864333
+daurnimator
+and even: accept() followed by fcnctl(O_NONBLOCK)? -> accept4(,,,SOCK_NONBLOCK)
+
+1556864402
+daurnimator
+emekankurumeh[m]: I assume you get the point :)
+
+1556864411
+emekankurumeh[m]
+the problem is that window's doesn't support accept4, so you have to do them separately
+
+1556864434
+daurnimator
+exactly.
+
+1556864617
+daurnimator
+You might be able to see that this suggests the "owner" is really a "commandbuffer" -like object
+
+1556864681
+emekankurumeh[m]
+so a like a drawlist or actionlist
+
+1556864717
+emekankurumeh[m]
+though if such a pattern is introduced in a socket module would it spread to the rest of std?
+
+1556864752
+daurnimator
+Not sure... I'd probably model it after the linux kernel though while keeping compatibility with windows IOCP
+
+1556864794
+emekankurumeh[m]
+so that would be the high level interface that you talked about?
+
+1556864802
+daurnimator
+yeah
+
+1556864981
+daurnimator
+emekankurumeh[m]: I'd start by looking into abstracting over window's OVERLAPPED structure (
+
+1556865528
+emekankurumeh[m]
+zig has some abstractions over overlapped io in std.event.fs so i think i would start from there. probably look at rust's mio/miow
+
+1556867198
+daurnimator
+emekankurumeh[m]: oh, you
+
+1556868551
+purelazy
+Hi
+
+1556869138
+daurnimator
+purelazy: hi
+
+1556869264
+purelazy
+Hi daunimator. I'd like to try to compile for an Arduino (AVR core)
+
+1556869297
+purelazy
+Was wondering if anyone had a link to a howto page
+
+1556870302
+daurnimator
+I know someone was looking at it before, but not sure if they got anywhere. What stage is your cpu architecture in the support list?
+
+1556870948
+purelazy
+daurnimator: Tier 4
+
+1556870995
+daurnimator
+purelazy: that pretty much means you'll have a lot to figure out yourself
+
+1556871090
+daurnimator
+purelazy: I assume you're looking for freestanding support?
+
+1556871105
+purelazy
+daurnimator: I don't know what freestanding means
+
+1556871112
+daurnimator
+purelazy: meaning no Operating System
+
+1556871145
+daurnimator
+purelazy: you might try and build an object file for your cpu containing something simple like a function that does `return 42`
+
+1556871153
+purelazy
+daurnimator: Then yes. The Arduino has no OS
+
+1556871352
+daurnimator
+e.g. try and build a file containing the following with `zig build-obj`: export fn meaningoflife() i32 { return 42; }
+
+1556871439
+purelazy
+I should probably play around with the Linux Tier 1 first
+
+1556871457
+daurnimator
+purelazy: FWIW I don't see 'avr' anywhere in the output of `zig targets`
+
+1556871470
+daurnimator
+purelazy: you may have to compile your LLVM with custom flags to get AVR support?
+
+1556871515
+purelazy
+
+
+1556871594
+tyler569
+if you look at the tier descriptions though, t4 may require a special experimental LLVM
+
+1556871608
+daurnimator
+purelazy: yes. but see definition of tier 4
+
+1556871690
+daurnimator
+purelazy: not sure where/how you installed your 'zig' binary. What is your output of `zig targets | grep avr`
+
+1556871720
+purelazy
+daurnimator: Nothing installed anywhere yet :)
+
+1556871734
+purelazy
+I'm brainstorming
+
+1556871779
+purelazy
+daurnimator: Arduino is my new toy
+
+1556871816
+daurnimator
+purelazy: TBH arduino AVR is a bit of a waste of time: at least use the stm32 stuff...
+
+1556871817
+purelazy
+daurnimator: I need to take babysteps
+
+1556871873
+daurnimator
+purelazy: ah! the binaries on the zig download page
+
+1556871937
+purelazy
+daurnimator: Not sure why you mention STM32
+
+1556871990
+daurnimator
+purelazy: there's a lot of arduino compatible stm32 boards out there
+
+1556872032
+purelazy
+Not really knowledgeable about STM32
+
+1556872064
+purelazy
+daurnimator: So many baby machines out there
+
+1556872114
+purelazy
+Can't see AVR on
+
+1556872152
+daurnimator
+purelazy: you download the compiler for your development environment
+
+1556872161
+daurnimator
+purelazy:
+
+1556872357
+purelazy
+daurnimator: That is encouraging
+
+1556872531
+daurnimator
+purelazy: I'd start by trying to link in a library build like that to an existing arduino C project. If that works then you can see how far things go....
+
+1556872573
+purelazy
+daurnimator: First I need the compiler
+
+1556872588
+daurnimator
+purelazy: you can just download a zig binary from the download page
+
+1556872709
+purelazy
+I'll be getting zig-linux-x86_64-0.4.0+f8117a07.tar.xz
+
+1556872721
+daurnimator
+purelazy: sure. that's what I used in my gist above.
+
+1556872745
+purelazy
+daurnimator: And do I need LLVM stuff?
+
+1556872759
+daurnimator
+purelazy: the binaries on the download page include everything you need
+
+1556872776
+daurnimator
+and luckily enough they were built with the experimental LLVM AVR target enabled :)
+
+1556872929
+purelazy
+daurnimator: What is zigs relation to C (and/or) C++.
+
+1556872939
+daurnimator
+purelazy: what do you mean by "relation"?
+
+1556872960
+daurnimator
+in terms of syntax? in terms of zig implementation? in terms of interoperation?
+
+1556872985
+purelazy
+I read Zig is also C, so would Zig be in the "superset" relation?
+
+1556873013
+purelazy
+Like C++ is a superset of C
+
+1556873046
+daurnimator
+purelazy: zig is not also C.
+
+1556873107
+daurnimator
+purelazy: zig has a few interesting interoperation points: 1. @cImport lets you import a C header and use it in zig code. 2. `zig translate-c` will translate C code to zig code. 3. you can use `zig build` as a C build system and `zig cc` as a C compiler.
+
+1556873130
+purelazy
+"Zig is also a C compiler" on the Zig homepage
+
+1556873179
+daurnimator
+purelazy: yes. which is to say that the zig binary includes a C compiler (`zig cc`). zig the languge isn't a superset of C.
+
+1556873367
+purelazy
+So how would you describe Zig, the language - in relation to C or otherwise?
+
+1556873388
+purelazy
+It is very C-like :)
+
+1556873435
+daurnimator
+purelazy: the language? implicit; un-managed; powerful; fast; "safer than C"
+
+1556873486
+daurnimator
+uh, s/implicit/imperative/
+
+1556873525
+purelazy
+daurnimator: would you include "C-like syntax" in your description list?
+
+1556873533
+daurnimator
+purelazy: no not really
+
+1556873553
+daurnimator
+it's C-like in the same way that all unmanaged imperative languages look like C....
+
+1556873611
+daurnimator
+(and even some managed ones)
+
+1556873976
+purelazy
+daurnimator: OK. I'm getting it
+
+1556874026
+purelazy
+It's not C
+
+1556874028
+presiden
+I like that in declaration, the identifier name is first then followed by type,
+
+1556874043
+presiden
+unlike in C where the type first followed by identifier
+
+1556874129
+daurnimator
+presiden: you might want to read
+
+1556874159
+daurnimator
+presiden: also hackernews thread:
+
+1556874252
+presiden
+btw, I'm Pascal fans :)
+
+1556874407
+presiden
+daurnimator, yeah, type inference becoming mainstream might be one of the reason
+
+1556874721
+purelazy
+daurnimator: So its not C and Zig is also a C compiler. That makes no sense to me at all
+
+1556874752
+purelazy
+What am I missing?
+
+1556874763
+daurnimator
+purelazy: zig the language vs zig the binary?
+
+1556874841
+purelazy
+What is zig the binary
+
+1556874865
+purelazy
+(sound like a new Marvel character)
+
+1556874892
+purelazy
+I know what a language is
+
+1556874897
+daurnimator
+purelazy: the program that you download called "zig"
+
+1556874967
+purelazy
+Zig the binary is a C compiler
+
+1556875043
+daurnimator
+yes. in addition to: a zig (the language) compiler, a build system, and more.
+
+1556875202
+purelazy
+daurnimator: Thanks. That's very clear now.
+
+1556882688
+tgschultz
+andrewrk, I meant, like, can we, in debug/safe, insert a call right before return that gets the current stack frame and sets it to 0xaa? No heap allocation involved.
+
+1556884112
+rivten
+Hello everybody ! I hope everyone is doing fine :) I had two quick questions for everybody. I'm trying to dynamically load zig code from zig code. There's two things I'm blocking on : (1) I didn't find any build.zig files to build DLL (windows and linux). (2) Am I forced to export my functions in my DLL with the C ABI even if I'm loading them back in Zig afterwards ?
+
+1556884149
+rivten
+(I guess the answer to the second question is yes since the DLL could very well be loaded from another language, but maybe there's a better way in Zig to implement dynamic code loading)
+
+1556884164
+daurnimator
+rivten: 1. what are you struggling with? I wrote one once and it seemed simple enough. 2. yes :(
+
+1556884215
+rivten
+Well I just struggle with finding examples :( All I ever see is reference to the Tetris build file which builds an exe and then run it.
+
+1556884343
+tgschultz
+Once you remove all the things that could never work across a DLL boundary anyway (comptime, type checking, etc.) you're basically at the C abi already anyway.
+
+1556890221
+rivten
+Ok ! I got it working in the end :) it feels great ahah
+
+1556890245
+rivten
+it was pretty seamless in Zig once I found out what to do
+
+1556900026
+andrewrk
+tgschultz, re: insert a call right before return that gets the current stack frame and sets it to 0xaa -> the problem is that when you call a function, it will overwrite your 0xaa's with the new function call frame. then if a dangling pointer is used it clobbers the new fn call
+
+1556900230
+tgschultz
+that's true today too. but imagine we add the saftey checks you're talking about. If I return a pointer to such an object that exists in my stack frame and then later try to use it, it will almost certainly assert because the check will the type code as undefined or whatever data that memory has been overwritten with. There's less chance of it mysteriously working in debug and then not in release-fast.
+
+1556900274
+tgschultz
+though I see your point about allocating and invalidating that frame for other pointers.
+
+1556900479
+andrewrk
+I see what you're saying - based on
+
+1556900488
+andrewrk
+but this would only catch @ptrCast, @intToPtr, etc
+
+1556900500
+andrewrk
+consider that you might just try to dereference a pointer that you thought was the same type all along
+
+1556901674
+mikdusan
+andrewrk: small revisit. i mentioned last night about --color { auto, never, always } . and that's pretty std for command line option. but not for ENV var... i don't find any examples of a standard. there is PR 2413 for env ZIG_DEBUG_COLOR
+
+1556901701
+mikdusan
+do you think ZIG_DEBUG_COLOR should simply accept the same kind of string values?
+
+1556901752
+andrewrk
+yes
+
+1556901758
+mikdusan
+ok i'll comment on pr
+
+1556901773
+andrewrk
+"never" "always" and then anything other than that means "auto"
+
+1556901781
+mikdusan
+yup!
+
+1556901800
+andrewrk
+docgen.zig needs updated
+
+1556902259
+mikdusan
+this PR is for env variable. i think we'll need another for instances of --color: src/main.cpp, doc/docgen.zig, src-self-hosed/main.zig, src-self-hosted/arg.zig
+
+1556902282
+andrewrk
+docgen.zig makes use of that env variable
+
+1556902314
+mikdusan
+your grep-fu is superior. i'll add request to pr.
+
+1556903006
+tgschultz
+we haven't implemented @OnePossibleValue() or whatever that was yet have we?
+
+1556903136
+andrewrk
+correct
+
+1556903753
+andrewrk
+daurnimator, is 2326 ready for merge?
+
+1556903765
+andrewrk
+I'm ok with doing the posix api layer thing separately later
+
+1556903804
+andrewrk
+what did you do to get the msghdr struct layouts for arm64, netbsd, and freebsd?
+
+1556907513
+shritesh
+andrewrk: Can you look at 2420? I'm new to POSIX and I'm following the same structure with all the other functions.
+
+1556907527
+andrewrk
+shritesh, yep I'm going through all the PRs now
+
+1556907540
+andrewrk
+currently on 2381, going from oldest to newest
+
+1556907570
+shritesh
+Thanks. Cool-ish demo coming tonight
+
+1556907589
+tgschultz
+ok, PackedIntArray/Slice are written, tested with bit widths from 0-256. I'll give it one more look over after lunch then run a full CI and make a PR. std.mem seem a reasonable place for it?
+
+1556907638
+andrewrk
+tgschultz, my suggestion: put the new code in a new file, and then all we have to figure out is what is the std lib path, whether it be std.mem.PackedIntArray or std.something_else.PackedIntArray
+
+1556907709
+andrewrk
+honestly I'd be fine with std.PackedIntArray
+
+1556908597
+tgschultz
+That makes sense, that's where array_list is
+
+1556908608
+tgschultz
+ArrayList rather
+
+1556910604
+Sahnvour
+andrewrk, are there plans to have traits over allocators, to allow specific optimized behaviour by the clients?
+
+1556911373
+tgschultz
+why would that be necessary? create different allocators for different optimized use cases.
+
+1556911596
+Sahnvour
+library code could make use of it if present, and still support any allocator
+
+1556911689
+Sahnvour
+for example iirc some windows allocation functions zero out the memory, but I doubt that's the case for most general allocation functions
+
+1556912080
+andrewrk
+Sahnvour, not sure, at this point
+
+1556912546
+tgschultz
+that means shoving that information into every allocator interface struct, and every routine that does allocation would have to make the decision to take advantage of it or not. I'd say its better to let the programmer determine which features to take advantage of by passing an appropriate allocator.
+
+1556912731
+scientes
+yeah it should be another allocator
+
+1556914102
+tgschultz
+ever write some code, and some tests, and then the code works the first time and your reaction is to get suspicious?
+
+1556914132
+andrewrk
+every time
+
+1556914144
+scientes
+^^^this
+
+1556914162
+andrewrk
+sometimes I use gdb just to make sure the code is doing what I think it's doing
+
+1556914268
+tgschultz
+Originally PackedIntSlice was just PackedIntArray but with a slice of u8 backing it instead of an array. Then I decided to make it an actual slice of a PackedInt(Array/Slice) and it seems to actually have been as simple a change as it appeared.
+
+1556914314
+andrewrk
+living the zig dream
+
+1556914335
+andrewrk
+when you don't hit immaturity / compiler bugs it's actually quite lovely
+
+1556914343
+scientes
+haha
+
+1556914356
+tgschultz
+yes, the compiler bugs are annoying. They are a lot fewer than they were a year ago though.
+
+1556917101
+mikdusan
+andrewrk: can u clarify: when asserts are
+
+1556917109
+mikdusan
+(re: #2421)
+
+1556917197
+andrewrk
+mikdusan, on my laptop I am using the build instructions from the README and getting all tests passed
+
+1556917212
+andrewrk
+the build instructions from the README use the default build mode which is Debug which has assertions enabled
+
+1556917219
+mikdusan
+wow.
+
+1556917747
+emekankurumeh[m]
+does zig build with experimental llvm targets enabled ?
+
+1556917761
+andrewrk
+can you clarify the question?
+
+1556917806
+scientes
+zig uses the system llvm
+
+1556917832
+andrewrk
+scientes, this is not true for the official ziglang.org/download builds
+
+1556917841
+scientes
+yes that is true
+
+1556917847
+scientes
+so yeah, clarification
+
+1556917900
+andrewrk
+mikdusan, I just did a 100% clean build on my macos laptop from a fresh terminal, fresh clone of zig, all tests passed
+
+1556917917
+mikdusan
+this is me sitting here perplexed
+
+1556918022
+mikdusan
+all i can think of is my /usr/include is empty. and /usr/local/include is near empty (has fuse/ and that's it)
+
+1556918342
+andrewrk
+it could be nondeterminism in LLD
+
+1556918344
+mikdusan
+can u pastie output of: zig build test --verbose --verbose-cc --verbose-link --build-file test/standalone/static_c_lib/build.zig
+
+1556918545
+andrewrk
+mikdusan,
+
+1556918681
+mikdusan
+just checking: is your `ar` from /usr/bin ?
+
+1556918691
+Sahnvour
+tgschultz, this is not related to the programmer's choice of allocator. they have no control over what advantage the library code they use can make of the allocator's specifics
+
+1556918749
+andrewrk
+mikdusan, zig no longer shells out to `ar`; it uses ZigLLVMWriteArchive
+
+1556918813
+Sahnvour
+it could be done with flags stored in the allocator struct, but I don't have a strong opinion about it, just thinking
+
+1556919964
+andrewrk
+whew. alright finished that round of PR reviews. Next round is on Tuesday. and now I get to do some coding
+
+1556921791
+tgschultz
+Sahnvour, that's how it is in C's world of One True Global Allocator, but we don't have to do it that way in zig. The library takes an allocator, the programmer gives it an allocator that does what the programmer wants it to do.
+
+1556921927
+companion_cube
+it's sometimes the case in C, too, I think — like, sqlite can take a custom allocator iirc
+
+1556922057
+Sahnvour_
+I understand that, I must not be expressing myself clearly. An allocator that gives zeroed memory (which is not always the case AFAIK) can be useful to some container or algorithm that would then not need to do it itself (assuming it wants zero initialized memory). But since it has to support any allocator implementing the interface, it currently is unable to know wether it can skip doing `memset(dest, 0, size)` and would in some cases do it
+
+1556922057
+Sahnvour_
+when it is not necessary.
+
+1556922132
+Sahnvour_
+Agreed that's not necessarily a commun usecase, but there may be some like that.
+
+1556922225
+Sahnvour_
+My point is the programmer doesn't need to know about this, that's a contract between the allocator implementer and the container/algorithm using it. That's a side bonus on top of the choice the programmer made regarding its allocation strategy but he has no control over it.
+
+1556922250
+Sahnvour_
+s/he/they
+
+1556922470
+scientes
+Sahnvour_, yes, but it would be a differn't allocator
+
+1556922496
+scientes
+Sahnvour_, maybe allocators could have attributes like that
+
+1556922826
+Sahnvour_
+Talking about VirtualAlloc on windows, which does exactly that. This is a minor property, one should very probably not base their allocator choice on it. But this property can be used by some piece of code they also may not need to know how it works. That's just out of the programmer's scope in 99% cases.
+
+1556922901
+Sahnvour_
+If you're using a VirtualAlloc-based allocator, you have no choice but to get zeroed pages, your choice is severely limited. But why not make the most out of it ?
+
+1556924455
+tgschultz
+WIf the algorythm requires zeroing memory then it should take a ZeroingAllocator, or take var and check if it is an Allocator or ZeroingAllocator to make its decision. ZeroingAllocator could just be a wrapper for Allocator but it forces the programmer to assert that the allocator they're passing does the zeroing for it. This avoids having a bunch of bit flags in the Allocator interface struct that are only used in a handful of
+
+1556924455
+tgschultz
+cases.
+
+1556924500
+tgschultz
+Probably an ever growing number of bit flags at that
+
+1556924526
+donpdonp
+is there useful information to capture when a zig build crashes?
+
+1556924539
+donpdonp
+not building zig, but while zig is building a project
+
+1556925128
+Sahnvour_
+the thing is, we're usually passing &mem.Allocator's around, and not the actual FooAllocator, so the type-based solution is less convenient. But I don't like adding another field to Allocator either... whatever
+
+1556925229
+tgschultz
+that's why I mentioned the interface reform. I think the standard should be that we preserve type information unless it is necessary to erase it.
+
+1556925246
+tgschultz
+current interfaces don't do that
+
+1556925293
+tgschultz
+wait, no, I didn't mention that because I erased that version of my reply.
+
+1556925297
+scientes
+Sahnvour_, you don't need another field, this is a compile-time thing
+
+1556925312
+scientes
+all you need is the @typeName proposal that was accepted
+
+1556925328
+scientes
+or memberName or whatever it was
+
+1556925345
+Sahnvour_
+tgschultz, I didn't see your message mentionning this, and I agree :)
+
+1556925348
+scientes
+or yeah interface reform
+
+1556925399
+Sahnvour_
+scientes, in the current state allocators can only carry information through runtime values to the code using them, since we erase the type via function pointers
+
+1556925488
+Sahnvour_
+tgschultz, oh right, that explains it
+
+1556925567
+tgschultz
+what we're trying to accomplish with interface reform is a userland proof of concept for taking `var` as the standard and type-erasing for storage or exporting.
+
+1556925612
+tgschultz
+ultimately that may become something handled at the language level
+
+1556926994
+mikdusan
+how about adding an arg (not a storage bit!) to existing functions or new functions that capture intent. programmer tells allocator give me zero'd memory. allocator decides how to efficiently do it.
+
+1556927383
+Sahnvour_
+this approach might end up adding many new functions/parameters, which is not really desireable
+

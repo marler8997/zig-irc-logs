@@ -1,0 +1,796 @@
+1549585347
+andrewrk
+that thing that happened on stream where llvm8 branch didn't work, is an LLD bug. a regression since 7.0.0
+
+1549585352
+andrewrk
+
+
+1549585366
+andrewrk
+I didn't find it until now because we didn't have thread local storage until 3 days ago :)
+
+1549586183
+emekankurumeh[m]
+should the logic for #1911 go in `ir_render_instruction` or in `ir_render_fence`, `ir_render_atomic_rmw`, and `ir_render_atomic_load`?
+
+1549586428
+daurnimator
+andrewrk: computed goto is mostly useful in bytecode vms. Until someone e.g. ports lua to zig, then I don't think you'll find a need for it
+
+1549586522
+emekankurumeh[m]
+does anything depend on the order of the fields of `IrInstructionAtomicLoad`?
+
+1549586687
+daurnimator
+andrewrk: I'm watching your screen. I noticed in your strace of your threaded program that you called exit() rather than exit_group(). intentional?
+
+1549586712
+emekankurumeh[m]
+is andrewrk streaming right now?
+
+1549586723
+daurnimator
+emekankurumeh[m]: no. a couple of hours ago.
+
+1549586735
+daurnimator
+emekankurumeh[m]:
+
+1549587752
+andrewrk
+emekankurumeh[m], in the latter 3. now that you ask the question though, the other possibility is to put the logic in the ir_analyze_* functions
+
+1549587784
+andrewrk
+I think putting the logic in codegen.cpp as you suggested is good
+
+1549587842
+andrewrk
+daurnimator, I never sat down and solved the exit vs exit_group problem. we had exit in there since the beginning and then added threads and haven't changed it yet
+
+1549588129
+daurnimator
+andrewrk: I'm not sure what happens exactly.... but I didn't see an exit() to match the thread.wait() calls: are threads cleaned up at all? (do they need to be on linux?)
+
+1549588195
+andrewrk
+daurnimator, I didn't pass -f to strace so you don't see the syscalls from the threads
+
+1549588209
+andrewrk
+I didn't realize that until just now
+
+1549588222
+daurnimator
+oh. I thought -f was only for 'fork' following
+
+1549588237
+andrewrk
+the difference between a subprocess and thread on linux is subtle
+
+1549588244
+daurnimator
+indeed.
+
+1549588265
+daurnimator
+really the only difference is "do they share a pid"
+
+1549588296
+andrewrk
+daurnimator, here's the same program, but strace -f output:
+
+1549588335
+andrewrk
+it looks noiser but the only extra syscalls were the 2 exits(0)'s that happened from the threads
+
+1549588345
+daurnimator
+andrewrk: okay good :)
+
+1549588363
+andrewrk
+I'll be back in a bit
+
+1549588390
+daurnimator
+so you may need to answer the question: when main() ends and threads are still running...... do you want to let the threads keep running? or do you want to end the process?
+
+1549588403
+daurnimator
+and I think we currently have a
+
+1549591389
+MajorLag
+andrewrk, I think explicit tail call might give us a route to computed goto anyway.
+
+1549592262
+andrewrk
+MajorLag, oh yeah, I vaguely remember discussing this with you
+
+1549593257
+emekankurumeh[m]
+andrewrk: how would i emit the binary ops for a non-atomic version of `@atomicRmw` here?
+
+1549593260
+emekankurumeh[m]
+
+
+1549593326
+andrewrk
+emekankurumeh[m], can you be more specific?
+
+1549593343
+emekankurumeh[m]
+AtomicRmwOp operations
+
+1549593449
+emekankurumeh[m]
+i'm thinking of using `ir_render_bin_op` somehow but i don't know what to do with the result.
+
+1549593496
+andrewrk
+here is a description of what the operations do:
+
+1549593523
+andrewrk
+note that all the arithmetic will be the wrapping versions
+
+1549593558
+emekankurumeh[m]
+will the shifts be lossy or exact?
+
+1549593597
+andrewrk
+I don't see shift in there
+
+1549593631
+emekankurumeh[m]
+sorry i was looking at the wrong function.
+
+1549593718
+andrewrk
+oh, neat - llvm 8 (or is it trunk?) added float add and float subtract to the atomic rmw operations
+
+1549593735
+emekankurumeh[m]
+i was just about to ask about that.
+
+1549594737
+emekankurumeh[m]
+would there be runtime safety for the non-atomic versions?
+
+1549595010
+andrewrk
+which operations?
+
+1549595168
+emekankurumeh[m]
+nvm, you said it would be wrapping
+
+1549596893
+daurnimator
+andrewrk: >     3\. However language support for valgrind will probably emit inline assembly directly, without going through the trouble of a C ABI or parsing .zig code
+
+1549596898
+daurnimator
+andrewrk: ^ what do you mean by that
+
+1549596914
+andrewrk
+emekankurumeh[m], I know I tagged #1911 with `contributor-friendly` - but now I'm reconsidering if it is a good idea - I would recommend to hold off until I collect more data on whether there is a use case for @fence, @atomicLoad, @atomicRmw even when it is guaranteed there will be no threads
+
+1549597045
+andrewrk
+emekankurumeh[m], apologies for misleading you
+
+1549597116
+andrewrk
+daurnimator, I mean that in codegen.cpp, we will build a string and use LLVMGetInlineAsm for the valgrind client requests, rather than std/special/valgrind.zig and trying to hook into it
+
+1549597213
+daurnimator
+andrewrk: is it worth just ignoring that until stage 2/3?
+
+1549597240
+andrewrk
+daurnimator, for example, after this memset:
+
+1549597244
+andrewrk
+yes, quite possibly
+
+1549597276
+andrewrk
+my personal priority would be to work on finalizing and stabilizing the language before this kind of ergonomic polishing
+
+1549597285
+daurnimator
+agreed
+
+1549597299
+daurnimator
+in the mean time I think my PR provides "enough"
+
+1549597302
+andrewrk
+of course, I want to enable contributors to work on whatever you want to work on :)
+
+1549597431
+daurnimator
+andrewrk: re: testing done. I confirmed that runningOnValgrind() works in every situation, and then checked that the others do vaguely the right thing as I wrote them
+
+1549597440
+daurnimator
+no in-depth testing.
+
+1549597466
+andrewrk
+interesting. I'm surprised that inline assembly works, given it's supposed to be a compile error to pass a slice
+
+1549597495
+daurnimator
+You talking about
+
+1549597505
+andrewrk
+yes
+
+1549597510
+andrewrk
+and the equivalent 64 bit version
+
+1549597522
+andrewrk
+I was also confused by makeMemNoAccess in FixedBufferAllocator.init
+
+1549597532
+andrewrk
+because it never marks the memory as accessible upon allocation
+
+1549597550
+daurnimator
+andrewrk: it does in alloc()
+
+1549597569
+andrewrk
+oh I see
+
+1549597610
+daurnimator
+i.e. the memory you pass to FixedBufferAllocator is initially marked as "not allowed to access". until you alloc out of it. and then only the part returned by alloc is marked as usable.
+
+1549597622
+andrewrk
+I think that's not quite right either- you would make the memory accessible before it gets set to undefined (which in debug mode sets to 0xaa's) and then after that tell valgrind it's undefined
+
+1549597662
+andrewrk
+anyway this is a great proof of concept. really nice to see valgrind's API will give us good tooling support
+
+1549597695
+andrewrk
+...riiiight after we fix their bug for them :)
+
+1549597697
+daurnimator
+andrewrk: it
+
+1549597767
+andrewrk
+understood - I'm talking about the code in std.mem.Allocator.alignedAlloc now. I think it should be 1. mark accessible to valgrind. 2. the for loop setting to undefined 3. mark undefined to valgrind
+
+1549597787
+andrewrk
+this is how we achieve undefined memory set to 0xaa and also valgrind knows it's undefined
+
+1549597826
+andrewrk
+note that the memory when returned from an allocation is undefined
+
+1549597833
+daurnimator
+undefined in valgrind means "the address is valid"
+
+1549597843
+daurnimator
+not "the contents is valid"
+
+1549597863
+daurnimator
+--> valgrind doesn't let you
+
+1549597950
+andrewrk
+you mean it doesn't let you write to
+
+1549598042
+daurnimator
+ah yeah
+
+1549598091
+daurnimator
+but yeah... turning from undefined->defined on write isn't possible from zig itself. and possibly too expensive even in the general case?
+
+1549598140
+daurnimator
+wouldn't it mean that
+
+1549598193
+andrewrk
+My claim is that is what valgrind does automatically for every write to memory
+
+1549598216
+andrewrk
+Which is why zig initializing undefined memory to 0xaa in debug mode actually has a downside
+
+1549598257
+andrewrk
+But that downside is fixed with a client request to valgrind after writing 0xaa's
+
+1549598311
+andrewrk
+Plus it actually makes setting a variable/field to undefined a helpful debugging technique that isn't available in C
+
+1549598345
+daurnimator
+So I'm confused: what do you want to do in the short term?
+
+1549598364
+daurnimator
+I think we need the valgrind client requests api availble in the std library in any case.
+
+1549598400
+andrewrk
+Valgrind client requests API in the std lib is great, agreed on that
+
+1549598426
+daurnimator
+Any blockers on merging that now?
+
+1549598463
+andrewrk
+A small, meaningful short term improvement would be as simple as, inline assembly after that memset in codegen.cpp that I linked above, with the client request marking the memory to undefined
+
+1549598495
+andrewrk
+That can exist independent of the client request API in the std lib
+
+1549598552
+andrewrk
+Blockers on merging: it's not semantically correct as discussed above, the inline assembly needs auditing (I can do that), and the CI tests have a failure that looks legit
+
+1549598655
+andrewrk
+Whether to actually use it in the standard library... I think we can try it out. I'd like to have an eventual goal of allocators working at comptime though, so that's something to consider
+
+1549598690
+daurnimator
+The bits in the allocator could be left out for now
+
+1549598714
+andrewrk
+Also, thanks for doing this! This is a really cool contribution
+
+1549598717
+daurnimator
+there's a few other places in the std library that should gain calls. e.g. thread creation should use the "mark as stack" api calls
+
+1549598738
+andrewrk
+Ooh nice, what does valgrind do with that info?
+
+1549598796
+daurnimator
+I think it only allows you to read/write below the stack pointer
+
+1549598819
+andrewrk
+That sounds useful
+
+1549598828
+daurnimator
+also for things that come from the stack, it notes which function they belong to
+
+1549598913
+daurnimator
+See VALGRIND_STACK_REGISTER on
+
+1549598925
+daurnimator
+oh..... > Warning: Unfortunately, this client request is unreliable and best avoided.
+
+1549598933
+daurnimator
+so, uh, maybe not.
+
+1549599245
+daurnimator
+andrewrk: what was this in reference to? > ...riiiight after we fix their bug for them :)
+
+1549599277
+andrewrk
+"really nice to see valgrind's API will give us good tooling support...riiiight after we fix their bug for them :)" ->
+
+1549599290
+andrewrk
+it's reproducible using only clang and LLD
+
+1549599408
+scientes
+andrewrk, you should come to Costa Rica so you can make that grant money last longer
+
+1549599413
+daurnimator
+oh you mean the ro-segment thing. gotcha
+
+1549599504
+andrewrk
+scientes, yeah. my significant other needs to be in NYC for school/career stuff for now
+
+1549610677
+shachaf
+I'm pretty sure this isn't appropriate for Zig, but I wonder whether the suggestion of using tuples for all function arguments has been brought up.
+
+1549610700
+shachaf
+I.e. making all functions single-argument, where the argument can be a tuple, and the calling convention for a tuple matches the usual multi-argument calling convention.
+
+1549610716
+shachaf
+I was thinking about that feature for a different language.
+
+1549610770
+daurnimator
+shachaf: aside from a conceptual change.... what would that actually change?
+
+1549611243
+shachaf
+Depending on the tuple/struct literal syntax, it could allow for nicer named arguments, default arguments, etc.
+
+1549611309
+shachaf
+Well, that's not much of a reason on its own (?), it's just the issue I was reading when I came across the tuple thing
+
+1549611682
+shachaf
+Oh, now I see that
+
+1549611729
+shachaf
+I should probably read entire threads rather than a few scattered comments.
+
+1549618339
+forgot-password
+Is it intentational that the compiler can't figure out that a branch with @compileError doesn't return? I manually have to add a `unreachable` to stop it from complaining about attempting to return `void`
+
+1549631949
+Hejsil
+Uuh, just pushed some code that allows me to disassemble the custom 'byte code' used in gen3 pokemon games, using comptime reflection
+
+1549632030
+Hejsil
+Instruction set is here:
+
+1549640423
+Akuli
+is there a way to run all tests in all zig files? currently i do:  for file in *.zig subfolder/*.zig; do zig test $file --library c; done
+
+1549641347
+emekankurumeh[m]
+you would do that like this:
+
+1549641536
+Akuli
+neat
+
+1549642082
+andrewrk
+forgot-password, can I see a code example? It's supposed to work how you expected
+
+1549644142
+Akuli
+github highlights zig code now :D
+
+1549644239
+andrewrk
+ha! all you suckers who used ```rust can pay for your crimes now!
+
+1549644282
+companion_cube
+ahah nice, just reloaded this tab on hash_map.zig
+
+1549644288
+companion_cube
+and it suddenly colored
+
+1549644289
+schme245
+got a Zig PR for Ripgrep merged today as well :)
+
+1549644301
+andrewrk
+schme245, I saw that!
+
+1549644333
+Hejsil
+How exactly will we pay for our crimes :)
+
+1549644344
+Hejsil
+It's not like ```rust broke :)
+
+1549644532
+Hejsil
+Hmm, it still doesn't show that the repos are in Zig. We can find Zig in 'Trending' now though
+
+1549644534
+andrewrk
+but it will be slightly less optimal!
+
+1549644553
+Hejsil
+It's probably more optimal than no syntax highlighting :)
+
+1549644658
+andrewrk
+Hejsil, wait so you're parsing that entire file you linked above at compile-time?
+
+1549644688
+Hejsil
+Ooh no
+
+1549644693
+Hejsil
+Not exactly
+
+1549644723
+Hejsil
+I generated a struct from that file, and uses that + comptime reflection to decode
+
+1549644736
+Hejsil
+The struct i generated using some ugly shell magic
+
+1549644763
+andrewrk
+ahhh cool
+
+1549644860
+Hejsil
+So when I decode a slice of bytes, i do @bytesToSlice(Command, mem)[0], calculate the encode length (comptime reflection), then do mem = mem[command_len..]; repeat
+
+1549644983
+Hejsil
+And because we dont have #1922 i had to write this function
+
+1549645017
+andrewrk
+wow
+
+1549645253
+Hejsil
+Maybe it would be cool to parse the asm macros at comptime
+
+1549645267
+Hejsil
+But it's not really worth it
+
+1549645430
+andrewrk
+not yet at least. the compiler needs to be faster, more memory efficient, more incremental, before that becomes worth it
+
+1549645456
+andrewrk
+we'll get there eventually
+
+1549645486
+Hejsil
+Well, even soo. Doing a hacky shell script got me 90% of the way, and it's not like it'll ever need to change
+
+1549645578
+Hejsil
+hmm. Now that I have the power to decode the scripts, maybe I should make all NPCs only ever wark down
+
+1549645586
+Hejsil
+walk*
+
+1549645609
+andrewrk
+hahaha
+
+1549646655
+Akuli
+how do i convert std.ArrayList(T) to []T, so that i can free it later using the allocator that was passed to the arraylist?
+
+1549646685
+andrewrk
+use the deinit() method
+
+1549646700
+Akuli
+let me tell more about the problem
+
+1549646720
+andrewrk
+you would use toSlice() to get a []T, or you can use toOwnedSlice() to get a []T that you can free with the allocator
+
+1549646738
+Akuli
+i have a function, and i believe the correct return type for it is []T because the result list's length should never be changed after calling the function
+
+1549646758
+Akuli
+but i want to use an arraylist in the function to make creating the result array easier
+
+1549646765
+Akuli
+is toOwnedSlice the thing i should use?
+
+1549646813
+andrewrk
+I think so. Here is an example:
+
+1549646817
+Akuli
+nice :)
+
+1549650853
+Akuli
+what does this code do?  while(true) { switch(1){ 1 => break; else => unreachable; } }
+
+1549650883
+Akuli
+does the break end the while loop? or does it do something to the switch like it would in c? is it guaranteed that the behaviour won't change in the future?
+
+1549651014
+andrewrk
+`break` does not interact with switch at all
+
+1549651035
+Akuli
+awesome, i think i'll need to add a comment about this to my code though
+
+1549651036
+andrewrk
+it's unfortunate - that is a reasonable question to ask
+
+1549651085
+Akuli
+currently i have code like:  const thing: ?ThingType = switch(byte) { case END_BYTE => null, ... }; if (thing == null) {break;} ...
+
+1549651110
+Akuli
+in a loop
+
+1549652050
+Akuli
+if i have: const lol = []*T{ };   what happens if i do some_allocator.free(lol)? is that guaranteed to do nothing?
+
+1549652213
+emekankurumeh[m]
+I think the problem would be with passing the allocator memory it doesn't own.
+
+1549652232
+Akuli
+yes, i'm asking whether an empty slice is a special case
+
+1549652383
+andrewrk
+yes empty slice with undefined pointer can be safely passed to free
+
+1549652409
+andrewrk
+also... nice that's a much better way to get an empty slice than what I was doing
+
+1549652449
+andrewrk
+I was doing (([*]T)(undefined))[0..0]
+
+1549652477
+andrewrk
+you will note this is what is returned from std.mem.Allocator.alloc if n == 0
+
+1549652952
+Akuli
+:D
+
+1549652968
+Akuli
+how do you not know everything about your own language? :D
+
+1549653221
+Akuli
+i hope that all these details will be well documented when the stdlib will have documentation
+
+1549653414
+andrewrk
+the main reason for lack of documentation is that the language is still changing, which invalidates documentation
+
+1549653428
+andrewrk
+so it's overall more efficient of my time to stabilize the language first, then write docs second
+
+1549653462
+andrewrk
+of course there is a balance, as I want people to try the language out even before it is finalized
+
+1549653493
+companion_cube
+do you have a timeline to 1.0? I suppose it may take a while :)
+
+1549653714
+andrewrk
+you can infer the timeline from the milestones on github. every issue is tagged with a milestone. I will tackle every issue that is 1.0.0 or lower before 1.0.0 is released
+
+1549653746
+andrewrk
+however note that even if an issue is tagged, for example, 0.5.0, I may get to the issue and decide to not do it, or decide it can be done after 1.0.0
+
+1549653789
+andrewrk
+even before 1.0.0 though - every release brings us closer to stability
+
+1549653862
+companion_cube
+right, I'm looking at
+
+1549653914
+andrewrk
+it's planned for 0.5.0, if I can manage it
+
+1549653925
+andrewrk
+(just moved it)
+
+1549653952
+andrewrk
+self hosting looks like: copy elision part 1a -> coroutine rewrite -> self hosting
+
+1549653966
+andrewrk
+I plan for 1.0.0 to be self hosted
+
+1549654142
+companion_cube
+do you think there's a chance of multiple implementations of the language at some point (like a gcc frontend)?
+
+1549654232
+andrewrk
+yes, in the distant future, if zig accomplishes its goal of replacing C. it's planned to have a detailed language specification
+
+1549654244
+andrewrk
+specifically so that there can be competing implementations
+
+1549654274
+companion_cube
+totally replacing C, good luck :D
+
+1549654283
+companion_cube
+but eating a good chunk of its cake would be cool
+
+1549656128
+Akuli
+is there a type that represents a function that can take any number of arguments, all arguments are of type T1, and returns type T2? is there a way to call a function with arguments from a []T1?
+
+1549656170
+Akuli
+i'd like to have a struct that contains a member, which is a function that takes a bunch of T1s and returns a T2
+
+1549656282
+Akuli
+i guess not because someone has written this
+
+1549658619
+andrewrk
+you know what would be entirely possible - just musing here - is a `variant` type that only works if the value is comptime known
+
+1549658640
+andrewrk
+that's kinda what `var` is as the type of a parameter
+

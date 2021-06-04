@@ -1,0 +1,2580 @@
+1576108907
+Cadey
+specifically, in zig/lib/std/special/start.zig `wasm_freestanding_start` is calling `callMain` but discarding the return code
+
+1576108928
+msiism
+andrewrk: Ok, I just can't, well, I can't really put into words how exactly i don't understand that... I mean I (think I) understand what a data type is, like an integer value of 1 or the return type of a function. But then, a command, like `break` is “not data”, is it? That's why I can't really imagine what, e.g., `break` having a type would really mean.
+
+1576108955
+andrewrk
+Cadey, ah yes. wasm32-freestanding does not provide a way to deal with the error code. your OS does, so wasm_freestanding_start is not the correct entry point. give me a sec I have a diff for you to try
+
+1576108962
+Cadey
+:=1:
+
+1576108964
+Cadey
+:+1:
+
+1576109255
+andrewrk
+Cadey, can you try this diff?
+
+1576109388
+andrewrk
+msiism, "noreturn" is a type that means "not data"
+
+1576109459
+Cadey
+andrewrk: from the os package, how do i call main()?
+
+1576109469
+Cadey
+just `main()`?
+
+1576109528
+andrewrk
+you can look at the file that diff patches as an example
+
+1576109625
+andrewrk
+hm maybe the std lib should expose that callMain function
+
+1576109695
+msiism
+andrewrk: Hm... ok. And what then is the rationale behind having a data type that has the meaning of ”not data”? (If that's already explained somewhere, a link will do.)
+
+1576109716
+andrewrk
+
+
+1576109917
+Cadey
+andrewrk: std.os.raise unimplemented for this target
+
+1576109933
+Cadey
+i'm gonna experiment with making callMain pub
+
+1576110110
+msiism
+andrewrk: Ok, thanks. Seems like I simply ran into something here that's just way over my head. Not a big deal.
+
+1576110175
+andrewrk
+Cadey, raise is getting pulled in from abort(), which is getting pulled in from the default panic impl
+
+1576110201
+Cadey
+huh, i thought i had a panic impl already
+
+1576110208
+andrewrk
+we should probably have a way to override the default panic in the os layer as well, check std/builtin.zig:425
+
+1576110257
+Cadey
+ah yep, there's a way to override it
+
+1576110273
+Cadey
+it's in `root.panic` though, would it be safe to move it to `root.os.panic`?
+
+1576110274
+andrewrk
+yeah you can already override it per-application, but you probably can provide a better default in the os layer as well
+
+1576110295
+andrewrk
+someone might want to override panic while using your OS layer package
+
+1576110305
+Cadey
+true
+
+1576110310
+andrewrk
+I suggest to allow OS layer override inside default_panic impl
+
+1576110552
+andrewrk
+or you could provide abort() instead
+
+1576110699
+Cadey
+still getting the `std.os.raise unimplemented for this target` error
+
+1576110733
+andrewrk
+here's another diff to apply
+
+1576110754
+Cadey
+kk
+
+1576110913
+Cadey
+`error: container 'std.os.system' has no member called 'abort'`
+
+1576110950
+Cadey
+olin.zig:
+
+1576111057
+pixelherodev
+std.os.system should be your OS layer IIRC
+
+1576111063
+pixelherodev
+i.e. @import("root").os
+
+1576111071
+Cadey
+yeah, that's what's confusing me too
+
+1576111084
+andrewrk
+Cadey, fyi that panic function isn't pub
+
+1576111099
+pixelherodev
+Cadey, you put it in a system struct
+
+1576111108
+andrewrk
+pixelherodev, it is, look at
+
+1576111143
+pixelherodev
+That's what I'm saying - wait - you mean it's
+
+1576111147
+pixelherodev
+... mine isn't...
+
+1576111161
+pixelherodev
+Was the OS layer changed?
+
+1576111172
+andrewrk
+I don't think so
+
+1576111184
+pixelherodev
+I think that's wrong then
+
+1576111210
+andrewrk
+pixelherodev, Indomitable has it in a system struct too
+
+1576111220
+pixelherodev
+... wait I do?
+
+1576111232
+andrewrk
+yeah I sent you that PR
+
+1576111236
+pixelherodev
+Ah, okay
+
+1576111287
+pixelherodev
+Ah - `pub const system = if (@hasDecl(root, "os") and root.os != @This()) root.os.system`
+
+1576111296
+pixelherodev
+That does root.os.system instead of root.os
+
+1576111301
+pixelherodev
+Which now that I think about it makes sense
+
+1576111304
+pixelherodev
+But doesn't solve the issue
+
+1576111356
+andrewrk
+Cadey, I'm not sure why that error would be happening, can you double check stuff on your end? e.g. that the changes are getting picked up or whatever
+
+1576111407
+andrewrk
+which line is giving the compile error?
+
+1576111502
+Cadey
+/home/cadey/prefix/zig/lib/zig/std/os.zig:202:11: error: container 'std.os.system' has no member called 'abort'
+
+1576111525
+Cadey
+and my copy of that file:
+
+1576111578
+pixelherodev
+Huh
+
+1576111586
+pixelherodev
+That's weird
+
+1576111605
+andrewrk
+make sure your application file has `pub` on your `os`. in the example you provided it is correct, but the panic function is not
+
+1576111624
+Cadey
+i do
+
+1576111631
+Cadey
+assuming `pub const os` is the right order
+
+1576111636
+andrewrk
+yeah that should be fine
+
+1576111663
+andrewrk
+let me try to reproduce
+
+1576111697
+andrewrk
+both my zig checkouts have dirty working trees, good thing I have a third checkout
+
+1576111725
+Cadey
+i'm almost at the level of making a fresh zig environment in a docker container lol
+
+1576111796
+pixelherodev
+andrewrk, if you have a third, then "both" isn't entirely accurate now is it? :)
+
+1576111874
+andrewrk
+🤔
+
+1576111887
+pixelherodev
+Oh, and regarding the earlier " there's --emit llvm-ir"
+
+1576111897
+pixelherodev
+I know, that's what I used to produce the test files
+
+1576111902
+pixelherodev
+(along with --strip for good measure)
+
+1576111909
+pixelherodev
+But if the goal is to remove LLVm
+
+1576111910
+pixelherodev
+LLVM*
+
+1576111923
+pixelherodev
+and my real goal is to support a backend to *Zig*, not *LLVM*...
+
+1576111934
+pixelherodev
+Then I'm going to need to switch the input source :P
+
+1576111958
+pixelherodev
+I was going to ask actually: is the goal to remove LLVM completely? Or just as a mandatory dependency for native compilation?
+
+1576112455
+andrewrk
+pixelherodev, my eventual goal is to make it an optional dependency of self-hosted
+
+1576112464
+pixelherodev
+And remove it entirely for stage2?
+
+1576112471
+pixelherodev
+Real question:
+
+1576112477
+pixelherodev
+Will stage2 be able to generate LLVM IR?
+
+1576112500
+andrewrk
+the zig language specification will not mention LLVM
+
+1576112511
+pixelherodev
+Right but practically
+
+1576112515
+pixelherodev
+Will LLVM be an alternative to e.g. x86?
+
+1576112521
+andrewrk
+the ability to output llvm ir will always be an "extension" or "implementation defined" feature
+
+1576112530
+pixelherodev
+Is that true of e.g. ARM also?
+
+1576112542
+pixelherodev
+And practically
+
+1576112544
+andrewrk
+that's a good question, how architectures fit into it
+
+1576112577
+pixelherodev
+I'd support having LLVM IR as a backend, even if the dependency on LLVM as a library is removed
+
+1576112583
+andrewrk
+still not quite sure what you're trying to figure out. I feel like I probably can answer it but haven't understood the question yet
+
+1576112594
+pixelherodev
+With `-target`
+
+1576112600
+andrewrk
+oh I see
+
+1576112601
+pixelherodev
+Sorry, starting over:
+
+1576112612
+pixelherodev
+Basically, will there be an alternate to `-emit llvm-ir` in stage2?
+
+1576112617
+pixelherodev
+e.g. `-target llvm-ir`?
+
+1576112632
+andrewrk
+you're suggesting a use case of LLVM IR (or bitcode) as a target, not necessarily with the actual LLVM project as a dependency
+
+1576112637
+pixelherodev
+Right
+
+1576112662
+pixelherodev
+That's why I was interested in the idea of a Zig-specific IR, but I feel like LLVM as a target is a better option that trying to stablize a Zig-specific IR
+
+1576112666
+andrewrk
+I'll have to think about how that might work. it wouldn't really be an architecture, because if it was then every sub-architecture would be all the other architectures
+
+1576112686
+pixelherodev
+Oh, that reminds me
+
+1576112695
+pixelherodev
+Is there a way to override the LLVM target to a custom definition for Zig?
+
+1576112697
+pixelherodev
+stage1
+
+1576112711
+pixelherodev
+Right now I'm using i386-freestanding since that's the closest match
+
+1576112727
+pixelherodev
+But it's not fully accurate, and if I want to try targeting e.g. z80 I need more customization
+
+1576112759
+andrewrk
+Cadey, ok I can reproduce
+
+1576112820
+Cadey
+\o/ my environment isn't as insane as i thought it was
+
+1576113375
+andrewrk
+oh, this is happening when building zig's freestanding memcpy/memset/ other libcalls like that
+
+1576113745
+pixelherodev
+
+
+1576113752
+pixelherodev
+Warning: code is
+
+1576113760
+pixelherodev
+That'll be fixed soon enough
+
+1576113847
+andrewrk
+Cadey, there's still room for improvement here, but this is an improvement over status quo:
+
+1576113854
+andrewrk
+should get you past the abort() not found thing
+
+1576113875
+andrewrk
+the error was correct; what was not clear is that it was happening when we were building our freestanding libc functions from source
+
+1576113894
+pixelherodev
+Idea: std.os.is_overridden() function?
+
+1576113904
+andrewrk
+pixelherodev, neat, I'll check it out.
+
+1576113929
+pixelherodev
+Don't expect it to work on basically anything yet
+
+1576113941
+pixelherodev
+Very rudimentary, I was focused on the core
+
+1576113966
+pixelherodev
+Now that the general proof-of-concept works, I can actually flesh it out and add broad LLVM support :)
+
+1576114023
+pixelherodev
+std.os.is_overridden idea: That way, instead of checking `if freestanding or other`, it allows overriding the code even when targeting supported systems, and doesn't result in accidentally checking only freestanding or other
+
+1576114037
+andrewrk
+pixelherodev, I do want to make the self-hosted compiler have a straightforward way to add backends to it. idea bing you can add a minimal amount of data to an ISA database and then the compiler gains support for it as a backend
+
+1576114056
+Cadey
+andrewrk: how do i import `lib/std/special/start.zig`?
+
+1576114059
+andrewrk
+I want to make this data format flexible enough to even support e.g. a C code backend, potentially lllvm ir
+
+1576114071
+pixelherodev
+You might be interested in ddevault's cozy idea
+
+1576114086
+pixelherodev
+
+
+1576114099
+andrewrk
+Cadey, you would have to expose it in std/std.zig
+
+1576114105
+Cadey
+:+1:
+
+1576114269
+Cadey
+yep
+
+1576114271
+Cadey
+that works
+
+1576114273
+Cadey
+$ cwa -main-func _start allyourbase.wasm
+
+1576114275
+Cadey
+All your base are belong to us.
+
+1576114277
+Cadey
+error: Unknown
+
+1576114279
+Cadey
+2019/12/12 01:31:01 allyourbase.wasm: exit status 1
+
+1576114300
+andrewrk
+grats
+
+1576114305
+Cadey
+
+
+1576114306
+pixelherodev
+Nice!
+
+1576114312
+Cadey
+thanks andrewrk :D
+
+1576114346
+andrewrk
+np, mind PRing it so we can let the tests run?
+
+1576114351
+Cadey
+will do
+
+1576114440
+andrewrk
+why did you end up needing to expose start.zig ?
+
+1576114488
+Cadey
+i was following the pattern used in other parts of `std`
+
+1576114525
+andrewrk
+are you using callMain? because it's still private in your PR
+
+1576114550
+Cadey
+oh
+
+1576114551
+Cadey
+i see
+
+1576114561
+Cadey
+so guess what patch i forgot to copy over from ~/prefix/zig
+
+1576114606
+Cadey
+fixed
+
+1576114658
+Cadey
+also, thank you for making the zig downloads list in json
+
+1576114661
+Cadey
+that saves me so much time
+
+1576114680
+Cadey
+would be nice if you could put the version tag in that json file to avoid some double-cut piping
+
+1576114703
+Cadey
+for master*
+
+1576114705
+andrewrk
+you mean like "0.5.0+c3d8b1ffe"
+
+1576114706
+andrewrk
+?
+
+1576114711
+Cadey
+yeah
+
+1576114724
+Cadey
+right now i'm extracting it with like
+
+1576114734
+Cadey
+zig_version="$(basename $(curl
+
+1576114737
+andrewrk
+good point
+
+1576114754
+Cadey
+which works, but feels kinda satanic lol
+
+1576114878
+pixelherodev
+You think that's bad?
+
+1576114887
+pixelherodev
+You should see my version extraction script for
+
+1576114891
+Cadey
+i mean
+
+1576114899
+Cadey
+i've done some crimes against humanity with shell script before
+
+1576114906
+Cadey
+but if i can avoid it, i'd like to
+
+1576114912
+pixelherodev
+Literally uses nested for loops to find VERSION in a CMake file and then find the next token :P
+
+1576114922
+Cadey
+dear god
+
+1576115133
+pixelherodev
+He's absent right now, should I take a message?
+
+1576115167
+pixelherodev
+My shell scripts are so bad they give deities migraines :)
+
+1576116820
+fengb
+`note: '*align(4) const std.os.bits.wasi.sockaddr' has alignment 4`
+
+1576116829
+fengb
+Should this be align(16)?
+
+1576117024
+pixelherodev
+That reminds me. Saw a very unclear error earlier. "Type u64 cannot contain all 64-bit integers!"
+
+1576117034
+pixelherodev
+Was an error in my code of course, but that was very confusing
+
+1576117079
+fengb
+Also these silly sockaddrs really should be a tagged union -_-
+
+1576117295
+fengb
+Oh... the method signature: `pub fn initPosix(addr: *align(4) const os.sockaddr) Address {`
+
+1576118856
+frmdstryr
+Is there like a "MemoryPool" allocator?
+
+1576118867
+pixelherodev
+If not, I plan on writing one tomorrow anyways
+
+1576118875
+pixelherodev
+I can always make sure to generalize it and then open a PR
+
+1576119936
+andrewrk
+frmdstryr, what would MemoryPool do?
+
+1576120289
+fengb
+andrewrk: initPosix uses align(4) but wasi defines sockaddr as align(max_align_t)
+
+1576120292
+daurnimator
+andrewrk: Cadey: re: os.io.getStd*: it sounds like you want the os lib to provide a mixin :)
+
+1576120342
+daurnimator
+I'd add in io.zig: `const os = if(@hasDecl(root, "os")) root.os else std.os; pub usingnamespace os.io;`
+
+1576120349
+fengb
+Should I just ignore the wasi alignment for now?
+
+1576120435
+frmdstryr
+I'm thinking the MemoryPool allocator would be more or less an ArrayList Fixedbufferallocator's
+
+1576120449
+daurnimator
+frmdstryr: huh?
+
+1576120463
+daurnimator
+frmdstryr: do you mean an arena allocator that can free?
+
+1576120478
+frmdstryr
+when one FixedBufferAllocator is deinited it's space goes back into the pool
+
+1576120484
+fengb
+ObjectPool with fixed sizes?
+
+1576120503
+daurnimator
+I had one in the works.... but got messed up that align is non-comptime.... except when its comptime
+
+1576120596
+frmdstryr
+fengb: Yes, is there an object pool?
+
+1576120633
+andrewrk
+fengb, that should be fine, I'm sure max_align_t is at least align 4
+
+1576120700
+fengb
+It's 8 or 16. But neither will work with the existing code that's only align(4)
+
+1576120714
+andrewrk
+if initPosix takes something align(4) that specifies a minimum alignment
+
+1576120721
+frmdstryr
+daurnimator: Yes, just it free's back into a pool instead of freeing using the child_allocator
+
+1576120723
+andrewrk
+so if the wasi struct is aligned 8 or 16 it will work
+
+1576120736
+fengb
+It's trying to build the wasi struct
+
+1576120799
+fengb
+
+
+1576120810
+daurnimator
+frmdstryr: remind me tonight and I can go over mine with you if you want?
+
+1576120834
+frmdstryr
+I can take a look if you have it somewhere
+
+1576120839
+andrewrk
+fengb, I see. we should use a constant from bits instead of 4 then
+
+1576121080
+daurnimator
+frmdstryr: it's in a git stash somewhere on my home desktop
+
+1576121258
+fengb
+Ah okay, would it make sense to put `pub sockaddr_alignment = 4` into all the other os bits?
+
+1576121269
+fengb
+And set sockaddr_alignment = max_align_t for wasi
+
+1576121537
+fengb
+I'm also getting a weird issue where initUnix just pops into existence and errors out the compiler. Deleting the method fixes the compile error so I'm not sure why it's being built
+
+1576122678
+frmdstryr
+daurnimator: Just got error.FileDescriptorAlreadyPresentInSet
+
+1576122700
+fengb
+
+
+1576122842
+daurnimator
+frmdstryr: great; I'm not the only one!
+
+1576122854
+daurnimator
+frmdstryr: would be fantastic to get that debugged/fixed
+
+1576123132
+frmdstryr
+It doesn't really make sense, I'm only using one connection
+
+1576123382
+daurnimator
+it seems to happen when an epoll wait gets picked up in another thread
+
+1576123404
+frmdstryr
+Were you reusing frame pointers?
+
+1576123420
+frmdstryr
+It started when I tried doing that and doesn't happen if I don't
+
+1576124134
+daurnimator
+'reusing'?
+
+1576126699
+andrewrk
+fengb, yes I'm ok with this. we may benefit from putting it in the sockaddr struct, since that namepsace is sort of "unclaimed" in terms of posix
+
+1576126719
+andrewrk
+actually I think it should just be @alignOf() whatever the union type is
+
+1576126746
+andrewrk
+there's a type that is supposed to be allowed to be pointer casted to any sock addr type
+
+1576126767
+andrewrk
+that type should be properly aligned, and then we can use @alignOf() on it
+
+1576127006
+Sargun
+Is there a zig style guide
+
+1576127217
+pixelherodev
+Thought experiment: second else clause to if/else statements
+
+1576127229
+pixelherodev
+Basically: `if (a) {} else if (b) {} else {} else {}`
+
+1576127259
+pixelherodev
+Not necessary though, there's a number of ways to accomplish the same thing already
+
+1576127269
+pixelherodev
+I just find the idea of a second else clause amusing
+
+1576127396
+daurnimator
+pixelherodev: when would it run?
+
+1576127485
+fengb
+andrewrk: I think that's where the align(4) came from. The base struct (sockaddr) is partially built and thus has a natural alignment of 2. It really should be the max of (sockaddr_in, sockaddr_in6, sockaddr_un)
+
+1576127508
+fengb
+Wasi is apparently the only one that aligns the common struct correctly >_>
+
+1576127523
+andrewrk
+yeah, can we fix by aligning the common struct correctly for the other systems?
+
+1576127544
+fengb
+Sure, I can add an explicit alignment in the same style
+
+1576127637
+fengb
+Another question — I can't figure out what's causing this to be compiled:
+
+1576127704
+fengb
+Deleting the method altogether convinces the compiler to continue
+
+1576127766
+daurnimator
+fengb: printing/formatting the struct is usually the source of such a thing
+
+1576128061
+Sargun
+I'm going to ask a very newb question. Why is this segfaulting?
+
+1576128154
+daurnimator
+Sargun: first though looks like you're on an old release/colmmit?
+
+1576128191
+pixelherodev
+daurnimator, basically if the first else
+
+1576128223
+Sargun
+daurnimator: of zig? I'm on 0.5.0
+
+1576128224
+daurnimator
+Sargun: segfault when building or running it? a quick once-over I don't see any obvious issues
+
+1576128230
+Sargun
+daurnimator: When running it.
+
+1576128241
+daurnimator
+Sargun: k. most of us are on master now. so much changes so quickly :)
+
+1576128244
+Sargun
+It's not even doing anything right now, except maybe allocating some memory.
+
+1576128245
+Sargun
+ah
+
+1576128257
+daurnimator
+Sargun: so first thing I would do is to run it under gdb and get a backtrace
+
+1576128263
+pixelherodev
+^
+
+1576128269
+pixelherodev
+That's always the first thing to do on a segfault
+
+1576128282
+pixelherodev
+Second is often valgrind, which is underratedly helpful with segfaults IIRC
+
+1576128338
+Sargun
+I ran it already (under lldb)
+
+1576128339
+Sargun
+#0  0x0000000000000000 in ?? ()
+
+1576128340
+Sargun
+#1  0x0000000000203e9c in __unnamed_322 ()
+
+1576128340
+Sargun
+#2  0x0000000000000000 in ?? ()
+
+1576128349
+pixelherodev
+Huh
+
+1576128351
+Sargun
+and it's compiled in debug mode
+
+1576128357
+pixelherodev
+That's... wat
+
+1576128358
+Sargun
+I have a gift for breaking computers.
+
+1576128362
+daurnimator
+Sargun: are you stripping the executable or something? that's not a backtrace I expect to see
+
+1576128366
+pixelherodev
+^
+
+1576128385
+Sargun
+I mean, the  exact invocation I'm using: zig build-exe --verbose-cc src/main.zig -lc && ./main
+
+1576128402
+Sargun
+And I also tried blowing away the zig cache
+
+1576128409
+daurnimator
+Sargun: `gdb ./main` `r` `bt` ?
+
+1576128520
+Sargun
+daurnimator: yep, that's what yielded the above output
+
+1576128552
+pixelherodev
+Check the IR?
+
+1576128560
+pixelherodev
+Assembly, rather
+
+1576128562
+Sargun
+How do I dump the llvm IR
+
+1576128571
+Sargun
+Yeah, I'm currently looking through the assembly
+
+1576128581
+pixelherodev
+Do you know _unnamed_322 corresponds to?
+
+1576128584
+Sargun
+Zig assembly isn't so pretty
+
+1576128587
+Sargun
+Nope
+
+1576128653
+pixelherodev
+Mind pastebinning it so I can took a look?
+
+1576128675
+Sargun
+I'm just objdump'ing main. Is there a better way to go about this?
+
+1576128691
+pixelherodev
+... yeah that won't be pretty
+
+1576128697
+pixelherodev
+Try compiling with `-emit asm`
+
+1576128703
+pixelherodev
+Should produce main.s instead of main
+
+1576128792
+Sargun
+Invalid argument: -emit
+
+1576128820
+pixelherodev
+--emit then
+
+1576128822
+pixelherodev
+My bad
+
+1576128913
+daurnimator
+Sargun: so I think the issue is that `.Events = [_]Event{` doesn't do what you might want?
+
+1576128931
+daurnimator
+.Events is a pointer. and you're trying to initialise it to an array
+
+1576128938
+daurnimator
+on master it has a compile error as it should
+
+1576128977
+Sargun
+
+
+1576128991
+Sargun
+Aren't arrays just pointers?
+
+1576129038
+daurnimator
+no
+
+1576129047
+daurnimator
+they're actual chunks of data
+
+1576129085
+pixelherodev
+In some languages (*cough* C
+
+1576129147
+Sargun
+yeah, I'm coming from C / Go.
+
+1576130345
+fengb
+Well Go arrays aren't pointers either but using them directly isn't very common
+
+1576131190
+pixelherodev
+I got the transpiled code running! :)
+
+1576131211
+pixelherodev
+At first there was a bus error because I gave it the wrong origin, but now it's busily doing nothing!
+
+1576131227
+pixelherodev
+Now to just implement array values properly so I can test a Puts :)
+
+1576132343
+fengb
+daurnimator: expectError is somehow triggering the method's existence. Any ideas on why?
+
+1576132421
+fengb
+Well... any printing. I've tried deleting the format() and it still breaks
+
+1576132435
+pixelherodev
+What's the context for this?
+
+1576132492
+fengb
+
+
+1576132515
+fengb
+This method can't build in wasi because it doesn't support sockaddr_un
+
+1576132538
+fengb
+But it's also not referenced so the compiler shouldn't be building it
+
+1576132631
+pixelherodev
+What from std.net
+
+1576132647
+fengb
+Just trying to run the test
+
+1576132700
+fengb
+
+
+1576132710
+fengb
+zig test --override-lib-dir lib lib/std/net.zig -target wasm32-wasi
+
+1576132754
+pixelherodev
+Weird
+
+1576132763
+pixelherodev
+Only place that's directly used in std.net is connectUnixSocket
+
+1576132774
+pixelherodev
+And that's not used anywhere in std.net or the tests...
+
+1576132817
+fengb
+Yeah, the bufPrint and expectErrors are the triggerpoints
+
+1576132825
+fengb
+But I'm not sure how that would force the method into existence
+
+1576132892
+pixelherodev
+Does parseIp use it?
+
+1576132898
+pixelherodev
+Because that's the most obvious conclusion
+
+1576132912
+pixelherodev
+bufPrint and expectError would force addr to be resolved
+
+1576132956
+pixelherodev
+Which would force parseIp and thus indirectly initunix
+
+1576133014
+pixelherodev
+But it doesn't look like they use it...
+
+1576133251
+fengb
+Something in fmt.format
+
+1576133501
+pixelherodev
+Then why would expectE - oh wait, that probably formats...
+
+1576133553
+pixelherodev
+Could it be a bug in lazy analysis?
+
+1576133603
+pixelherodev
+Also, shouldn't that function (initUnix?) print an error and do unreachable on wasi anyways?
+
+1576133611
+pixelherodev
+So if someone tries using it they'll know why it's not an option
+
+1576133664
+fengb
+I can set it to return an error with a comptime block, but that feels like working around the symptom
+
+1576133762
+fengb
+... I'm pretty sure @typeInfo is causing it but that makes no sense
+
+1576134334
+fengb
+
+
+1576141547
+pixelherodev
+fengb, I'd argue that it should return an error even without the bug
+
+1576141574
+pixelherodev
+Because it's not out of the question that someone might try using it even though it's unsupported
+
+1576142029
+mq32
+hey
+
+1576142036
+mq32
+what is the current state of the AVR backend?
+
+1576142051
+mq32
+i remember it being "you can compile objects, but do not link"
+
+1576142213
+pixelherodev
+I was planning on debugging it, but...
+
+1576142240
+pixelherodev
+Well, first there were some IRL problems, then I had to rebuild LLVM with support for it, then Zig was annoyed because LLVM=10 but Clang=9 so now I need to rebuilt Clang...
+
+1576142248
+pixelherodev
+So I have no clue atm
+
+1576142263
+dch
+wrt
+
+1576142342
+mq32
+pixelherodev: hmm.
+
+1576142372
+mq32
+i want to hack something over the weekend and think about using zig for it. but it's an AVR project, so i require the AVR backend :(
+
+1576142874
+mq32
+hmm
+
+1576142875
+mq32
+void (%"[]u8"*, %std.builtin.StackTrace*)* bitcast (void (%"[]u8"*, %std.builtin.StackTrace*) addrspace(1)* @panic to void (%"[]u8"*, %std.builtin.StackTrace*)*)
+
+1576142886
+mq32
+seems like there's a function pointer messup
+
+1576143163
+pixelherodev
+That reminds me
+
+1576143176
+pixelherodev
+Function pointers inside of packed structures appears to be borked
+
+1576143219
+pixelherodev
+Fortunately, it's a simple enough structure (and my backend doesn't actually tweak non-packed structures) so it's fine even non-packed
+
+1576143281
+mq32
+yeah i think the problem with the AVR backend is that zig doesn't care for address spaces right now
+
+1576144424
+mq32
+pixelherodev, andrewrk: looks like the AVR target regressed from 0.5 to "now":
+
+1576144507
+pixelherodev
+hmm
+
+1576144562
+mq32
+okay, i'm doing a fake bisect now :D
+
+1576144577
+mq32
+still works: zig-linux-x86_64-0.5.0+1f0bcefe4
+
+1576144787
+mq32
+zig-linux-x86_64-0.5.0+55685ae78 does also work
+
+1576144805
+mq32
+all other variants i have installed do not work
+
+1576145523
+Snektron
+I though avr was llvm 10
+
+1576146624
+pixelherodev
+It is
+
+1576146758
+Snektron
+can't wait to dump avr-gcc in favor of Zig tbh
+
+1576146815
+mq32
+Snektron: oh yeah
+
+1576146992
+Snektron
+i'm not a fan of those PORTB macros
+
+1576147069
+bgiannan
+no sure i get where i should put my custom panic function. what's the root source file ? (
+
+1576147071
+mq32
+well, the macros are okayish
+
+1576147082
+mq32
+bgiannan: the file you start your compilation with
+
+1576147088
+mq32
+where your main is located in
+
+1576147102
+mq32
+so if you do "zig build-exe foobla.zig", foobla.zig is your root source file
+
+1576147104
+bgiannan
+that's what i thought but my panic function is not called
+
+1576147133
+mq32
+pub fn panic(msg: []const u8, stackTrace: ?*std.builtin.StackTrace) noreturn { }
+
+1576147136
+mq32
+should be the signature
+
+1576147477
+bgiannan
+the signature is correct (zig complained when it wasn't), but it doesn't seem to be called;
+
+1576147538
+mq32
+huh
+
+1576147542
+mq32
+just do an @panic() and try :D
+
+1576147555
+mq32
+Snektron: you can do the PORTB in zig probably like this:
+
+1576147562
+mq32
+extern PORTB : u8;
+
+1576147573
+mq32
+at least for 8bit avr
+
+1576147608
+bgiannan
+i managed to trigger an error and i have the regular stacktrace instead of my simple debug.warn
+
+1576147633
+Snektron
+mq32, PORTB isn't a value, its a macro defined as (volatile uint8_t)(value)
+
+1576147663
+Snektron
+`*(volatile uint8_t*)(value)`
+
+1576147689
+bgiannan
+ok so @panic calls it
+
+1576147698
+bgiannan
+so i just don't understand when panic is called
+
+1576147732
+Snektron
+but it'd just be an extern volatile pointer instead
+
+1576147766
+mq32
+Snektron: you can also just extern it and define it via linker script
+
+1576147790
+mq32
+bgiannan: panic is called when you do checkable undefined behaviour
+
+1576147798
+mq32
+so overflow, out-of-bounds check, ...
+
+1576147803
+mq32
+but only in debug and release-safe mode
+
+1576147807
+bgiannan
+oh
+
+1576147817
+mq32
+invalid pointer access is non-checkable undefined behaviour
+
+1576147851
+mq32
+Snektron: i once made an attempt for an C++ lib for AVR
+
+1576147857
+mq32
+it was gorgious template magic :D
+
+1576147873
+mq32
+avr::io::pin<avr::io::portb, 3> led0;
+
+1576147883
+mq32
+led0 = avr::on;
+
+1576147883
+pixelherodev
+no offense
+
+1576147889
+Snektron
+thats not so bad tbh
+
+1576147906
+mq32
+it compiled really well, so the line above is a single instruction "set bit"
+
+1576147933
+mq32
+pixelherodev: that's just a HAL, would do the same thing with zig
+
+1576147950
+pixelherodev
+I just find templates.... ugly
+
+1576147966
+pixelherodev
+It's not a problem I have with you
+
+1576147968
+Snektron
+pixelherodev, did you see my solution for some advent of code last week
+
+1576147970
+pixelherodev
+It's one I have with C++
+
+1576147973
+pixelherodev
+Nope
+
+1576147980
+mq32
+const led0 = avr.io.Pin(.portb, 3);
+
+1576147982
+mq32
+led0.set();
+
+1576147983
+mq32
+:)
+
+1576147988
+Snektron
+
+
+1576148086
+pixelherodev
+...
+
+1576148126
+mq32
+Snektron: its funny that you use the turing-completness of c++ syntax :D
+
+1576148172
+Snektron
+Its actually just a pure functional language with some really weird syntax
+
+1576148190
+Snektron
+With pattern matching built-in
+
+1576148272
+Snektron
+i have another nice repository
+
+1576148317
+Snektron
+
+
+1576148358
+mq32
+yeah, but it's syntax :D
+
+1576148371
+mq32
+so, c++ code is undecidable :D
+
+1576148445
+Snektron
+its perfectly decidable
+
+1576148446
+Pistahh
+Snektron: this template based fizzbuzz.. it is.. it is.. no words. :P
+
+1576148485
+Snektron
+i like the private member access even more, though i didn't come up with it
+
+1576148657
+mq32
+Snektron: you can write a turing machine emulator with that => undecidable
+
+1576148657
+mq32
+:D
+
+1576149275
+Snektron
+I think there was actually a template function to check wether an expression is undecidable
+
+1576149324
+Snektron
+Because if a constexpr function in c++ errors or cannot be calculated, it'll defer to runtime
+
+1576149345
+Snektron
+so all you have to do is check wether that function is evaluated
+
+1576149393
+Snektron
+also, mq32, there is a maximum template depth so its pretty much guaranteed to error at some point
+
+1576157651
+daurnimator
+you can get pretty far with plain C too
+
+1576157668
+daurnimator
+the secret to stupid hacks in C is that ternarys can return different types
+
+1576157683
+daurnimator
+(for each branch)
+
+1576158716
+dimenus
+Snektron: you said you have vulkan experience, yeah?
+
+1576161296
+frmdstryr
+daurnimator: I'm trying the h1 branch again, getting the error error: no member named 'ensureCapacity' in struct 'std.io.BufferedInStreamCustom(4096,std.fs.file.File)'
+
+1576161467
+daurnimator
+frmdstryr: uh... traceback?
+
+1576161541
+frmdstryr
+
+
+1576161593
+daurnimator
+frmdstryr: doh. should be `try self.fifo.ensureCapacity`
+
+1576161885
+frmdstryr
+try buf_stream.fill(start_contination_line, 1);
+
+1576161891
+frmdstryr
+in h1_connection.zig:178:32: error: expected 2 arguments, found 3
+
+1576161947
+daurnimator
+hang on.... let me tidy up and force push
+
+1576161982
+frmdstryr
+Also push the script you're using into tests/standalone/http_server/ or something
+
+1576164265
+aperezdc
+woohoo, my first bits of Zig work →
+
+1576164288
+daurnimator
+frmdstryr: pushed.
+
+1576164293
+aperezdc
+I am trying to rewrite an existing C project, piecewise, for the fun
+
+1576164317
+frmdstryr
+thanks will give it a try
+
+1576164330
+daurnimator
+frmdstryr: it seems to randomly get stuck all the time...
+
+1576164341
+daurnimator
+and if I push it hard with `wrk` then it fails with that EEXIST error
+
+1576164365
+aperezdc
+I feel like the way argc/argv are forwarded to the foo_main() functions (which are still in C) is unnecessarily complicated. As I am a total Zig newbie, comments and suggestions are super welcome :)
+
+1576164368
+frmdstryr
+yeah I noticed wrk seems to close and reopen connections periodically
+
+1576164378
+daurnimator
+that should be fine...
+
+1576164482
+daurnimator
+aperezdc: why do I know your name?
+
+1576164483
+frmdstryr
+I think it's trying to read before the previous handle is removed
+
+1576164490
+daurnimator
+aperezdc: hmmm... arcan?
+
+1576164495
+aperezdc
+mmh, Lua mailing list?
+
+1576164507
+daurnimator
+aperezdc: that would work too
+
+1576164539
+daurnimator
+aperezdc: some misc notes: make use of null terminated pointers: `[*:0]` instead of `[*]`
+
+1576164557
+aperezdc
+I posted Arcan PKGBUILDs to package it for Arch Linux, too
+
+1576164590
+aperezdc
+oh, I hadn't noticed the null-terminated pointers in the manual (still reading through as I try things), neat
+
+1576164635
+daurnimator
+aperezdc: `if (......) else unreachable` is weird
+
+1576164642
+aperezdc
+daurnimator: FWIW, I've been a fan of lua-http for quite some time :-D
+
+1576164675
+aperezdc
+ah, the “else unreachable” probably I am going to change into some kind of print error + exit
+
+1576164704
+aperezdc
+unreachable is more of an assertion, then, isn't it?
+
+1576164723
+daurnimator
+aperezdc: C assertion yes. (lua assertion no)
+
+1576164740
+daurnimator
+aperezdc: I assume the applets are going to be somewhat dynamic? otherwise I'd suggest making an enum of them
+
+1576164757
+daurnimator
+aperezdc: also, run `zig fmt` over your code :)
+
+1576164802
+daurnimator
+aperezdc: no need to use argsAlloc: just use std.process.ArgIterator
+
+1576164828
+frmdstryr
+daurnimator: Did you push to github?
+
+1576164835
+daurnimator
+frmdstryr: yes. my h1 branch.
+
+1576164839
+aperezdc
+mmh, the applets are a fixed set, I suppose an enum makes more sense, yeah
+
+1576164858
+frmdstryr
+It says last update 5 days ago?
+
+1576164888
+daurnimator
+frmdstryr: I amended. it keeps the old author time (but updates the commit time)
+
+1576165086
+frmdstryr
+Yeah it works now
+
+1576165111
+frmdstryr
+For whatever reason the original test file  I had was segfaulting
+
+1576165123
+aperezdc
+mmh, zig fmt is neat <3
+
+1576165234
+frmdstryr
+It was using 85% cpu?
+
+1576165273
+daurnimator
+frmdstryr: oh I see one stupid mistake of mine (unrelated)
+
+1576165313
+frmdstryr
+Also I'm interested to see what the raw http parser benchmarks at
+
+1576165325
+frmdstryr
+
+
+1576165352
+frmdstryr
+I can't get how they're doing ~1.8GB/s
+
+1576165780
+daurnimator
+frmdstryr: its just the parser; not the network operations
+
+1576165817
+frmdstryr
+I know, even with just the parser that I can't get near that
+
+1576165963
+frmdstryr
+The fastest parse speed I can get is ~700MB/s
+
+1576165992
+daurnimator
+are you doing it on all cores?
+
+1576166014
+frmdstryr
+No that's a single thread
+
+1576167784
+nofmal
+hello guys, i have a newbie question
+
+1576167920
+nofmal
+i tried to link my application with argon2
+
+1576167963
+nofmal
+but everytime, it always says: error: /usr/lib/libargon2.so: undefined reference to explicit_bzero
+
+1576168020
+nofmal
+i honestly have no idea what to do
+
+1576168581
+fengb
+Looks like that libargon2 requires glibc. Have you linked to libc? -lc
+
+1576168645
+daurnimator
+error: incompatible types: '[3]u8' and '*const [3:0]u8'
+
+1576168647
+daurnimator
+break :blk status.* == "204" or status.* == "304";
+
+1576168655
+daurnimator
+^ should those really be incompatible?
+
+1576168806
+frmdstryr
+const & not const?
+
+1576168850
+fengb
+It thinks one is a pointer. But why?
+
+1576168872
+nofmal
+fengb: i have, but it still doesnt work
+
+1576168972
+nofmal
+explicit_bzero()'s already in glibc as far as i'm concerned
+
+1576169016
+fengb
+Zig doesn't link glibc by default
+
+1576169079
+nofmal
+oh, i know. like i said, i've already linked libc in my build.zig
+
+1576169085
+fengb
+Are you passing in a specific target?
+
+1576169109
+nofmal
+not really, no
+
+1576169243
+fengb
+Can you check `ldd [built-exe]`
+
+1576169311
+frmdstryr
+Any ideas why this would happen?
+
+1576169452
+nofmal
+fengb: sorry, how do i do that?
+
+1576169489
+fengb
+`$ ldd [the zig executable]`
+
+1576169524
+fengb
+glibc should be linked in, but if not that might be Zig using musl instead
+
+1576169560
+nofmal
+oh you meant the compiler. gotcha, wait a sec
+
+1576169612
+nofmal
+it says statically linked
+
+1576169672
+fengb
+Er not the compiler, the binary you built
+
+1576169798
+nofmal
+oh, in that case, libc is linked in
+
+1576169813
+nofmal
+and so is libargon2
+
+1576169899
+fengb
+Hmm, I'm out of ideas :/
+
+1576169972
+nofmal
+ehh it's fine. thank you anyway
+
+1576170135
+daurnimator
+nofmal: what version of glibc do you have?
+
+1576170141
+daurnimator
+IIRC it was absent in 2.24
+
+1576170210
+nofmal
+mine is 2.29
+
+1576170276
+nofmal
+i'd checked the symbol table thing and it is there
+
+1576171353
+andrewrk
+ugh I'm tired of debugging corrupt unions in c++. wish I had zig's "use of inactive union field" safety
+
+1576173574
+fengb
+Does any other language allow you to use any union field but also error checks it?
+
+1576173625
+mq32
+andrewrk: what about std::variant?
+
+1576173636
+Cadey
+it looks like the tests on master are failing, i'm gonna look into it and see if i can fix them
+
+1576173638
+mq32
+it's the c++ way of "tagged union" with pain
+
+1576173726
+daurnimator
+misc note before I go to bed: in mid January I'll be at Linux.conf.au. I'd love to be able to give a demo of writing a kernel module in zig. There's a backlog of related items at
+
+1576173854
+andrewrk
+daurnimator, that's a great motivating use case
+
+1576173889
+andrewrk
+Cadey, it's just a timeout on the aarch64 server, tests running too long
+
+1576173907
+andrewrk
+it's a crime really, they're giving us like 60 cpus and we're using 1 for 2 hours and getting timed out
+
+1576173909
+Cadey
+ah, when is the master release updated?
+
+1576173962
+andrewrk
+you are correct that the failing ci blocked the download page from getting updated
+
+1576173978
+Cadey
+ah, lol, makes sense
+
+1576174009
+daurnimator
+andrewrk: oh shit; I forgot: I think that arm box on packet.net is still running?
+
+1576174054
+andrewrk
+daurnimator, I'm not personally using it, although I believe we gave access to several other community members, including LemonBoy and markfirmware
+
+1576174066
+daurnimator
+ah okay. as long as its in use
+
+1576174069
+fengb
+Is it a physical aarch64 box?
+
+1576174088
+andrewrk
+daurnimator, we should probably advertise that it is available for community members to experiment with
+
+1576174090
+daurnimator
+fengb: yes. a very very beefy one
+
+1576174097
+andrewrk
+idk maybe on the wiki or reddit announcement or something
+
+1576174113
+daurnimator
+andrewrk: how do you want to manage access?
+
+1576174129
+andrewrk
+btw anyone else want to mod /r/zig? right now it's just me, and what if I die
+
+1576174142
+daurnimator
+andrewrk: sure. same username
+
+1576174147
+Cadey
+i'm a somewhat avid redditor, /u/shadowh511
+
+1576174154
+mq32
+andrewrk: and what if I die
+
+1576174157
+andrewrk
+daurnimator, I think we can get away with "if you ask for it, you get a user account" for now
+
+1576174160
+daurnimator
+andrewrk: though if you die... I think the bus factor is still 1
+
+1576174161
+mq32
+then i don't think zig will ever get awesome again!
+
+1576174171
+daurnimator
+andrewrk: I more meant: how are you deploying keys onto the box
+
+1576174183
+Cadey
+
+
+1576174189
+Cadey
+ex:
+
+1576174194
+andrewrk
+asking people for their pub keys, manually creating user and copying the pub key in there
+
+1576174202
+daurnimator
+Cadey: I know how to
+
+1576174209
+daurnimator
+oh I thought there was nix magic around that sort of thing
+
+1576174210
+andrewrk
+would be happy to hand off admin of this box to someone else
+
+1576174243
+daurnimator
+mq32: any chance you'll be going past brussels soon?
+
+1576174287
+daurnimator
+(or anyone else?)
+
+1576174316
+mq32
+brussels?! :D
+
+1576174437
+aperezdc
+FOSDEM?
+
+1576174450
+mq32
+ah, i think you told here already some time
+
+1576174454
+aperezdc
+I usually go, but can't make it thus time due to $LIFE
+
+1576174462
+mq32
+i just know the name, but i have no idea what FOSDEM is
+
+1576174505
+aperezdc
+It's a conference, two days, usually first weekend of February
+
+1576174532
+daurnimator
+aperezdc: actually I just want someone to pick up beer for me :P
+
+1576174533
+mq32
+ah
+
+1576174537
+mq32
+nah, i'm not the conference guy
+
+1576174566
+aperezdc
+Well, it's more of a huge gathering of free software people
+
+1576174581
+aperezdc
+With lots of talks, because conference, too
+
+1576174585
+aperezdc
+For me it's more of a social event
+
+1576174586
+aperezdc
+;-)
+
+1576174595
+mq32
+yeah, doesn't sound that appealing to me, sorry :D
+
+1576174605
+mq32
+i'm more the demoparty guy ^^
+
+1576174655
+aperezdc
+Oh, I like those when they're the real deal, with actual demoscene competitions
+
+1576174686
+aperezdc
+Not the ones which have devolved into LAN-parties
+
+1576174725
+andrewrk
+daurnimator, invite sent
+
+1576174765
+andrewrk
+there is nix magic probably for user accounts. I don't really know anything about nixos beyond setting up my personal dev environment
+
+1576174813
+daurnimator
+/bed
+
+1576174822
+daurnimator
+5:20am and I have to get up in.... 3 hours
+
+1576174842
+andrewrk
+goodness
+
+1576174844
+fengb
+Good night
+
+1576174865
+aperezdc
+Ouch, make the most of the sleep time, daurnimator !
+
+1576174928
+Cadey
+has anyone made a cgi library in zig yet?
+
+1576175013
+andrewrk
+fengb, can you help Cadey get the CI green in  #3891 ? what's happening is that we're trying to call wasi.abort() which doesn't exist. it was working before because it used raise() but you showed me that they removed raise from wasi
+
+1576175033
+andrewrk
+so basically, what should be the impl of std.os.abort() for wasi?
+
+1576175168
+andrewrk
+it would be nice if there was just a single-page list of wasi syscalls
+
+1576175194
+mq32
+aperezdc, come to UNC at 27,28th december in darmstadt!
+
+1576175204
+andrewrk
+
+
+1576175228
+fengb
+
+
+1576175232
+andrewrk
+this is problematic, a trap can be resumed from
+
+1576175237
+fengb
+So anything we do is a hack
+
+1576175241
+Cadey
+wait what?
+
+1576175247
+andrewrk
+ok. I think it should be @breakpoint(); exit(1);
+
+1576175320
+aperezdc
+mq32: thanks, but not at this time... it's a bit complicated to go to conferences with a newborn at home O:-)
+
+1576175324
+fengb
+Zig was using proc_raise, but that got removed
+
+1576175337
+mq32
+aperezdc: damn, stop fork()ing! :D
+
+1576175344
+andrewrk
+Cadey,
+
+1576175349
+mq32
+this just slows down life processing
+
+1576175686
+Cadey
+andrewrk: how do i install the stuff in `deps`?
+
+1576175746
+Cadey
+the zig build docs command is wanting llvm-config from there
+
+1576175775
+andrewrk
+deps/ is a red herring
+
+1576175810
+Cadey
+Unable to spawn the following command: file not found
+
+1576175812
+Cadey
+/deps/local/bin/llvm-config --shared-mode
+
+1576175860
+Cadey
+oh, do i need to do the cmake rain dance?
+
+1576175863
+andrewrk
+interesting, I hadn't considered this use case, downloaded zig binary against a source checkout
+
+1576175877
+andrewrk
+this awkwardness stems from the fact that we're not self hosted yet
+
+1576175892
+fengb
+Hmm, the docs are building wasi already?
+
+1576175915
+andrewrk
+fengb,
+
+1576175929
+aperezdc
+mq32: xDDDD
+
+1576175950
+mq32
+
+
+1576175959
+andrewrk
+I think the wasmer output is hard coded
+
+1576175983
+mq32
+i wish you at least 1h of free time a day, aperezdc!
+
+1576176002
+aperezdc
+mq32: wouldn't it be more like unfork()? that is: merging two processes into a new one?
+
+1576176009
+aperezdc
+as in unfork():
+
+1576176035
+aperezdc
+mq32: thanks for the good wish, I have maybe... 30-40min to myself every other day
+
+1576176053
+aperezdc
+a bit more when the grandparents come to help a bit; then what we do is sleeping
+
+1576176056
+mq32
+it's something!
+
+1576176347
+frmdstryr
+project managers.... expect stuff they didn't even ask you to do to just magically work
+
+1576176517
+fengb
+That's just all non-technical people
+
+1576177028
+frmdstryr
+yes but that's expected :)
+
+1576181179
+andrewrk
+ooh, vexu is working on self-hosted translate-c
+
+1576181185
+andrewrk
+excited about that
+
+1576181251
+mq32
+
+
+1576181759
+FireFox317
+He is not in here right? He's contributing so much, awesome to see that!
+
+1576181778
+FireFox317
+Or she* :)
+
+1576183430
+Cadey
+zig fmt is continuously so good
+
+1576183455
+Cadey
+i have a lua script that's generating every HTTP status code from a json file, zig fmt makes it look nice :D
+
+1576183520
+fengb
+Shouldn't that be a zig script? 🤔
+
+1576183826
+Cadey
+probably
+
+1576183844
+Cadey
+but when you're hammering things out, it's generally a good idea to start with what you understand
+
+1576183867
+fengb
+Yeah I'm just trolling >_>
+
+1576184079
+andrewrk
+I'd hack it up with a vim macro, wouldn't even write code for that
+
+1576184192
+Cadey
+i'm not enough of an elder god for vim macros like that lol
+
+1576184237
+fengb
+Word of god says he wouldn’t use his own creation 🙃
+
+1576184317
+andrewrk
+lol
+
+1576184515
+Cadey
+
+
+1576184663
+andrewrk
+you could chop off `StatusCode` from all those switch progns
+
+1576184695
+andrewrk
+uhh you could also replace the entire body with @tagName(status_code)
+
+1576184764
+Cadey
+TIL!
+
+1576185014
+Cadey
+
+
+1576185336
+Cadey
+by the way, to install that tool i'm using to generate that listing of the files: `go get github.com/rogpeppe/go-internal/cmd/txtar-c`
+
+1576189116
+dch
+andrewrk: I'm interested in providing more freebsd ci capacity. in particular I'm not particularly limited by cpu nor ram constraints
+
+1576189122
+dch
+how can I help?
+
+1576189267
+andrewrk
+dch, what CI service are you offering?
+
+1576189788
+Cadey
+what is zig's atoi?
+
+1576189823
+andrewrk
+std.fmt.parseInt
+
+1576189898
+Cadey
+thanks
+
+1576190884
+Snektron
+Hold up
+
+1576190904
+Snektron
+Why does mmap return -1 instead of a nullptr
+
+1576191015
+daurnimator
+Snektron: because you can map null
+
+1576191024
+daurnimator
+(on some architectures)
+
+1576191039
+daurnimator
+Snektron: but also... you mean the C mmap right?
+
+1576191123
+daurnimator
+Cadey: FWIW I've been looking into http pieces lately
+
+1576191206
+daurnimator
+Cadey: I've been trying to figure out a StringMap that would work at compile time without too much luck :(
+
+1576191212
+Snektron
+yeah i mean that
+
+1576191221
+daurnimator
+Cadey: (for reason phrase mapping)
+
+1576191241
+Snektron
+I have this really strange issue where when i mremap on one compute node it works but it returns EFAULT on the other
+
+1576191282
+daurnimator
+Snektron: but also in general, for libc wrapped syscalls 0 is a success code. -1 is failure. look at e.g. sysctl
+
+1576191440
+daurnimator
+Snektron: huh. I forget mmap exists. We should use it from the page allocator
+
+1576191444
+daurnimator
+*mrema
+
+1576191784
+Cadey
+how do i pass a non-const argument to a function?
+
+1576191802
+daurnimator
+Cadey: pass a pointer to it
+
+1576191812
+Cadey
+like &foo?
+
+1576191874
+daurnimator
+Cadey: your function would need to take a *T instead
+
+1576191940
+Cadey
+ah
+
+1576192921
+andrewrk
+or you can make a copy of the parameter
+
+1576192931
+andrewrk
+var mutable_thing = thing;
+
+1576193377
+Snektron
+daurnimator, i was thinking that too
+
+1576193400
+Snektron
+It seems like a decent option to make it more efficient
+
+1576194147
+Cadey
+zig-cgi is working!
+
+1576194148
+Cadey
+
+
+1576194190
+Cadey
+the /metrics thing is a lie, but otherwise it works
+
+1576194285
+andrewrk
+sweet!
+
+1576194290
+andrewrk
+I'm almost done merging your PR
+
+1576194321
+andrewrk
+I added into the branch, un-special-casing the start code from the compiler
+
+1576194337
+andrewrk
+so you'll have to change std.special.start.callMain to std.start.callMain
+
+1576194338
+Cadey
+:+1:
+
+1576194343
+Cadey
+sounds good to me
+
+1576194361
+andrewrk
+but the cool thing is that std/start.zig no longer has any special casing in the compiler, it's just another std lib file like everything else
+
+1576194376
+Cadey
+oh wow
+
+1576194402
+andrewrk
+`comptime { _ = start; }` in std/std.zig makes it get analyzed; then the comptime block in start.zig has all the start logic of what symbols if any to export
+
+1576194522
+Cadey
+lol
+
+1576195005
+Snektron
+What if you @import std from another source file though?
+
+1576195025
+Snektron
+Wouldnt that also import the bootstrap code
+
+1576195093
+andrewrk
+Snektron, start code is always unconditionally analyzed for all builds
+
+1576195136
+andrewrk
+this logic determines whether anything further is done:
+

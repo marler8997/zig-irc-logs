@@ -1,0 +1,816 @@
+1564795664
+daurnimator
+torque: last thing I remember with non-8 bit chars was the Texas instruments dsps popular from 2005-2009
+
+1564795690
+daurnimator
+I hear some qualcom dsps may still have a weird char size today; but all the info seems to be under NDA
+
+1564796072
+fengb
+How do I assert not undefined?
+
+1564796621
+daurnimator
+you don't
+
+1564796782
+scientes
+yeah undefined will cause compiler errors sometimes unnecessarily too
+
+1564796788
+scientes
+its a hard problem
+
+1564796861
+scientes
+undefined should generally just propagate, the exception is when you try to branch on undef
+
+1564796884
+fengb
+It’s for debugging only
+
+1564796897
+scientes
+undefined is also a compiler optimization
+
+1564796920
+fengb
+I’d like to check for 0xaa in safe builds and not check at all in release-fast
+
+1564796924
+scientes
+that's how it started
+
+1564796940
+scientes
+fengb, you can't check undef
+
+1564796954
+scientes
+fengb, well you could do exactly that....
+
+1564796966
+scientes
+zig is already pushing the limit by erroring out on undef
+
+1564796974
+scientes
+which may limit valid optimizations
+
+1564797020
+scientes
+maybe there should be a way of doing a silent undef
+
+1564797024
+scientes
+that can't result in a compiler error
+
+1564797032
+scientes
+but that is quite a bit of work
+
+1564797102
+daurnimator
+fengb: undefined is only 0xaa sometimes
+
+1564797140
+fengb
+Oh? I’ll create my own sentinel then. I thought it was standard
+
+1564797142
+daurnimator
+fengb: e.g. for static data I think it's null bytes. and I've been in callback situation where it ends up as junk
+
+1564797154
+daurnimator
+fengb: undefined is.... undefined => it can be
+
+1564797199
+scientes
+yeah generally you should only check for 0xaa in the debugger
+
+1564797217
+scientes
+and valgrind is smarter with zig than C
+
+1564797220
+scientes
+IIRC
+
+1564797262
+daurnimator
+scientes: yep. thanks to the valgrind instruction we emit :)
+
+1564797414
+fengb
+I was thinking of explicitly setting undefined as a special value since null was already used. But if it’s not consistent, I’ll find a separate magic number
+
+1564797547
+scientes
+is there any reason to not have maxInt and minInt return the corresponding int type?
+
+1564797553
+scientes
+instead of comptime_int
+
+1564797625
+daurnimator
+scientes: that's IntFittingRange
+
+1564797641
+scientes
+you can always cast it back to comptime_int
+
+1564797642
+daurnimator
+oh wait I misunderstood the question
+
+1564797652
+scientes
+u16(std.math.maxInt(u16))
+
+1564797655
+scientes
+this is annoying
+
+1564797687
+daurnimator
+scientes: I think that change would make sense
+
+1564797691
+daurnimator
+scientes: send a PR?
+
+1564797694
+scientes
+yeah i will
+
+1564797757
+scientes
+maxInt(i32)
+
+1564797763
+scientes
+oh that is fine, nvm
+
+1564798149
+scientes
+hmm, the existing tests will only pass with that change if we implement > and < between signed and unsigned
+
+1564804705
+andrewrk
+comptime_int is intentional for std.math.maxInt and std.math.minInt
+
+1564804727
+andrewrk
+why do you need to cast it
+
+1564804818
+andrewrk
+AlexMax, as a first pass, a correct implementation with a quality test suite wolud be preferred. as long as the API is reasonable then a faster implementation will come around eventually
+
+1564808328
+zacharycarter
+does anyone have any idea when -
+
+1564808424
+daurnimator
+zacharycarter: > leave a comment detailing your specific needs and I'll see if I can code those up for you to unblock you, so you don't have to wait for this issue to be 100% solved.
+
+1564808464
+daurnimator
+zacharycarter: at the moment issue 2377 (coroutines) is the top priority. essentially everything is on hold until that is complete.
+
+1564808524
+zacharycarter
+daurnimator: ah okay gotcha, thank you! I'll do what you suggested and compile a list of blockers and add it to the issue
+
+1564809382
+daurnimator
+andrewrk:
+
+1564809602
+daurnimator
+andrewrk: `const p = async first();` -- shouldn't this be `var`? isn't `p` essentially getting modifed?
+
+1564809963
+andrewrk
+daurnimator, the const is actually ok in the variable initialization (that's the same as `const x = initStruct();`, but then yeah `resume p` should be a compile error
+
+1564809995
+andrewrk
+hmm that frame copy is inadvisable. that should probably also be a compile error
+
+1564810037
+andrewrk
+async function frames are immovable
+
+1564810070
+daurnimator
+andrewrk: why?
+
+1564810102
+daurnimator
+zig doesn't really have the concept of immovable types
+
+1564810154
+daurnimator
+andrewrk: but also, being able to copy a frame like that is
+
+1564810195
+andrewrk
+multiple reasons. (1) when it is called with `async` and there is a return value, the result is stored in the frame, with a pointer to the result also stored in the frame (2) if the function takes the address of a local variable (3) the awaiter field needs to be atomic, it is touched by multiple threads
+
+1564810198
+daurnimator
+andrewrk: you could use it to e.g. serialise pending operations and give them out as signed tokens to get a stateless server
+
+1564810286
+andrewrk
+I don't fully understand your example, but can't you do that with just normal async/await semantics?
+
+1564810315
+daurnimator
+andrewrk: i'll have to think a little more about that
+
+1564810326
+andrewrk
+zig's async functions are designed to be like normal functions: there is one caller, one callee
+
+1564810346
+daurnimator
+at the moment they feel 90% of the way to a call/cc primitive
+
+1564810360
+andrewrk
+copying a function call mid-call is not something that makes sense semantically
+
+1564810494
+daurnimator
+andrewrk: btw,
+
+1564810508
+andrewrk
+ok let me take a look since I'm between commits
+
+1564810702
+daurnimator
+andrewrk: trying to call a non-async function with `async` resulted in a compiler assertion. relevant stack frame: #7  0x0000555555ab0f3f in resolve_llvm_types (g=0x555556517c20, type=0x555558a0f210, wanted_resolve_status=ResolveStatusLLVMFwdDecl) at /home/daurnimator/src/zig/src/analyze.cpp:7608
+
+1564810786
+andrewrk
+daurnimator, that's in the BRANCH_TODO list
+
+1564810803
+daurnimator
+ah k
+
+1564810937
+daurnimator
+Other misc thing... why are stack traces so slow right now? I just straced during an assertion and saw:
+
+1564810971
+andrewrk
+it's the new code that lemonboy added:
+
+1564810985
+andrewrk
+it's doing some O(N) thing instead of binary search or something like that
+
+1564811010
+andrewrk
+should be a fun one to fix I think
+
+1564811017
+andrewrk
+I mean legitimately, not sarcastically
+
+1564811033
+andrewrk
+
+
+1564811053
+andrewrk
+
+
+1564811074
+daurnimator
+I've met the horrors of dwarf before. I might leave that for someone else :p
+
+1564812742
+andrewrk
+daurnimator, here you go, try your resume thing now: e444e737b786afd0c5aba2ea04c901f89c57813e
+
+1564812767
+andrewrk
+oops, meant to link to
+
+1564813403
+daurnimator
+andrewrk: does this mean we can't have two versions of a function?
+
+1564813453
+andrewrk
+are you asking about copying a frame again?
+
+1564813473
+daurnimator
+no. 'compile error for casting a function to a non-async function pointer, but then later it gets inferred to be an async function'
+
+1564813499
+andrewrk
+oh I see. hmm maybe that's a good way to resolve that issue
+
+1564813502
+andrewrk
+I like that
+
+1564813520
+andrewrk
+wait
+
+1564813535
+andrewrk
+no, that won't work. if a function calls an async function then it must be async
+
+1564813558
+andrewrk
+that compile error describes a situation where a non-async function pointer, points to an async function. that is invalid
+
+1564813566
+daurnimator
+what if a function calls a callback passed as a parameter?
+
+1564813605
+daurnimator
+`fn foo(bar: fn (void) void) { bar(); }` -> now call foo once with an async function; and then with a non-async function
+
+1564813615
+andrewrk
+show me the test case and I'll tell you expected behavior
+
+1564813997
+daurnimator
+andrewrk: earlier, what did you mean by "try your resume thing"
+
+1564814019
+andrewrk
+<daurnimator> andrewrk: btw,
+
+1564814103
+daurnimator
+andrewrk: got 'awaiting function resumed'
+
+1564814134
+andrewrk
+brilliant. safety crash instead of undefined behavior
+
+1564814223
+andrewrk
+daurnimator, in your example, `first` is an async function which is awaiting the function call to `other`. the only valid way for first to get resumed is when `other` returns
+
+1564814276
+andrewrk
+that's why in the test case, when it passes, the `resume` corresponds to the actual `suspend` - it's resuming `other`'s frame, not `first`'s
+
+1564814413
+andrewrk
+the way to think about them is that they are functions that can suspend themselves. when a function suspends itself, it better have a plan for how it's going to get resumed. in the example of this test case, the plan is that it puts its frame into a global variable, and then doTheTest resumes it
+
+1564814437
+daurnimator
+okay makes sense
+
+1564814450
+daurnimator
+but it sort of sounds like having `async foo()` return something is a bit of a footgun then
+
+1564814465
+andrewrk
+the frame has to go somewhere
+
+1564814498
+daurnimator
+true
+
+1564814507
+andrewrk
+you should look at the code at the bottom of
+
+1564814521
+andrewrk
+it's just async/await
+
+1564814580
+andrewrk
+point being that everything works with defer,errdefer,try, and all the rest of the language features
+
+1564814590
+andrewrk
+resource management will be reasonable
+
+1564814824
+daurnimator
+andrewrk: `frame2.* = async parseFile(allocator, "bar.txt");` even though we have result-location semantics... this ends up feeling like a copy
+
+1564814872
+daurnimator
+I wonder if `async` should take a frame pointer.....
+
+1564814913
+andrewrk
+@asyncCall takes []u8 or a frame pointer, as well as a result pointer
+
+1564814923
+daurnimator
+I guess that gets into @asyncCall(parseFile, frame2, allocator, "bar.text")
+
+1564814938
+andrewrk
+@asyncCall doesn't take an allocator
+
+1564814948
+andrewrk
+oh, I see that's an arg, sorry
+
+1564815004
+andrewrk
+the point of using result location is so that this works: var frame = async foo();  const result = await frame;
+
+1564815077
+daurnimator
+but that doesn't work... unless you know foo() doesn't suspend in a subfunction?
+
+1564815171
+andrewrk
+I think you're getting resume and await mixed up
+
+1564815188
+andrewrk
+async is matched with await or cancel. suspend is matched with resume
+
+1564815199
+daurnimator
+ah
+
+1564815216
+andrewrk
+suspends cannot be canceled; they must be resumed
+
+1564815270
+daurnimator
+except that you can only await on something suspended?
+
+1564815318
+daurnimator
+
+
+1564815454
+daurnimator
+be back later; gotta walk the dog. though I imagine you should go to bed :)
+
+1564815461
+andrewrk
+this example is hitting:  * compile error for casting a function to a non-async function pointer, but then later it gets inferred to be an async function
+
+1564815481
+andrewrk
+your example would cause the _start function to be async, which is not allowed
+
+1564815494
+andrewrk
+await is a suspend point, you can't await in a non-async function
+
+1564819214
+daurnimator
+back
+
+1564819260
+daurnimator
+btw, reading through the traceback code. we open /proc/self/exe. Could we get the same info from looking at AT_PHDR?
+
+1564825047
+scientes
+daurnimator, yes
+
+1564825839
+mq32
+hm
+
+1564825853
+mq32
+maybe i should wait for the next release cycle until i start the game project…
+
+1564825871
+mq32
+empty project fails to compile for i386-windows-msvc
+
+1564826412
+Sahnvour
+mq32: see
+
+1564826516
+mq32
+ah, damn
+
+1564826545
+mq32
+can't use x86_64 sadly
+
+1564826617
+Sahnvour
+what's your system ?
+
+1564826710
+mq32
+arch linux x86_64
+
+1564826720
+mq32
+but the library i want to use only exists for i386-windows-msvc
+
+1564826809
+Sahnvour
+I doubt an empty program should fail to compile though, what's the error ? It can be worth reporting it
+
+1564826826
+mq32
+made an issue already
+
+1564826828
+mq32
+two compile errors
+
+1564826841
+mq32
+one is a usize/u64 problem, the other one some assembler stuff
+
+1564826841
+mq32
+
+
+1564827188
+Sahnvour
+oh okay, the usize one is my fault actually, but as you noted it's easy to fix
+
+1564827231
+Sahnvour
+don't know about there asm errors
+
+1564827285
+mq32
+dunno if the usize thing is fixed like this
+
+1564827306
+mq32
+but it *should*, as we can't read more than 4 GB on i386
+
+1564827312
+Sahnvour
+`size_to_read` should initially be a `usize` I guess
+
+1564827320
+mq32
+yeah, probably
+
+1564846150
+andrewrk
+daurnimator, scientes: no. we open /proc/self/exe to get the DWARF info, which is not mapped into memory on program startup
+
+1564846756
+batok
+join ##C
+
+1564848127
+scientes
+open != lstat
+
+1564848161
+scientes
+my misunderstanding
+
+1564848174
+scientes
+lstat of /proc/self/exe
+
+1564848188
+scientes
+is indeed AT_PHDR
+
+1564848261
+andrewrk
+what? AT_PHDR is in the aux vector that the kernel gives, showing where the program headers are mapped into memory. this has nothing to do with soft links
+
+1564848440
+nrdmn
+is there any convenient syntax to add padding in a struct without having to declare an unused attribute?
+
+1564848645
+scientes
+oh its a little differn't from /proc/self/exe AT_EXECFN
+
+1564848653
+scientes
+as it can be a relative path
+
+1564848682
+scientes
+and unlike argv[0] is not what is passed by the execve() caller
+
+1564848772
+andrewrk
+nrdmn, you can give a field a default value of undefined
+
+1564849243
+Sahnvour
+andrewrk: just rebased on master (and installed) and when compiling a snippet I wrote some time ago I get :
+
+1564849247
+Sahnvour
+zig\lib\zig\std\special\start.zig:124:35: error: root source file has no member called 'main'
+
+1564849248
+Sahnvour
+switch (@typeInfo(@typeOf(root.main).ReturnType)) {
+
+1564849262
+Sahnvour
+something to do with zig-cache ?
+
+1564849321
+Sahnvour
+no wait, i'm an idiot, there is no main, only a test, my bad
+
+1564849466
+Sahnvour
+let's do a friendlier @compileError for this
+
+1564849477
+scientes
+I thought it was fine
+
+1564849482
+scientes
+but yeah, no objection
+
+1564849507
+scientes
+Sahnvour,
+
+1564851037
+diltsman
+For @cImport, how do i get system files, like Windows.h?  Also, how do you add search paths?
+
+1564852401
+donpdonp
+diltsman:
+
+1564852432
+diltsman
+donpdonp: Thanks!
+
+1564852707
+Sahnvour
+daurnimator: pardon my notifications via github's review tool, I have no idea how it works
+
+1564853569
+emekankurumeh[m]
+perhaps there should be an issue "purge" sometime to remove stale issues or issue that no longer apply
+
+1564853840
+scientes
+emekankurumeh[m], andrew does that
+
+1564856397
+ltr-
+there is somthing like condition_variable in the std?
+
+1564859862
+andrewrk
+emekankurumeh[m], note that there are no issues with old milestones
+
+1564859868
+andrewrk
+ltr-, not yet
+
+1564859886
+andrewrk
+ltr-, if you're linking libc you can use posix apis
+
+1564860413
+ltr-
+andrewrk: k thx, i have to implement a waiter that can be signaled from 2 different threads, any advice to implement something simple and not cpu intesive like spin locks?
+
+1564860491
+andrewrk
+ltr-, my suggestion would be to either use the posix condition/signal APIs or work on adding these APIs to the zig std lib directly
+
+1564860524
+andrewrk
+what are your target platforms?
+
+1564860597
+ltr-
+ill use pthreads with a thin layer of abstraction for now
+
+1564860606
+ltr-
+im doing a tiny rpc server
+
+1564860616
+ltr-
+for a language server implementation
+
+1564860632
+ltr-
+using 2 threads one for stdin and another for stdout
+
+1564860657
+ltr-
+and the main thread takes care for query the DB and fire indexing threads
+
+1564860690
+ltr-
+any advice will be much appreciated
+
+1564860752
+ltr-
+so far i have the request response and request handlers. but the main thread suck up all the core, cos im using a naive waiter. basically a mutex and a flag.
+
+1564860829
+andrewrk
+the async/await stuff I'm working on right now will make this much nicer
+
+1564860862
+andrewrk
+you don't really need mutexes or condition variables with event-based
+
+1564860900
+ltr-
+nice, coroutines will make this so easy.
+
+1564860904
+ltr-
+what do you recommend?
+
+1564860921
+ltr-
+i just want to know if there is an item in two different queues.
+
+1564860936
+andrewrk
+maybe you can use pipes for now
+
+1564860944
+andrewrk
+and poll()
+
+1564860972
+Sahnvour
+andrewrk: are your mascot propositions based on puns, references or something ?
+
+1564861022
+fengb
+Zigbee, Ziggurat, and Zero Wing
+
+1564861055
+andrewrk
+Sahnvour, bees is a reference to
+
+1564861103
+Sahnvour
+thanks
+
+1564861633
+scientes
+awesome exploit against zigbee and wifi
+
+1564863515
+dimenus
+scintes: i just merged your simd5 branch with master and it throws a zig compiler bug when assigning to vector component
+
+1564863521
+dimenus
+the branch itself is fine though
+
+1564863530
+dimenus
+*scientes
+
+1564864829
+emekankurumeh[m]
+if we have @asyncCall what about @call?
+
+1564867249
+andrewrk
+emekankurumeh[m], for what purpose?
+
+1564867941
+emekankurumeh[m]
+we have @asyncCall, @noInlineCall, @inlineCall, @newStackCall, but no basic @call builtin
+
+1564868199
+andrewrk
+but each of those has a purpose. what would be the purpose of @call?
+

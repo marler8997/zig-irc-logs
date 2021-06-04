@@ -1,0 +1,1356 @@
+1572749738
+andrewrk
+I'm planning to do a stream tomorrow, live coding a basic TCP chat server using evented I/O in zig. I think it will be fun, because i'll forward a port on my router and let people join
+
+1572749755
+pixelherodev
+Sounds exciting!
+
+1572750052
+scientes
+so the original proposal on array access on vectors is what is implemented, and pointers can also be supported the way that gcc-9 does it, and I really think that is the ideal way to do it, as those are common operations on vectors, and manually loading and storing is awkwards (there is a reason we never do that in C on ints, despite assembly working that way), unnecessarily
+
+1572750076
+scientes
+I really feel you are overthinking things with this new proposal
+
+1572750504
+andrewrk
+scientes, vector of integers should support all operations that integers support, yes?
+
+1572750535
+scientes
+generally yes, can't think of any exceptions ATM
+
+1572750547
+andrewrk
+vector of pointers, why not the same thing?
+
+1572750594
+scientes
+except that that isn't the common case, memory is a flat address space, and usually when dealing with @scatter and @gather you are dealing with a single base, and a vector of indexes
+
+1572750598
+scientes
+which my series supports
+
+1572750612
+scientes
+in addition to the vector-specific @scatter and @gather
+
+1572750621
+andrewrk
+I agree it is not a common case
+
+1572750645
+scientes
+basically the problem is that if you use vectors you have to do vector operations----the same math on every element
+
+1572750670
+scientes
+so generally you only do that with a single base array address
+
+1572750706
+scientes
+I talked with this guy at the LLVM conference
+
+1572750715
+scientes
+and that writes vector code as scalar code
+
+1572750750
+scientes
+I think this explicit approach is much better, where it is similar but not identical
+
+1572750783
+andrewrk
+your main criticism is the inconvenience of element access, is that correct?
+
+1572750789
+scientes
+I also learned a great deal about the up-and-comming risc-v, helium and sve simd ISAs
+
+1572750829
+scientes
+yes, and that we don't have any concept of load and store, and should not have them
+
+1572750846
+scientes
+well, actually @gather and @scatter are explicit load/stores....
+
+1572750856
+scientes
+but i guess that is just a vector version of pointer dereference
+
+1572750861
+andrewrk
+related:
+
+1572750874
+scientes
+yes, and that is supported
+
+1572750879
+andrewrk
+this is what I would expect v[i] to do
+
+1572750889
+andrewrk
+or more specifically v.*
+
+1572750900
+andrewrk
+but you cannot have one without the other
+
+1572750927
+scientes
+v.* could return a vector
+
+1572750935
+andrewrk
+then v[i] must return a vector also
+
+1572750940
+scientes
+andrewrk, actually that can work with my patch set
+
+1572750944
+scientes
+i just didn't think of that
+
+1572750947
+scientes
+*that case
+
+1572750961
+andrewrk
+@Vector(N, *i32) vs @Vector(N, [*]i32)
+
+1572750968
+scientes
+but only if i is a vector
+
+1572750979
+scientes
+which actually makes way more sense than the vector version
+
+1572751009
+scientes
+but does mean we are overloading two operations with [i] which is a bit confusing, and I like that you point that out
+
+1572751009
+andrewrk
+oh!! good point. we can check the type of the index
+
+1572751027
+andrewrk
+maybe my branch is not wasted after all
+
+1572751042
+scientes
+so we are already supporting i as a vector
+
+1572751045
+scientes
+well, I am
+
+1572751063
+scientes
+when accessing both array (@gather/@scatter) and vector (@shuffle)
+
+1572751089
+scientes
+but if it is a vector of
+
+1572751103
+scientes
+there is also the nasty that the index type is differ in the array and vector case
+
+1572751133
+scientes
+u32 and usize
+
+1572751254
+scientes
+also, if the sizeof() of the differn't pointer's types is differn't, we will have to do a vector multiplication by the sizeof (which may be optimized to a right shift)
+
+1572751256
+andrewrk
+I agree it is nasty
+
+1572751291
+andrewrk
+I think there is a way to make it work without being nasty
+
+1572751292
+scientes
+it made me realize that @gather and @scatter with 32-bit pointers should be supported on 64-bit architectures (with a passed base address somehow)
+
+1572751327
+scientes
+as you get twice the number of load/stores that way, and don't have to use unpack operations
+
+1572751417
+andrewrk
+scientes, new test case:
+
+1572751427
+andrewrk
+which opens up v[scalar] for vector element access
+
+1572751449
+andrewrk
+I'm glad you brought this up
+
+1572751564
+scientes
+andrewrk, yeah of course, both @gather and @scatter lowering for this vector of pointers case
+
+1572751590
+scientes
+and with differnt sizeof, which you are not testing
+
+1572751591
+andrewrk
+those have a mask parameter right?
+
+1572751597
+scientes
+yes they do
+
+1572751616
+scientes
+and most vector operations will soon have mask parameters
+
+1572751632
+scientes
+as was discussed in the vector predication RFC, and roundtable at the conference
+
+1572751643
+andrewrk
+even operations such as add, mul?
+
+1572751646
+scientes
+yes
+
+1572751654
+scientes
+because mul and div are energy intensive
+
+1572751666
+andrewrk
+hmm. this will integrate less cleanly with the language
+
+1572751671
+scientes
+so you can save energy, also the float operations can throw exceptions
+
+1572751687
+scientes
+well it can be done just with DemandedBits, as long as llvm optimizes that correctly
+
+1572751716
+scientes
+andrewrk,
+
+1572751750
+scientes
+and it DOES have to be correct, as pointer out in that comment
+
+1572751776
+andrewrk
+scientes, do you have any problems with my pull request
+
+1572751793
+andrewrk
+I think it is quite clean, and it is different than your implementation
+
+1572751878
+scientes
+going through it now
+
+1572752474
+andrewrk
+scientes, that test case passes in your branch?
+
+1572752501
+scientes
+no. I do not have pointers working because I ran into issues with understanding how ResultLoc works
+
+1572752504
+andrewrk
+in mine this compile error is intentional
+
+1572752509
+scientes
+but gcc-9 supports that sort of thing
+
+1572752527
+andrewrk
+I would like to see such code
+
+1572752543
+scientes
+it just stack allocates
+
+1572752550
+scientes
+and than passes a pointer to the stack allocation
+
+1572752567
+scientes
+to the
+
+1572752589
+andrewrk
+I don't understand
+
+1572752608
+scientes
+vectors have a in-memory representation
+
+1572752629
+scientes
+so you always write vector operations back to the stack
+
+1572752632
+andrewrk
+I see
+
+1572752636
+scientes
+and then rely on the optimizer to fix it up
+
+1572752655
+andrewrk
+but if you address an element, this will prevent the optimizer from doing such fix ups
+
+1572752657
+scientes
+that way atomics will work too
+
+1572752665
+scientes
+but in that case you want that
+
+1572752686
+scientes
+andrewrk, only if it can't optimize out the pointer to a direct element access
+
+1572752785
+andrewrk
+hm. we can make this work
+
+1572752799
+scientes
+also, it depends on GEP working on vectors
+
+1572752811
+scientes
+which is officialy not supported, but this is a valid use case
+
+1572752821
+andrewrk
+you mean it depends on GEP working on a vector element
+
+1572752831
+scientes
+so once it is working, we have to ask for that "not supported" to change
+
+1572752840
+scientes
+as GEP is the best way to do it
+
+1572752853
+andrewrk
+this would be done by pointer casting a vector to an array and using GEP on the array pointer
+
+1572752862
+scientes
+soooo
+
+1572752866
+scientes
+GEP works on vectors
+
+1572752881
+scientes
+there just wasnt a use case (and clang isn't doing what gcc-9 can do yet)
+
+1572752892
+scientes
+*noooo
+
+1572752977
+andrewrk
+if GEP worked on vectors this patch would be incredibly easy, and the type of &v[0] would be simply *i32
+
+1572752990
+scientes
+yes
+
+1572752994
+scientes
+i just ran into ResultLoc issues
+
+1572753018
+scientes
+unless I am missing something else
+
+1572753034
+scientes
+I don't know where we store
+
+1572753044
+andrewrk
+ok we can't rely on undocumented unsupported GEP behavior though
+
+1572753067
+scientes
+well we get it working, and point out that clang will also need it
+
+1572753071
+andrewrk
+the part you're missing is that it only works on a pointer to a vector. the pointer tells where the allocation is
+
+1572753079
+scientes
+and we
+
+1572753097
+andrewrk
+this is exactly the same code path as arrays
+
+1572753115
+scientes
+yes it is
+
+1572753145
+scientes
+except we have to check the type, because vectors are not packed, and a u7 vector cannot be supported
+
+1572753154
+scientes
+(gcc doesn't support those, so doesn't have this issue)
+
+1572753180
+andrewrk
+I think we can support u7 just fine, we tell llvm it's u8
+
+1572753217
+andrewrk
+let's think for a moment if there was no llvm, how this would work
+
+1572753219
+scientes
+then we would have to copy it when it gets written somewhere else
+
+1572753221
+scientes
+with a cast
+
+1572753240
+scientes
+cause I actually
+
+1572753251
+scientes
+you just need bit-granularity pointers to work with it fully
+
+1572753257
+scientes
+which are not in scope
+
+1572753313
+andrewrk
+ok so your objection to this PR is that @typeOf(&v[0]) can actually be simply *i32
+
+1572753323
+scientes
+exactly
+
+1572753349
+scientes
+i played with gcc-9 and realized the code could be that simple
+
+1572753354
+andrewrk
+this is a difficult decision you've created for us to make. I certainly would want some reason to believe that LLVM core devs plan to make this change before relying on it
+
+1572753369
+scientes
+we can do it other ways
+
+1572753375
+scientes
+it just won't optimize correctly in llvm
+
+1572753382
+scientes
+(either now or in the future)
+
+1572753389
+andrewrk
+right, ok, so then the question of what if there is no LLVM, does this make sense in general
+
+1572753396
+scientes
+a big part of compiler development is making things optimizable
+
+1572753424
+scientes
+I think clang will want to do it this way
+
+1572753430
+scientes
+its just that we are ahead of clang
+
+1572753442
+andrewrk
+it's annoying being ahead
+
+1572753465
+andrewrk
+ok I think this makes general sense. compiler chooses an in-memory layout for vectors. element access of a pointer means it's in memory, so element pointer is possible
+
+1572753488
+andrewrk
+if there were vector packing, then our bitfield pointer annotations will be sufficient to address sub-bytes
+
+1572753511
+scientes
+well, I don't like the limitation of those types anywhere
+
+1572753517
+scientes
+the general solution is bit-granularity pointers
+
+1572753525
+scientes
+but that is a different problem
+
+1572753531
+andrewrk
+agreed
+
+1572753562
+andrewrk
+ok, well having vector element access be simpler is certainly desirable, so you've convinced me this is the direction to go. I'll amend my branch to do this
+
+1572753583
+scientes
+well, let my finish this PR request
+
+1572753604
+andrewrk
+I think the rest of your SIMD series will be easier to merge. element access was a tricky subject
+
+1572753617
+scientes
+and you brought up a case I missed
+
+1572753625
+scientes
+vector of pointers, with vector index
+
+1572753701
+andrewrk
+let's just make progress in master branch, a little bit at a time. eventually we'll get this thing finished
+
+1572753733
+andrewrk
+urgh I gotta improve the CI to not fail so often
+
+1572753755
+scientes
+I have a bug on my CI failure
+
+1572753762
+scientes
+its a qemu bug
+
+1572753767
+andrewrk
+I knew this day was coming. each different service must start a "try to update download page if all other services are done" job after completing successfully
+
+1572753790
+andrewrk
+ah yes the qemu bug
+
+1572753820
+andrewrk
+zig is starting to generate a lot of bug reports for other projects
+
+1572753837
+scientes
+well, i did warn that qemu doesn't work with SIMD
+
+1572753898
+andrewrk
+I have an idea
+
+1572753962
+scientes
+although it would be nice if qemu could actually KNOW when it doesn't work correctly
+
+1572753968
+scientes
+which it totally could do
+
+1572753985
+scientes
+I get that supporting so many instructions, that are rarely used, is not a high priority
+
+1572753995
+andrewrk
+if there is a "CPU target features" option to disable SIMD, then we can add to zig build, -Ddisable-SIMD-features, (depends on #2883)
+
+1572754011
+andrewrk
+and the CI script will add this flag
+
+1572754028
+andrewrk
+because it knows it is using qemu for non-native architectures
+
+1572754052
+scientes
+I think SIMD on arm64 actually works...
+
+1572754054
+andrewrk
+then the vector tests will still run - but LLVM will not emit SIMD instructions, it will expand the vector instructions
+
+1572754061
+andrewrk
+yes ok then we can make flags for specific architectures
+
+1572754062
+scientes
+ahhhh I see
+
+1572754074
+andrewrk
+then we can find bugs in LLVM instead of QEMU! /s
+
+1572754095
+scientes
+lower the SIMD is a good idea
+
+1572754102
+scientes
+I like that
+
+1572754116
+andrewrk
+yeah that's the whole point of having language support for vectors
+
+1572754125
+andrewrk
+is that you're not wasting your time, because they can be lowered
+
+1572754138
+andrewrk
+your intent is specified precisely enough
+
+1572754226
+andrewrk
+this was a productive chat, thank you for your patience scientes
+
+1572754367
+wilsonk
+andrewrk: what time were you planning the stream tomorrow?
+
+1572754572
+andrewrk
+wilsonk, let me pick a time right now... 15:00 EST
+
+1572754614
+wilsonk
+sounds good, thanks :)
+
+1572758602
+traviss
+I made a simple command line parser inspired by the Jon Blow stream from a few days ago with similar functionality.  Have a look:
+
+1572759782
+andrewrk
+traviss, neat!
+
+1572759812
+andrewrk
+maybe post to
+
+1572760722
+traviss
+done:
+
+1572760899
+bhansconnect
+looks really cool, traviss. I will have to dig into the code when I am less tired.
+
+1572762155
+traviss
+thanks guys. it helped me to understand comptime a little better.  i ended up being a little inefficient, looping over struct fields and then searching through command line args in order to satisfy the compiler.  many 'unable to evalute constant expression' type errors were encountered.
+
+1572762250
+traviss
+if anyone can suggest a better approach, i'd like to hear it
+
+1572777735
+pixelherodev
+Is there a way to have a variable that can hold one of two different struct types?
+
+1572777763
+pixelherodev
+e.g. with an array_list, can you have a var that's either array_list(u8) or array_list(u16), the type of which is determined at runtime?
+
+1572777798
+pixelherodev
+I was thinking of using a tagged union containing both types with a `get() var` method, but apparently returning variable types isn't implemented yet :P
+
+1572779065
+lucus16
+andrewrk: where will I be able to find this stream? I'd love to watch it
+
+1572780570
+mq32
+lucus16:
+
+1572780625
+mq32
+oh man. i just realised that i got into flow yesterday and hacked together a 500 line parser in about 1 hour
+
+1572784611
+mq32
+is there a way to access a declaration/function by comptime name?
+
+1572784637
+mq32
+so: similar to @field() something like @decl(Type, "name")?
+
+1572784806
+pixelherodev
+What's the use case for that?
+
+1572784955
+mq32
+oh, it works by just using @field(Type, "decl")
+
+1572784965
+mq32
+pixelherodev: I'm writing an assembler for my project
+
+1572784977
+mq32
+and the use case is to translate mnemonics to instructions
+
+1572784979
+pixelherodev
+Anyone know what the performance of switching on tagged unions is?
+
+1572784993
+mq32
+should be the same as switching on an integer/enum
+
+1572785002
+mq32
+i have a struct with one function per possible mnemonic
+
+1572785014
+pixelherodev
+Trying to figure out a way to optimize it further then
+
+1572785021
+pixelherodev
+Because I'm basically just using function pointers
+
+1572785025
+mq32
+and i use a inline for loop to find the matching instruction and assemble that by calling the function
+
+1572785035
+pixelherodev
+That's neat
+
+1572785047
+mq32
+yes!
+
+1572785061
+pixelherodev
+Doesn't that mean that if the assembly accidentally contains main, it'll recurse?
+
+1572785061
+mq32
+now i only need to write the code generation itself :D
+
+1572785068
+pixelherodev
+Or panic... or literally any other function?
+
+1572785073
+mq32
+no
+
+1572785081
+pixelherodev
+Ah, because it won't be the struct
+
+1572785092
+mq32
+i only search in that one particular struct
+
+1572785155
+mq32
+the struct looks like this:
+
+1572792214
+dimenus
+:q
+
+1572792216
+dimenus
+hah
+
+1572796943
+pixelherodev
+There a way to force the compiler to allow an import of a file outside the package path?
+
+1572797123
+pixelherodev
+Eh, for now I can just use an `export`/`extern` function and it should be fine...
+
+1572797143
+mq32
+what do you want to do?
+
+1572797188
+pixelherodev
+I'm writing a text-based game using the kernel - except it also builds as native
+
+1572797196
+pixelherodev
+so I have src/os, src/native, and src/main.zig
+
+1572797208
+pixelherodev
+Within the src/os and src/native folders, the root source file includes `../main.zig`
+
+1572797289
+dimenus
+pixelherodev: yes, use 'addPackagePath' in your build.zig
+
+1572797301
+pixelherodev
+I'm not using build.zig
+
+1572797307
+pixelherodev
+I have a Makefile
+
+1572797313
+dimenus
+why?
+
+1572797317
+mq32
+still, you can add stuff as packages
+
+1572797319
+mq32
+also: why?
+
+1572797319
+pixelherodev
+Annoying to set up
+
+1572797332
+mq32
+everything build.zig can do can be done with a Makefile
+
+1572797335
+mq32
+it will just be more work
+
+1572797363
+pixelherodev
+--pkg-begin I assume?
+
+1572797399
+dimenus
+yes
+
+1572797413
+dimenus
+what about build.zig is "annoying"?
+
+1572797434
+pixelherodev
+Figuring out how to target it properly
+
+1572797455
+dimenus
+what is 'it' in this scenario?
+
+1572797457
+dimenus
+aarch64?
+
+1572797461
+pixelherodev
+i386-freestanding
+
+1572797467
+pixelherodev
+Plus, I have a lot of custom targets
+
+1572797493
+pixelherodev
+e.g. `make burn DEVICE=/dev/sdb` uses parted to fetch device info, ask for confirmation, then uses `dd` to "burn" the image to the specified drive
+
+1572797502
+mq32
+kernel.setTheTarget(std.build.Target{.Cross = std.build.CrossTarget{.arch = builtin.Arch.i386,
+
+1572797503
+mq32
+.os = builtin.Os.freestanding, .abi = builtin.Abi.eabi, },});
+
+1572797529
+mq32
+i have build.zig for building zig stuff and make files for the rest
+
+1572797540
+mq32
+btw, what bootloader are you using?
+
+1572797604
+pixelherodev
+Mostly, none
+
+1572797614
+pixelherodev
+QEMU with `-kernel` can load multiboot-compatible ELF files
+
+1572797623
+pixelherodev
+When producing a disk image, GRUB
+
+1572797655
+mq32
+ah
+
+1572797671
+mq32
+yeah, but the multiboot loader from qemu cannot do everything a "real" bootloader can do :D
+
+1572797679
+mq32
+like init VBE
+
+1572797697
+mq32
+i use syslinux for my image file and modify it with mtools
+
+1572797924
+pixelherodev
+Sure, but I don't need those
+
+1572798011
+pixelherodev
+How do you specify to link against libc in the command line? `--library c`?
+
+1572798018
+mq32
+-lc
+
+1572798065
+pixelherodev
+That's literally an alias of --library c :)
+
+1572800034
+kenaryn
+Hi guys, I am brought to a standstill by a 'incompatible types' error. Here is the code snippet if someone accepts to look at it:
+
+1572800167
+mikdusan
+your catch block has a path that can "result" void to `const line =`
+
+1572800237
+mikdusan
+ie. what is the result type of "try stdout.write..."
+
+1572800458
+kenaryn
+it is []u8 of course.
+
+1572800514
+kenaryn
+Here is the same one but with godbolt:
+
+1572800686
+kenaryn
+Does that mean I need to replace a string explaining an error to void? It doesn't make any sense.
+
+1572800705
+mikdusan
+immediately after `try stdout...` add --> `return err;`
+
+1572800902
+kenaryn
+error: expected token ';', found 'return'
+
+1572800941
+mikdusan
+
+
+1572801132
+kenaryn
+My apology, you meant at a newline. It works, I thank you :)
+
+1572806452
+lf94
+Question: could zig be re-implemented in a month, given a spec?
+
+1572806558
+andrewrk
+that's a fun question
+
+1572806589
+lf94
+I've been using Rust as my systems language for the past 2 years, but now I want to start programming stuff that will last decades.
+
+1572806599
+lf94
+I don't believe Rust code is suitable for this
+
+1572806627
+lf94
+Anything C, sure. And since Zig is more or less a derivative...it would fit the bill too, I think.
+
+1572806672
+lf94
+Then I think: maybe programming languages at all is not a good idea. Maybe I should plan my software via a spec, which will last forever.
+
+1572807240
+andrewrk
+incoming, a bunch of broken master branch commits while I fiddle with how the download page gets updated
+
+1572807572
+lf94
+andrewrk: /do/ you think zig could be re-impl'd in a month? :)
+
+1572807933
+andrewrk
+no. I think that while the zig language is simple for programmers to read and write, the compiler is in fact doing quite a bit of complicated work on behalf of the programmer
+
+1572808346
+lf94
+What do you think is a reasonable time frame?
+
+1572811426
+wilsonk
+Is the stream on Twitch? Or has it not started yet?
+
+1572811434
+mq32
+wilsonk, same question here :D
+
+1572811554
+andrewrk
+I'm dealing with some audio issues, will start the stream hopefully within the next 30 minutes
+
+1572811606
+wilsonk
+Ah, cool. No pressure here...just didn't want to miss it because I no Twitch so good :P
+
+1572812350
+andrewrk
+stream starting in 10 min:
+
+1572812994
+scientes
+how do i break in gdb on syscalls?
+
+1572813011
+scientes
+or is there a way to detach strace and attach gdb?
+
+1572813345
+lf94
+it's gonna work
+
+1572814037
+scientes
+lf94, zig requires an interpreter
+
+1572814048
+scientes
+this makes it much more complicated than, say, c89
+
+1572814137
+scientes
+(that said, the current interpreter does not have a full memory model that the language requires)
+
+1572814442
+lf94
+hm
+
+1572820357
+andrewrk
+that was a fun stream
+
+1572820445
+rjtobin
+it was! thanks man
+
+1572820548
+mq32
+it sure was!
+
+1572820560
+mq32
+and i'm impressed on how well that all went
+
+1572820640
+rj00
+Hey there, so i've hit a compile error I can't decipher. Any idea what "error: switch on type 'i9' provides no expression parameter" means? For context, I have a switch prong that looks like this: `'\'', '"' => |c| return self.string(c)`
+
+1572820649
+lf94
+to be fair hitting compiler bugs was unexpected to a first timer watching
+
+1572820664
+lf94
+(and unsettling)
+
+1572820684
+lf94
+with that said, zig looks nice, but still a ways to go.
+
+1572820849
+andrewrk
+rj00, can I see a link to a paste of the output?
+
+1572820859
+rj00
+sure
+
+1572820905
+rj00
+andrewrk:
+
+1572820951
+rj00
+I wasn't able to reproduce the error elsewhere
+
+1572820993
+andrewrk
+rj00, oh, it means you don't get a capture value, you have to access the same value you used in switch()
+
+1572821020
+andrewrk
+that potentially could be changed
+
+1572821046
+rj00
+oh why's that? So I have to create a variable outside the switch, and then switch on that?
+
+1572821073
+andrewrk
+yeah. it used to be that only tagged unions gave capture values
+
+1572821104
+andrewrk
+but then it made sense to add support for various other things. and now I think it probably makes sense to make this work as well, to be consistent
+
+1572821117
+mq32
+would be cool!
+
+1572821174
+rj00
+oh ok, Sounds good. I was expecting it to be like rusts pattern binding syntax e.g. `c @ 1..=5 => foo(c)`
+
+1572821310
+traviss
+how do i run the tests in test/translate_c.zig?  i tried: `zig test test/translate_c.zig --test-cmd add_both` but it says "No tests to run".
+
+1572821449
+andrewrk
+traviss, have a look at
+
+1572821463
+andrewrk
+there's a test-translate-c step
+
+1572821541
+traviss
+thank you
+
+1572821757
+traviss
+`zig build test-translate-c` from build directory is what i was looking for
+
+1572821778
+andrewrk
+yep
+
+1572823401
+pixelherodev
+What does ` /usr/local/lib/zig/std/fmt.zig:123:9: error: evaluation exceeded 1000 backwards branches` generally indicate?
+
+1572823409
+pixelherodev
+Is my format string too big?
+
+1572823470
+mikdusan
+yes. roughly 330 chars max in my experience
+
+1572823477
+pixelherodev
+Ugh
+
+1572823480
+pixelherodev
+That's going to be a problem
+
+1572823488
+mikdusan
+you can use a builtin to increase the limit
+
+1572823514
+mikdusan
+
+
+1572823519
+pixelherodev
+Yeah, but given how big this is liable to grow, that just means it'd end p being a RAM-murderer
+
+1572823549
+pixelherodev
+Longest one is 2KB so far, probably going to have even bigger ones
+
+1572823571
+mikdusan
+i'm curious what is your need for such large comptime strings
+
+1572823582
+mikdusan
+
+
+1572823588
+pixelherodev
+Making a text-based adventure game
+
+1572823605
+pixelherodev
+Using stuff like e.g. `print(@embedFile("data/intro/N.txt"), args);`
+
+1572823635
+pixelherodev
+Might just switch to using printf
+
+1572823657
+pixelherodev
+I already have a printf function on all targets anyways (normal printf on native platforms via libc, plus the implementation I whipped up for ACPICA)
+
+1572823692
+pixelherodev
+Except that doesn't work because I can't use C varargs from Zig
+
+1572823720
+pixelherodev
+Ah, solution
+
+1572823732
+pixelherodev
+I'm already tokenizing into lines so I can handle scrolling
+
+1572823741
+pixelherodev
+I'll just tokenize
+
+1572823807
+pixelherodev
+Though that means all arguments will have to be positional, not implicit
+
+1572824020
+andrewrk
+pixelherodev, you can call c var args from zig. can't export a c var args function yet
+
+1572824072
+andrewrk
+pixelherodev, I don't think you want to use N.txt as your format string, right? it shouldn't be interpreting {} in there
+
+1572824086
+andrewrk
+i think you want print("{}", @embedFile(...))
+
+1572824098
+scientes
+^^^
+
+1572824111
+pixelherodev
+No, it should be interpreting {}
+
+1572824114
+scientes
+printf(variable) is extremely dangerous
+
+1572824117
+pixelherodev
+It passes in variables
+
+1572824120
+pixelherodev
+That's not variable.
+
+1572824122
+pixelherodev
+It's constant.
+
+1572824131
+pixelherodev
+It's just a very long constant which happens to be in its own file.
+
+1572824132
+andrewrk
+oh ok. no problem then. just set a higher branch eval quota
+
+1572824150
+pixelherodev
+Approximately how big would I need?
+
+1572824162
+andrewrk
+imo just double it until it's big enough
+
+1572824330
+pixelherodev
+Huh. 2K is enough for now.
+
+1572824388
+fengb
+Bump it up to 640k 🙃
+
+1572824753
+pixelherodev
+I might actually bump it up to 64K for now.
+
+1572824755
+pixelherodev
+2K quickly became too small also
+
+1572824857
+andrewrk
+you might start to run into inefficiencies in stage1 with regards to slowness or ram usage, and for that I apologize
+
+1572824874
+andrewrk
+these things can be improved eventually
+

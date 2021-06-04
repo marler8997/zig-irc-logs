@@ -1,0 +1,3172 @@
+1571270440
+fengb
+Interrupts kinda break “no hidden control flow” paradigm
+
+1571270712
+pixelherodev
+Not really
+
+1571270731
+pixelherodev
+fengb, the interrupt will occur in the midst of other code yes, but it has zero effect on it
+
+1571271081
+fengb
+Hmm so I’d consider tossing the interrupt handler in an async frame and resume on interrupt
+
+1571271087
+fengb
+I suppose that require an event loop which you might not have >_>
+
+1571271298
+pixelherodev
+I've got it actually
+
+1571271302
+pixelherodev
+Just using a function table
+
+1571271304
+pixelherodev
+Calling into it from asm
+
+1571271361
+pixelherodev
+Which leads to my latest question: if I have a function declared `export` and `noreturn`, and it takes parameters, can I `jmp` to it from asm, or do I have to `call` it?
+
+1571271383
+fengb
+Does that automatically suspend the rest of the program?
+
+1571271400
+pixelherodev
+Well, for critical exceptions, it literally `@panic`s
+
+1571271417
+pixelherodev
+For normal interrupts - keyboard, timer, etc - it calls the handler then returns right back to where it was before
+
+1571271430
+pixelherodev
+It's sort of like how I'm running VLC and HexChat at the same time and neither affects the other :)
+
+1571271438
+pixelherodev
+(and looooots more)
+
+1571271534
+fengb
+I think you want nakedcc but I don’t really grok call conventions
+
+1571271575
+micparke
+What allows a function to be imported?
+
+1571271585
+pixelherodev
+Has to be declared `pub`
+
+1571271589
+micparke
+Thanks!
+
+1571271596
+pixelherodev
+No problem
+
+1571271602
+micparke
+What does `export` mean then?
+
+1571271615
+pixelherodev
+That's to make it accessible from e.g. C
+
+1571271637
+micparke
+Ah!
+
+1571271724
+pixelherodev
+I think I need to `call` it - I
+
+1571272054
+pixelherodev
+I'm also trying to cheat and use 4 lines of comptime code to declare 32 functions :P
+
+1571272063
+pixelherodev
+(isr0, isr1, isr2... isr31)
+
+1571272078
+pixelherodev
+Some very inefficient `@cImport`ing :P
+
+1571272311
+pixelherodev
+Perhaps fortunately, that doesn't seem possible
+
+1571272486
+micparke
+Using 5.0 on Windows, and it's the first time I've gotten a runtime error in a zig build from a missing DLL, VCRUNGTIME140_1.dll
+
+1571272751
+micparke
+Looks like I'm missing the 2019 version of MSVC
+
+1571273672
+pixelherodev
+Is there a way to use comptime reflection to get a function's address from its name?
+
+1571273917
+pixelherodev
+Never mind that's a terrible idea anyways
+
+1571274488
+andrewrk
+micparke, it's a bug, should be fixed shortly.
+
+1571278428
+pixelherodev
+What's the correct type for a function pointer? `var`?
+
+1571278506
+pixelherodev
+`function`, rather?
+
+1571278583
+pixelherodev
+Never mind, figured it out
+
+1571278829
+andrewrk
+pixelherodev, here's an example:
+
+1571278852
+pixelherodev
+Yeah, I already got it :) Thanks though!
+
+1571279324
+emekankurumeh[m]
+pixelherodev:  do you have this stuff in a repo somewhere? i tried to make a i3686 kernel in zig before but i always got stuck on setting up interrupts
+
+1571279357
+pixelherodev
+Give me two minutes and I can push the interrupts
+
+1571279557
+andrewrk
+emekankurumeh[m], there are a couple i386 kernel examples
+
+1571279584
+scientes
+has anyone tried avr-8?
+
+1571279632
+emekankurumeh[m]
+does llvm support avr?
+
+1571279639
+scientes
+not as well as gcc
+
+1571279647
+scientes
+but it does
+
+1571279708
+pixelherodev
+emekankurumeh[m],
+
+1571279722
+emekankurumeh[m]
+i considered getting a arduino nano, or embedded development but i got a stm32 board instead
+
+1571279752
+andrewrk
+avr is an experimental target in llvm
+
+1571279753
+scientes
+avr-8 is quite limited
+
+1571279781
+pixelherodev
+Since I just got interrupts working literally five minutes ago, when you boot it dumps basic info (memory, bootloader, cmdline, etc), initializes the heap, then prints TIMER forever
+
+1571279858
+pixelherodev
+Okay, so I may have forgotten to add `asm volatile("cli");` to the panic function, but it's fixed locally :P
+
+1571280241
+pixelherodev
+Heads up that f128 isn't usable in i386-freestanding - "undefined symbol: __divtf3"
+
+1571280448
+pixelherodev
+Oh, and timing is off in the code in the repo - didn't manually specify that reload_value is u16, so it ended up getting butchered
+
+1571280765
+andrewrk
+pixelherodev, that's just a tiny improvement to compiler-rt away from working just fine
+
+1571280799
+pixelherodev
+I'm going to see if I can patch that one then :)
+
+1571280816
+andrewrk
+the solution is to port
+
+1571280837
+andrewrk
+you can see there were a lot of additions in 0.5.0:
+
+1571280858
+emekankurumeh[m]
+what happens if a async function suspends in another thread?
+
+1571280898
+andrewrk
+emekankurumeh[m], this is the same question as "what happens if a function running in another thread returns?"
+
+1571280927
+andrewrk
+`return` and `await` in async functions are thread-safe
+
+1571280998
+emekankurumeh[m]
+nevermind, you can't start a thread using a async function
+
+1571281022
+andrewrk
+you can, however, make an async function called switchToAnotherThread()
+
+1571281030
+andrewrk
+(and have it do as advertised)
+
+1571281062
+emekankurumeh[m]
+Thread.new works with an async function?
+
+1571281082
+andrewrk
+no
+
+1571281149
+andrewrk
+I need to do a lot more documentation about how to use async functions in zig
+
+1571281558
+andrewrk
+emekankurumeh[m], you could suspend, and then have a different thread resume it
+
+1571281894
+emekankurumeh[m]
+would the thread with the suspended function just burn CPU, or would it just "sleep"?
+
+1571283181
+andrewrk
+emekankurumeh[m], `suspend` sends control flow back to either the `async` or the `resume`
+
+1571283864
+muffindrake
+'(Note that Windows line endings (CRLF) are not allowed, and hard tabs are not allowed.)'
+
+1571283872
+muffindrake
+Huh, now that's a statement.
+
+1571283920
+emekankurumeh[m]
+
+
+1571283951
+emekankurumeh[m]
+discussion on whitespace is a bit of a dead horse and considered off-topic
+
+1571284003
+muffindrake
+I was simply stumped to see that in the docs. You don't see this kind of pragmatism everywhere.
+
+1571284637
+torque
+what if beating dead horses is my favorite pastime
+
+1571284693
+pixelherodev
+Then take it elsewhere?
+
+1571284702
+emekankurumeh[m]
+better watch out for PeTA then
+
+1571284705
+muffindrake
+Is there a #deadhorse channel?
+
+1571284720
+muffindrake
+Sounds like a meeting place for animal cruelty and necrophilia alike.
+
+1571284774
+pixelherodev
+Okaaay then, someone ping me when the conversation gets less creepy
+
+1571284839
+andrewrk
+that will be right now, please
+
+1571284869
+muffindrake
+Direct your complaints to torque.
+
+1571285140
+muffindrake
+The docs mention global assembly - at precisely which point is that inserted?
+
+1571285263
+andrewrk
+it becomes part of the compilation unit
+
+1571285342
+andrewrk
+if you want it to go into a specific section, you can use the assembly syntax for that
+
+1571296746
+muffindrake
+I've read through the docs, and am looking at the standard library now. What concrete examples for memory allocation can I look at?
+
+1571296883
+mq32
+muffindrake, want to create or use an allocator?
+
+1571296949
+muffindrake
+I want to know what to do and what not to do to allocate memory.
+
+1571296963
+mq32
+good start for either side is the allocator interface itself:
+
+1571296973
+mq32
+usually, you do something like
+
+1571296987
+mq32
+var x : *MyType = myAllocator.create(MyType);
+
+1571296993
+mq32
+defer myAllocator.destroy(x);
+
+1571297047
+muffindrake
+What's the specific difference between errdefer and defer?
+
+1571297108
+mq32
+errdefer is only called when the current block/function returns with an error
+
+1571297121
+mq32
+usual pattern is something like this:
+
+1571297146
+mq32
+fn make() !*T { var t = alloc.create(T); errdefer alloc.destroy(t); /* here be failing code */ return t; }
+
+1571299405
+daurnimator
+huzzah. issue closing spree
+
+1571301053
+muffindrake
+How is the general purpose allocator coming along, anyway?
+
+1571301104
+muffindrake
+I'd be fine just linking to libc and using some allocator interface for malloc/free, if there's such a thing.
+
+1571301134
+muffindrake
+Or if there's a well-tested general purpose allocator, I'd use that instead of a full libc.
+
+1571301254
+mikdusan
+i haven't used it in a while but try `std.heap.c_allocator`
+
+1571301260
+mq32
+muffindrake, you can just link libc anduse what mikdusan just said :D
+
+1571301289
+muffindrake
+Ah, fine.
+
+1571301339
+ceymard
+is it possible to manufacture function calls at comptime ?
+
+1571301353
+mikdusan
+also if you have code that is amenible to arena... use direct_allocator as backing for an arena allocator
+
+1571301354
+ceymard
+as in, I give a function in a var parameter
+
+1571301370
+ceymard
+and I want in turn to call it with all its arguments
+
+1571301403
+mq32
+ceymard, i don't think so
+
+1571301408
+mq32
+haven't found a way yet
+
+1571301411
+ceymard
+okay, scrap that idea
+
+1571301423
+mq32
+i would like to have that, but it's a complex thing
+
+1571301427
+ceymard
+when iterating over a struct field with @TypeInfo
+
+1571301436
+ceymard
+is the order guaranteed to be that of declaration ?
+
+1571301443
+ceymard
+struct fields*
+
+1571301449
+mq32
+my "closures in user land"-idea died by not having that ability
+
+1571301556
+mq32
+what would be cool though: the ability to call a function with a struct providing all the parameters
+
+1571303250
+mikdusan
+ceymard: struct field layout is only guaranteed when packed
+
+1571303266
+mikdusan
+see
+
+1571303434
+ceymard
+mikdusan: even when doing meta-stuff ?
+
+1571303446
+mikdusan
+i believe so
+
+1571303449
+ceymard
+I'm not talking about memory layout, but playing with @typeInfo
+
+1571303453
+ceymard
+ok
+
+1571303764
+mq32
+mikdusan: extern should also guarantee field order
+
+1571305149
+muffindrake
+Isn't an extern struct supposed to be used only for interoperability with C APIs?
+
+1571305610
+mq32
+muffindrake, no. "extern" just means that the struct layout follows the C ABI
+
+1571305647
+muffindrake
+I'll get this right at some point, I'm sure.
+
+1571305710
+mq32
+it means that zig follows certain rules on how to lay out memory and align elements in the struct
+
+1571305820
+muffindrake
+The normal 'struct' declaration tries to make field access as quick as possible, but makes no guarantees about layout, no? What is the reasoning for 'packed struct'?
+
+1571306060
+mikdusan
+with a guaranteed layout you can use structs to interface with structured binary data. for example, audio or video bitstreams
+
+1571306194
+mikdusan
+kernel interfaces too
+
+1571306428
+Snektron
+muffindrake: theres @inlineCall, @noInlineCall, @NewStackCall, @asyncCall which do what you want i think
+
+1571306659
+mq32
+<muffindrake> What is the reasoning for 'packed struct'?
+
+1571306681
+mq32
+you want packed structs if the memory layout MUST BE exact, bit perfect
+
+1571306717
+mq32
+there's a lot of use cases: communcations (ethernet, wifi, ...), storage (binary files), MMIO (hardware access)
+
+1571313245
+Snektron
+I realized i can probably make the parser im writing use async
+
+1571313250
+Snektron
+but im not sure if thats intended usage
+
+1571313294
+Snektron
+Basically you'd write the token to a location and then suspend
+
+1571313302
+Snektron
+and resume to get the next
+
+1571313994
+mq32
+Snektron, you can also just use a generator pattern
+
+1571314010
+mq32
+var parser = Parser.parse(slice); while(parser.next()) |tok| { }
+
+1571315227
+Snektron
+Sure, but with async you can just use a simple stack-based parser
+
+1571315297
+fengb
+No context: you can use async to implement a generator!
+
+1571315332
+fengb
+Oh that’s the architecture you just proposed
+
+1571315483
+Snektron
+Though its a bit annoying to do so since suspend cant return a value
+
+1571315492
+Snektron
+Would be cool if it could
+
+1571315546
+mq32
+Snektron, that would be a higher level concept
+
+1571315553
+mq32
+you can probably create something like
+
+1571315563
+mq32
+Generator(T, function)
+
+1571315627
+fengb
+I’ve been wanting to implement a generic generator but it gets messy really quick
+
+1571315652
+mq32
+yeah
+
+1571315677
+mq32
+my biggest problem right now is that i don't get how i can work with multiple "event loops"
+
+1571315752
+mq32
+so what happens if i'm doing "await"
+
+1571315760
+fengb
+
+
+1571315835
+fengb
+That was my attempt at making a recursive generator
+
+1571315863
+mq32
+ah
+
+1571315879
+mq32
+you can probably use push/pull semantic for the "out" variable
+
+1571315900
+fengb
+Reusing the same suspend point let me sidestep multiple async contexts
+
+1571316576
+ninepoints
+two days ago in despair, I reached for libllvm to make a language because I was so fed up with all the other alternatives. while coding, I found zig!
+
+1571316621
+ninepoints
+has most of the things I was going for (low level, comptime, no gc, simd) and more on the roadmap (hot reloading)
+
+1571316628
+ninepoints
+pretty excited!
+
+1571317422
+mq32
+hey ninepoints
+
+1571317428
+mq32
+yeah, zig is quite awesome :)
+
+1571317760
+ninepoints
+:)
+
+1571317831
+ninepoints
+i'm pretty new, but my background is in graphics engines and networking engines (mostly console but also desktop). my goal is to use zig for a new renderer I'm cooking up
+
+1571317878
+ninepoints
+as in, pretty new to zig. Before zig, I've coded C++ for ~18 years or so (and continue to do so for my day job)
+
+1571318023
+mq32
+ah nice, i'm into graphics stuff as well
+
+1571318032
+mq32
+i have a small library for OpenGL and similar
+
+1571318069
+mq32
+do you have experience writing reliable UDP libraries?
+
+1571318113
+fengb
+But the U stands for unreliable 🙃
+
+1571318119
+ninepoints
+yes i used to work on games you've probably played if you're a gamer hehe
+
+1571318140
+ninepoints
+there's a protocol literally called rudp (bit of an oxymoron, that)
+
+1571318162
+ninepoints
+i don't do much networking anymore, mostly rendering and graphics
+
+1571318166
+mq32
+hm
+
+1571318175
+mq32
+i'm trying to create a reliable UDP library for zig right now
+
+1571318187
+ninepoints
+ah ok, how can i help
+
+1571318187
+mq32
+** remove UDP
+
+1571318192
+mq32
+reliable networking
+
+1571318199
+mq32
+but not for gaming, but ad-hoc connectionless networking
+
+1571318205
+mq32
+so not built on IP
+
+1571318209
+ninepoints
+similar foundation yea
+
+1571318227
+ninepoints
+I've worked with WebRTC protocols also (voip, teleconferencing, SFUs, MCUs, etc)
+
+1571318241
+ninepoints
+do you need encryption?
+
+1571318246
+ninepoints
+or is this the layer below that
+
+1571318248
+mq32
+not for a proof of concept
+
+1571318255
+ninepoints
+ok sure
+
+1571318259
+mq32
+also i have no idea how to apply encryption to this
+
+1571318265
+mq32
+packet size is <= 250 byte
+
+1571318268
+ninepoints
+look at DTLS
+
+1571318297
+ninepoints
+which is how control packets are encrypted via UDP for browser calls (like facebook messenger, slack, etc)
+
+1571318321
+ninepoints
+but let's ignore encryption for now
+
+1571318323
+mq32
+yeah
+
+1571318337
+mq32
+my current state is a prototype that sends messages via IP/broadcast
+
+1571318353
+mq32
+but, you know, transport layer is exchangeably
+
+1571318366
+mq32
+and i don't want to have wireless hardware with me all day :D
+
+1571318385
+mq32
+=> query, don't want to spam offtopic
+
+1571318449
+ninepoints
+in a production library, the hardest thing to deal with is congestion (resend/retry policies)
+
+1571318460
+mikdusan
+how about something like QUIC
+
+1571318473
+ninepoints
+also, be sure to detect the MTU and leverage the full width
+
+1571318485
+mq32
+MTU is 250 byte
+
+1571318500
+ninepoints
+QUIC is pretty nice but I'm not sure how latency sensitive it is
+
+1571318513
+ninepoints
+mq32: are you saying the MTU is statically coded to be 250 bytes?
+
+1571318517
+mq32
+yep
+
+1571318538
+mq32
+at least for the tech i'm looking at
+
+1571318573
+ninepoints
+what's your packet header like?
+
+1571318594
+mq32
+right now i have "sequenceID, from, to, flags (reliable, ACK)"
+
+1571318609
+mq32
+sequenceID is 16 bit, from,to are both similar to MAC, flags is 8 bit
+
+1571318632
+mq32
+sequence id will be used for reliable resending
+
+1571318699
+ninepoints
+are you doing nacks also
+
+1571318893
+ninepoints
+mentioning because in many situations, an ack-per-packet is often really chatty and it's cheaper to nack the packets that aren't received
+
+1571318900
+mq32
+not yet, but would probably be reasonable
+
+1571318919
+mq32
+but how to NAK?
+
+1571318952
+ninepoints
+haha well, that's sort of up to you. on the receiving side, you decide what is unreasonable time to wait for a missing packet before nacking
+
+1571318975
+ninepoints
+in real-world situations, this policy is highly dynamic depending on bandwidth and network conditions
+
+1571318986
+ninepoints
+so it's common to have a "policy" abstraction
+
+1571319009
+ninepoints
+(disclaimer, this is all stuff i did >10 years ago)
+
+1571319080
+riba
+hi, i'm getting a compile error i don't quite get and hope you guys can maybe help me with it
+
+1571319097
+ninepoints
+:thumbsup:
+
+1571319124
+mq32
+riba, what's it?
+
+1571319139
+riba
+i imported some definitions from a C library, and now i'm trying to initialize this struct which wants a string
+
+1571319148
+mq32
+ninepoints: i have the fortunate situation that i have zero devices between my endpoints
+
+1571319162
+riba
+i give it a c""-string but i get  error: cast discards const qualifier
+
+1571319180
+riba
+i don't get where the cast is
+
+1571319190
+mq32
+riba, your struct probably wants a "[*c]u8" instead of "[*c]const u8"
+
+1571319199
+riba
+when i try to give it a zig-string the type is just c string as far as i can tell
+
+1571319199
+mq32
+does the string has to be mutable?
+
+1571319225
+riba
+it doesn't need to be mutable
+
+1571319249
+riba
+i tried making a var that contains this string but got the same
+
+1571319271
+riba
+wait, do i have to specify the var type so const is not derived?
+
+1571319304
+mq32
+no
+
+1571319308
+mq32
+string literals cannot be mutable
+
+1571319308
+companion_cube
+0 device, not even an ethernet cable?
+
+1571319327
+mq32
+companion_cube: correct. point-to-point via 802.11/wlan
+
+1571319330
+mq32
+how is the struct defined in C?
+
+1571319346
+companion_cube
+dang, nice
+
+1571319380
+riba_
+hit the wrong button
+
+1571319417
+riba_
+when i try to give it a zig string i get error: expected type '[*c]u8', found '[9]u8', so yeah i need a non-const c-string
+
+1571319454
+mq32
+just put some text into a var:
+
+1571319482
+mq32
+var mutstring = "Hello, World!" ++ ([1]u8 { 0 } ** 50); // hello world and 50 zeroes
+
+1571319491
+mq32
+then use &mutstring
+
+1571319506
+mq32
+companion_cube: i'm trying to create some kind of "distributed OS thingy"
+
+1571319517
+companion_cube
+oh boy
+
+1571319524
+mq32
+so ad-hoc remote file system and stuff
+
+1571319540
+mq32
+(what? this is nuts? ... no way!)
+
+1571319543
+ninepoints
+RIP
+
+1571319585
+mq32
+:D
+
+1571319595
+mq32
+ninepoints: good thing is that my "focus" is quite small
+
+1571319612
+mq32
+every device i can reach by my own transmitter is there, everything else does not exist
+
+1571319619
+ninepoints
+i just noticed zig supports the half-float. that's pretty great
+
+1571319623
+mq32
+yeah
+
+1571319642
+mq32
+this makes stuff a lot easier (both f16 and the communcation)
+
+1571319643
+riba_
+mq32: i tried putting it into a var and giving it the address, but now i get error: expected type '[*c]u8', found '*[*]const u8'
+
+1571319649
+ninepoints
+you'll probably want a nack based approach all the more then mq32
+
+1571319659
+ninepoints
+since the links are unlikely to be lossy?
+
+1571319667
+mq32
+yeah probably
+
+1571319677
+mq32
+so if i receive a packet 0, then 2
+
+1571319684
+mq32
+i send the sender of 2: "hey, i lost packet 1"
+
+1571319686
+mq32
+right?
+
+1571319692
+mq32
+<ninepoints> since the links are unlikely to be lossy?
+
+1571319698
+ninepoints
+yes, but not necessarily immediately, since order isn't guaranteed
+
+1571319700
+mq32
+probably lossy a.f. as it's wifi
+
+1571319706
+mq32
+order is guaranteed <3
+
+1571319710
+ninepoints
+on your end, you'll want a buffer to do reconstruction
+
+1571319711
+ninepoints
+oh what
+
+1571319716
+ninepoints
+lol then yea
+
+1571319716
+mq32
+it's wifi
+
+1571319729
+mq32
+i send a packet, it either is there as soon as my send is completed or it's lost
+
+1571319732
+mq32
+i know that immediatly
+
+1571319747
+ninepoints
+hmm i actually don't know if a typically router guarantees order on the local link
+
+1571319771
+ninepoints
+s/typically/typical
+
+1571319782
+riba_
+in C everything is a char * so i guess it's kind of correct that zig complains, but i'm trying to statically initialize everything and it seems there is no way to do that in zig?
+
+1571319783
+mq32
+ninepoints, i don't use a router
+
+1571319796
+mq32
+i'm doing point-to-point wifi without having a station/AP
+
+1571319803
+ninepoints
+ok got it
+
+1571319819
+mq32
+riba_: strings in C are usually "char const *"
+
+1571319840
+mikdusan
+riba_: `var buffer: [64]u8 = undefined; var p: [*c]u8 = &buffer;`
+
+1571319846
+riba_
+mq32: sorry, i meant the definition of this struct the char *
+
+1571319857
+riba_
++has
+
+1571319860
+mq32
+yeah then you need to provide mutable memory
+
+1571319895
+mq32
+ninepoints: i should probably test how lossy my link is
+
+1571319901
+mq32
+maybe i can even do that this evening :)
+
+1571319902
+muffindrake
+String literals are of type char[n] in C, and they're not const. Just that modifying a string literal is undefined behaviour.
+
+1571319920
+mq32
+muffindrake: depends on the version if string literals are const or not
+
+1571319925
+ninepoints
+mq32: yea i mean, you're lucky you have a well defined setup. you can tune all the windows and timers etc to your situation
+
+1571319927
+mq32
+but yeah, you're right
+
+1571319944
+muffindrake
+There is no C standard where string literals are const
+
+1571319944
+mq32
+ninepoints: yep. i'm gonna have fun with this project and i will be learning a lot.
+
+1571319948
+riba_
+mikdusan: i'll try that
+
+1571320002
+mikdusan
+riba_: it's just a stack buffer. do you need a buffer on a heap?
+
+1571320003
+riba_
+i feel like it's a sensible exception if everything is initialized at comptime
+
+1571320010
+riba_
+wait, can i just make it a comptime var
+
+1571320016
+mq32
+yes, you can :D
+
+1571320181
+riba_
+it seems i can't because the scope is global or something
+
+1571320506
+riba_
+i'm trying to write a plugin and i need to call a macro on this initialized struct
+
+1571320606
+mq32
+plugin and macro sounds like magic
+
+1571320618
+mq32
+you probably have to recreate the macro magic by hand
+
+1571320745
+riba_
+well i didn't even get that far since i cannot create the struct
+
+1571320840
+ninepoints
+hmm... no operator overloading
+
+1571321483
+riba_
+okay, so if i make my own struct which looks exactly the same i could make the types const and use it how i'd like to, correct?
+
+1571321522
+mikdusan
+ninepoints: no op overloading. clarity. no RAII - instead use defer and errdefer. no inheritance. there is struct methods.
+
+1571321529
+riba_
+and it's an extern struct
+
+1571321584
+riba_
+i've been statically initializing everything in my C code so i assume it doesnt really have to be mutable
+
+1571321585
+tgschultz
+with result location changes, operator overloading is now an especially terrible idea.
+
+1571321748
+ninepoints
+I think op overloading is the only thing I am confused by
+
+1571321767
+ninepoints
+That means I have no way to implement a numeric-like entity
+
+1571321787
+ninepoints
+tgschultz: could you elaborate?
+
+1571321868
+fengb
+andrewrk says we’re lucky to get operators at all 🙃
+
+1571321869
+tgschultz
+`x = x.func();` is now a footgun if func is something like `fn(self: Self) Self { return Self{ .x = self.y, .y = self.x, }; }`
+
+1571321922
+ninepoints
+why do we need to overload =
+
+1571321952
+tgschultz
+so if func overloads `~`, for example, this now looks like `x = ~x;`, which is a perfectly safe operation under normal cirucmstances, but has now hidden a dangerous function call.
+
+1571321984
+ninepoints
+are there no footguns in the language whatsover?
+
+1571321990
+tgschultz
+ideally no.
+
+1571322007
+tgschultz
+currently there are several, but that's considered something that needs fixing
+
+1571322015
+ninepoints
+so, i'd like to at least proffer my perspective on operators specifically
+
+1571322034
+tgschultz
+There's a length issue in the tracker about it, as I recall.
+
+1571322036
+ninepoints
+which is that users of the language should be able to define new numeric types
+
+1571322040
+ninepoints
+i've read them just now
+
+1571322062
+ninepoints
+i might have a different perspective because i'm a graphics engineer and maybe i'm not the target audience
+
+1571322085
+tgschultz
+it's a general purpose language, so I think pretty much any use case is part of the target audience
+
+1571322095
+ninepoints
+but if the language requires that any numeric type be provided solely by the language itself, that's a severe limitation
+
+1571322120
+muffindrake
+Oh, a thing that is probably of use to me. Is there a way to execute a zig source file like a script?
+
+1571322134
+ninepoints
+I do not view using function calls where operators suffice as being remotely acceptable in cases such as these (complex numbers dual quats, multivectors, etc)
+
+1571322156
+ninepoints
+main reason being too much semantic meaning is loss. operators imply associativity, commutivity, and read naturally
+
+1571322162
+fengb
+muffindrake: zig run file.zig
+
+1571322171
+mikdusan
+muffindrake: `zig run foo.zig -- arg1 arg2 ...` is probably as close as you get
+
+1571322179
+tgschultz
+The problem is that zig very much leans towards readability and clarity over writability
+
+1571322187
+ninepoints
+that's what I'm saying
+
+1571322197
+ninepoints
+readability and clarity is absolutely compromised
+
+1571322203
+ninepoints
+and i stare at math code all day
+
+1571322226
+tgschultz
+with operator overloading you're trading one kind of clarity for antoher. you hide function calls.
+
+1571322237
+ninepoints
+i've read this, in the docs
+
+1571322242
+fengb
+Zig code isn’t designed for math
+
+1571322252
+ninepoints
+fengb: ok maybe that's it then
+
+1571322254
+tgschultz
+My personal suggestion for this was some kind of comptime DSL interpreter
+
+1571322285
+mq32
+ninepoints, we graphics programmers are on a lone foot here
+
+1571322300
+mikdusan
+math. always so dang special
+
+1571322314
+tgschultz
+math is already its own DSL (several, actually...)
+
+1571322337
+ninepoints
+right... but making it a special snowflake seems like an odd choice
+
+1571322362
+ninepoints
+i really do appreciate many aspects of the language, but without that well...
+
+1571322370
+ninepoints
+i actually can't even begin to port my code
+
+1571322376
+ninepoints
+it would be literally unreadable
+
+1571322378
+tgschultz
+mathify("<insert LaTeX here>", a, b, c, d, e);
+
+1571322380
+mq32
+ninepoints, i'm struggling as well
+
+1571322392
+ninepoints
+latex would read like shit lol
+
+1571322399
+ninepoints
+no joke and i'm 100% fluent in latex
+
+1571322406
+tgschultz
+only if your IDE didn't support rendering it
+
+1571322423
+ninepoints
+i can't tell if you're trolling me
+
+1571322434
+mq32
+i think he is, at least a bit
+
+1571322447
+tgschultz
+I've never used LaTeX, not a math guy
+
+1571322453
+ninepoints
+eh oh well, zig was interesting to look at at least
+
+1571322484
+ninepoints
+but i can't imagine any of my colleagues biting if they can't even define a complex number lol
+
+1571322497
+mq32
+i wanted to port {
+
+1571322499
+mikdusan
+well u can but not with operator overloading
+
+1571322503
+mq32
+*zig, but i'm still struggling
+
+1571322505
+ninepoints
+yea i know
+
+1571322506
+tgschultz
+I'm jsut saying, math is already a DSL and if you do a lot of heavy math work, maybe it makes sense to write equations in a form that actually is that math, but I think instead of baking it into the language we should have a facility to interpret it for you
+
+1571322524
+ninepoints
+we don't write add(x, y) for integers for a reason
+
+1571322535
+mikdusan
+mq32: is zug unsigned and zig signed?
+
+1571322536
+ninepoints
+i think different domains require brevity for common operations
+
+1571322543
+mq32
+mikdusan, zug is unsigned zig :D
+
+1571322557
+mq32
+tgschultz, yeah but it gets horribly messy with function syntax even for simple linear algebra
+
+1571322562
+mq32
+when * und + aren't options
+
+1571322567
+ninepoints
+and the degree to which i can improve brevity and maintain control speakes to the expressiveness of the language
+
+1571322577
+mq32
+> p - k1 + k2*clamp( dot(k1-p,k2)/dot2(k2), 0.0, 1.0 ); // is already hard to read, but
+
+1571322578
+ninepoints
+english is expressive because it affords me a lot of words at my disposal
+
+1571322596
+ninepoints
+zig, is very not expressive (although it's very impressive in other ways)
+
+1571322605
+tgschultz
+mq32, I'm saying: go ahead and write your vector math in whatever makes sense, then have a comptime function that you pass that string to and it generates the calls to functions.
+
+1571322614
+mq32
+> vec2.sub(p, vec2.add(k1, vec2.scale(k2, clamp(vec2.dot(vec2.sub(k1,p),k2) / vec2.dot(k2,k2), 0.0, 1.0))
+
+1571322647
+tgschultz
+english is also one of the hardest languages in the world to learn. even its native speakers screw it up constantly.
+
+1571322649
+mq32
+tgschultz: that wouldn't make it any more readable at all
+
+1571322668
+tgschultz
+why not?
+
+1571322678
+mq32
+because then i have the problem of something like <?zigvec ?> blocks in zig code
+
+1571322678
+fengb
+I don’t think expressiveness is a design goal of zig
+
+1571322698
+tgschultz
+WTF? How is that anything like what I said?
+
+1571322712
+ninepoints
+haha a programming language that isn't shooting for expressiveness
+
+1571322713
+mq32
+because otherwise i could never mix zig code and vector math code
+
+1571322745
+ninepoints
+this conversation depresses me. i really do feel like this language has a lot of potential
+
+1571322766
+mq32
+the problem is that if i change it to a comptime compiler (which i cannot do quite well right now afaik)
+
+1571322767
+ninepoints
+but because we're afraid of people confusing an operator with a function call... that's the end of the discussion
+
+1571322773
+mq32
+it gets even more worse to read
+
+1571322803
+fengb
+ninepoints: I don’t think zig is for you then
+
+1571322806
+mq32
+because i suddenly have several names in several languages for the same variables
+
+1571322806
+tgschultz
+Why not? In best case it could look like this: `vectorMath("<string of vector math howeer you like it");`, but that would need some facility to accesss variables outside the function scope, if only at comptime
+
+1571322812
+ninepoints
+fengb: nor many others
+
+1571322824
+ninepoints
+pretty sure i can speak for most of the people in my industry
+
+1571322829
+mq32
+tgschultz: vectorMath("p - k1 + k2*clamp( dot(k1-p,k2)/dot2(k2), 0.0, 1.0 )", ???)
+
+1571322834
+mq32
+how do i pass my variable names here?
+
+1571322843
+mq32
+<ninepoints> pretty sure i can speak for most of the people in my industry
+
+1571322845
+tgschultz
+The problem with expressiveness is you end up like C++ with 40 different languages that kinda look the same sometimes
+
+1571322859
+mq32
+true dat. game dev and graphics require operator overloads to create at least
+
+1571322880
+ninepoints
+i'd seek a middle ground. like no need to overload , -> *
+
+1571322889
+tgschultz
+mq32, first of all, you wouldn't use function calls in the string but your own notation, and secondly as I said it would require some ability to peek at variables outside the scope in a comptime call.
+
+1571322903
+ninepoints
+also your comptime parser suggestion makes no sense lol
+
+1571322909
+mq32
+yeah, but clamp() and dot() are actually some quite common functions
+
+1571322910
+ninepoints
+one, compile times are a thing
+
+1571322923
+ninepoints
+and codebases i work on have 1.5+ million lines of code
+
+1571322957
+ninepoints
+much of which are code to do things like, skinning on animation bones, or integrating log-luminance levels, or constructing kd-trees idk
+
+1571322958
+tgschultz
+If my suggestion makes no sense, I haven't seen a coherent argument as to why not
+
+1571322970
+ninepoints
+i'm typing it out jeez
+
+1571322977
+mq32
+tgschultz: maybe something like Rust Macros could be a thing for zig, but i don't know. those are horribly overcomplicated in the end
+
+1571322998
+ninepoints
+so the suggestion on deck is that each of those expressions would need to be parsed and compiled separately
+
+1571323011
+ninepoints
+i'm really not buying it lol
+
+1571323022
+tgschultz
+not compiled separately, not any more so than ArrayList(u8) is compiled separately
+
+1571323030
+ninepoints
+wat
+
+1571323041
+ninepoints
+the "string" expression in each situation is distinct
+
+1571323052
+ninepoints
+you have to parse each one
+
+1571323054
+tgschultz
+so is every call to ArrayList(T)
+
+1571323060
+tgschultz
+yes
+
+1571323061
+tgschultz
+and?
+
+1571323062
+ninepoints
+not to mention, we're talking hundreds of lines. how do you debug that
+
+1571323068
+mq32
+tgschultz: ArrayList(T) is cached.
+
+1571323078
+ninepoints
+yea lol i'm being trolled i must be
+
+1571323079
+mq32
+we don't create a new ArrayList every line of code
+
+1571323080
+tgschultz
+only where T is identical, which would be the same here
+
+1571323096
+fengb
+It'd be like format()
+
+1571323113
+fengb
+You can bounce in and out of context at comptime
+
+1571323118
+mq32
+there's a big difference between 1 Mio lines of of "ArrayList(T)" and "ArrayList(T1), ArrayList(T2), ..., ArrayList(T1000000)"
+
+1571323136
+mikdusan
+well ninepoints is correct that there is comptime cost for such a thing. but zig also doesn't bear the comptime cost of
+
+1571323144
+fengb
+tgschultz is a big fan of his comptime hacks. I'm not really in favor but still
+
+1571323166
+ninepoints
+i mean, it just speaks to the lack of experience in the code i'm talking about
+
+1571323170
+ninepoints
+it's completely untenable
+
+1571323189
+ninepoints
+but like someone else mentioned, zig might just not be for game dev
+
+1571323191
+tgschultz
+yaeh, I mean, no one ever writes such code in C where there's also no operator overloading
+
+1571323201
+ninepoints
+AAA has no one in C
+
+1571323218
+mq32
+no one writes games in C anymore because it's a pain not to have operator overloading
+
+1571323219
+ninepoints
+every studio i'm aware of is on C++
+
+1571323247
+ninepoints
+operator overloading + templates + polymorphism (for the game logic peeps)
+
+1571323264
+mq32
+ninepoints: polymorphism isn't much needed for games
+
+1571323267
+mq32
+luckily
+
+1571323274
+mq32
+btw
+
+1571323276
+ninepoints
+yea i never use it myself
+
+1571323286
+companion_cube
+this is so confusing that 'polymorphism' isn't parametric polymorphism
+
+1571323296
+mq32
+we're always talking about "operator overloading" is the same syntax as "builtin operators"
+
+1571323305
+fengb
+You can get polymorphism with function pointers
+
+1571323321
+mq32
+the argument against operator overloading is: "you cannot distinct it from a function call"
+
+1571323335
+mq32
+so: what do you think about separate overloading syntax?
+
+1571323353
+mq32
+this would contradict "Reduce the amount one must remember.", but would favour "Communicate intent precisely." (#zen)
+
+1571323363
+mikdusan
+example?
+
+1571323369
+mq32
+something like "a `+` b"
+
+1571323382
+mq32
+where i can recognize both "+" and that it's actually not "+"
+
+1571323389
+tgschultz
+some kind of infix function syntax would be acceptable I think
+
+1571323397
+fengb
+I've been thinking that maybe we could have a pipe operator or "infix" operator
+
+1571323399
+fengb
+a |dot| b == dot(a, b)
+
+1571323406
+mq32
+and i can implement only operators on the same types
+
+1571323424
+companion_cube
+a `dot` b :D
+
+1571323425
+mq32
+so, no "Vec2 * Vec2", but only "Vec2 `*` Vec2"
+
+1571323428
+companion_cube
+like in haskell
+
+1571323430
+tgschultz
+pipe is already used for capture syntax so that could get confusing, but it does look nice
+
+1571323443
+fengb
+Backticks is probably better yeah
+
+1571323457
+fengb
+It was a thing in Elm but they removed it in favor of backticks
+
+1571323464
+mq32
+i can write up a proposal later if you want, i'm thinking a long time about this already :D
+
+1571323471
+fengb
+I'm still trying to find a blurb why
+
+1571323475
+fengb
+Er... removed backticks in favor of pipe operator
+
+1571323484
+mq32
+fengb: backticks are a dead key
+
+1571323516
+mq32
+it's hard to type for non-nodeadkey-keyboards
+
+1571323529
+mq32
+usually you type à instead of `a
+
+1571323576
+ninepoints
+i'd be ok with a haskell-like infix operator notation i think
+
+1571323587
+ninepoints
+it retains the left-to-right readability of an expression at least
+
+1571323596
+companion_cube
+a 🤔+ b
+
+1571323597
+ninepoints
+which is the main issue with the usage of function composition
+
+1571323601
+riba_
+is there a way to print the info of a c-imported struct definition?
+
+1571323602
+companion_cube
+a *👀 b
+
+1571323658
+mikdusan
+i'm going to ask the obvious: why not access operator? ma .+ mb .* mc <-- i did purposely use .* to show that we already use that for deref
+
+1571323712
+mq32
+mikdusan, i think that's a) harder to read, b) ambigious and c) not symmetrical
+
+1571323727
+tgschultz
+mb.* vs mb .* is too close for my comfort
+
+1571323737
+mq32
+so "ma .add mb" is kinda weird
+
+1571323761
+mq32
+what is also to be considered is operator precedence for custom operators
+
+1571323773
+fengb
+ma .+. mb .*. mc 🙃
+
+1571323780
+companion_cube
+a ~+~ b
+
+1571323783
+mq32
+where there is a very simple answer: "evaluation left to right with no operator mnixing"
+
+1571323788
+mq32
+a ~~~ b
+
+1571323789
+mq32
+:D
+
+1571323795
+tgschultz
+even primitive operators will probably have compiler enforced disambiguation
+
+1571323807
+mikdusan
+on that subject i'm not sure the rabbit hole of
+
+1571323836
+mq32
+overloading precedence is horror
+
+1571323839
+mikdusan
+swift
+
+1571323850
+fengb
+a 💩+🤮 b
+
+1571323852
+mq32
+it makes parsing the language quite impossible
+
+1571323870
+companion_cube
+don't overload the precedence, use the same as the "normal" operators
+
+1571323879
+mq32
+also, another thing to consider: only allow known-symbol operators, single-symbol operators, text-only operators?
+
+1571323883
+companion_cube
+OCaml doesn't have overloading, but you can write infix functions
+
+1571323963
+fengb
+I personally think it should be any regular function that's 2 arguments
+
+1571324014
+fengb
+I suppose that's the Haskell way
+
+1571324166
+companion_cube
+tbh infix operator overloading strays quite far from "better C"
+
+1571324211
+mq32
+oh
+
+1571324212
+mq32
+
+
+1571324222
+mq32
+the infix idea is like ... 2 years old :D
+
+1571324291
+fengb
+I really don't like UFCS
+
+1571324391
+tgschultz
+I'm not surprised it's an old idea. I am alittle surprised it was closed though.
+
+1571324436
+tgschultz
+I don't really like infix fuction call either, but as an alternative to operator overloading it's far more palatable to me.
+
+1571324453
+mq32
+tgschultz: it doesn't read like it's off the table forever though
+
+1571324509
+mq32
+i'm with you that "classic operator overloading" is a horrible idea with hidden control flow, but having at least some way to infix-call functions is a benefit for any algebra-heavy code with custom types
+
+1571324531
+emekankurumeh[m]
+it was just closed because it was forgotten
+
+1571324542
+tgschultz
+Yes, I've been convinced of that by empassioned arguments in its favor.
+
+1571324639
+mq32
+my biggest problem with readability with function calls (be it "normal" or UFCS calls) is that the actual information is clobbered in a horrible mess of parens
+
+1571324645
+tgschultz
+`a #plus b` doesn't look bad either. Still doesn't feel very 'zig' to me, but I'm not really sure what that means anyway.
+
+1571324663
+mq32
+i'm still in for "a `+` b"
+
+1571324686
+ninepoints
++1
+
+1571324686
+mq32
+yes, it's more to type, but it's also easier to parse for me (and the compiler doesn't care anyways)
+
+1571324708
+tgschultz
+well the parens may end up being necessary anyway, even with primitives. getting the operator precidence wrong is a pretty common problem.
+
+1571324721
+mq32
+yeah
+
+1571324730
+mq32
+but i want to add something to my point on parens: i'm reordering larger function calls into multiple lines instead of making new local variables
+
+1571324759
+ninepoints
+associativity is huge though. never underestimate how simple a * b * c is to write compared to mul(a, mul(b, c))
+
+1571324770
+ninepoints
+(extrapolating to many many variables/indeterminates)
+
+1571324772
+mq32
+because i have to come up with good names for them (which isn't really useful when doing math because stuff is like sum_of_a_and_b_times_c)
+
+1571324797
+mq32
+did you mean "how simple a * b * c is to
+
+1571324803
+ninepoints
+yes
+
+1571324816
+ninepoints
+both really
+
+1571324820
+emekankurumeh[m]
+i suppose that's what
+
+1571324821
+mq32
+i don't care for writing. it's the same level of hardness because the thought process is the same
+
+1571324833
+ninepoints
+i always optimize for reading also
+
+1571324836
+mq32
+but having to de-cypher a function call is harder as soon as it's nested
+
+1571324861
+mq32
+emekankurumeh[m]: yeah, i'm totally in on that, even though it adds some parens
+
+1571324914
+mq32
+"(a `*` b) `+` (c `*` d)" is still way more readable than "add(mul(a,b),mul(c,d))" (even though the example is quite small)
+
+1571324952
+mikdusan
+how about "no hidden allocations"; is that compatible with the vast majority of custom math operators?
+
+1571324983
+ninepoints
+adding an allocation in an operator is a sin punishable by death
+
+1571324988
+ninepoints
+jk
+
+1571324990
+emekankurumeh[m]
+would infix operations only be free functions? or would they have to be fully qualified?
+
+1571324998
+companion_cube
+ninepoints: hey what about bigints? :o
+
+1571325008
+mikdusan
+good point
+
+1571325016
+emekankurumeh[m]
+what about stack allocations?
+
+1571325018
+ninepoints
+usage of bigints is also a sin
+
+1571325028
+mikdusan
+stack i think is excluded from that
+
+1571325029
+tgschultz
+I feel like allocations must definitely be out
+
+1571325035
+ninepoints
+push and pop are not "allocations" in the colloquial sense
+
+1571325042
+tgschultz
+heap allocations that is
+
+1571325075
+ninepoints
+big int, tbh, i've never found a use for?
+
+1571325086
+mikdusan
+making a compiler you'll need it
+
+1571325112
+ninepoints
+why not just a dynamically resizing array in that case
+
+1571325120
+ninepoints
+why is it a number necessarily
+
+1571325129
+emekankurumeh[m]
+that's why i always do call my functions with @newStackCall([]u8{}, func, ...) to i don't do any sinful allocations
+
+1571325134
+mikdusan
+because it can do number'ish things
+
+1571325140
+mq32
+<tgschultz> I feel like allocations must definitely be out
+
+1571325142
+mq32
++1
+
+1571325161
+mq32
+mikdusan: on your original question: i would even forbid errors on infix calls
+
+1571325168
+fengb
+I think stack allocations should be fine. The compiler would theoretically detect the max stack allocation
+
+1571325168
+mq32
+try (a `+` b)
+
+1571325178
+emekankurumeh[m]
+ewww, what about infix functions failing?
+
+1571325179
+tgschultz
+forbidding errors also makes sense
+
+1571325195
+ninepoints
+how can the compiler detect that when recursion is possible
+
+1571325224
+fengb
+There's a separate issue for safe recursion. It's semi-solved
+
+1571325226
+tgschultz
+should be a requirement shouldn't it? infix must take exactly 2 parameters (of the same type?) and return exactly one non-optional non-error.
+
+1571325228
+mq32
+ninepoints: zig has/will get safe recursion, meaning: you have to allocate a new stack to solve this
+
+1571325243
+mq32
+tgschultz, yep, exactly my proposal :)
+
+1571325256
+ninepoints
+oh runtime detection you mean?
+
+1571325266
+mq32
+the good thing about both forbidden errors and allocations is: this reduces the use of infix calls a lot, thus making misuse much harder
+
+1571325268
+fengb
+The proof of concept is solved, but the implementation is currently... not pretty
+
+1571325310
+mq32
+ninepoints: no, comptime. zig can calculate "deepest possible stack level" for
+
+1571325320
+tgschultz
+ideally we'd also guarantee pureness of infix
+
+1571325336
+fengb
+ninepoints: Yeah, we can recurse using the heap instead of a stack frame, and it follows the same semantics as OOM at that point
+
+1571325344
+ninepoints
+got it
+
+1571325344
+mq32
+so no side effects for infix operators? yes, please :D
+
+1571325374
+emekankurumeh[m]
+perhaps you would just `try` the whole expression? try (a `/` b)
+
+1571325378
+ninepoints
+i was going to make my infix plus spawn a new thread and allocate a 1 gb texture
+
+1571325399
+tgschultz
+Why not? cpp lets << do io
+
+1571325400
+emekankurumeh[m]
+but with errors you can catch divide by zero errors
+
+1571325434
+fengb
+try (cout `<<` "hello world\n")
+
+1571325443
+fengb
+Looks fine to me
+
+1571325447
+fengb
+🙃
+
+1571325483
+emekankurumeh[m]
+infix closures anyone?
+
+1571325508
+mikdusan
+no side effects yes, but i think there should be a way to inject runtime safety error for overflows/whatever just like current safety checks are done
+
+1571325509
+fengb
+I feel like we're now tossing together random jargon
+
+1571325534
+tgschultz
+mikdusan, that makes sense to me
+
+1571325571
+tgschultz
+but yeah, how to reconcile "no side effects except this one big one"
+
+1571325665
+fengb
+Zig doesn't detect side effects atm
+
+1571325707
+mq32
+one question is left out: how to declare such infix operators?
+
+1571325719
+mikdusan
+i suppose the overload impl would always have a const self and then naming convention for the ops
+
+1571325740
+mq32
+my idea was to just make it pretty similar to struct funs
+
+1571325771
+mikdusan
+maybe even -> pub fn @`+`(self: Matrix, other: Matrix)
+
+1571325779
+mq32
+struct { const Self = @This(); x: f32, y: f32, pub fn `·`(a: Self, b:Self) f32 { … } }
+
+1571326546
+tgschultz
+well i still prefer the `#op` convention, and that could work by just saying you can call any struct decl fn with the pattern `fn(T,T)T` using it.
+
+1571326604
+tgschultz
+so `a #op b` is just sugar for `a.op(b)`
+
+1571326674
+emekankurumeh[m]
+with certain constraints with on the prototype of op
+
+1571326712
+tgschultz
+yeah, it has to be `fn(T,T)T` where T is @typeOf a and b
+
+1571326755
+emekankurumeh[m]
+though `a #@"+" b` looks kinda ugly
+
+1571326769
+tgschultz
+then don't do that?
+
+1571326776
+tgschultz
+`a #plus b`
+
+1571326850
+emekankurumeh[m]
+fair
+
+1571326881
+fengb
+I don't like # since it looks like a comment but it's pretty unambiguous
+
+1571327009
+mq32
+i would allow the operators changing the return type, otherwise something like "dot product" could not be implemented
+
+1571327095
+emekankurumeh[m]
+why would we mandate that the types be the same?
+
+1571327161
+emekankurumeh[m]
+that wouldn't allow multiplying scalars and vectors, or broadcast operators
+
+1571327718
+tgschultz
+true
+
+1571328071
+emekankurumeh[m]
+i mean, the Allocator interface used to be fused to the language for async functions
+
+1571328206
+tgschultz
+yeah, and I was quite pleased when that went away personally.
+
+1571328374
+torque
+why would an infix function need to be something special (besides only having two arguments)? If there's a specific syntax for calling a function as infix, then any normal function should be able to be used this way
+
+1571328496
+torque
+the bigger problem with trying to create a math dsl within zig is that a lack of function overloading means `scalar dot vector` would end up having a different infix name than `vector dot vector`
+
+1571328519
+torque
+so actual math purists would probably not be wild about it
+
+1571328521
+tgschultz
+how would that work for fns that took 3 parameters and could return a nullable? `(a #op b c).?` ?
+
+1571328589
+torque
+I think it's reasonable to say that infix can only take two arguments, so trying to use a function with 3 parameters would be a compile error
+
+1571328602
+torque
+just like if you tried to call `my3argfunc(a,b)`
+
+1571328665
+torque
+as for unwrapping the optionals, that seems like it follows from how you'd do it with a normal function
+
+1571328667
+emekankurumeh[m]
+well, you could have the second argument be var parameter and comptime switch on the type
+
+1571328699
+torque
+that's a good point
+
+1571328707
+emekankurumeh[m]
+instead of function overloading
+
+1571328726
+fengb
+Is (a #op b c).?  any better than a.op(b, c).?
+
+1571328741
+mq32
+<emekankurumeh[m]> why would we mandate that the types be the same?
+
+1571328746
+ntgg
+is there a better way to write this line? `if (end) |end_char| if (end_char == char) return i;`
+
+1571328749
+emekankurumeh[m]
+that would be invalid
+
+1571328768
+mq32
+i think there's a more important question that needs to be solved previously: "in what scope does the resolver search for the user-defined infix function?
+
+1571328819
+torque
+why would scope resolution be any different than for normal functions?
+
+1571328831
+tgschultz
+yeah, but it gets nasty in a hurry: `try (a #op b #op c)` coould only work if op took error unions for all parameters, so you'd have to do `try (try a #op b) #op c` which isn't any better than the situation with normal function calls. I guess the solution could just be "don't do that then".
+
+1571328876
+emekankurumeh[m]
+torque: where would a #op b look for op?
+
+1571328889
+emekankurumeh[m]
+inside a? inside b? inside the global scope?
+
+1571328895
+emekankurumeh[m]
+@ntgg
+
+1571328899
+torque
+right
+
+1571328918
+mq32
+torque: why is that needed? because i want to declare an operator `+` for both Vec2 and Vec3
+
+1571328919
+torque
+I forget about the method syntax sometimes
+
+1571328940
+mq32
+otherwise the whole idea of adding overloaded operators for readability is gone
+
+1571329020
+torque
+is it? you could just explicitly import your operators
+
+1571329061
+emekankurumeh[m]
+ntgg: `if (end != null and end.? == char) return i;`?
+
+1571329064
+torque
+`const dot = Vec2.dot` or whatever
+
+1571329069
+muffindrake
+Has there been work on a json parser in zig?
+
+1571329074
+companion_cube
+const `*` = Vec2.dot
+
+1571329078
+mq32
+torque, this will only work if you only use Vec2 in your code
+
+1571329094
+mq32
+muffindrake: std.json should fulfill all your needs
+
+1571329098
+emekankurumeh[m]
+yes there is one in the std lib
+
+1571329105
+torque
+see earlier claim about the issue with lack of function overloading
+
+1571329113
+muffindrake
+I'm blind
+
+1571329115
+pixelherodev
+Given that LLVM is supposed to have a C backend, is it possible to compiler Zig into C?
+
+1571329118
+emekankurumeh[m]
+
+
+1571329123
+muffindrake
+It's right there in the directory :(
+
+1571329132
+mq32
+muffindrake:
+
+1571329135
+pixelherodev
+s/compiler/compile
+
+1571329148
+emekankurumeh[m]
+being able to link to doc page is quite satisfying
+
+1571329150
+tgschultz
+pixelherodev if LLVM has a C backend, probably yeah
+
+1571329157
+ntgg
+emekankurumeh[m]: oh right, thanks.
+
+1571329159
+mq32
+pixelherodev: yes, there even
+
+1571329165
+mq32
+but it was removed :(
+
+1571329170
+pixelherodev
+Drats :P
+
+1571329173
+torque
+this would be an interesting application of that overloading proposal that explicitly defines overloads from groups of functions
+
+1571329179
+emekankurumeh[m]
+
+
+1571329194
+emekankurumeh[m]
+Julia seems to have revived it
+
+1571329212
+companion_cube
+fwiw in OCaml people something define `Foo.Infix` that you can open locally to overload infix operators
+
+1571329225
+mq32
+emekankurumeh[m], yeah but it's "bad" as i've tried it, it didn't emit standard C and used "modern" features
+
+1571329230
+companion_cube
+(since infix operators are just normal functions, and `open` puts them into scope)
+
+1571329264
+pixelherodev
+It also seems to require LLVM 8
+
+1571329288
+emekankurumeh[m]
+perhaps we can come up with some comptime magic import the operators automatically?
+
+1571329621
+pixelherodev
+So apparently LLVM just didn't feel the need to update the docs and say "Nope doesn't exist"?
+
+1571329655
+fengb
+pixelherodev: you can compile LLVM to wasm, and there's a few wasm to C compilers 🙃
+
+1571329668
+companion_cube
+😂
+
+1571329689
+pixelherodev
+... that's a terrible plan but I feel like doing it just to make a point now :P
+
+1571329735
+fengb
+The C output is terrible though since it's translating a stack language. But still
+
+1571329762
+mq32
+the important question is: does it output C89?
+
+1571329815
+fengb
+Probably? wasm is a dirt simple language so no idea why it'd do anything more complicated
+
+1571329850
+mq32
+would be quite cool to have some "* → K&R C" compiler
+
+1571329851
+pixelherodev
+If it's only being used as a step in a convoluted compilation process it's probably mildly tolerable, but definitely not worth the effot
+
+1571341776
+mq32
+andrewrk: i need a shirt! where do i get one?!
+
+1571341816
+emekankurumeh[m]
+we have shirts?!
+
+1571341819
+emekankurumeh[m]
+what about stickers?
+
+1571341874
+mq32
+andrew just posted this:
+
+1571341892
+mq32
+i'll print that and sticker it to my new laptop as his firstie
+
+1571342332
+riba
+i'm trying to recreate the struct that's giving me problems because i need to initialiaze it statically but it has char * fields (i.e. non-const)
+
+1571342334
+gunnarahlberg
+hi! does anyone know of plans to work with libsodium?
+
+1571342342
+riba
+now i'm getting to the function pointers and it's getting weird
+
+1571342355
+riba
+can i print info on an imported type somewhere?
+
+1571342412
+mq32
+riba: you can even look at the zig code ;)
+
+1571342425
+mq32
+there's somewhere your code in zig-cache
+
+1571342436
+mq32
+you can use "zig translate-c" as well to convert headers
+
+1571342437
+riba
+mq32: good point, thanks
+
+1571342455
+riba
+i failed to use translate-c but i don't quite remember why
+
+1571342546
+nrdmn
+ok I was skeptical about mascots and logos
+
+1571342550
+nrdmn
+but that's pretty metal
+
+1571342649
+riba
+somehow i feel like there should be a feature somewhere that makes it unnecessary to copy stuff from the zig-cache dir
+
+1571342658
+riba
+the "just trust me dude" mode
+
+1571342701
+mq32
+riba, you should be able to do everything "by-hand"
+
+1571342761
+riba
+mq32: yes, but i'm only doing this because a thing that works in my c code does not work in the zig code because someone 20 years ago decided to omit the const at the struct definition
+
+1571342798
+fengb
+Andrew doesn’t want to run a store, but Cadey offered something
+
+1571343133
+andrewrk
+gunnarahlberg, libsodium is a C library. Zig has good integration with C libraries
+
+1571343161
+companion_cube
+that's why `const` should be the default… :/
+
+1571343217
+gunnarahlberg
+andrewrk, yea thank you, Zig has good integration with C libraries, I totally concur with that.
+
+1571343220
+andrewrk
+riba, try --verbose-cimport
+
+1571343244
+gunnarahlberg
+andrewrk, just wanted to check were Zig will draw the line, e.g. to re-implement libsodium in Zig or not :)
+
+1571343267
+FireFox317
+riba: You could change the definition in zig to take a const and use that one instead. It should still work with the c library tho
+
+1571343293
+riba
+andrewrk: thanks, i now realize that it does exactly what i want. i tried it before but the output was unexpectedly long and i didn't even think to scroll
+
+1571343323
+gunnarahlberg
+e.g. if someone would want to implement a
+
+1571343340
+riba
+FireFox317: that's what i'm currently doing :D
+
+1571343350
+riba
+let's see if it will work with the macro magic
+
+1571343383
+andrewrk
+gunnarahlberg, this question will probably be left up to the zig community. I don't think the compiler or package manager will have a dependency on these abstractions
+
+1571343468
+THFKA4
+TLS tho
+
+1571343494
+companion_cube
+iirc the design of the package manager would be to bootstrap without TLS
+
+1571343503
+companion_cube
+just dl with normal http, then use a checksum
+
+1571343533
+THFKA4
+hardcoded checksum? checksum also downloaded with http?
+
+1571343534
+andrewrk
+that will be an option, and it's also planned that packages can have "plugins" for supporting additional fetching protocols
+
+1571343545
+andrewrk
+THFKA4, "Trust On First Use"
+
+1571343558
+companion_cube
+I imagine there could be a checksum hardcorded for the first stage of the package manager?
+
+1571343563
+companion_cube
+so it can install its plugins or whatever :p
+
+1571343598
+andrewrk
+right. the first person to ever download and install a dependency is responsible for verifying the checksum / being on a secure internet connection, and then the checksum is committed to source control along with the list of dependencies / versions
+
+1571343791
+FireFox317
+andrewrk: I'm not sure if you knew this but if you past a link to the std documentation website in the irclient (I'm using HexChat), and click on it it only links to the part before the ';' i.e.
+
+1571343798
+FireFox317
+Wait
+
+1571343820
+FireFox317
+On the client it links correctly, but on the irclog it doesn't (firefox)
+
+1571343848
+andrewrk
+ah, interesting
+
+1571343873
+andrewrk
+there are some adjustments that need to be made to the URL
+
+1571343878
+FireFox317
+That is probably an issue of the irclog's link parsing and turning it into a <a> tag then
+
+1571343972
+FireFox317
+According to this stackoverflow post (
+
+1571344089
+riba
+working with glib is a bit of a pain so far
+
+1571344102
+FireFox317
+Hmm, it does show up in the example section of the RFC tho
+
+1571344103
+riba
+i have a function that returns c.gboolean but i cannot return c.TRUE
+
+1571344187
+riba
+it seems it's an error in the import? i don't quite get it
+
+1571344188
+riba
+error: expected type 'bool', found 'comptime_int'
+
+1571344189
+riba
+pub const TRUE = !FALSE;
+
+1571344320
+riba
+while FALSE is defined like this: pub const FALSE = 0;
+
+1571344347
+riba
+i guess you can't negate an int and expect something good to happen in zig?
+
+1571344425
+andrewrk
+riba, are you looking for
+
+1571344498
+andrewrk
+riba, in zig a bool must either be true or false; integers do not implicitly cast to booleans. you can use `x != 0` to convert
+
+1571344625
+riba
+andrewrk: that sounds useful, but the @cImport is creating these automatically
+
+1571344673
+riba
+i can just define my own TRUE to be 1, just didn't expect compile errors from the autogenerated code
+
+1571344706
+andrewrk
+translated C can be a little rough around the edges. it's not in its final form yet
+
+1571344771
+andrewrk
+macros are especially hard to translate because they are not even C. they're an abominable combination of context sensitive preprocessor language mixed with C
+
+1571344817
+Snektron
+That ziguana looks like a crocodile
+
+1571344874
+Snektron
+But its cute too
+
+1571345079
+riba
+okay, now the compiler is crashing
+
+1571345109
+riba
+TODO implement get_c_type for more types
+
+1571345111
+riba
+Unable to dump stack trace: debug info stripped
+
+1571345114
+andrewrk
+riba, congrats, you're truly one of us now
+
+1571345119
+riba
+how do i debug this? :D
+
+1571345135
+andrewrk
+with a debugger. what OS are you on?
+
+1571345174
+riba
+fedora
+
+1571345197
+riba
+i assume i need to compile it myself first with debugging symbols activated?
+
+1571345199
+andrewrk
+oh, this is to do with generating .h files. do you need that?
+
+1571345223
+riba
+i don't
+
+1571345223
+andrewrk
+--disable-gen-h
+
+1571345246
+andrewrk
+this feature belongs in self-hosted only
+
+1571345291
+riba
+i see, yeah this worked now
+
+1571345427
+Cadey
+fengb: i'm waiting on approval from legal at work :(
+
+1571345434
+riba
+i think i need to stop for today though, thanks for all the help
+
+1571345543
+andrewrk
+Cadey, you got your work to pay for zig t shirts?
+
+1571345602
+Cadey
+andrewrk: No, they made me sign a contract that says i need approval to moonlight things
+
+1571345622
+Cadey
+It's a Quebec being backwards thing
+
+1571345651
+andrewrk
+oh, that's shady
+
+1571345675
+andrewrk
+I'm surprised the legal system there even allows that
+
+1571345714
+Cadey
+Me too
+
+1571345731
+Cadey
+i'm working on trying to get a lot of it reversed, but it's hard given i work for an e-commerce company
+
+1571346075
+Snektron
+The infamous general allocator thats being worked on, is that more than a linked list? Or is that the debug allocator too?
+
+1571346105
+Snektron
+It kinda surprised me that thats missing, it shouldn't be too hard to make something like that right?
+
+1571346123
+Snektron
+A teacher of mine made one  and it wasn't that complex
+
+1571346127
+Snektron
+Maybe that peforms really bad or something
+
+1571346228
+andrewrk
+Snektron, have a look at the roadmap on the readme:
+
+1571346254
+andrewrk
+there's also the question of, ok, but what about when you want to turn off debug mode?
+
+1571346392
+Snektron
+I suppose you have two options
+
+1571346418
+Snektron
+Either introduce a builtin debug mode
+
+1571346425
+Snektron
+Or make the debug allocator wrap another
+
+1571346493
+andrewrk
+we have
+
+1571346524
+andrewrk
+and it already supports wrapping another. the point is that we don't have a general purpose release mode allocator, designed for performance
+
+1571346549
+Snektron
+Ah yes, i forgot about mode
+
+1571346595
+Snektron
+Hmm, sounds like a good project, though i kinda already was making something else
+
+1571346872
+Snektron
+Ill try to read some papers and see if i can cook up something
+
+1571347009
+fengb
+Simple allocators aren't too hard
+
+1571347032
+fengb
+But they can get hairy real fast
+
+1571347032
+fengb
+You should try writing one! It's actually pretty fun in Zig
+
+1571347033
+Snektron
+But not always fast
+
+1571347075
+Snektron
+I find writing Zig really refreshing
+
+1571347100
+Snektron
+But on the other side, i've become really allocation aware, and i have a tendency of overengineering so that doesnt mix well
+
+1571347116
+Snektron
+Because i'll just get stuck trying to find a more efficient way
+
+1571347199
+andrewrk
+I think that's good for libraries
+
+1571347227
+andrewrk
+for applications, they'll probably come up with some kind of strategy that makes it easier to iterate quickly with regards to memory allocation. e.g. for a command line tool, arena allocator for the entire lifetime of the program is fine
+
+1571347292
+Snektron
+Depends on the program of course
+
+1571347295
+Snektron
+Though i wonder in which cases it really matters
+
+1571347315
+Snektron
+I mean i've never had the need to write a custom allocator in C++ before
+
+1571347468
+FireFox317
+I mean for games I think it does really matter a lot what kind of allocator you use, which brings me to a point of the game developer that was here earlier, he was asking for operator overloading. We should really come up with some way to make them happy, because it would enable a lot more game developers to use zig, I think. However, we do have some game devs already and they are happy with status quo, so I'm not really sure
+
+1571347546
+Snektron
+I read a bit about thag
+
+1571347560
+Snektron
+I think its not just operator overloading
+
+1571347613
+Snektron
+Whats missing is some way of extending things without it being too involving
+
+1571347615
+Snektron
+For example, Rust has the trait system for this
+
+1571347641
+Snektron
+Even in c++ its possible, although a bit clunky, but operator overloading can be used for that
+
+1571347666
+Snektron
+For example << and >>, but also the usage of | in the new ranges
+
+1571347675
+THFKA4
+the hard part will be reconciling this type dispatching with the "no hidden control flow" goal of the language
+
+1571347693
+FireFox317
+Jup good point THFKA4
+
+1571347701
+Snektron
+Writing a long computation pipeline without something like that is not nice
+
+1571347719
+Snektron
+Working with C++ iterators is really nasty, everyone knows that
+
+1571347752
+Snektron
+And the way formatting works for a custom type is not really the best as well i'd say
+
+1571347811
+Snektron
+You'll probably run into conflicts really often if thats used as standard method
+
+1571348266
+FireFox317
+I mean for games I think it does really matter a lot what kind of allocator you use, which brings me to a point of the game developer that was here earlier, he was asking for operator overloading. We should really come up with some way to make them happy, because it would enable a lot more game developers to use zig, I think. However, we do have some game devs already and they are happy with status quo, so I'm not really sure
+
+1571348273
+FireFox317
+Whoooops my bad -_-
+
+1571349726
+muffindrake
+
+
+1571349742
+muffindrake
+This wiki entry states Zig has no metaprogramming. That's not correct, or is it?
+
+1571349850
+andrewrk
+it doesn't really have any meta programming
+
+1571349869
+andrewrk
+unless you count reflection
+
+1571349900
+muffindrake
+Oops. I am conflating Generics with that. My bad.
+
+1571349953
+muffindrake
+Please confirm that we in fact have generics, and that I didn't imagine reading about them in the zig docs.
+
+1571349987
+andrewrk
+
+
+1571350005
+muffindrake
+Hurray.
+
+1571352728
+mq32
+btw, "unreachable" is a great concept
+
+1571352736
+mq32
+if(blabla()) unreachable;
+
+1571352758
+mq32
+this is just more expressive to add an assert instead of just discarding a value
+
+1571352981
+andrewrk
+that can be shortened to assert(!blabla());
+
+1571353002
+andrewrk
+
+
+1571354070
+mq32
+yeah, but i have still some bad memories of doing something like the assert with business logic
+
+1571354077
+mq32
+and the compiler optimized that away in release mode :D
+
+1571354119
+andrewrk
+there's no "buts" here, assert is literally if (!ok) unreachable
+
+1571354134
+mq32
+yeah, i know :D
+
+1571356043
+Snektron
+The compiler also removes if (thing()) unreachable in release mode
+
+1571356394
+mq32
+Snektron, also if thing() may not be always true?
+
+1571356423
+mq32
+what i'm doing is if(@atomicRmw(…) != someAssertedValue) unreachable;
+
+1571356435
+mq32
+so it would be quite painful to have the atomicRmw removed
+

@@ -1,0 +1,672 @@
+1559693393
+emekankurumeh[m]
+tars are uploaded through the ci
+
+1559693467
+scientes
+mrkishi, that is on purpose
+
+1559693476
+scientes
+except for tarballs
+
+1559693500
+mrkishi
+well, it's by accident for tarballs then:
+
+1559693502
+scientes
+cloudflare is just to save money on downloads
+
+1559693514
+mrkishi
+
+
+1559693528
+mrkishi
+right, but it won't cache if it's told not to!
+
+1559693549
+scientes
+yeah that is wrong
+
+1559693591
+mrkishi
+ah, that's a json, my bad
+
+1559693596
+mrkishi
+the actual tarball is up
+
+1559693618
+emekankurumeh[m]
+can anyone on windows run `zig fmt` on master and tell me if it runs successfully?
+
+1559694141
+mrkishi
+I haven't ran zig from source yet, might as well do it now!
+
+1559698304
+mrkishi
+emekankurumeh[m]: sorry it took me a while.
+
+1559699109
+emekankurumeh[m]
+are you building from master?
+
+1559699125
+mrkishi
+yeah.
+
+1559699195
+mrkishi
+sorry, I actually built from another branch lol, but no diff from master.
+
+1559699209
+mrkishi
+(just the ci pr I sent)
+
+1559699462
+mrkishi
+btw it exits okay
+
+1559699542
+mrkishi
+and both `std/c/{freebsd,netbsd}.zig` get a `-use std.c; +
+
+1559699542
+mrkishi
+usingnamespace std.c;`
+
+1559714465
+mq32
+wilsonk, thanks, i'll try this!
+
+1559738411
+SamTebbs33
+Does Zig have a notion of c-style arrays? i.e arrays without any extra information like length that are just contiguous elements?
+
+1559738569
+daurnimator
+SamTebbs33: yes. [*]
+
+1559738601
+daurnimator
+SamTebbs33: see
+
+1559738727
+SamTebbs33
+daurnimator, thanks. What I'm trying to accomplish is have a struct with such an array of 1024 elements
+
+1559738750
+SamTebbs33
+Then when I allocate that struct with an allocator, I'd like that array to be allocated as part of the struct
+
+1559738761
+daurnimator
+SamTebbs33: "without any extra information like length" "array of 1024 elements" <== which one is it?
+
+1559738767
+SamTebbs33
+My understanding is that if I use [*] only a pointer will be allocated and not the 1024 elements
+
+1559738781
+SamTebbs33
+Well it's both
+
+1559738790
+SamTebbs33
+I don't want the length to be stored as part of the array
+
+1559738808
+daurnimator
+SamTebbs33: sounds like you want a struct member of type [1024]T
+
+1559738870
+gamester
+yeah, there's no length stored for array types
+
+1559738877
+SamTebbs33
+If I were to put that in a structm, would the size of the struct then be 1024 * sizeOf(T)?
+
+1559738884
+gamester
+yes
+
+1559738937
+SamTebbs33
+That's not what I'm seeing in practice, if sizeOf(T) == 4 then the size of my struct ends up being 5120 instead of 4096
+
+1559738959
+SamTebbs33
+So there's 1024 bytes appearing from somewhere and I guessed it would be the length information
+
+1559738977
+daurnimator
+zig doesn't need 1024 bytes to store the length of something :p
+
+1559738980
+SamTebbs33
+There's no extra fields in my struct btw
+
+1559738994
+daurnimator
+SamTebbs33: could you paste your code somewhere?
+
+1559739042
+SamTebbs33
+I'll give you a link:
+
+1559739066
+gamester
+const A = struct { field: [1024]i32, }; pub fn main() void { @compileLog(@sizeOf(A)); } -- 4096 bytes
+
+1559739068
+SamTebbs33
+Note I tried to make the Directory struct packed, which it needs to be, but I can't do that since "error: array of 'src.kernel.arch.x86.paging.DirectoryEntry' not allowed in packed struct due to padding bits
+
+1559739246
+gamester
+SamTebbs33: The compiler says the size of DirectoryEntry is 5 bytes
+
+1559739269
+SamTebbs33
+Weird, if you sum up all the fields it comes to 32 bits
+
+1559739331
+SamTebbs33
+To quote the docs: "bool fields use exactly 1 bit" and "Zig supports arbitrary width Integers and although normally, integers with fewer than 8 bits will still use 1 byte of memory, in packed structs, they use exactly their bit width"
+
+1559739358
+gamester
+yeah this is weird
+
+1559739425
+SamTebbs33
+Possible packed struct bug here? I can do more investigation if need be
+
+1559739445
+daurnimator
+SamTebbs33: can you iterate over struct members and print their offsets?
+
+1559739485
+SamTebbs33
+Sure, I haven't done any reflection in Zig before but will check the docs
+
+1559739687
+daurnimator
+SamTebbs33: something like this: for (@typeInfo(DirectoryEntry).Struct.fields) |field| { std.debug.warn("field={}, byteoffset={} bitoffset={}\n", field.name, @byteOffsetOf(DirectoryEntry, field.name), @bitOffsetOf(DirectoryEntry, field.name)); }
+
+1559739961
+gamester
+daurnimator: that appears to need to be an inline for, but I'm then hitting a "compiler bug" (a missing cast)
+
+1559740038
+gamester
+daurnimator, SamTebbs33: here
+
+1559740042
+SamTebbs33
+So it looks like they are correct: present = 0, writable = 1, user_level = 2, write_through = 3, caching_disabled = 4, accessed = 5, zero = 6, four_megabyte_pages = 7, ignored = 8, available = 9, reserved = 12, page_phys_addr = 22
+
+1559740082
+SamTebbs33
+gamester, duarnimator: thanks, I used something similar :)
+
+1559740141
+SamTebbs33
+Those are all bit offsets btw, the byte offsets match up (zeroes up until "ignored" then ones)
+
+1559740203
+daurnimator
+what I get:
+
+1559740249
+gamester
+the byteoffset looks wrong
+
+1559740255
+gamester
+but not the bitoffset
+
+1559740347
+SamTebbs33
+gamester, yeah it does, it should be zeroes, then ones up until page_phys_addr then it should be 2
+
+1559740350
+SamTebbs33
+I guess
+
+1559740358
+daurnimator
+gamester: yeah... looks like a bug I think
+
+1559740475
+SamTebbs33
+gamester, duarnimator: I'll make an issue! Do you think it needs a more generic example or is this good enough?
+
+1559740511
+daurnimator
+SamTebbs33: always try and get it down to a minimal test case if you can.
+
+1559740589
+gamester
+This is already fairly minimal as long as only DirectoryEntry is included and no excess surrounding code, but one could certainly try to 'simplify' the struct while still hitting the bug(s)
+
+1559740743
+SamTebbs33
+gamester, duarnimatorm, yeah I'll add some comments and refactor the fields names to make it more clear
+
+1559740764
+daurnimator
+SamTebbs33: use tab completion for IRC names :P
+
+1559740951
+gamester
+SamTebbs33: I'd include the @sizeOf issue as well. While the byte offsets seem too low, the total size seems too high.
+
+1559741165
+SamTebbs33
+daurnimator: haha thanks :D
+
+1559741183
+SamTebbs33
+gamester: Yeah I will, the mismatch is too weird
+
+1559741246
+gamester
+SamTebbs33: I think it's only the last field that's at the wrong byte offset
+
+1559741389
+gamester
+the 'ignored' field is at bit offset 8, so definitely byte offset 1
+
+1559741495
+gamester
+SamTebbs33: oh nevermind I misread what you said. I thought you had said it should at all zeroes up until page_phys_addr, I was trying to correct that :D
+
+1559741504
+daurnimator
+gamester: I thought bitOffsets were
+
+1559741539
+gamester
+daurnimator: "Returns the bit offset of a field relative to its containing struct"
+
+1559741666
+daurnimator
+gamester: huh. right. I misunderstood the field :P
+
+1559741858
+SamTebbs33
+daurnimator, gamester: Issue is at
+
+1559741872
+SamTebbs33
+Do you guys have any idea what could be causing this?
+
+1559741956
+SamTebbs33
+I guess I should figure out if this is a @bitOffset, @byteOffset and @sizeOf issue or if it's wrongly laid out in memory too.
+
+1559741976
+SamTebbs33
+I hazard a guess at saying it's wrongly laid out in memory due to my troubles debugging my kernel :p
+
+1559742143
+daurnimator
+SamTebbs33: sorry I'm not familiar with that part of the codebase
+
+1559742509
+gamester
+Yeah I have no clue, but nice find! As useful as packed structs are, not many people have been using them so far. I'll be needing them at some point so it's nice that they are getting some use :D
+
+1559742825
+SamTebbs33
+gamester: thanks :) I think this is the third bug I've found in the past week and a half :D Tbh that was one of the main reasons why I've wanted to use Zig: to find bugs
+
+1559742889
+daurnimator
+SamTebbs33: heh. you're lucky. I tend to find one every 20 mins or so  :P
+
+1559744134
+SamTebbs33
+daurnimator: haha I might have encountered a few more but just not noticed them yet :p
+
+1559744162
+SamTebbs33
+I'm surprised that this use case (of packed structs) isn't tested for
+
+1559744276
+mikdusan1
+add some :)
+
+1559744308
+SamTebbs33
+Hmm ignore that, it seems that it is tested in stage1/behavior/sizeof_and_typeof.zig, not with bools though AFAIS
+
+1559744336
+SamTebbs33
+mikdusan1: Oh definitely, I reckon it should come with a patch that fixes the bug and I have no idea how to do that yet :D
+
+1559744403
+fengb
+I'm curious: does this work if you change bool to u1?
+
+1559744424
+SamTebbs33
+Nothing changes if I change bool to u1 :/
+
+1559744704
+SamTebbs33
+fengb: ^
+
+1559745084
+fengb
+Okay, I was hoping it's a bug in bool heh
+
+1559745243
+SamTebbs33
+fengb: Yeah me too
+
+1559745270
+SamTebbs33
+Hopefully andrew will have some insight when he gets time to look at it
+
+1559745301
+mikdusan1
+if you want to look at the code for those builtins - ir.cpp - ir_analyze_instruction_byte_offset_of()
+
+1559745396
+SamTebbs33
+mikdusan1: Sweet, thanks :) I'll take a look
+
+1559746042
+SamTebbs33
+What's the best way of doing debug logging in the zig source?
+
+1559746114
+mikdusan1
+i just use fprintf(stderr,...)
+
+1559746248
+mikdusan1
+friendly reminder; after changing src/ and installing, you'll need to use `--cache off` when testing .zig; eg. `zig run --cache off foo.zig`
+
+1559746379
+SamTebbs33
+mikdusan1: I'm assuming that doesn't apply to doing `zig build-exe foo.zig && ./foo`?
+
+1559746447
+mikdusan1
+correct
+
+1559746522
+SamTebbs33
+mikdusan1: cheers
+
+1559750438
+andrewrk
+mikdusan1, incorrect - the cache system is not broken, it knows when things change
+
+1559750499
+mikdusan1
+i see your point, but in the world of logging and doing a repeat `zig run` the cache prevents seeing analysis log statements
+
+1559750526
+andrewrk
+if you insert a new log statement, the change will be picked up
+
+1559750558
+mikdusan1
+and if i want to see the log statements on re-run when NOTHING has changed?
+
+1559750576
+andrewrk
+the log statements are in the compiler?
+
+1559750584
+mikdusan1
+yes
+
+1559750588
+andrewrk
+I see
+
+1559750725
+mikdusan1
+btw welcome back. how was your marathon?
+
+1559750727
+andrewrk
+mikdusan1, sorry for putting you on the spot. I just want to make sure that rumors don't spread of the cache system being broken
+
+1559750759
+andrewrk
+(unless they're true, in which case need to be fixed pronto. I don't want people superstitiously wiping the cache dir)
+
+1559750810
+andrewrk
+it was a well run event. those last 6 miles are brutal
+
+1559750848
+mikdusan1
+yes i wasn't clear that it was NOT a bug. only that we needed to circumvent the cache system. i agree, need to be clear if it might read as a "bug" where there is none
+
+1559751119
+SamTebbs33
+"well run"
+
+1559751491
+SamTebbs33
+andrewrk: Good to know it went well :)
+
+1559752123
+donpdonp
+i can zig test src/one.zig. whats the usual way to run though all the files?
+
+1559756617
+tgschultz
+andrewrk: are we aware of an issue with windows traces being wrong again? Specifically it seems to only happen on the very first line and may just be a single character?
+
+1559756647
+tgschultz
+though in my current case that doesn't make sense, because it asserted an inactive union field access on assigning to a u32.
+
+1559759506
+tgschultz
+huh, so it's as if it was using cached data or something. merely adding a space fixed the trace
+
+1559759523
+tgschultz
+and removing it again, it still works.
+
+1559764021
+emekankurumeh[m]
+does zig use the parser written in zig or the original one written in c++?
+
+1559767017
+andrewrk
+emekankurumeh[m], compilation uses the c++ one. zig fmt uses the self-hosted one
+
+1559767350
+emekankurumeh[m]
+
+
+1559767682
+fengb
+I like a lot of what he wrote, but really disagree on error handling
+
+1559767683
+emekankurumeh[m]
+andrewrk: any thoughts?
+
+1559767715
+fengb
+After working with Go a bunch, if you don't add proper error handling into the language, people will invent adhoc patterns that emulate them poorly
+
+1559767793
+andrewrk
+emekankurumeh[m], I read this and I don't think there's anything for zig project to learn from this post
+
+1559767822
+fengb
+I'd be curious to see how Odin develops
+
+1559767852
+andrewrk
+his biggest issue is errors, and his suggestion is "You make your mess; you clean it." I don't even know how that's supposed to work. You told me to append an item to a list and there's not enough memory to do it, what am I supposed to do?
+
+1559767926
+andrewrk
+an error is when the requested operation could not be completed
+
+1559767944
+andrewrk
+that's not a mess - that's a possible outcome of attempting something fallible
+
+1559767962
+fengb
+Fallible isn't perfect. Therefore we shouldn't support it :troll:
+
+1559767989
+mikdusan1
+strangely enough it's not easy to find examples of error handling in odin. especially memory failures.
+
+1559768028
+andrewrk
+fengb, you may be trolling but my definition of "perfect" is explicitly: "correct behavior and output for every possible input"
+
+1559768057
+andrewrk
+handling errors correctly is part of creating perfect software
+
+1559768095
+fengb
+Sorry, I'm more countering a rather common design philosophy that ignores the real world
+
+1559768132
+andrewrk
+my use of "perfect" doesn't mean some unicorn rainbow shitting idealistic future - it means the design allows for all the bugs to be fixed
+
+1559768176
+andrewrk
+some designs actually prevent this. for example if you use python, go, or any scripting language really, you actually cannot handle out of memory. you will never be able to control the behavior when memory is exhausted
+
+1559768193
+andrewrk
+this is a language limitation; not a fundamental limitation of reality
+
+1559768283
+andrewrk
+fengb, just taking your prompt as an excuse to rant :)
+
+1559768338
+fengb
+Sure, I just didn't mean offense, even if I sorta hijacked "perfect"
+
+1559768367
+gamester
+I don't understand why gingerbill doesn't mention/credit Jai, when he's been copying Jai's syntax and asking JBlow about syntax issues with Jai's design. Also one of Odin's goals is "joy of programming" but then says "error handling should not be fun" when talking about Zig..
+
+1559768410
+fengb
+One thing I love about Zig is how it naturally cascades down to embedded systems, webassembly, etc without feeling like a trudge to replace the userland.
+
+1559768510
+merlyndmg
+Jai isn't released software yet
+
+1559768516
+merlyndmg
+that's one reason not to include it
+
+1559768518
+andrewrk
+fengb, yep! I tried to make this point in the intro of the talk linked on that blog post - even if you manage to make perfect software, if you don't do it in a widely reusable way, then someone else is going to write their own not-perfect software for their environment instead of using yours
+
+1559768536
+merlyndmg
+(and one reason I'm slowly digging into zig now)
+
+1559768588
+fengb
+I'm really enjoying this renaissance of C replacements though. Feels long overdue to finally have something that's not a C++ replacement
+
+1559768593
+andrewrk
+Jon is a smart guy but he has a very specialized perspective, and not opening up his development process to the open source world as I've done with Zig is keeping his perspective limited
+
+1559768763
+merlyndmg
+There might be value to keeping his perspective narrow and more focused for a while, making his retail game in it, then opening it up for wider criticism
+
+1559768810
+merlyndmg
+but I think zig is good to be doing a different approach
+
+1559768822
+fengb
+I think it's really pigeonholed into game dev
+
+1559768842
+merlyndmg
+that's the intention, yeah
+
+1559768849
+merlyndmg
+from what I understand
+
+1559769093
+fengb
+Jon is really smart, but nobody has the best idea on everything. I believe having real world usecases taxing the language will improve it much more than an ivory tower approach
+
+1559769116
+fengb
+andrewrk: I really like your wizard hat in that talk :P
+
+1559769164
+andrewrk
+I had a wizard hat?
+
+1559769287
+emekankurumeh[m]
+there are some features in odin that i would like to see in zig though
+
+1559769310
+emekankurumeh[m]
+namely distinct values, and bit sets
+
+1559769337
+fengb
+Your miming of ivory tower design
+
+1559769341
+andrewrk
+ahh right
+
+1559769363
+fengb
+Although your version of a wizard sounds really derpy
+
+1559771104
+emekankurumeh[m]
+zig fmt seems to be broken, whenever i try to run it i get a segfault in ___chkstk_ms
+
+1559774738
+andrewrk
+emekankurumeh[m], one of the zig test suite tests runs zig fmt on build.zig
+
+1559777849
+I_Right_I
+Hi all, I am checking out zig for the first time and I was wondering if there is any documentation for the standard library?
+
+1559778685
+scientes
+not yet
+
+1559778714
+scientes
+basically it is waiting for the documentation generator to be written
+

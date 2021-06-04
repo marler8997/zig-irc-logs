@@ -1,0 +1,212 @@
+1548131336
+daurnimator
+zig translate-c doesn't seem to support anonymous unions
+
+1548176625
+MajorLag
+zig doesn't support anonymous unions. I ran into that relatively early on and andrew explained that technically ANSI C doesn't support anonymous unions.
+
+1548176658
+andrewrk
+hm I don't remember that
+
+1548176696
+andrewrk
+we support anonymous unions now, but syntax limitations prevent you from using them. this would fix it:
+
+1548176754
+andrewrk
+oh, I was going to link to
+
+1548176772
+andrewrk
+I think it would be the anonymous struct literal syntax that would also apply to unions
+
+1548176793
+andrewrk
+I don't see any reason why translate-c cannot be improved to support C anonymous unions, at least after this issue is resolved
+
+1548176830
+MajorLag
+I believe I was working with translating the Windows API at the time, which uses it extensively. Fortunately it turned out that MS supported ANSI C and it just needed a #define to name the unions.
+
+1548176831
+andrewrk
+MajorLag, ah, I remember now. I think there are 2 concepts that are anonymous unions and you are referring to the one where the namespace is flattened
+
+1548176877
+MajorLag
+Yes. Is that not what is meant? Is there a bug with simply declaring an unnamed union in other contexts?
+
+1548176881
+andrewrk
+I was thinking about when there is no declaration name assigned to the type
+
+1548176912
+hg
+^ that's what I was thinking of too
+
+1548176923
+hg
+and that's existed in C for a long time
+
+1548176959
+andrewrk
+yeah, that should translate fine, and everything I said above applies to that
+
+1548176960
+hg
+even moreso since C11 where an anonymous union is allowed inside another aggregate and kind of seamlessly behaves as though its members are directly part of the encompassing aggregate
+
+1548176974
+andrewrk
+^ that's the thing zig does not support
+
+1548177000
+andrewrk
+I believe there are open proposals to add this, but I haven't given it serious consideration yet
+
+1548177006
+hg
+I mean
+
+1548177017
+MajorLag
+Zig could support automatically naming them in the same way the #define on Windows headers does. I believe it just uses s0,s1,u0,u1, etc.
+
+1548177080
+andrewrk
+MajorLag, you're talking about for the purposes of translate-c?
+
+1548177082
+hg
+the benefit of anonymous aggregate submembers is mostly that it allows for C to have a simpler way of doing a tagged union (i.e., like the Maybe type in Haskell)
+
+1548177096
+hg
+not sure that really applies to Zig as useful since Zig already has a lot of those benefits
+
+1548177098
+MajorLag
+andrewrk, yes.
+
+1548177101
+hg
+🤷
+
+1548177124
+andrewrk
+MajorLag, I think that makes sense
+
+1548177151
+MajorLag
+also, sorry about not getting back to you yet on 1885. Looking at that today (ideally...).
+
+1548177245
+andrewrk
+today will be a good day if I get all the std lib tests passing in the copy elision branch
+
+1548177279
+hg
+:D
+
+1548177304
+andrewrk
+I'm really glad I did this work in stage1. when I implement this in stage2, I know how to do it much better
+
+1548177378
+hg
+andrewrk: pardon my (perhaps, continued) ignorance; what do stage1 and stage2 refer to? self-hosting?
+
+1548177392
+andrewrk
+stage1 is the zig compiler implementation written in C++
+
+1548177398
+andrewrk
+stage2 is the self-hosted compiler
+
+1548177406
+andrewrk
+stage3 is the self-hosted compiler, built with stage2
+
+1548177422
+andrewrk
+see the readme for a more detailed explanation
+
+1548177422
+hg
+right, cool :)
+
+1548177487
+andrewrk
+the tests are in the middle of a transition: there will be a stage1 directory, stage2 directory, and a `both` directory. tests which only pass in stage1, tests which only pass in stage2, and tests which pass in both
+
+1548177511
+andrewrk
+ideally all the tests would be in the `both` directory, but it's not going to be an immediate thing, so that's why there is an ongoing transition
+
+1548177525
+hg
+sure
+
+1548177556
+MajorLag
+I'm looking forward to seeing if I can clean up serialization by removing the `deserializeTo` method thanks to copy elision.
+
+1548177614
+andrewrk
+MajorLag, deserializeInto?
+
+1548177792
+MajorLag
+yeah, that one
+
+1548177795
+andrewrk
+I think you would need "Part 2" of copy elision. When this branch is done, you get copy elision in your `return` expressions, but if you declare a variable and then return it, you'll get a copy
+
+1548177817
+MajorLag
+Oh, yes, you're right. I'm jumping the gun there.
+
+1548177864
+andrewrk
+this is the bulk of the work though. part 2 will be nowhere near as much of an implementation investment
+
+1548177894
+andrewrk
+e.g. it would take 1 hour to add @getReturnPtr if we went that route
+
+1548177983
+MajorLag
+sweet
+
+1548178034
+andrewrk
+the other thing I want to explore after this branch is done, is ability to mark a struct or maybe even a field as unmovable, and you get a compile error if it would get memcpy'd
+
+1548178189
+MajorLag
+That would be helpful. How would you override it, if necessary? My first thought is to use @intToPtr/@ptrToInt. It's ugly and hacky, but needing to copy an uncopiable field seems like a pretty deperate circumstance anyway.
+
+1548178241
+andrewrk
+I think @memcpy would actually work. the compile error would happen for assignment or other expressions. essentially, any "hidden" memcpy
+
+1548178312
+andrewrk
+(which is one reason coders are encouraged to use std.mem.copy when possible, since it would have the safety of a compile error if you try to copy an unmovable field)
+
+1548178480
+andrewrk
+I realized that one mistake I made in this branch was trying to do the result location mechanism as well as destructuring of error unions and optionals. they're both large complicated changes, and doing them together multiplied the difficulty
+
+1548178506
+andrewrk
+but hey, once this is done, even in functions that return an error, or an optional, you still get no-copy for the payload
+
+1548195310
+daurnimator
+andrewrk: so how long now until copy ellision is merged?
+

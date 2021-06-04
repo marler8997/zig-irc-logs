@@ -1,0 +1,1752 @@
+1562372134
+hryx
+I was looking at #2685 for fun and I don't know the first thing about debug symbols. Is this where the compiler tells gdb how big a bool is?
+
+1562373285
+scientes
+only this line
+
+1562373310
+scientes
+otherwise that is g->builtin_types.entry_bool
+
+1562374023
+hryx
+thanks scientes
+
+1562384620
+IntoxicatedHippo
+I have multiple files with exports, is there a way to tell zig to export the symbols from all the files without putting all the exports in one file?
+
+1562387126
+mikdusan
+would putting imports in a single root file be ok?
+
+1562387168
+mikdusan
+if so at top of collector file just put `comptime { _ = @import("file1.zig"); _ = @import("file2.zig"); ... }`
+
+1562387630
+dawzon
+Hi, Zig noob here.  Is there any documentation on how to include C libraries?  I see the stuff about @cImport but I couldn't find anything specific about where it looks for headers.  Do I just make my own folder under /lib in my Zig install dir? Using release 0.4.0 on Windows, by the way
+
+1562412544
+nifker
+can I read volatile from an usual pointer?
+
+1562420156
+very-mediocre1
+Is there a design reason why allocator.alloc/create doesn't initialize memory even though a type T is passed which may have default values for fields?
+
+1562420194
+very-mediocre
+nvm I realized it would be an inconsistent mess if only some fields were initialized
+
+1562420291
+very-mediocre
+It might be nice/safe to wrap the allocator.alloc/create functions with something that accepts an init param
+
+1562420335
+very-mediocre
+that would force the programmer to think about it, and have to explicitly pass `undefined` for uninitialized memory
+
+1562420442
+mikdusan
+something like `allocator.create(self: *Allocator, init: var)` ?
+
+1562420471
+very-mediocre
+Yep!
+
+1562420591
+mikdusan
+oh i forgot there's no fn overloading. so yeah it would have to be .createWithInit(...) or somesuch.
+
+1562420609
+very-mediocre
+imho it should replace the existing function
+
+1562420616
+very-mediocre
+just pass undefined if you want uninitialized memory
+
+1562420632
+very-mediocre
+it feels like the zig way that you have to think about it
+
+1562420755
+very-mediocre
+the only thing that might be misleading is if you're initializing to a complex data structure, a newcomer might expect some of its inner properties to be initialized
+
+1562420788
+very-mediocre
+I guess it would be confusing if some of those properties pointed to stuff on the heap
+
+1562420863
+very-mediocre
+const some_struct = SomeStruct{ .innerVars = (heap allocated array) } -> all instances would point to the same array
+
+1562420945
+mikdusan
+so i tried `undefined` in a mockup: error: parameter of type '(undefined)' requires comptime
+
+1562420970
+very-mediocre
+hm, the alignedAlloc function in std.mem calls `@memset(byte_slice.ptr, undefined, byte_slice.len);`
+
+1562421002
+very-mediocre
+Was that error from std.debug.warn?
+
+1562421036
+mikdusan
+just an empty function: `fn doit(value: var) void {}`
+
+1562421100
+very-mediocre
+this is beyond my zig knowledge, I'm unsure if you're supposed to not be able to pass `undefined` to a var param
+
+1562421346
+Tetralux
+I think undefined has to be a pointer type.
+
+1562421391
+very-mediocre
+@memset takes a u8 for its 2nd param, and in std.mem.alignedAlloc undefined is passed for it
+
+1562421404
+Tetralux
+Or no - wait. I'm not actually sure about that.
+
+1562421412
+mikdusan
+ok so if `undefined` is known at comptime then it can be checked for. and acted properly. but for runtime, i don't think there's a check for that and that's what optional is for.
+
+1562421456
+mikdusan
+i suppose though if undefined was it's own type, then comptime special function could say "ok no init".
+
+1562421460
+very-mediocre
+optional is for null, undefined is just like, uninitialized memory
+
+1562421501
+very-mediocre
+the keyword undefined usually lets the programmer state that a variable has deliberately not been initialized
+
+1562421518
+very-mediocre
+what that implies for passing undefined is beyond me
+
+1562421533
+very-mediocre
+you
+
+1562421556
+mq32
+mikdusan: i think the problem is that "undefined" has the type "undefined" and you tried to pass "undefined" to a var that was not comptime
+
+1562421570
+mikdusan
+wouldn't that
+
+1562421573
+mq32
+so something like "foo(i:u32)" would require "foo(u32(undefined))"
+
+1562421610
+very-mediocre
+mikdusan: I guess the compiler should be smart enough to never copy undefined
+
+1562421622
+very-mediocre
+
+
+1562421647
+mikdusan
+sure but our type is not specified
+
+1562421679
+very-mediocre
+and never needs to be, it's literally undefined behavior, typically garbage memory
+
+1562421689
+mikdusan
+today we have create() which alloc and never init.
+
+1562421743
+mikdusan
+on the table is a
+
+1562421772
+very-mediocre
+I see your point, but I expect the compiler to know not to ever copy "undefined"
+
+1562421798
+very-mediocre
+
+
+1562421802
+mikdusan
+`var a: usize = undefined; var b = a;` i believe b = a will be a copy?
+
+1562421817
+very-mediocre
+yes, but i would argue it shouldn't be
+
+1562421862
+very-mediocre
+anyway when you really think about it, it's a moot point
+
+1562421869
+very-mediocre
+you could use any convention
+
+1562421876
+very-mediocre
+the goal is to let the programmer say "i want uninitialized memory"
+
+1562421881
+mikdusan
+mq32: yes i agree. which i see as an issue
+
+1562421884
+very-mediocre
+if that means passing a null, so be it
+
+1562421915
+very-mediocre
+no that was dumb of me, but i guess it could be a flag
+
+1562421957
+very-mediocre
+or... wait for it... your original suggestion of having a second function, createWithInit
+
+1562421966
+mq32
+i think optional/null would be more semantic, even if we have "undefined" as a keyword
+
+1562421981
+very-mediocre
+no because sometimes you want to initalize to null, which is not the same as uninitialized memory
+
+1562422176
+mikdusan
+yes, it looks to me a second fn is necessary
+
+1562422224
+mikdusan
+and let's be honest, all this really does is have an alloc function that does a copy for you,
+
+1562422234
+mikdusan
+instead of doing it at the call-site after bare-bones alloc.create()
+
+1562422241
+very-mediocre
+that's true
+
+1562422273
+very-mediocre
+this whole idea came about because of default field init values
+
+1562422280
+very-mediocre
+semantically it "feels" like they should be initialized
+
+1562422286
+very-mediocre
+of course that's irrational
+
+1562422290
+Tetralux
+Personally, I'd like to have `createUninitialized` and `create` which initializes, which would be zeroing in other langs, but in Zig maybe it takes a T to initialize it with.
+
+1562422292
+mikdusan
+zig zen is going to be the deciding factor on that. i'd wait for the zen masters opinions on this too :)
+
+1562422330
+very-mediocre
+mikdusan: you've convinced me, it's probably not worthwhile
+
+1562422362
+very-mediocre
+Tetralux: can't init with T, because not all fields will have a default init value
+
+1562422397
+Tetralux
+very-mediocre: You'd be passing the T, and so you'd be doing .create(T{ .f1 = v1, .f2 = v2, ... })
+
+1562422419
+Tetralux
+i.e: You're either forced to init, or you call createUninit
+
+1562422427
+very-mediocre
+right ok, that's what the proposal was
+
+1562422434
+Tetralux
+Personally however
+
+1562422446
+Tetralux
+I'd prefer you had zero-initting and constructors
+
+1562422462
+Tetralux
+and then create (the one that inits) would call the initializer
+
+1562422484
+Tetralux
+But in Zig we only have constructors, essentially.
+
+1562422530
+very-mediocre
+even constructors aren't really a thing in zig
+
+1562422530
+very-mediocre
+it
+
+1562422533
+very-mediocre
+it's just a convention
+
+1562422541
+Tetralux
+I was using those words specifically.
+
+1562422549
+Tetralux
+I mean
+
+1562422558
+Tetralux
+"T{ .f1 = v1, ... }" = constructor.
+
+1562422575
+Tetralux
+Whereas var x: T; is zeroing.
+
+1562422579
+Tetralux
+Except that in Zig you can't do that
+
+1562422583
+Tetralux
+Because it has to have a value.
+
+1562422587
+Tetralux
+But what I'm sayin g
+
+1562422595
+Tetralux
+Is that the default value would be to zero
+
+1562422605
+Tetralux
+Unless the type has a constructor in the struct definitiuon
+
+1562422612
+Tetralux
+in which case it would run that as well.
+
+1562422626
+very-mediocre
+I see
+
+1562422637
+Tetralux
+See
+
+1562422651
+Tetralux
+See Odin: var x: T; (zeroed)
+
+1562422655
+Tetralux
+Or no
+
+1562422659
+Tetralux
+Wrong syntax LOL
+
+1562422666
+Tetralux
+See Odin: x: T; (zeroed)
+
+1562422672
+Tetralux
+x: T = ---; (undefined)
+
+1562422683
+Tetralux
+Odin doesn't have constructors IIRC
+
+1562422684
+Tetralux
+But Jai does
+
+1562422702
+Tetralux
+struct { f1: T;   #constructor {  f1 = 42; } }
+
+1562422720
+Tetralux
+If the struct is named S
+
+1562422725
+Tetralux
+s: S;
+
+1562422733
+Tetralux
+^^ calls the constructor after zeroing.
+
+1562422742
+Tetralux
+And so f1 == 42;
+
+1562422745
+very-mediocre
+I see, I'll have to take your word for it as I'm not familiar with any of this
+
+1562422750
+Tetralux
+XD
+
+1562422761
+Tetralux
+My point is - this is very simple.
+
+1562422766
+Tetralux
+And trivial to get your head around.
+
+1562422773
+Tetralux
+Because you always want things zeroed unless you don't.
+
+1562422787
+Tetralux
+Meaning, struct default values + constructor fn is enough.
+
+1562422798
+Tetralux
+And in Jai
+
+1562422815
+Tetralux
+You can call initializer_of(T) and constructor_of(T) to get the fn pointers for them.
+
+1562422835
+Tetralux
+.. meaning that userland code and call constructors and initializers manually.
+
+1562422840
+Tetralux
+.. meaning that Allocator.create can.
+
+1562422894
+Tetralux
+Whereas in Zig, it only could if you provided a value yourself, or had default values for all struct fields, in which case Allocator.create could just set it equal to {}.
+
+1562422901
+Tetralux
+In Jai
+
+1562422905
+Tetralux
+It looks like this:
+
+1562422953
+Tetralux
+p: *T = ...; init := initializer_of(T); con := constructor_of(T); if init { init(p) } if con { con(p) } return p;
+
+1562422956
+Tetralux
+Something like that.
+
+1562422972
+very-mediocre
+Yeah, that's martian to me as I've not looked into jai for ages
+
+1562422976
+Tetralux
+
+
+1562423031
+Tetralux
+= *get ptr to newly allocated thing*, *ask for the initializer fn ptr*, *if it exists, call it on the ptr*, *(same with constructor)*, return newly initted  and 'constructed' ptr
+
+1562423102
+Tetralux
+Point is, struct instances are zero-initted by default, and constructors are called if they are specified for the type  when you do the equivalent of `var x: T;`
+
+1562423115
+very-mediocre
+Noted
+
+1562423126
+Tetralux
+And you can get those initializer and constructor fns at runtime for a given type and then call it.
+
+1562423146
+Tetralux
+Which is what the equivalent of Allocator.create does in Jai.
+
+1562423183
+Tetralux
+In Zig, I believe  you could only do initialize a struct instance by having the user pass a value into .create
+
+1562423270
+dimenus
+Tetralux: are you going off of videos or is there a public release now?
+
+1562423296
+Tetralux
+dimenus: Many videos. But that particular part of the stdlib has been shown quite a number of times.
+
+1562423317
+Tetralux
+But that's a whole other thing which I've been through before xD
+
+1562423420
+Tetralux
+Hmmmm.
+
+1562423439
+scientes
+hryx, so I rebased and updated my patch series as much as I could, but now I'm running to compiler bugs, and I have other priorities than #2129
+
+1562423540
+Tetralux
+I guess that you could have .create---if you wanted it to initialize---check the type def for .init and if it exists, call it.. but that could take arbitrary params. :')
+
+1562423558
+Tetralux
+I guess it could emit a compile error in that case though.
+
+1562423570
+Tetralux
+(.. since the whole point is that you want it to auto init)
+
+1562423686
+mikdusan
+Tetralux: imo as soon as the init requires params, it
+
+1562423749
+mikdusan
+so Foo.create(allocator: *std.mem.Allocator, name: []const u8, num: usize, etc...) and have it call allocator, and then init alloc result.
+
+1562423815
+mikdusan
+is there really any incentive to make alloc.create() check a type's struct for defs of .init or similar? without params that's the same as default values, no?
+
+1562424168
+fengb
+Default values currently don't run on allocator creation
+
+1562424212
+fengb
+Although I'd love it if it did
+
+1562424325
+Tetralux
+mikdusan: It isn't necessarily the same, depending on exactly what init actually does.
+
+1562424344
+Tetralux
+If it just returns an instance with fields values specified, then no.
+
+1562424360
+Tetralux
+But if it does some sort of non-trivial computation, then yes it is different.
+
+1562424369
+Tetralux
+The latter is what I was calling a "constructor" before.
+
+1562424410
+fengb
+How would it handle multiple arguments?
+
+1562424461
+Tetralux
+It would emit a compile error if you tried to call .create on a type that requires extra args to .init
+
+1562424480
+fengb
+wat
+
+1562424559
+Tetralux
+If the set up of a type requires extra data, like an allocator or something, then you'd be expected to call .createUndefined(T) and do ptr.* = T.init(...);
+
+1562424567
+Tetralux
+At least, with status-quo Zig, you would.
+
+1562424642
+fengb
+There's an issue to detect using undefined in debug/safe mode
+
+1562424765
+Tetralux
+Essentially, T.init() would be called by .create(T). If .init has extra arguments that need to be passed, then .create has no idea where to get those values from and so it errors. In which case, you'd have to do .createWithValue(T, T.init(...)} or .createUndefined(T) and initialize the ptr yourself.
+
+1562424798
+Tetralux
+(The last one is how we do it now.)
+
+1562424976
+Tetralux
+Well... I suppose you could do .createUndefined(T).init(...), which'd be cleaner.
+
+1562425040
+fengb
+At that point, I'd just prefer .create(T).init() as a convention and let the system catch accessing undefineds
+
+1562425042
+Tetralux
+If you could get at the default values of the fields in RTTI, and .init only had one arg (*Self) then you could just have .create set the fields to their defaults and then call .init if there is one.
+
+1562425068
+Tetralux
+And then var x = allocator.create(T)
+
+1562425070
+Tetralux
+would be the same as
+
+1562425071
+fengb
+It also gets much more complicated when allocating nested structs
+
+1562425099
+Tetralux
+var x = allocator.createUndefined(T).init(); // also sets fields to default values.
+
+1562425108
+mikdusan
+small note it would need to be: `(try .create(T)).init()`
+
+1562425124
+Tetralux
+mikdusan: Yes it would.
+
+1562425172
+Tetralux
+Point is - it is
+
+1562425190
+Tetralux
+And also note how right now, if any field did not have a default, it would emit a compile error.
+
+1562425330
+Tetralux
+Honestly, I kinda like the simplicity of .create(T).init() and .createUndefined(T).init()
+
+1562425333
+Tetralux
+
+
+1562425352
+Tetralux
+As soon as you need to pass things to .init, you have to expand it to the status quo.
+
+1562425365
+Tetralux
+Or no
+
+1562425367
+Tetralux
+That's not right.
+
+1562425390
+Tetralux
+You do have to have .init on your type, otherwise you have to expand to status quo.
+
+1562425551
+Tetralux
+Wait - not .create(T).init() -- the point was that .create did the init too xD
+
+1562425558
+Tetralux
+I really shouldn't be doing this while tired XD
+
+1562425571
+Tetralux
+.create(T) == .createUndefined(T).init()
+
+1562425574
+Tetralux
+Something like that.
+
+1562425640
+Tetralux
+A simple thing we could do right now though is just have .create take an instance of T to initialize the memory to.
+
+1562425648
+Tetralux
+.. as was mentioned before.
+
+1562425683
+Tetralux
+var t = a.createUndefined(T).init(...); var t2 = a.create(T, T{...});
+
+1562425738
+mikdusan
+vs today:
+
+1562425767
+mikdusan
+`a.create(T).init(...)` and `a.create(T); a.* = T{...};`
+
+1562425790
+Tetralux
+The issue being that it's not clear that the result of .create is undefined.
+
+1562425813
+mikdusan
+with respect, that's not an issue for me. i'm ok with the contract/idiom
+
+1562425820
+Tetralux
+( .. Whereas the result of .init always is.)
+
+1562425837
+Tetralux
+Point is, it's a gotcha.
+
+1562425843
+Tetralux
+You can get used to it, sure.
+
+1562425849
+Tetralux
+But it's a gotcha. And it's uncessary.
+
+1562425857
+Tetralux
+Just call it .createUndefined and be done with it xD
+
+1562425948
+mikdusan
+.allocOne()
+
+1562426021
+mikdusan
+to be fair my naming is probably not a good idea... i don't account for what .destroy() does
+
+1562428533
+dimenus
+note to self, don't pass structs with opaque fields by address to c functions....
+
+1562428540
+dimenus
+or you're going to have a bad time
+
+1562428898
+Tetralux
+Oh? xD
+
+1562433766
+forgot-password
+Why does Zig detect a dependency loop when importing objc/runtime.h?
+
+1562436332
+nifker
+The thumbv7m ELF I compiled yesterday and converted using arm-none-eabi to a binary did not really work - it just results in an empty binary with 0Bytes
+
+1562438074
+mq32
+nifker, do you use symbol garbage collection in linker step?
+
+1562438098
+nifker
+do you mean in the linker script?
+
+1562438106
+mq32
+no, in the linker invocation
+
+1562438156
+mq32
+-Wl,--gc-sections
+
+1562438254
+nifker
+not that I know of
+
+1562438332
+andrewrk
+gc-sections is on by default. but that is fine if you export your entry points
+
+1562438371
+andrewrk
+use the export keyword or @export builtin function
+
+1562438839
+nifker
+shouldnt this tell me rather the error in my code?
+
+1562438875
+nifker
+Im trying to unwrap std.io.getStdOut()
+
+1562439048
+andrewrk
+I thought your os was freestanding?
+
+1562439082
+andrewrk
+stdout is an os abstraction, freestanding doesn't have stdout
+
+1562439089
+nifker
+is there no way to write output for debugging purposes?
+
+1562439099
+andrewrk
+how would that work?
+
+1562439111
+nifker
+through my debugger?
+
+1562439119
+andrewrk
+ok, what's your debugger's API?
+
+1562439157
+nifker
+SWD
+
+1562439187
+andrewrk
+I don't know what that means, but call your debugger's API instead of std.io.getStdOut()
+
+1562439277
+nifker
+ok
+
+1562439323
+nifker
+cant I add comptime_int together?
+
+1562440054
+nifker
+..
+
+1562440073
+nifker
+"invalid operands to binary expression: '*comptime_int' and '*comptime_int'"
+
+1562440233
+hryx
+nifker: are you trying to add two pointers?
+
+1562440238
+nifker
+hryx: yes
+
+1562440292
+andrewrk
+
+
+1562440367
+andrewrk
+adding two pointers together doesn't make sense
+
+1562440537
+nifker
+but if I do "const l = y_ptr.* += 1;" l is an integer and not a pointer anymore
+
+1562440607
+hryx
+you have two assignments in one statement there
+
+1562440623
+nifker
+I meant "const l = y_ptr.* + 1;"
+
+1562440637
+andrewrk
+what's the question?
+
+1562440692
+nifker
+why does it return an integer and not an pointer anymore?
+
+1562440775
+andrewrk
+.* is pointer deref syntax
+
+1562440783
+Tetralux
+If y_ptr is a ptr to an integer, then you're derefing the ptr and adding 1.
+
+1562440789
+Tetralux
+And so you get back an integer.
+
+1562440797
+nifker
+why cant I just ptr + 1 ?
+
+1562440808
+andrewrk
+
+
+1562440818
+Tetralux
+You can with @ptrToInt/@intToPtr
+
+1562440825
+Tetralux
+But not directly, as in C.
+
+1562440839
+Tetralux
+(.. Correct if wrong.)
+
+1562440842
+andrewrk
+Tetralux, please don't advise that when the other better options have not been explored first
+
+1562440890
+nifker
+Tetralux: that doesnt make sense - why would I cast them if I can just add an offset
+
+1562440919
+Tetralux
+andrewrk, -0. Was just informing what they are trying to do - if you have a better suggestion - please feel free to ask about the context.
+
+1562440960
+Tetralux
+nifker: It's a safety thing in Zig. But maybe you should tell us more context - why are you trying to do this?
+
+1562440995
+Tetralux
+Are you pointing into an array of items or something, and you want to just advance to the next one?
+
+1562441088
+nifker
+I have an address where all MMIOs begin and use an offset so I dont need to hardcode it
+
+1562441157
+andrewrk
+nifker, did the docs make sense?
+
+1562441226
+ibutra
+Hi, how can i pass my libc configuration textfile if I use the zig buildsystem?
+
+1562441243
+nifker
+andrewrk: quite but it doesnt tell why its not possible to add directly to a pointer
+
+1562441265
+andrewrk
+ibutra, this might be a new use case that we need to consider
+
+1562441272
+andrewrk
+might be worth opening an issue
+
+1562441282
+ibutra
+And can I pass flags like -mcpu -mfpu etc?
+
+1562441292
+andrewrk
+ibutra, is that a way of passing c compiler args without the CLI?
+
+1562441310
+andrewrk
+oh you mean the `zig libc` file
+
+1562441315
+ibutra
+yes
+
+1562441328
+andrewrk
+--libc [file]                Provide a file which specifies libc paths
+
+1562441358
+ibutra
+I tried that, then I get "Unrecognized argument: --libc:
+
+1562441377
+andrewrk
+as for mcpu mfpu:
+
+1562441382
+ibutra
+(The final : was supposed to be a " and is not part of the output)
+
+1562441480
+andrewrk
+nifker, use an unknown length pointer
+
+1562441509
+andrewrk
+I see the docs are missing an example of pointer arithmetic
+
+1562441584
+andrewrk
+ibutra, I just tested it and it worked
+
+1562441585
+nifker
+andrewrk: but isnt it rather used when putting multiple elements inside?
+
+1562441631
+ibutra
+ok, I will update to the latest HEAD and try again I guess
+
+1562441652
+ibutra
+Nope, I am on HEAD
+
+1562441676
+ibutra
+"zig build --libc libc.txt" << is this correcT?
+
+1562441683
+andrewrk
+oh I see, you're asking about zig build
+
+1562441715
+andrewrk
+ok --libc is currently not exposed to zig build. that's an easy fix. interested in contributing the patch?
+
+1562441736
+ibutra
+sure, but that will be tomorrow, it is getting late here :)
+
+1562441752
+andrewrk
+it would be something like: your_exe.setLibcPathsFile(libc_file_path);
+
+1562441803
+andrewrk
+nifker, const mmio_base = @intToPtr([*]volatile u8, 0xdeadbeef);
+
+1562441803
+ibutra
+Yes, I will have to look into how it is handled in the normal build, but that shouldn't be an issue. Will look into it tomorrow!
+
+1562441825
+ibutra
+Thank you again for the help and good night everybody!
+
+1562441910
+andrewrk
+nifker, then you can do mmio_base[offset] = foo;
+
+1562442233
+nifker
+this yields me "index of single item pointer"
+
+1562442374
+andrewrk
+`[*]volatile u8` is not a single-item pointer, it is an unknown length pointer
+
+1562442757
+nifker
+I tried to use direct pointers first - which lead me to interesting errors
+
+1562442890
+andrewrk
+nifker, you did not use [*], you used *
+
+1562442926
+andrewrk
+you're treating non-addresses as addresses
+
+1562442992
+nifker
+as I already said - bc of this
+
+1562443225
+Tetralux
+Try @ptrToInt on PERIPHERALS.*, add 0x10c00 and then cast back.
+
+1562443227
+Tetralux
+Something like
+
+1562443249
+Tetralux
+const PORT_B = @intToPtr(*volatile usize, @ptrToInt(PERIPHERALS.*) + 0x10c00);
+
+1562443326
+andrewrk
+that code snippet would also need the definition of PERIPHERALS to be useful. I suspect that is a bad deref
+
+1562443427
+Tetralux
+Also, I think line 18 is meant to be `var in: u8 = KEY_1.*`
+
+1562443526
+nifker
+so whats the difference between ptr.* and *ptr?
+
+1562443526
+hryx
+andrewrk: regarding #2569, anything I can do to investigate or provide more info? As it stands I'm not sure next steps to solve the build failure
+
+1562443542
+hryx
+also I know it's not high priority, so if you want to leave it on hold for the time being that's fine with me
+
+1562443571
+andrewrk
+hryx, I had a brief look and determined that this is relatively difficult compared to other PRs, so I'll come back to it in a bit
+
+1562443582
+andrewrk
+I'm currently on #2509
+
+1562443585
+hryx
+cool, no problem
+
+1562443595
+hryx
+meantime I'll try to tackle some smaller ones
+
+1562443607
+andrewrk
+yeah thanks for that \u{}, good stuff
+
+1562443613
+andrewrk
+love it when I can just press the big green button
+
+1562443621
+hryx
+(^_^)_b
+
+1562443688
+nifker
+I finally got it compile again and my outcoming binary is still 0Bytes big
+
+1562443804
+andrewrk
+nifker, what happened when you tried my advice last time you asked this question?
+
+1562443990
+nifker
+you mean the "extern"?
+
+1562444083
+andrewrk
+please read my answer again, it looks like you did not read it correctly
+
+1562444117
+nifker
+hmm
+
+1562444193
+nifker
+idk
+
+1562444526
+andrewrk
+nifker, OK. beginners are more than welcome here, but I need you to try a little harder, both to be more polite, and to be more respectful of people's time who are giving help. can you do that? yes or no.
+
+1562444557
+nifker
+I think so
+
+1562444668
+andrewrk
+I said yes or no. you can try again in 1 week.
+
+1562446277
+andersfr
+how can I become a contributor to the Zig project?
+
+1562446462
+hryx
+hi andersfr, welcome. there are a bunch of ways you can help:
+
+1562446502
+hryx
+what are you interested in?
+
+1562446644
+andersfr
+I did a port of the murmur hash and cityhash algorithms and wanted to add them to std.hash
+
+1562446690
+andersfr
+I happened to need better hashing algorithms for a set implementation on a hobby project
+
+1562446853
+hryx
+oh, cool. I'm not sure what the criteria would be when deciding whether that would get merged into the standard library. At the very least you should add a link to your project on the wiki:
+
+1562446868
+andrewrk
+andersfr, I think those would be welcome in std, at least until package manager is available and we decide which code will stay in std and what should be extracted to become separate packages
+
+1562446899
+hryx
+andersfr: maybe this issue would be of interest to you too
+
+1562446935
+andersfr
+the hobby project is to create an LSP implementation for Zig (provides code completion, error reporting and more for editors)
+
+1562446970
+andrewrk
+andersfr, oh wow, and this is written in zig, no changes to the stage1 cpp code?
+
+1562447007
+andersfr
+it is far from complete but written entirely in Zig
+
+1562447025
+andrewrk
+very interesting
+
+1562447081
+hryx
+andersfr: cool! Here's an open issue for implementing LSP if you want to track it or share your project:
+
+1562447175
+andersfr
+I hadn't spotted the open issue yet but thx for pointing it out
+
+1562447478
+andersfr
+I happen to also be a c++ programmer with LLVM experience but I think it is better to go for native Zig first. Otherwise I have to reimplement everything later or keep maintaining c++ code...
+
+1562447574
+andrewrk
+I don't think you need to interact with LLVM, but the c++ compiler code is the only thing that has an implementation of analyzing zig source code, so you'd be doing at least some of that work
+
+1562447643
+andrewrk
+you might be able to get a good chunk of things working relatively quickly, but to truly have correct language understanding you'd need a full comptime / semantic analysis implementation
+
+1562447662
+andrewrk
+which is why my plan for this is to integrate it into the self hosted compiler
+
+1562447686
+andersfr
+I agree completely
+
+1562447774
+andrewrk
+a competing zig implementation would be amazing
+
+1562447791
+andersfr
+worst case I would have to contribute some analysis code to the self hosted compiler ;-)
+
+1562447818
+andrewrk
+someone who makes significant progress on such a project would have a lot of clout as far as their proposals & discussion on existing proposals because they would be very well informed on the details
+
+1562447840
+andrewrk
+I would also be willing to start working on the language specification if that were the case
+
+1562447949
+andersfr
+lets hope that I manage to make good progress. It is by no means an easy task
+
+1562448151
+andrewrk
+agreed
+
+1562448184
+andrewrk
+andersfr, one of the goals of this release cycle is redoing coroutines so that we can have nice async/await syntax. I think this will help a lot for servers in general, including LSP
+
+1562448212
+andrewrk
+it helps code model a pipeline
+
+1562448330
+mq32
+andrewrk, btw: thumbs up for the endeavor to unify async/blocking APIs
+
+1562448332
+andersfr
+for now I am mostly focused on the parsing part but it will indeed be the obvious solution for an LSP server
+
+1562448346
+mq32
+that's something that is bad in almost any lang with async
+
+1562448399
+andrewrk
+mq32, we'll see! it's a really ambitious project, but I definitely think it's worth a try
+
+1562448410
+andrewrk
+you can thank daurnimator for convincing me to try to do it
+
+1562448415
+mq32
+yes, for sure!
+
+1562448439
+andrewrk
+andersfr, oh, you should probably use the tokenizer/parser from the std lib, did you know about that?
+
+1562448445
+andrewrk
+the self-hosted tokenizer and parser is done already
+
+1562448460
+andersfr
+I know and have used them
+
+1562448505
+andersfr
+but the parser suffers from the first-error quits everything problem
+
+1562448514
+andrewrk
+ahh for integration with IDEs
+
+1562448529
+andersfr
+I have to do a lot of error recovery etc which needs a different model
+
+1562448532
+andrewrk
+right. one more piece of information, btw, zig has line-independent tokenization
+
+1562448542
+andrewrk
+so when you see a \n you can reset the tokenizer state
+
+1562448616
+andersfr
+I wrote an independent table based tokeniser already just for lols
+
+1562448629
+andrewrk
+andersfr, also, it's planned for bad indentation to be a compile error, so you can also use that to recover from mismatched braces and stuff.
+
+1562449958
+dawzon
+New user question:  Is there any documentation on where Zig looks for C header files for linkSystemLibrary()?  I couldn't find anything in the main docs.  (I'm using 0.4.0 on Windows)
+
+1562450191
+andrewrk
+dawzon, currently, nowhere; you'll have to explicitly provide all the search directories manually
+
+1562450203
+andrewrk
+here's a related issue:
+
+1562450230
+dawzon
+Alright, thanks!
+
+1562450234
+hryx
+Is there an open proposal to make block labels optional when breaking? I remember it being discussed the other day and I'm interested
+
+1562450296
+andrewrk
+hryx, closest issue I can think of is
+
+1562450369
+hryx
+I'll read that one and see if it would be redundant to open a new proposal
+
+1562450372
+hryx
+thanks
+
+1562450553
+supereti
+Hi! I'm trying to use `zig build` to do static linking with C project that uses raylib. I want to do the equivalent of `clang -framework CoreVideo -framework IOKit -framework Cocoa -framework GLUT -framework OpenGL libraylib.a game.c -o game` in  build.zig file. Here's the build.zig work in progress:
+
+1562450554
+supereti
+ror output when I run `zig build`:
+
+1562450598
+andrewrk
+supereti, one recommendation I would make would be to use master branch rather than 0.4.0
+
+1562450633
+andrewrk
+I believe homebrew has an arg for that
+
+1562450658
+hryx
+andrewrk: your last comment in 732 is well written. I won't open a new proposal because your comment already addressed the reasoning
+
+1562450674
+hryx
+it's very helpful to have justification for accept/reject recorded in an issue like that
+
+1562450675
+fengb
+Would it be difficult to maintain a list of major changes of master vs last stable release?
+
+1562450715
+andrewrk
+hryx, agreed
+
+1562450728
+andrewrk
+fengb, I do that with the release notes
+
+1562450767
+andrewrk
+it could potentially be useful to do the release notes during the release cycle rather than at the end, which I think is what you're suggesting
+
+1562450813
+andrewrk
+personally it's easier to motivate myself to do them when the release is imminent
+
+1562450818
+fengb
+Yeah, doesn't have to be comprehensive
+
+1562450835
+fengb
+I can understand that. Nobody really likes documenting :P
+
+1562451342
+supereti
+andrewrk: error output using zig 0.4.0+9471f16c
+
+1562451365
+andrewrk
+that should be ok
+
+1562451374
+andrewrk
+in your paste earlier, it looks like the zig compiler is crashing
+
+1562451408
+andrewrk
+ah, yes in this new paste, zig is crashing in the linker
+
+1562451459
+andrewrk
+supereti, I'm going to tell you about a secret feature to help figure out why this is happening
+
+1562451522
+andrewrk
+supereti, exe.enableSystemLinkerHack();
+
+1562451546
+andrewrk
+if that fixes it, then, damn. the real fix will be
+
+1562451570
+fengb
+Bug in LLD?
+
+1562451622
+andrewrk
+LLD mach-o code is unmaintained
+
+1562451628
+fengb
+Ah
+
+1562451680
+emekankurumeh[m]
+is mach-o that hard?
+
+1562451691
+andrewrk
+no, it's due to a lack of interest by relevant parties
+
+1562451720
+fengb
+Nobody at Apple works on lld?
+
+1562451740
+emekankurumeh[m]
+llvm's mach-o is unmaintained, tcc doesn't have a mach-o backend
+
+1562451742
+emekankurumeh[m]
+it's like mach-o is the plague
+
+1562451744
+supereti
+andrewrk, that looks like it almost did the trick. I'm getting an "undefined symbols" error for the raylib functions so it probably can't find the header file.
+
+1562451760
+emekankurumeh[m]
+what about swift?
+
+1562451776
+andrewrk
+fengb, correct
+
+1562451807
+andrewrk
+supereti, undefined symbols means you're missing objects/libraries on the linker line, should not be affected by .h files
+
+1562451847
+supereti
+can you manually add linker flags via build.zig?
+
+1562451853
+andrewrk
+to debug the linker line you can use --verbose-link
+
+1562451871
+andrewrk
+can I see the linker line?
+
+1562451995
+supereti
+andrewrk: `lld -demangle -dynamic -arch x86_64 -macosx_version_min 10.9.0 -sdk_version 10.9.0 -pie -o /path/to/game/zig-cache/o/UXH1v7AEEJeqgaowKOt0MQHif16fDjaz87GdT5WC-5Kh2vcM8iGr2eK8_OHXsVrK/game /path/to/game/zig-cache/o/EN0GEjfyHNtHh5SmihNMOcm7w5JbSylOiQuXmvEfp6-Mr_QgbduH2qcxuzfgQvG1/libraylib.a /path/to/game/zig-cache/o/ZMy5j5iHbnyDLI1nhPz-EGV
+
+1562451996
+supereti
+kfRX5tGkwV5WhQ9zSjHRQYyMcLQO8-vOeoHpYYSrK/main.o /path/to/Library/Application Support/zig/stage1/o/IpO5RRjTZ_tefTRhYeHjL7q0O6iU9hojBlg_2O_oDDs3x6r8L0ngPKx84cqqnI8O/libcompiler_rt.a -lSystem -framework OpenGL -framework IOKit -framework Cocoa -framework CoreVideo -framework GLUT`
+
+1562452043
+andrewrk
+hmm seems to have not added the raylib
+
+1562452144
+andrewrk
+can I see the `build-exe` command that it ran?
+
+1562452156
+andrewrk
+it should print that if you pass --verbose to zig build
+
+1562452172
+andrewrk
+oh I know the problem
+
+1562452174
+supereti
+`libraylib.a` is the second arg after `-o`
+
+1562452181
+emekankurumeh[m]
+andrewrk: as they are using 0.4.0, could this have been fixed by
+
+1562452231
+andrewrk
+emekankurumeh[m], <supereti> andrewrk: error output using zig 0.4.0+9471f16c
+
+1562452243
+andrewrk
+supereti, ok I'm pretty sure this is a name collision with libraylib.a
+
+1562452297
+andrewrk
+why do you have that     raylib.addObjectFile("libraylib.a"); there? is it produced by a makefile or some other part of the build process?
+
+1562452402
+supereti
+So the `libraylib.a` in the game dir is conflicting with the `libraylib.a` in a system dir?  I put the addObjectFile thing in there manually. Trial and error. I'm trying to use the librarylib.a in the game dir, but maybe that's a bad idea?
+
+1562452442
+supereti
+`zig build-exe --c-source -std=c99 /path/to/game/main.c --library c --object /path/to/game/zig-cache/o/zg-nWwYdUXY_etMH0AARbU_eOhLsMHTDn197R32r1jwa_bxYwCw1WQn0MOjtIhB5/libraylib.a --cache-dir /path/to/game/zig-cache --name game -isystem /path/to/game/zig-cache/o/zg-nWwYdUXY_etMH0AARbU_eOhLsMHTDn197R32r1jwa_bxYwCw1WQn0MOjtIhB5 -framework OpenGL -fra
+
+1562452443
+supereti
+mework IOKit -framework Cocoa -framework CoreVideo -framework GLUT --system-linker-hack --cache on`
+
+1562452602
+andrewrk
+supereti, sorry, actually I think there is no name conflict, it should be fine. but I do see a problem in the build-exe command: the libraylib.a that you have attempted to manually add is missing
+
+1562452624
+andrewrk
+which points to a bug in zig build not correctly passing the arg to build-exe
+
+1562452679
+supereti
+andrewrk, Hmm, I also see the following waring amidst a ton of `ld: warning: text-based stub file /... and library file /... are out of sync. Falling back to library file for linking.` warnings: `ld: warning: ignoring file /path/to/game/zig-cache/o/zg-nWwYdUXY_etMH0AARbU_eOhLsMHTDn197R32r1jwa_bxYwCw1WQn0MOjtIhB5/libraylib.a, file was built for arch
+
+1562452680
+supereti
+ive which is not the architecture being linked (x86_64): /path/to/game/zig-cache/o/zg-nWwYdUXY_etMH0AARbU_eOhLsMHTDn197R32r1jwa_bxYwCw1WQn0MOjtIhB5/libraylib.a`
+
+1562452752
+andrewrk
+oh, oh, oh. you're linking a .a file into another .a file. is that even allowed? I'm not sure, maybe
+
+1562452765
+andrewrk
+but the build-exe line is fine, because the one .a file is in the other one
+
+1562452788
+andrewrk
+so this warning you're getting seems pertinent. it souds like the .a file you are trying to manually add to the linker line is no good
+
+1562452796
+andrewrk
+how did you get it?
+
+1562452801
+supereti
+I'm probably doing something dumb in build.zig. Maybe the whole `b.addStaticLibrary` thing is a bad idea.
+
+1562452829
+supereti
+I built raylib manually. Also tried using the one created by homebrew.
+
+1562452839
+andrewrk
+oh, yeah don't do addStaticLibrary
+
+1562452846
+andrewrk
+get rid of system linker hack
+
+1562452862
+andrewrk
+exe.addObjectFile("libraylib.a"); exe.linkFramework(); // etc
+
+1562452899
+andrewrk
+addStaticLibrary is for when you're trying to produce a .a file
+
+1562452911
+andrewrk
+which I don't think you are. you're just trying to build your game
+
+1562452954
+supereti
+right. facepalm.
+
+1562452971
+supereti
+okay, that works! thanks andrewrk!
+
+1562452990
+andrewrk
+zig package manager will make all this stuff "just work". no worries.
+
+1562453025
+andrewrk
+until then people will have all kinds of fun fiddling with their builds
+
+1562453084
+supereti
+documenting the whole zig build system would be great too, though I assume that's lower priority understandably.
+
+1562453094
+programisto
+hi. went rhough the docs and didn't see the answer. how do I get around "x does not support field acess" for a c type? I'm guessing some kind of cast
+
+1562453115
+andrewrk
+supereti, I haven't given up on zig build docs for this release cycle yet:
+
+1562453167
+andrewrk
+programisto, I think this should work: foo.*.field
+
+1562453168
+hryx
+programisto: what type is it exactly?
+
+1562453189
+andrewrk
+you can think of that like doing -> in C
+
+1562453203
+andrewrk
+it's not necessary for single-item pointers
+
+1562453206
+programisto
+[*c].cimport:1:20.struct_SDL_Surface
+
+1562453282
+programisto
+yes, that works
+
+1562453307
+programisto
+thank you. andrewrk love what you're doing with this lang. thank you for your work
+
+1562453317
+andrewrk
+thanks for the compliment
+
+1562453414
+programisto
+it's hard to explain how much of a difference being able to seamlessly use c libraries is vs "easy" wrappers
+
+1562453422
+programisto
+all languages have wrappers tehse days, but they aren't free
+
+1562453476
+programisto
+guess what I'm syaing is, zig has a great niche
+
+1562453560
+andrewrk
+you'll probably run into some friction with C interop but most of it is fixable, just needs some work
+
+1562453594
+andrewrk
+there's a label "translate-c" for tracking these issues
+
+1562457083
+hryx
+andrewrk: it looks like NodeTypeErrorType is still used to generate a node from `error.Something` expressions, not just `anyerror`
+
+1562457096
+hryx
+that seems to be the only thing standing in the way of removing it - do you see a way around that?
+
+1562457179
+andrewrk
+there's definitely some dead code around here
+
+1562457215
+andrewrk
+hryx, see if you can delete AstNodeErrorType
+
+1562457223
+hryx
+okdk
+
+1562457300
+andrewrk
+oh I see, NodeTypeErrorType is sort of a vestigial hack. that's ok for now
+
+1562457313
+andrewrk
+yeah I don't think there's anything else to do on that PR
+
+1562457341
+hryx
+it was worth a shot :)
+
+1562457489
+andrewrk
+I think zig will let you use `anyerror.Something` rather than `error.Something` which is probably not desirable
+
+1562457559
+hryx
+oof yeah
+

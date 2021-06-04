@@ -1,0 +1,368 @@
+1547083746
+mgxm
+andrewrk: I'm going to start working on making the cross comp work for FreeBSD
+
+1547083768
+mgxm
+Do you thing that the best approach to target FreeBSD from non-BSD is to port Scrt and related to zig?
+
+1547091941
+emekoi
+link order is important when you're constructing a link job in `construct_linker_job` right?
+
+1547099833
+andrewrk
+mgxm, yes I think that is a reasonable approach. I also think it would be reasonable to look at freebsd's Scrt and related, and consider what, if anything is necessary to statically link. Potentially, we would be able to not link any of that stuff.
+
+1547101632
+emekoi
+how would you emit inject from symbols within the compiler?
+
+1547101940
+andrewrk
+emekoi, I'm actually not sure if link order is important. it is for gnu binutils ld, but it might not be for LLD
+
+1547101959
+andrewrk
+I'm not sure about your second question, can you elaborate on what you're trying to do?
+
+1547102226
+emekoi
+i'm trying to get the hello_libc example to compile on windows under mingw-w64, but i get link errors because `__image_base__` and `__stack_chk_guard` aren't defined.
+
+1547102272
+emekoi
+if i link manually and ignore undefined symbols it compiles but then it gets stuck in a loop for a while, then it segfaults.
+
+1547102343
+andrewrk
+if those symbols are needed it's because something is calling them
+
+1547102346
+emekoi
+and i can't define `__stack_chk_guard` myself because exporting values like `usize` or `[@sizeOf(usize]u8` doesn't seem to work.
+
+1547102419
+emekoi
+yeah, they seems mingw libc is calling them in `__security_init_cookie` to enable stack-smashing detection.
+
+1547102496
+andrewrk
+you have to port the mingw libc functions to std/special/builtin.zig
+
+1547102508
+andrewrk
+what happened when you tried to export a usize?
+
+1547102772
+emekoi
+i got `TODO export const value of type usize`
+
+1547102896
+andrewrk
+ahh! don't be scared of a little TODO panic :)
+
+1547102969
+andrewrk
+that's how you wanted to export
+
+1547103005
+emekoi
+__stack_chk_guard, actually
+
+1547103021
+andrewrk
+__stack_chk_guard is an integer variable, not a function?
+
+1547103104
+andrewrk
+anyway for both of these, it might be better to provide them manually in codegen.cpp when the target is mingw
+
+1547103137
+andrewrk
+or perhaps are these defined in libgcc, which is not being linked in?
+
+1547103162
+emekoi
+i link i libgcc so that's whats got me confused.
+
+1547103679
+andrewrk
+sorry, did you say you are or are not linking against libgcc?
+
+1547103756
+andrewrk
+it would be beneficial to understand where these symbols come from when you create a binary with mingw gcc
+
+1547104273
+emekoi
+i sorry i meant i link agains't libc
+
+1547104329
+emekoi
+i link againt all the libraries gcc does when i compile a file with verbose mode
+
+1547105050
+emekoi
+i just remembered lld has a mingw driver that solves some of these problems
+
+1547106434
+emekoi
+i just realized that export error was weird because exporting where it's declared works.
+
+1547130408
+forgot-password
+Is there a way to force a function to be evaluated at compile time? If I were to remove the comptime from the function call I wouldn't get a compilation error and cause a crash at runtime.
+
+1547139904
+forgot-password
+I got it to work by just using a comptime_int instead of a u32. Is that a valid workaround or too hacky?
+
+1547140806
+mgxm
+andrewrk: great, I'll check that
+
+1547143771
+andrewrk
+forgot-password, that's a good workaround. there's a known issue right now where zig generates a runtime function unnecessarily (if you only call the function at comptime, it shouldn't do this)
+
+1547143829
+andrewrk
+mgxm, it's OK to put in a bunch of FreeBSD-specific linker logic into link.cpp
+
+1547143844
+andrewrk
+you can look at codegen->zig_target.os
+
+1547143879
+forgot-password
+andrewrk: Oh okay, but that shouldn't be that much of a problem since it hopefully doesn't get called, right? Of course, it's still a waste of space.
+
+1547143924
+andrewrk
+it's usually not a problem, and could even be convenient for debugging purposes - and would get deleted in release modes
+
+1547143952
+andrewrk
+when it becomes a problem is if you have logic in the function that can only work at comptime, e.g. if you use the ++ operator, but zig mistakenly tries to create a runtime version of the function and gives you a compile error
+
+1547143985
+forgot-password
+Can I somehow format an int into a string at compile time? std.fmt.bufPrint won't work, because you currently cannot call var arg functions at comptime...
+
+1547144002
+andrewrk
+your comptime_int thing is a good workaround, until this is fixed, because zig then knows not to create a runtime version of the function
+
+1547144076
+forgot-password
+But when I don't use a comptime_int it won't be forced to run at comptime, right? Because then the caller is obligated to make it a comptime expression.
+
+1547144111
+andrewrk
+std.fmt.bufPrint will be the way to do that, just need to make more progress on the compiler internals. I don't have a workaround for that off the top of my head
+
+1547144138
+andrewrk
+you're running into the immaturity and "beta"-ness of zig here
+
+1547144200
+forgot-password
+I'm thinking ofjust adding 0x30, but that will only work up to 9 :/
+
+1547144243
+andrewrk
+try std.fmt.formatIntBuf
+
+1547144311
+forgot-password
+I found that in the source as well, but I didn't now what to pass at a glance, so I just ticked it off :p
+
+1547144318
+forgot-password
+Will take a look though, thanks :)
+
+1547144318
+andrewrk
+const result = out_buf[0..formatIntBuf(out_buf, integer_value, 10, false, 0)];
+
+1547144338
+andrewrk
+a bit clunky, but, that's because bufPrint is the real answer once the issues are resolved
+
+1547144560
+forgot-password
+I'm getting this error: 'comptime_int' does not support field access
+
+1547144784
+forgot-password
+Casting did the trick
+
+1547145081
+forgot-password
+However, now I have a problem with allocating the buffer... A slice doesn't work, because it demands a []u8 and using a DirectAllocator just hangs the program(/compiler?)
+
+1547145151
+andrewrk
+you're trying to allocate at compile time?
+
+1547145226
+forgot-password
+How else would I go about it? I cannot get the stack allocation to work.
+
+1547145754
+andrewrk
+what are you trying to do?
+
+1547146090
+forgot-password
+Here's the snippet:
+
+1547146774
+andrewrk
+forgot-password, I think you can move it to inside the while loop: comptime var buf: [100]u8 = undefined;
+
+1547146787
+andrewrk
+you need it to be an array. a slice references other memory
+
+1547146912
+forgot-password
+THat still gives me
+
+1547146927
+forgot-password
+Sorry, I thought I was in my editor. I didn't mean to send it already
+
+1547146962
+forgot-password
+It still gives me 'expected type []u8, found [100]u8'
+
+1547149010
+andrewrk
+zig won't automatically turn an array into a slice unless you take the address of it
+
+1547149748
+forgot-password
+andrewk: Alright, how do I do that? I tried to somehow turn it to an array before, but I couldn't figure it out.
+
+1547149787
+andrewrk
+where it is telling you it expects a slice, and it found an array, you can take the address of the array
+
+1547149803
+andrewrk
+&array
+
+1547149839
+forgot-password
+That's what I just did, but then I get a pointer to that array and it complains about that
+
+1547149850
+forgot-password
+Wait nevermind
+
+1547149911
+forgot-password
+Weird, that's exactly what I had. Maybe I forgot to save. Anyways, thank you very much :)
+
+1547151284
+andrewrk
+forgot-password, no problem. I understand it's frustrating when you run into some of the TODO issues
+
+1547151512
+forgot-password
+andrewrk: I wasn't frustrated at all, did it come off like that? I'm very sorry if so. It's totally fine and understandable to run into issues, because, like you said yourself, this is a rather young language. You guys are doing a great job at nurturing Zig and noobs like me :)
+
+1547151542
+forgot-password
+Not that there's anything wrong with being frustrated, though
+
+1547151622
+andrewrk
+I wasn't responding to anything in particular, just communicating friendliness
+
+1547152550
+sjums
+Andrew is like a super human good guy, forgot-password 👌
+
+1547154521
+sjums
+Besides the huge brain I'm amazed how patient and helpful he is.
+
+1547154537
+sjums
+You'll go far in this world, Andrew!
+
+1547154908
+andrewrk
+I don't have a huge brain, I just try hard
+
+1547154947
+andrewrk
+zig is for people with medium size brains who are willing to put the work in :)
+
+1547155245
+forgot-password
+sjums: At least the helpfulness and patience applies to all of you, the other I don't know about ;)
+
+1547156648
+mgxm
+andrewrk: yeah, like you did with osx and windows?
+
+1547156678
+andrewrk
+mgxm, yes
+
+1547156726
+mgxm
+ok, thanks
+
+1547157035
+andrewrk
+mgxm, to give you a vision of the future: someday we'll have the ability to build C projects from source purely with zig, on any supported platform, targeting any supported platform
+
+1547157079
+andrewrk
+so your zig project, for example, could depend on a C library, which in turn depends on other C libraries, and so on, but they're all packaged up in a way that zig understands how to build
+
+1547157123
+andrewrk
+so you could build the project on any OS, targeting any OS, with only Zig as a system dependency on all the systems
+
+1547157389
+andrewrk
+of course, distributions such as debian are then free to package up software however they see fit; probably breaking it up into its dependencies and using system packages. But for development purposes, the ability to rely on dependencies always being there regardless of the system and its configuration is a huge productivity and collaboration boon
+
+1547160301
+mgxm
+that... it's the main reason to start contributing :)
+
+1547160749
+mgxm
+and how about the libc?
+
+1547160781
+mgxm
+I read that the main goal is to no depend on it
+
+1547160864
+andrewrk
+for macos, freebsd: zig will build c libraries which dynamically link libc, with the linker option that makes it not required to be present on the native system
+
+1547160894
+andrewrk
+for windows, linux: zig will build its own libc from source and statically link it in when building C libraries that depend on libc
+
+1547160925
+andrewrk
+this will mostly be a port of musl (linux) and newlib (windows)
+
+1547160958
+andrewrk
+of course, pure zig projects can rely on the standard library, no libc needed
+
+1547160984
+andrewrk
+but when depending on C libraries that do use libc, libc and the zig standard library will share code
+

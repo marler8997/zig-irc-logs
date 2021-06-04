@@ -1,0 +1,2256 @@
+1574640119
+Snektron
+very nice
+
+1574640169
+daurnimator
+andrewrk: I assume you saw the error(s) I hit when swapping out the return type of toSlice?
+
+1574640268
+andrewrk
+I appreciate your enthusiasm, trying out a branch that doesn't even have these check boxes done :) but yeah I wouldn't expect it to work until I add those test cases and fix whatever issues come up
+
+1574640295
+Snektron
+What sentinel syntax got implemented in the end?
+
+1574640315
+Snektron
+[123 :0]u8?
+
+1574640321
+andrewrk
+Snektron,
+
+1574640321
+daurnimator
+andrewrk: none of the unticked boxes seemed relevant to the errors I hit :)
+
+1574640349
+Snektron
+Ah yes
+
+1574640355
+andrewrk
+daurnimator, "Take advantage of null terminated pointers in the standard library"
+
+1574640378
+Snektron
+Also:
+
+1574640384
+Snektron
+i think argv is officially null-terminated
+
+1574640391
+Snektron
+not only the elements, but also argv itself
+
+1574640433
+daurnimator
+Snektron: likewise environ
+
+1574640449
+daurnimator
+at least they are on linux.... not 100% sure about other platforms
+
+1574640629
+Snektron
+yeah, so already a nice use case
+
+1574640719
+Snektron
+Does this mean that c string syntax will be deprecated btw? considering they can now be expressed as `const c_str: [_:0] = "i like pythons";`
+
+1574640730
+daurnimator
+Snektron: yep. you'll see the PR already has that done
+
+1574640762
+andrewrk
+not only deprecated, it's completely removed
+
+1574640767
+andrewrk
+to fix your code, simply delete the letter `c`
+
+1574640787
+daurnimator
+and sometimes suffix a .*
+
+1574640794
+Snektron
+so all strings now get a sentinel by defailt?
+
+1574640800
+daurnimator
+Snektron: yep
+
+1574640802
+andrewrk
+daurnimator, no, not for upgrading C string literals. they were already pointers
+
+1574640809
+daurnimator
+andrewrk: oh okay
+
+1574640846
+andrewrk
+this is in preparation for another breaking change... removing the type ceorcion from array values to const slices. you'll have to use &
+
+1574640850
+Snektron
+What if you want to circumvent automatic sentinels?
+
+1574640856
+pixelherodev
+"all strings now sentineled by default" :(
+
+1574641128
+andrewrk
+I promise you this change will be strictly more convenient for you
+
+1574641186
+Snektron
+no doubt; just wondering about intricacies
+
+1574641220
+andrewrk
+you could circumvent automatic sentinels with a comptime function call
+
+1574641261
+andrewrk
+in case it isn't perfectly clear: string literals still cast to `[]const u8`
+
+1574641272
+andrewrk
+but now they
+
+1574641339
+pixelherodev
+"you could circumvent automatic sentinels with a comptime function call"?
+
+1574641458
+andrewrk
+sure, for example, you could make a function called `s`, used like this: `s("foo")` and returns `[]const u8` based on a new array in memory with no sentinel. zig would figure out the original string literal is not used and only include the non-terminated one in the binary
+
+1574641468
+andrewrk
+this is also how you would implement, for example, decoded strings as string literals
+
+1574641600
+daurnimator
+andrewrk: actually that's something I'm never sure about with zig: what is the lifetime for things like that
+
+1574641644
+andrewrk
+the answer is comptime garbage collection
+
+1574641684
+daurnimator
+also things like: `&io.BufferSlice(&mybuffer).stream` -> isn't that BufferSlice itself going out of scope and hence the address is invalid?
+
+1574641781
+pixelherodev
+decoded?
+
+1574641809
+Snektron
+Also i thing i was wondering about: Does llvm do autovectorization with Zig?
+
+1574641831
+Snektron
+i just saw my counting sort implementation go from slow to fast when i switched to clang from gcc
+
+1574641839
+daurnimator
+pixelherodev: I guess: `Base64.decode("stringliteral")` -> the decode can happen at comptime and hence you want the result in the binary, not the source string
+
+1574641846
+pixelherodev
+ah
+
+1574641863
+daurnimator
+(also that example is terrible... sorry :P)
+
+1574642365
+daurnimator
+
+
+1574642468
+andrewrk
+Snektron, yes it does
+
+1574642509
+andrewrk
+daurnimator, if you take the address of an element/field of a comptime value, that is still referencing the base
+
+1574642526
+andrewrk
+@fieldParentPtr works at comptime
+
+1574642564
+daurnimator
+andrewrk: but not at runtime? that feels a little foot-gun-y
+
+1574642573
+andrewrk
+?
+
+1574642670
+andrewrk
+@fieldParentPtr has no relation to comptime/runtime, the abstraction holds
+
+1574642674
+daurnimator
+--> taking address at compile time? works fine; lifetime is safe. taking address at runtime: better make sure its valid.
+
+1574642698
+andrewrk
+it's the same thing. the difference is that the lifetime of a comptime const is immortal
+
+1574642742
+andrewrk
+you could also have an immortal runtime object. for example if you put it in the stack frame of main()
+
+1574642745
+daurnimator
+andrewrk: is the `&io.BufferSlice(&mybuffer).stream` pattern safe?
+
+1574642780
+protty
+un-ironically a cool way to say static
+
+1574642837
+andrewrk
+daurnimator, well we have this issue open for that:
+
+1574642894
+daurnimator
+andrewrk: okay, so that
+
+1574642906
+andrewrk
+I'm not sure what you're asking
+
+1574642926
+andrewrk
+to me "safe" means "impossible to invoke undefined behavior"
+
+1574642947
+andrewrk
+your question doesn't have enough information (I'd need a full test case) to evaluate whether this is true or false
+
+1574642960
+daurnimator
+andrewrk: the standard library is full of that unsafe pattern. e.g.
+
+1574643011
+andrewrk
+there's 2 ways for this pattern to go wrong
+
+1574643026
+andrewrk
+(1) forgetting the &, which is #591
+
+1574643127
+andrewrk
+(2) otherwise obtaining an, e.g. *Allocator which some code does @fieldParentPtr on it, but in fact, it had a different parent than the one asserted. (1) is just causing this (2) thing to happen
+
+1574643146
+andrewrk
+both planned to have safety panics
+
+1574643171
+andrewrk
+regardless of the mixin thing, this pattern is still relevant. it's how intrusive linked lists work, for example
+
+1574643185
+daurnimator
+andrewrk: okay yeah. was just suprising to see how pervasive the mistake is even in the standard library
+
+1574643208
+daurnimator
+--> and also how we seem to luck out and have it work
+
+1574643254
+andrewrk
+what mistake are you talking about?
+
+1574643275
+daurnimator
+what I just linked to....
+
+1574643276
+andrewrk
+I'm aware of 0 instances of the mistake in #591 occuring in the std lib
+
+1574643279
+daurnimator
+`var buf_stream = &io.BufferOutStream.init(&buf).stream;`
+
+1574643287
+andrewrk
+that is valid
+
+1574643328
+andrewrk
+the mistake is omitting the &
+
+1574643360
+daurnimator
+how is that valid? `io.BufferOutStream` has two members: .buffer and .stream.
+
+1574643375
+daurnimator
+the stream uses `const self = @fieldParentPtr(BufferOutStream, "stream", out_stream);` to get back to the BufferOutStream
+
+1574643406
+andrewrk
+what's the problem?
+
+1574643416
+protty
+does doing `var x = &T{.y=z}` where z is runtime known create a temporary T and store the address of that in x?
+
+1574643431
+daurnimator
+andrewrk: where does the BufferOutStream live?
+
+1574643465
+daurnimator
+`var bo = io.BufferOutStream.init(&buf); const buf_stream = &bo.stream;` -> that would be safe.
+
+1574643473
+andrewrk
+protty, yes. the memory will be in the current stack frame.
+
+1574643475
+daurnimator
+but without `bo` being in scope, isn't it unsafe?
+
+1574643488
+pixelherodev
+Taking the address of a temporary
+
+1574643518
+daurnimator
+right: `&io.BufferOutStream.init(&buf).stream;` is taking the address of a temporary.
+
+1574643528
+daurnimator
+is taking the address of a temporary allowed?
+
+1574643532
+andrewrk
+daurnimator, yes
+
+1574643540
+pixelherodev
+At the very least,
+
+1574643550
+andrewrk
+pixelherodev, correct
+
+1574643552
+pixelherodev
+But it's valid within the stack frame in question?
+
+1574643554
+daurnimator
+andrewrk: so temporaries are valid until.... the next }?
+
+1574643555
+andrewrk
+correct
+
+1574643555
+pixelherodev
+Interesting
+
+1574643559
+andrewrk
+daurnimator, yes
+
+1574643565
+dbandstra
+news to me as well hehe
+
+1574643570
+daurnimator
+news to me... and suprising
+
+1574643625
+andrewrk
+the exception is if the value is comptime known. then it's a pointer to comptime const data
+
+1574643647
+andrewrk
+which, if you think about it, is why it's OK to return a string literal
+
+1574643680
+protty
+so something like:
+
+1574643712
+protty
+`const x: *const T = &T{}` will have x point to a const memory region?
+
+1574643737
+andrewrk
+well in this case it will be a no-op. but if you make that 1 element or more, then yes
+
+1574643751
+protty
+makes sense
+
+1574643765
+daurnimator
+`const buffer_out_stream = &io.BufferOutStream.init(&buffer);` // is the temporary mutable? --> is it a `*io.BufferOutStream` or a `*const io.BufferOutStream`?
+
+1574643798
+andrewrk
+& gives you exactly the mutability of the thing you're referring to
+
+1574643806
+andrewrk
+whether it's a temporary or not doesn't enter into it
+
+1574643832
+daurnimator
+uhhhhh
+
+1574643837
+andrewrk
+wait, I'm wrong, it does enter into it. that's a good question
+
+1574643848
+mikdusan
+andrewrk: if there was no address of tmp taken, is compiler free (and can zig/llvm today do it) to use the same tmp storage in a next statement in same block?
+
+1574643872
+andrewrk
+mikdusan, the lifetime is until the end-of-scope
+
+1574643894
+andrewrk
+but note that some scopes are not explicitly represented with { }
+
+1574644005
+andrewrk
+when taking the address of a temporary, the lifetime gains the same lifetime as the result location that accepts the reference to the temporary
+
+1574644043
+andrewrk
+so in daurnimator's example above, the lifetime of the temporary that got its address taken, is the lifetime of buffer_out_stream
+
+1574644099
+andrewrk
+btw I would be open to proposals about this. I was just trying to answer questions about status quo
+
+1574644164
+mikdusan
+got it. i had just assumed that `warn("{}\n", a+b); warn("{}\n", c+d);` would/could use same temp storage
+
+1574644276
+andrewrk
+for integers, I don't think there is even a concept of the storage for a+b or c+d
+
+1574644294
+andrewrk
+but maybe your example could have foo() and bar() as the parameter to warn
+
+1574644303
+andrewrk
+with a struct return type
+
+1574644345
+andrewrk
+in these cases, the result location is a temporary result location created by the parameter. the scope is the parameter expression. so yes zig is free to reuse the same temp storage
+
+1574644361
+andrewrk
+each parameter to a function is a new result location
+
+1574644466
+dbandstra
+news to me as well hehe
+
+1574644471
+dbandstra
+whoops wrong window :|
+
+1574644588
+andrewrk
+my argument for having the ability to take the address of a temporary is that it's actually safer than the alternative
+
+1574644612
+pixelherodev
+Seconded
+
+1574644621
+pixelherodev
+Though it's a bit unusual, that's not bad
+
+1574644748
+pixelherodev
+I think "unusual, but in a good way" might be a good way of summing up Zig :)
+
+1574645369
+mikdusan
+I wish github let me choose to which hat to wear { contributor, owner } so that I can choose when all these fancy buttons (which I don't want to use by mistake) show up
+
+1574648628
+stratact
+What an adventure I had... well glad to be fully set up again and back here
+
+1574648716
+daurnimator
+stratact: go on.....
+
+1574649298
+stratact
+long story, but I'll trim it down as best as I can. I originally got fed up with FreeBSD due to lack of care with updating the drm-kmod drivers to 5.0 for 12.X to support my AMD GPU cards. So I tried OpenBSD, which updated them to 4.19. Surprisingly it's the only open source OS in existence that makes installing and setting things up the easiest. The disadvantage to it, is it's security focused features make it noticeably slow and they have a "I
+
+1574649300
+stratact
+Know Better Than You" design in some things like their ports system, which limits flexibility. So then there is NetBSD... overall out of the BSDs, it's the most flexible and the most friendly (even the developers will welcome you), BUT... NetBSD folks are only interested in mostly supporting non-mainstream hardware or very old and low powered devices. So then I thought okay... go back to Linux... and I did, back to Slackware which architecturely was
+
+1574649301
+stratact
+the most BSD-ish besides Gentoo... well doing a UEFI + ZFS root setup for was a pain in the m***** f****** booty. After exhausting all of my options I talked to my local FreeBSD and he suggested just get an NVidia card, so I did, I ordered one from a local Best Buy online and have it delivered same day, reinstalled FreeBSD 12.1 with Nvidia drivers and my gosh, it was the most painless setup I've ever encountered... things just worked out of the box.
+
+1574649356
+daurnimator
+That sounds backwards
+
+1574649390
+daurnimator
+Worst thing I ever did was put an nvidia card in my linux desktop. So many bugs in the nvidia closed source driver; and no recourse. Swap it out for anything AMD and it runs like a dream
+
+1574649447
+stratact
+That's the thing, amdgpu works best for Linux, however it's different with FreeBSD. With FreeBSD there is very little kernel updates and ABI breakages which take away from Linux's nvidia problem.
+
+1574649485
+stratact
+The nvidia drivers aren't open source sure, but I don't have to worry about breakages.
+
+1574649523
+stratact
+Surprisingly enough using amdgpu on FreeBSD is the most painful, which is the opposite for Linux
+
+1574649530
+daurnimator
+stratact: uefi+zfs root shouldn't be too hard on linux...
+
+1574649597
+daurnimator
+I think grub has some issues... but the workarounds are known. Alternatively, just use rEFInd
+
+1574649637
+stratact
+daurnimator: I was using refind... it's just I didn't understand Slackware's mkinitrd system and it was not happy to install symlinks from the initrd-tree in the fat32 partition...
+
+1574649667
+daurnimator
+stratact: then don't use slackware? :P
+
+1574649674
+stratact
+Correcto! :)
+
+1574649737
+daurnimator
+but I mean.... I would have swapped over to e.g. Arch; not gone out and bought a different graphics card :P
+
+1574649834
+stratact
+nonetheless, I'm sure my story was interesting, no?
+
+1574649992
+daurnimator
+sure
+
+1574650003
+daurnimator
+so you're back on freebsd?
+
+1574650008
+stratact
+Yeah
+
+1574650295
+stratact
+My lesson here was, "when in Rome, do what the Romans do"
+
+1574652514
+pixelherodev
+It's not too difficult to "trick" refind into accepting unusual initrd names
+
+1574652540
+pixelherodev
+I literally wrote a script to update the initramfs on Gentoo that duplicated the produced files with names rEFInd understands
+
+1574652549
+pixelherodev
+Like, three lines tops, everything started "just working"
+
+1574652584
+pixelherodev
+On a different note, never try updating a Gentoo system that's been off for years
+
+1574652588
+pixelherodev
+It's a pain in the ass
+
+1574652820
+andrewrk
+c'mon github, I'm trying to get shit done
+
+1574652841
+mikdusan
+ok so I'm not the only one
+
+1574652857
+andrewrk
+I've got 3 issues typed out in vim, ready to go
+
+1574652880
+daurnimator
+indeed. I'm also having trouble with docker not pulling right now
+
+1574652888
+daurnimator
+I wonder if one of the cloud providers/cdns is failing
+
+1574653108
+andrewrk
+the type of argv actually looks kinda nice: [*:null]const ?[*:0]const u8
+
+1574653135
+andrewrk
+it's a bit noisy, but I mean, consider what a diagram explaining how argv is organized in memory would look like
+
+1574653248
+mikdusan
+nice, null terminated slice of byte=0 terminated byte slices
+
+1574653866
+pixelherodev
+I think you mean, pointer to unknown number of pointers to byte=0 terminate byte slices, with a null as the last entry ;)
+
+1574653893
+pixelherodev
+Wait... actually, with the new syntax, I'm no longer 100% sure
+
+1574653893
+pixelherodev
+drats
+
+1574654105
+andrewrk
+I think you both said the same thing
+
+1574654151
+mikdusan
+it looks good. tells me what the sentry types are.
+
+1574654197
+andrewrk
+it would be neat if we could propose some kind of extension to .h files which could add this additional type information, in some backwards compatible way
+
+1574654226
+andrewrk
+we could start sending upstream PRs to c libraries, and if it got popular enough, then even C compilers would gain optional warnings for this
+
+1574654331
+daurnimator
+I think theres a proposal open for that :)
+
+1574654403
+daurnimator
+#2457
+
+1574654610
+pixelherodev
+andrewrk, pointer != slice
+
+1574654697
+andrewrk
+pixelherodev, ah, I didn't notice that you said slice
+
+1574654712
+andrewrk
+slice syntax omits the length
+
+1574657063
+adamkowalski
+andrewrk: what are your thoughts on allowing unicode characters in code, especially for things like function names and variables names. One of the things I loved about Julia was that they allowed this. For somebody who spends all day dealing with a math heavy domain, being able to write things down exactly as they appear in the textbooks increases readability and communication between developers. They
+
+1574657069
+adamkowalski
+can instantly see the mapping from your code to the equations you were trying to implement where greek letters are extremely common
+
+1574658162
+pixelherodev
+IMO the biggest problem with Unicode code is that the set of allowed characters is a lot harder to define
+
+1574658205
+pixelherodev
+Unless you decide that anything that's non-ASCII is allowed and will never be used by the language itself or something I suppose
+
+1574658487
+daurnimator
+adamkowalski: you can, just put it in @""
+
+1574658818
+daurnimator
+adamkowalski:
+
+1574658916
+pixelherodev
+...wat
+
+1574659053
+pixelherodev
+So is it just me or are zig 0.4 and newer broken on godbolt?
+
+1574659080
+daurnimator
+pixelherodev: assembly output seemed to stop working around the 0.5 release. no one seems to have figured out why
+
+1574659106
+pixelherodev
+:(
+
+1574659181
+adamkowalski
+Hmm what benefit is there of having the @""? Why not just be able to write it directly?
+
+1574659191
+andrewrk
+daurnimator, someone did and it's a really simple fix:
+
+1574659200
+adamkowalski
+pixelherodev: in Julia you can just type backslash like so \omega
+
+1574659265
+adamkowalski
+you can write your loss function like so \sqrt(mean((y - y\hat)^2))
+
+1574659279
+adamkowalski
+then it turns the sqrt, and hat into the greek symbols
+
+1574659316
+adamkowalski
+obviously it's not needed, but it's kindof nice when reading it
+
+1574659352
+adamkowalski
+you just write tab and the editor replaces the \omega with the greek letter
+
+1574659499
+pixelherodev
+Ah, passing in the extension :P
+
+1574660082
+daurnimator
+andrewrk: looks like you're ready for merging? :)
+
+1574660109
+andrewrk
+just about. gonna let my windows computer finish running tests so that I can bypass CI
+
+1574660111
+daurnimator
+andrewrk: did you want to try making the change to mem.toSlice again?
+
+1574660118
+andrewrk
+daurnimator, about to push that
+
+1574660181
+adamkowalski
+andrewrk: I saw your latest stream today. If you start generating machine code directly do you think it will ever be viable to bypass llvm even for optimized builds? Keep everything under the control of Zig, and target new platforms that maybe llvm doesn't support
+
+1574660203
+andrewrk
+adamkowalski, yes that is another possible use case - basic support for targets that llvm does not support
+
+1574660214
+mikdusan
+6502 here we come
+
+1574660219
+andrewrk
+yeah!
+
+1574660277
+adamkowalski
+That would be great, you could probably become one of the first languages that can literarly deploy everywhere, from phones, laptops, webassembly. To things like aws lambda or even big supercomputers like cray
+
+1574660327
+adamkowalski
+Has there already been any work done on deploying to aws lambda, azure cloud functions, or anything of that nature?
+
+1574660412
+andrewrk
+isn't that just x86_64?
+
+1574660520
+adamkowalski
+I'm not sure, if thats all it is thats awesome. I'll have to try it out soon
+
+1574660568
+adamkowalski
+I've made a lot more progress on my project. I'm writing out the equality explicitly like you mentioned, and just moving things along. Hopefully I'll be able to replace some of our Python code in production soon and I can see how simple it is to deploy to web services
+
+1574660639
+hspak
+For AWS Lambda at least, any static x86_64 binary will run. You should be able to follow this for Zig:
+
+1574660657
+andrewrk
+daurnimator, pushed
+
+1574660693
+andrewrk
+yeah zig is great at making static binaries. you have to try extra hard to
+
+1574660747
+adamkowalski
+hspak: thanks I'll follow that!
+
+1574660757
+hspak
+Actually, that post is showing off some lambda crate that makes running rust on lambda easier. I'm sure there's a better resource, but you can definitely run Zig in Lambda. People were running Rust in lambda before it was supported
+
+1574660789
+andrewrk
+even if you need a c library for that, you can use -target x86_64-linux-musl and still get a static binary
+
+1574660843
+pixelherodev
+Which is really awesome :)
+
+1574660856
+pixelherodev
+Currently, I have a total binary size of ~100KB :D
+
+1574661080
+daurnimator
+adamkowalski: need http server first
+
+1574662116
+mikdusan
+`fn toSliceConst(comptime T: type, comptime sentry: T, ptr: [*:sentry]const T) [:sentry]const T {...}`
+
+1574662116
+daurnimator
+andrewrk: is there a cast from  [*c]u8 to [*:0]const u8?
+
+1574662154
+mikdusan
+is there a way to get sentry from a type
+
+1574662178
+daurnimator
+mikdusan: its in @typeInfo IIRC
+
+1574662242
+emekankurumeh[m]
+if i implement an unaccepted feature request is there any reason to think that it would be more likely to be accepted?
+
+1574662280
+daurnimator
+emekankurumeh[m]: not particularly; unless the concerns were about being e.g. "too complex" or "too much work"
+
+1574662303
+andrewrk
+emekankurumeh[m], which one?
+
+1574662309
+daurnimator
+that said, I've done it before: easier to talk about pros/cons when you have an implementation in front of you
+
+1574662328
+emekankurumeh[m]
+1214
+
+1574662399
+andrewrk
+ah. that one i'm not ready to address yet. probably a PR would sit for a long time, or be closed until the proposal is settled
+
+1574662411
+andrewrk
+I understand it's a popular proposal
+
+1574662453
+emekankurumeh[m]
+hmm, i second thought i may be able to come up with a workaround for my specific use case
+
+1574662528
+emekankurumeh[m]
+can generic functions return extern structs?
+
+1574662567
+daurnimator
+emekankurumeh[m]: yes
+
+1574663142
+emekankurumeh[m]
+since when could _ be a struct field?!
+
+1574663323
+stratact
+andrewrk: I have a question, I was mentioning Zig to an OpenBSD user and his impression of making wrapping of unsigned integers undefined was "harsh" because it would make it harder to implement cryptographic features like in C. What would be your opinion on this matter? Just for my curiousity.
+
+1574663365
+emekankurumeh[m]
+just use the wrap-around operators...
+
+1574663421
+stratact
+ah awesome, thank you
+
+1574663490
+stratact
+Somehow I must of missed that due to skimming the documentation last time I was learning Zig.
+
+1574663624
+emekankurumeh[m]
+well i worked around the lack of struct embedding by turning my structs into generic functions and using `_` as a field to
+
+1574663625
+emekankurumeh[m]
+"hide" them in other structs
+
+1574663774
+daurnimator
+emekankurumeh[m]: struct { usingnamespace struct{} }
+
+1574663798
+emekankurumeh[m]
+the issue is that i need the fields not declarations
+
+1574663828
+emekankurumeh[m]
+i'm writing a wrapper for a COM api so i need to define the vtables manually
+
+1574663956
+emekankurumeh[m]
+i came up with this:
+
+1574664179
+daurnimator
+emekankurumeh[m]: interesting. and you're writing these out manually for each COM thing?
+
+1574664265
+emekankurumeh[m]
+it's not to bad, i'm mostly just cleaning up some stuff from translate-c bc windows is crazy and zig chokes on all the redefinitions in windows headers
+
+1574664851
+daurnimator
+andrewrk: can you give me permission to restart CI runs? lately azure devops seems to have random failures
+
+1574665276
+andrewrk
+daurnimator, step 1 is you need a username on Azure
+
+1574665322
+daurnimator
+andrewrk: i'm signed in with quae at daurnimator.com
+
+1574666431
+daurnimator
+andrewrk: wooo :)
+
+1574666447
+andrewrk
+and now bring on the PRs
+
+1574666473
+daurnimator
+Easy or hard ones? :)
+
+1574666734
+daurnimator
+#3769, #3764, #3762, #3715, #3714 should be easy
+
+1574668217
+andrewrk
+daurnimator, btw I don't generally require people to rebase their PRs if they were ready to merge before; I'm happy to do such work
+
+1574668295
+daurnimator
+andrewrk: what about when there is a material difference though. e.g. on the environ PR I just said that on, all the types in the PR need to be redone
+
+1574668378
+andrewrk
+draft for 30+ days? sounds like they should re-open when they want something merged
+
+1574668396
+daurnimator
+andrewrk: but also... your time is valuble. its better for all of us if you spend time reviewing rather than fixing up someone's low priority PR
+
+1574668416
+andrewrk
+I guess that's true
+
+1574669255
+daurnimator
+What do you think about adding milestone for some useful zig goals, e.g. "easy to create a linux kernel module"?
+
+1574669308
+andrewrk
+daurnimator, I've been using the "Projects" feature for stuff like that:
+
+1574669346
+andrewrk
+that example in particular, I think would be valuable as a community maintained third party project
+
+1574669421
+andrewrk
+the progress towards the goal would be measured in the complexity of the README file of a hello world linux kernel module
+
+1574669571
+daurnimator
+andrewrk: right now its measured in the TODOs of
+
+1574669605
+daurnimator
+(for which
+
+1574669610
+andrewrk
+nice, that's a good resource
+
+1574669644
+andrewrk
+daurnimator, personally I want to fully invest in self-hosted translate-c rather than fix bugs in the C++ one
+
+1574669670
+daurnimator
+andrewrk: the reason I was thinking milestones over projects is that when you go to an issue page, it tells you the milestones it belongs to
+
+1574669682
+andrewrk
+it also tells you the project
+
+1574669688
+daurnimator
+oh? I haven't noticed then
+
+1574669688
+andrewrk
+
+
+1574669697
+daurnimator
+ah k, great :)
+
+1574669746
+andrewrk
+I'd be OK with "Non-Kludgy Linux Kernel Module" as a project
+
+1574669755
+daurnimator
+k. will do
+
+1574669781
+daurnimator
+Column ideas: "blockers" "nice to have" "enhancements"
+
+1574669790
+andrewrk
+sure, go nuts
+
+1574669804
+andrewrk
+none of that is going to make people work faster though :P
+
+1574669904
+daurnimator
+andrewrk: good to have an idea of what working on a given issue may accomplish. also for anyone watching, knowing when a good time to try out zig for their purpose is
+
+1574669930
+mq32
+hey
+
+1574669941
+mq32
+is there a safe way of casting ints to enums?
+
+1574669959
+andrewrk
+daurnimator, yeah I think it's a good idea. I was just poking fun at the columns
+
+1574669962
+mq32
+or do i have to do this myself?
+
+1574669975
+andrewrk
+mq32, if you were to name this builtin, what would you call it?
+
+1574670027
+FireFox317
+xd
+
+1574670123
+mq32
+hm. we already have @intToEnum, maybe "fn @tryIntToEnum(comptime T: type, value: @enumType(T)) ?T"
+
+1574670131
+andrewrk
+ahh I see what you are after
+
+1574670145
+mq32
+safe deserialization
+
+1574670154
+andrewrk
+there might be something in meta
+
+1574670174
+mq32
+i really have to download the docs for each zig version when i'm updating...
+
+1574670178
+andrewrk
+std.meta.intToEnum
+
+1574670183
+mq32
+online help just doesn't cut it
+
+1574670194
+andrewrk
+yeah generated docs are WIP
+
+1574670218
+mq32
+mostly because of the file size :D
+
+1574670233
+andrewrk
+hm. I would have made it optional, not an error union
+
+1574670243
+mq32
+it just doesn't load on a mobile connection
+
+1574670283
+mq32
+it's kinda expected that it fails to convert :D
+
+1574670719
+andrewrk
+yeah you can sort of get a sense of when it makes sense to use an optional rather than an error union, based on the following 2 clues: (1) there is only 1 error in the error set. (2) the error is not something that would make sense to show to a user
+
+1574670764
+andrewrk
+"InvalidEnumTag" is some kind of internal programming thing, it doesn't really have to do with operating a computer
+
+1574670791
+andrewrk
+vs OutOfMemory, InvalidCharacter, or NetworkUnreachable
+
+1574670825
+daurnimator
+andrewrk: btw, is now a good time to walk you through the fifo code?
+
+1574670858
+andrewrk
+sorry, it's real close to my bed time and I want to play video games for a few minutes
+
+1574670889
+daurnimator
+k. what you playing?
+
+1574670935
+andrewrk
+Noita
+
+1574670995
+mq32
+oh, Noita is nice
+
+1574671012
+mq32
+burn some Oil!
+
+1574671545
+daurnimator
+btw, still not able to re-trigger an azure build
+
+1574673973
+FireFox317
+If i look at the generated llvm-ir, it is doing a memcpy `call void @llvm.memcpy.p0i8.p0i8.i64(i8* align 4 %11, i8* align 4 bitcast (%"?testStruct"* @9 to i8*), i64 16, i1 false), !dbg !536` and i think this align 4 is not correct here
+
+1574675333
+andrewrk
+FireFox317, that align 4 describes the alignment of %11 and @9, so you can check where those come from to see if they have proper align attributes
+
+1574675365
+andrewrk
+good night
+
+1574675380
+FireFox317
+Thanks andrew, good night!
+
+1574676101
+daurnimator
+andrewrk:
+
+1574677160
+daurnimator
+So has anyone managed to come up with a better callback solution than what I had the other week?
+
+1574691085
+Snektron
+Callback solution for what?
+
+1574691472
+daurnimator
+Snektron: A zero-overhead way to pass optional callbacks to a generic.
+
+1574691673
+frmdstryr
+Can zig to forward type declarations?
+
+1574691680
+frmdstryr
+do*
+
+1574691784
+daurnimator
+frmdstryr: you don't need to: zig is lazy
+
+1574691857
+frmdstryr
+So I can just define an empty struct and populate it in another file?
+
+1574691868
+daurnimator
+no
+
+1574691875
+daurnimator
+you have to populate immediately
+
+1574691882
+daurnimator
+but the things you reference... don't have to exist yet
+
+1574691941
+daurnimator
+const Foo = struct { x: Bar };  const Bar = struct { y: u8 }; // this works
+
+1574692012
+frmdstryr
+What if Bar is in another file?
+
+1574692025
+fengb
+Import and use it
+
+1574692047
+fengb
+You can have circular imports if you’re feeling extra edgy:P
+
+1574692081
+frmdstryr
+But then it still needs to know what to import
+
+1574692104
+mq32
+fengb: I#ve even seen some circular usingnamespace in the wild
+
+1574692130
+frmdstryr
+Can i just assign a "var" field in a struct? that takes whatever is put there
+
+1574692157
+fengb
+What are you trying to do?
+
+1574692161
+mq32
+no, you need different types for that
+
+1574692181
+frmdstryr
+Trying to learn zig by porting a web framework
+
+1574692193
+frmdstryr
+The router must be able to map a rule to a request handler
+
+1574692213
+frmdstryr
+request handlers can be defined whenever
+
+1574692238
+fengb
+That should be a function pointer right?
+
+1574692242
+mq32
+sounds like a classic usecase for function pointers
+
+1574692249
+fengb
+Or an interface type of sorts
+
+1574692276
+frmdstryr
+Yes but it looks like zig doesn't have interfaces yet?
+
+1574692311
+fengb
+We do kinda. std.mem.allocator is are most common one
+
+1574692323
+fengb
+It’s a userland pattern
+
+1574692624
+frmdstryr
+Can I cast a buffer to a struct?
+
+1574692655
+mq32
+kindaish
+
+1574692699
+frmdstryr
+What I really want is a union that can be modified at comptime before it's first used
+
+1574692715
+mq32
+you can @bitCast types to convert their binary represenatation, but that is rarely used
+
+1574692723
+mq32
+use generics
+
+1574692758
+mq32
+fn MyBadOptional(comptime T: type) type { return union(enum) { none: void, some: T }; }
+
+1574692761
+frmdstryr
+but I can't store a generic in a stuct unless I know the type ahead of time
+
+1574692789
+mq32
+what do you want to achieve in the end?
+
+1574692811
+frmdstryr
+store struct + context to populate the struct
+
+1574692839
+frmdstryr
+wheither neither are known until the user adds them to the routing table
+
+1574692910
+mq32
+hm
+
+1574692917
+mq32
+you can use a generic function
+
+1574692927
+mq32
+on your routing table
+
+1574692935
+mq32
+routingTable.addSome(T, T { … });
+
+1574693027
+frmdstryr
+Can a hashmap store a dynamic type?
+
+1574693045
+frmdstryr
+How would I then save that and pull it back
+
+1574693059
+frmdstryr
+See the issue?
+
+1574693104
+mq32
+you can always store a pointer
+
+1574693124
+mq32
+have an interface with a release-function that will delete the allocated object
+
+1574693244
+frmdstryr
+Whats the type for a generic pointer?
+
+1574693288
+frmdstryr
+*void ?
+
+1574693390
+mq32
+a pointer to your interface type
+
+1574693434
+mq32
+so if you would like to have a list of different "routers", you would have a common interface Router and an implementation that does this:
+
+1574693445
+mq32
+struct { router: Router, i: i32, j: i32 };
+
+1574693462
+mq32
+and you can use @fieldParentPTr to get from "struct.router" to a pointer to your struct type
+
+1574694085
+frmdstryr
+So zig basically has inheritance but it's reversed?
+
+1574694312
+mq32
+nah, not quite
+
+1574694317
+mq32
+look at how std.mem.Allocator works
+
+1574694403
+mq32
+you can use that for a kind of inheritance, yews
+
+1574694413
+mq32
+but it's a userspace concept, you can built a lot of stuff with that
+
+1574694547
+frmdstryr
+Just uses callback functions?
+
+1574694661
+frmdstryr
+Oh, I see in std.heap.zig
+
+1574694835
+frmdstryr
+So what happens with fieldParentPtr if you pass in something whoms parent is not the proper type?
+
+1574694931
+fengb
+Undefined behavior
+
+1574694948
+fengb
+It's doing a bad pointer offset and reaching outside of the struct
+
+1574694964
+fengb
+It would be doing*
+
+1574695420
+frmdstryr
+So by passing the nested struct instead of the "parent" the compiler is losing information it could use to validate that or does it already detect it?
+
+1574695466
+fengb
+I think there's a task to investigating making it safe, but right now there's no check
+
+1574695813
+frmdstryr
+#591
+
+1574697121
+muffindrake
+So string literals are null-terminated now?
+
+1574697164
+mq32
+seems so
+
+1574697443
+fengb
+They are for compatibility reasons. 99% of zig code shouldn't actually care
+
+1574697619
+mq32
+i really like the sentinel-pointer-stuff
+
+1574697644
+mq32
+i have the strong feeling that this stuff will also open a lot of neat options we didn't thought of yet
+
+1574697678
+fengb
+It basically allows us to remove C string literals, since all string literals are compatible now. Other than that, Zig code doesn't touch the null and it doesn't show up in the length
+
+1574697818
+fengb
+Unless you're using the new sentinel slicing of course >_>
+
+1574697823
+mq32
+yep, that's neat :)
+
+1574697836
+mq32
+that also means we can interface with C strings much much simpler
+
+1574698346
+Flaminator
+So it stores string literals with a \0 at the end now?
+
+1574704196
+dimenus
+andrewrk: in cd37c1, did you mean to remove functionality? You took away the `readFileAllocAligned` that doesn't require a dir
+
+1574704416
+andrewrk
+dimenus, yes, use std.fs.Dir.cwd().readFileAllocAligned
+
+1574704435
+dimenus
+ah, got it
+
+1574704477
+andrewrk
+there is room in the API to add a function that asserts that the parameter is absolute and does not require a directory, but this function works for both
+
+1574704505
+andrewrk
+and it being here encourages people to think in terms of open directory handles, which is not what people are used to but it's the correct way to avoid race conditions
+
+1574704552
+andrewrk
+WASI doesn't even have the absolute path version; you must use a directory handle
+
+1574704675
+nairou
+Silly question... ziglang.org has great reference documentation for the language, but where do I find a reference for the std lib? I don't see that in the documentation.
+
+1574704804
+tgschultz
+nairou: We get that a lot. The answer is that the stdlib is highly unstable and hasn't been worth documenting. However, I believe the intention is that 0.6.0 release will have documentation generated from source doc-comments at least.
+
+1574704888
+nairou
+Good to know. What is the current process for using it then? For example, I'm trying to learn the language by going through last year's Advent Of Code, and the first thing I need to do is read from a file... I've been searching for how to do that. :-)
+
+1574704891
+adamkowalski
+andrewrk: if you have some time could you take a look at
+
+1574704936
+fengb
+We have some "secret" docs that aren't linked because it's incomplete
+
+1574704946
+adamkowalski
+It's about a project called Zygote which is a source to source automatic differentiation library. Similar to the kind of thing I was talking about earlier. They demonstrate how it's implemented and more importantly some of the practical implications of what you can do with machine learning
+
+1574704975
+adamkowalski
+Would it be possible to implement something like this in Zig? They are able to hook into the compiler and write libraries that take all code and move it to the gpu for example
+
+1574704980
+nairou
+Sweet, that works. Thanks!
+
+1574705001
+adamkowalski
+or turn all floats into f16 so that you can take advantage of the latest advances in gpus/tpus
+
+1574705024
+adamkowalski
+they also let you add a "hook" before any function is called so you can do non standard interpretation like taking derivatives
+
+1574705046
+adamkowalski
+If you don't like it can you suggest what path you recommend I go down in Zig when trying to implment it for myself?
+
+1574705172
+andrewrk
+nairou, I think zig's std lib facilites for text processing input are not to the convenience level of "scanf" yet. maybe someone wants to do submit a PR for such an API over the next few days before dec 1? :)
+
+1574705193
+andrewrk
+if you're willing to read the entire input into memory, you can get pretty far std.mem.separate and std.mem.tokenize
+
+1574705254
+andrewrk
+adamkowalski, I'd be happy to advise on how to solve this use case, but I don't understand what you're trying to do. you can't just swap out floats for f16's, you'll break everybody's code
+
+1574705257
+nairou
+Reading the entire file is good enough for now, I'll check those out. Thanks!
+
+1574705359
+adamkowalski
+andrewrk: well the premise is that if you have a library that was written for the cpu and it is using f64 or f32 and now you want to leverage it on the gpu. You want to use f16 because you can do more floating ops per second, and we don't need the precision in neural networks. So you want to reinterpret all floats as f16 or even quantized i8 within a particular scope
+
+1574705430
+adamkowalski
+But thats not even the important thing. The main point of that library is automatic differentiation. It is usually a one function API called gradient which gives you the gradient vector of a particular function with respect to some parameters
+
+1574705456
+adamkowalski
+They talk in this video (which I strongly recommend, the speaker is very entertaining) about the drawbacks of the current approaches
+
+1574705495
+adamkowalski
+Right now in Python with PyTorch or TensorFlow you record all the operations (plus, mul, sub, whatever) on a tape, which then you can play back using the chain rule to take the derivatives. But this ends up acting like an interpreter and is really slow
+
+1574705525
+adamkowalski
+Zygotes approach is to hook into the compiler and actually do a source to source transformation of your code so you get to use all the optimizations that llvm has to offer, even on your backwards pass
+
+1574705551
+adamkowalski
+so it's a "compile time function" which takes in your source code and returns source code which generates the derivative
+
+1574705599
+andrewrk
+zig is a DSL for machine code. if you want some other kind of API or DSL you have to build it on top of zig, rather than hacking up the semantics of zig to match a different DSL
+
+1574705638
+adamkowalski
+right, I figured that this was not the approach you wanted to take. So I figured I would get some feedback from you so I can design the library that works in the way it's intended for zig
+
+1574705698
+adamkowalski
+Fundamentally all of these libraries are building up a computation graph. They seperate the description of the operations to be done from the operations themselves. This way they can operate on the graph and take derivatives, or offload work to other nodes or accelerators
+
+1574705704
+andrewrk
+based on my limited understanding of this: you need a declarative API for this, and you need a dependency on an optimizing compiler. julia has an optimizing compiler in the runtime. zig has no runtime
+
+1574705744
+adamkowalski
+So should I just explicitly build up a graph? Sort of like an ast but at runtime?
+
+1574705791
+andrewrk
+yes
+
+1574705797
+adamkowalski
+in C++ the approach I tried to take was expression templates, so I was trying to build a graph using templates and then using meta programming to transform the templates into something new
+
+1574705806
+andrewrk
+if your ast is compile-time known information, then this can be a build step
+
+1574705808
+adamkowalski
+that way all the work was happening at compile time
+
+1574705820
+adamkowalski
+the main problem I ran into was control flow
+
+1574705836
+adamkowalski
+I think thats why in Python they tried making the graph at runtime
+
+1574705953
+adamkowalski
+You mentioned I could hook into an optimizer at runtime? Does zig expose anything like that? I know that TensorFlow actually had to reimplement many optimization passes themselves
+
+1574705960
+andrewrk
+you can give yourself a nice API, and use it in a tool that runs during your build, generating zig code which you then compile. that's one option
+
+1574706148
+adamkowalski
+Hmm that makes sense, so then the generated zig code will still get compiled.
+
+1574706190
+adamkowalski
+What do you think about building out a tensor type (nd array where 0d is scalar, 1d is vector, 2d is matrix, 3d is ?) that is completely lazy
+
+1574706225
+adamkowalski
+so rather then actually storing data inside itself, it just records the work it would have done
+
+1574706260
+adamkowalski
+only when you actually do something like printing or differentiating you actually force work to happen and it looks through the computation graph and figures out how to actually do something
+
+1574708391
+andrewrk
+this pattern is really nice:
+
+1574708417
+andrewrk
+when doing this kind of abstraction, put the type enum id as the field default value, so that at the initialization site, you don't need redundant info, and can't get it wrong
+
+1574711497
+andrewrk
+argh, I think there was a regression in s3cmd or something, the docs have content-type application/octet-stream now
+
+1574713338
+mq32
+i'm on the wrong foot when working with zig right now.
+
+1574713380
+mq32
+halted the kernel project, continued working on another one
+
+1574713390
+mq32
+first line of code: "not implemented yet"
+
+1574713749
+mq32
+at least it was something that could be fixed easily :)
+
+1574714720
+mikdusan
+azure/CI windows: what a drag
+
+1574714936
+mq32
+20 minutes later: This is a bug in the Zig compiler.
+
+1574714938
+mq32
+dang!
+
+1574715261
+andrewrk
+mikdusan, it would be really nice if the log printed during the run, and if it at least told us why it didn't finish
+
+1574715585
+andrewrk
+also nice, thanks for rebasing the ConstExprValue PR
+
+1574715590
+mikdusan
+does your azure access let you "ctrl-c" a job?
+
+1574715611
+mikdusan
+like i mean literally (not some GUI button)
+
+1574715638
+mikdusan
+because here's the log of a windows "cancelled":
+
+1574715650
+andrewrk
+I don't have any kind of command line access if that's what you're asking
+
+1574715653
+mikdusan
+--> 136/1252 parker.test "std-native-ReleaseFast-c-multi std.ThreadParker"...^C
+
+1574715664
+mikdusan
+i mean someone literally hit ctrl-C.
+
+1574715697
+andrewrk
+hmmmmmmmmm
+
+1574715717
+mikdusan
+azure overcommit mitigation: attach to terminal manually, hit ctrl-C. oh my.
+
+1574715738
+andrewrk
+that might literally be what it is...
+
+1574715782
+andrewrk
+ahhh. ZigValue is a much better name for this type
+
+1574715788
+andrewrk
+this is a breath of fresh air
+
+1574715812
+mikdusan
+oh wow you committed it. nice.
+
+1574715823
+mikdusan
+s/commited/merged/
+
+1574715828
+andrewrk
+hold on to your butts. master branch is about to become a firehose
+
+1574715839
+andrewrk
+I don't need the CI, I have every operating system on my desk
+
+1574716340
+andrewrk
+mikdusan, we could probably merge x_void with const_void_val (also in CodeGen struct)
+
+1574716383
+mikdusan
+will take a look
+
+1574716615
+mikdusan
+should I move const_zero_byte into the intern struct as well?
+
+1574716625
+mikdusan
+struct intern_values {}
+
+1574716775
+andrewrk
+yep that should be good too
+
+1574716804
+mq32
+andrewrk: is the "wrong field type assignment bug" fixed already?
+
+1574716814
+mq32
+or did you reintroduce it with the anonymous struct changes?
+
+1574716865
+andrewrk
+mq32, this one?
+
+1574716914
+mq32
+no, the one with LLVM code in the error message
+
+1574716921
+mq32
+when doing invalid type assignment of a field
+
+1574716934
+mq32
+struct { a: A } {.a= B{}}
+
+1574717030
+andrewrk
+I have a branch in progress on that one
+
+1574717811
+mq32
+ah okay
+
+1574717815
+mq32
+so i don't have to report that again
+
+1574717818
+mq32
+just ran into it :D
+
+1574717940
+mq32
+need to get some sleep
+
+1574718039
+andrewrk
+fengb, what do you think about replacing std.heap.WasmAllocator with zee_alloc?
+
+1574718049
+mikdusan
+andrewrk: I'll probably do a supplemental to #3774 to update interning stats that show up in -fmem-report for code that refs const_void_val/const_zero_byte
+
+1574718073
+andrewrk
+mikdusan, sounds good, feel free to merge when you feel it's ready
+
+1574718329
+fengb
+andrewrk: that'd be pretty cool but I haven't tested it pretty thoroughly
+
+1574718378
+andrewrk
+don't you use it for fun dude?
+
+1574718389
+andrewrk
+uh, let me put some punctuation in there, lol
+
+1574718389
+fengb
+I do but I make like 3 allocations total
+
+1574718399
+andrewrk
+don't you use it for FunDude?
+
+1574718441
+andrewrk
+ah ok. well... we do need something that provides a map/unmap API on top of wasm's global state
+
+1574718476
+andrewrk
+in theory we should be able to create a nice allocator fuzz tester and run it on any allocator
+
+1574718480
+fengb
+Yeah I was thinking about that
+
+1574718501
+andrewrk
+maybe even this code:
+
+1574718527
+fengb
+The current wasm allocator needs the memory to be a special state. I've coded zee_alloc to depend only on the response of the LLVM function so it's mostly stateless
+
+1574718542
+fengb
+I actually pulled that in and found a few performance bottlenecks :)
+
+1574718568
+andrewrk
+hmm if you ran this test for any duration of time, it's probably ready for this phase of std lib
+
+1574718609
+andrewrk
+I'd like to delete std.heap.wasm_allocator and make std.heap.direct_allocator be a global instance of wee_alloc
+
+1574718666
+fengb
+I also added some tuning knobs because I wasn't sure which direction I wanted to go. The defaults are pretty heavily weighted towards a tiny footprint
+
+1574718677
+andrewrk
+I think that's a good default for wasm
+
+1574718701
+fengb
+Like even reimplementing some stdlib functions to get rid of some debugging output in release-safe
+
+1574718703
+andrewrk
+further modifications can always look at std.builtin.mode
+
+1574718728
+fengb
+
+
+1574718736
+andrewrk
+oh even in release-safe you wanted small? that's interesting. I thought that wasm was a good use case for ReleaseFast and ReleaseSmall actually
+
+1574718775
+fengb
+I couldn't turn off safety in fundude because it's not well tested. But I wanted to tune the allocator separately
+
+1574718813
+andrewrk
+that makes sense
+
+1574718830
+andrewrk
+I'm plannig to allow changing the build mode per scope (and note that files are scopes)
+
+1574718862
+fengb
+Anyway... I think zee_alloc "works", and it might even be usable as a generic allocator
+
+1574718891
+fengb
+But I'm not confident it's performant or anything
+
+1574718902
+andrewrk
+yeah that's fine for now though :)
+
+1574718911
+andrewrk
+std lib is not at production grade yet, it's at proof of concept status
+
+1574718961
+fengb
+I think it'd make the most sense to expose wasm_page_allocator
+
+1574718972
+andrewrk
+aahh now that sounds like what I'm looking for
+
+1574719011
+fengb
+
+
+1574719041
+fengb
+It's only multiples of 64K and no unmap (per spec)
+
+1574719054
+andrewrk
+oh that's nice since wasm is single threaded, you can rely on no TOCTOU races with those intrinsics
+
+1574719059
+andrewrk
+(Time Of Check, Time Of Use)
+
+1574719075
+andrewrk
+oh, wasm has no unmap?
+
+1574719083
+fengb
+Not yet
+
+1574719096
+andrewrk
+that's lame
+
+1574719105
+fengb
+No idea where the proposal is right now
+
+1574719126
+andrewrk
+you can't give a smaller size to grow?
+
+1574719135
+fengb
+Nope, it's only 64K chunks
+
+1574719173
+fengb
+Multiples of 64K
+
+1574719174
+andrewrk
+what's this other parameter? "initial size"? I don't understand
+
+1574719222
+fengb
+Good question
+
+1574719258
+andrewrk
+this isn't clear either:
+
+1574719315
+andrewrk
+get good, webassembly
+
+1574719318
+andrewrk
+we need to be able to free memory
+
+1574719458
+fengb
+Clang has __builtin_wasm_mem_grow(int32_t imm, size_t delta)
+
+1574719471
+fengb
+All hardcoded to 0 as well
+
+1574719531
+andrewrk
+it's not so bad - we need the wasm_page_allocator to re-use pages
+
+1574719550
+fengb
+Ah that'd be neat
+
+1574719717
+fengb
+So I think the base wasm allocator should be a shared page allocator. Unfortunately it only responds in 64k chunks so we need something to sit on top to be usable
+
+1574719757
+andrewrk
+I don't think we do - std.mem.page_size is 64k on wasm
+
+1574719773
+andrewrk
+std.heap.direct_allocator is expected to give std.mem.page_size chunks
+
+1574719780
+fengb
+Oh really?
+
+1574719796
+fengb
+So if I ask it for 4B, it's just wasting a bunch?
+
+1574719811
+andrewrk
+yeah totally, you really shouldn't use direct_allocator for stuff
+
+1574719836
+andrewrk
+it's good as a backing allocator for ArenaAllocator
+
+1574719848
+fengb
+Ah okay, then we can just do the page allocation style
+
+1574719859
+andrewrk
+I think it should be renamed to std.heap.page_allocator
+
+1574719870
+andrewrk
+maybe that will give people a better idea
+
+1574719908
+andrewrk
+I'm going to propose that
+
+1574719913
+fengb
+We'll still need to to store "free" pages. I can take a look later tonight
+
+1574719935
+fengb
+👍
+
+1574720032
+andrewrk
+so the memory starts at address 0?
+
+1574720126
+andrewrk
+I hope that grow intrinsic is returning a nonzero number... otherwise our null pointers have to take up an extra 4 bytes on wasm
+
+1574720136
+andrewrk
+s/null pointers/optional pointers/
+
+1574720318
+fengb
+It returns total number of previous pages
+
+1574720339
+fengb
+I'm pretty sure stack memory is considered a page so it should be !0
+
+1574720351
+andrewrk
+good
+
+1574720360
+fengb
+But it could be -1
+
+1574720838
+andrewrk
+fengb, one more question, do you care about wasmtime vs wasmer? I haven't really messed with either
+
+1574721094
+fengb
+I chose whatever was easiest lol
+
+1574721108
+fengb
+I don't know which is better, but there seems to be a little rivalry going on
+
+1574721290
+andrewrk
+zig actually has a lot to offer in that space as well - the guy mentioned that they didn't support freebsd, but if we did one we'd be using our cross platform std lib abstractions
+
+1574721313
+andrewrk
+zig's would be slower - the point wouldn't be perf or jit or anything, just that we should take advantage of our cross platform std lib
+
+1574721324
+andrewrk
+and then be able to run tests without other dependencies
+
+1574722514
+andrewrk
+not allowing shadowing just saved my ass big time
+
+1574722551
+emekankurumeh[m]
+how?
+
+1574723190
+andrewrk
+I refactored a struct field to be a global variable, and it clobbered a local variable name without me noticing until the compile error
+
+1574724979
+daurnimator
+andrewrk: oh I had an idea: the new `var` as a comptime struct member: its modifyable right?
+
+1574725002
+daurnimator
+I can probably come up with a callback pattern using it :D
+
+1574725098
+andrewrk
+it's modifiable but it forces the entire struct to always be comptime known
+
+1574725121
+andrewrk
+anonymous struct literals do not have this restriction, however
+
+1574725135
+daurnimator
+Also I had an idea triggered by a chat with gingerbill: what if struct literals had their own type: `comptime_structliteral`
+
+1574725154
+daurnimator
+`@typeOf(.{.foo = 42)` == comptime_structliteral
+
+1574725163
+andrewrk
+ah, yeah, that's essentially how it already works
+
+1574725194
+daurnimator
+similar to how we have comptime_int that casts to an integer that can fit it; a comptime_strucliteral would cast to a struct with members that match up
+
+1574725210
+andrewrk
+yeah it already is supposed to do that (there's a "TODO" compile error if you trigger it)
+
+1574725286
+daurnimator
+You should also be able to e.g. access a comptime_structliteral member: `(.{.foo = 42}).foo` would be a comptime_int 42
+
+1574725307
+andrewrk
+I'm pretty sure that already works
+
+1574725315
+daurnimator
+oh? cool if so :)
+
+1574725317
+andrewrk
+and doesn't have to be comptime
+
+1574725334
+andrewrk
+yeah anon struct literals are hella useful
+
+1574725388
+daurnimator
+andrewrk: did you see
+
+1574725457
+daurnimator
+"fix" meaning make less ugly
+
+1574725664
+andrewrk
+I clicked the link, but I'm gonna prioritize PRs over thinking about this
+

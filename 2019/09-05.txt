@@ -1,0 +1,3296 @@
+1567644373
+fengb
+Okay, wasm-opt got it down half a meg
+
+1567644391
+fengb
+Half a kilobyte lol
+
+1567644398
+fengb
+So it's ~1.7kb
+
+1567644433
+fengb
+Oh it stripped the symbols too :/
+
+1567644499
+fengb
+I suppose that's the same test baseline as wee_alloc
+
+1567645560
+mikdusan
+I'm starting an unofficial doc to consolodate all these things I (don't) know about Zig stage1 and IR. Looking for feedback.
+
+1567645568
+mikdusan
+(it's a very early WIP)
+
+1567645978
+shritesh
+mikdusan: That's impressiver
+
+1567645981
+shritesh
+'impressive
+
+1567646196
+mikdusan
+as I glean more things from this channel and making the odd contribution, I'll update it. goal is to help anyone wanting to debug/contribute stage1
+
+1567647567
+fengb
+mikdusan: this is amazing
+
+1567647740
+mikdusan
+thank u
+
+1567649904
+curtisf
+Is there any way to turn a []u8 into a []u4 (each byte indexed as two nibbles)?
+
+1567649946
+fengb
+We don’t have packed slices/arrays builtin
+
+1567649976
+fengb
+The std data structure might work but it sounds pretty gnarly
+
+1567650034
+fengb
+
+
+1567650073
+fengb
+Oh you can init with bytes so that might work
+
+1567650183
+curtisf
+That's not bad, but I think it's probably better for this case to just break the bytes up manually
+
+1567650233
+curtisf
+The biggest thing they're missing is an iterator
+
+1567651358
+stratact
+Is there a function in the std lib that can parse strings into integers?
+
+1567651445
+curtisf
+`std.fmt.parseInt` or `std.fmt.parseUnsigned` I think do what you want
+
+1567651849
+stratact
+curtisf: thank you :)
+
+1567654281
+marler8997
+just to double check...passing an array (i.e. [100]u8) to a function would have the same runtime ABI as passing a struct with 100 u8 fields?
+
+1567654316
+fengb
+Struct layout isn’t guaranteed unless you use packed or extern
+
+1567654328
+marler8997
+ok, assume a packed struct
+
+1567654345
+marler8997
+the point of the question was, is the 100-length array passed by value like passing a struct by value?
+
+1567654396
+fengb
+I believe so yes. But I’m pretty sure it’s not copied like it would be for C structs
+
+1567654412
+marler8997
+not copied?  so then then answer is no?
+
+1567654451
+fengb
+Zig shouldn’t copy the data. It’d be a const reference
+
+1567654492
+marler8997
+hmmmm, does that mean I could take the address of it, and that address will still be valid when the function returns?
+
+1567654495
+fengb
+I don’t think this is defined yet, but it’s not like C where a struct is defined to make a memory copy for a struct
+
+1567654547
+fengb
+Zig compiler chooses the best strategy
+
+1567654573
+Tetralux
+Basically, it passes a ptr to a large struct (like [100]u8) as an optimization
+
+1567654592
+Tetralux
+You therefore cannot take a ptr to it and have it worked like you said.
+
+1567654601
+fengb
+Yeah, and for data that’s smaller it’d do a real copy
+
+1567654616
+fengb
+But you shouldn’t rely on it
+
+1567654618
+marler8997
+Tretralux: why not?
+
+1567654646
+Tetralux
+Because the data is copied into the function as far as the compiler is concerned.
+
+1567654671
+marler8997
+interesting
+
+1567654681
+marler8997
+so in practive, the address would probably be valid because of the optimization
+
+1567654687
+marler8997
+but in theory, you shouldn't rely on it
+
+1567654698
+curtisf
+using it after return would be undefined behavior
+
+1567654704
+fengb
+It’s undefined behavior
+
+1567654707
+marler8997
+is that in the spec somewhere?
+
+1567654708
+curtisf
+Andrew has mentioned that he hopes to make this
+
+1567654720
+Tetralux
+I suggest you actually write a program to test what happens.
+
+1567654727
+marler8997
+I have written a program
+
+1567654734
+Tetralux
+Print out the ptr address both in and out of the fn.
+
+1567654734
+marler8997
+It does the optimization
+
+1567654741
+fengb
+Zig doesn’t have a real spec :P
+
+1567654742
+marler8997
+but I'm asking if I can rely on it
+
+1567654748
+Tetralux
+Okay yeah
+
+1567654748
+fengb
+No you can’t
+
+1567654751
+Tetralux
+Don't.
+
+1567654753
+Tetralux
+:p
+
+1567654757
+curtisf
+I'm not sure how different Zig's memory model is from C, but two pointers having the same integer value doesn't mean they are the same pointer
+
+1567654759
+curtisf
+(in C)
+
+1567654804
+marler8997
+this sounds like an area where we need to work on the spec
+
+1567654809
+Tetralux
+curtisf: Two pointers that point to the same address, necessarily do point to the same data in memory.
+
+1567654829
+fengb
+Zig’s function call behavior is intentionally not a stable ABI
+
+1567654838
+fengb
+Except with extern
+
+1567654847
+marler8997
+ok
+
+1567654854
+Tetralux
+marler8897: Think of it like how clang can opimize a C++ function that scans an integer for how many bits are set to one---it optimizes it to a single popcnt instruction.
+
+1567654861
+Tetralux
+You don't want to
+
+1567654863
+companion_cube
+Tetralux: the C spec makes pointers typed, I think
+
+1567654873
+Tetralux
+But the fact that it does is obviously what you want.
+
+1567654897
+marler8997
+I understand what undefined behavior is
+
+1567654906
+curtisf
+@Tetralux That's not quite true, because a pointer may not point to valid data but happen to point to an address which is valid by another object
+
+1567654916
+marler8997
+I am surprised that taking the address of a statically sized array parameter is undefined
+
+1567654937
+Tetralux
+marler8897: That's not what's undefined.
+
+1567654943
+marler8997
+the lifetime is undefined
+
+1567654974
+marler8997
+if I take the address, it could be taking the address of a value on the functions frame or the address of a variable passed in by the caller
+
+1567654987
+Tetralux
+It's just that you don't want to rely on optimizations.
+
+1567655010
+marler8997
+if it's defined, then whats the definition of taking the address of a statically sized array parameter?
+
+1567655012
+marler8997
+what's the definition?
+
+1567655034
+fengb
+Parameter location isn’t consistent
+
+1567655053
+Tetralux
+The definition is that it'll either point to a local copy in that functions frame, OR, the original array in the caller frame, in this case.
+
+1567655064
+fengb
+You can use it but who knows where it is after a return
+
+1567655074
+Tetralux
+It points to a local copy if it's small.
+
+1567655086
+fengb
+Also it’s a const ref so you can’t change the data
+
+1567655093
+marler8997
+you gave me a definition but I have a feeling that's not the language definition, just the current LLVM implementation
+
+1567655129
+fengb
+Andrew mentioned he’s letting the compiler choose passing strategy
+
+1567655148
+marler8997
+as I understand it, C functionally solves this by only allowing the optimization if the address isn't taken
+
+1567655163
+Tetralux
+And that's the other important point - the optimization is to pass by const&, therefore if you modify the array, it may not do the optimization.
+
+1567655164
+marler8997
+well...that actually doesn't sound right
+
+1567655214
+marler8997
+The compiler makes the array const so I don't think you can modify it
+
+1567655231
+Tetralux
+That sounds about right.
+
+1567655243
+Tetralux
+I've never passed a large fixed array to a fn xD
+
+1567655265
+marler8997
+I'm trying to figure out how to properly handle fixed-size arrays in a generic function I'm writing
+
+1567655287
+fengb
+What’s wrong with a slice?
+
+1567655295
+marler8997
+The function returns the pointer to the array, but it sounds like that won't work for statically sized arrays, even though it may work with the optimization
+
+1567655309
+marler8997
+the generic function supports whatever makes sense
+
+1567655319
+fengb
+You can return the array
+
+1567655329
+curtisf
+function parameters are `const` anyway, so you shouldn't be able to get a non-const pointer to them anyway, right?
+
+1567655334
+marler8997
+It only returns a pointer
+
+1567655336
+marler8997
+not a value
+
+1567655348
+marler8997
+it can be a const pointer
+
+1567655359
+Tetralux
+Where does the memory live if you're returning it?
+
+1567655360
+marler8997
+what makes you think it needs to be non-const?
+
+1567655375
+marler8997
+it lives in the memory passed in by the caller
+
+1567655385
+curtisf
+I thought I mentioned you modifying it
+
+1567655393
+marler8997
+so depending on what type they pass in will determine where it lives
+
+1567655410
+Tetralux
+So essentially, they have a *T, they pass it to you, and you give back a *T?
+
+1567655416
+marler8997
+yes
+
+1567655423
+marler8997
+[*]T, pass back the pointer
+
+1567655428
+marler8997
+*T pass back the pointer
+
+1567655437
+curtisf
+I don't think you can say it depends on the type, in principal the compiler would be free to decide on a call-by-call basis
+
+1567655438
+marler8997
+[N]T, sounds like it should be an error
+
+1567655490
+marler8997
+I'm saying that the function will treat the value differently depending on the type
+
+1567655505
+marler8997
+and it will be up to the caller to understand how to call it correctly for their particular type
+
+1567655505
+Tetralux
+I mean, [N]T is a value, not a pointer.
+
+1567655519
+Tetralux
+So if they're giving you that, they aren't giving you a ptr.
+
+1567655522
+marler8997
+right, so it sounds like it doesn't make sense inj this case
+
+1567655539
+Tetralux
+It prob depends on what exactly this proc of yours does
+
+1567655542
+Tetralux
+But also
+
+1567655554
+Tetralux
+They could just pass you *[N]T instead
+
+1567655560
+marler8997
+it's just returning an iterator/rang type struct of the argument
+
+1567655609
+Tetralux
+Yeah, so they should pass you a *[N]T instead, by the sounds of it.
+
+1567655624
+marler8997
+correct, but I was just clarifying that [N]T should be an error
+
+1567657799
+andrewrk
+the answer is documented here:
+
+1567661318
+bgiannan
+would be nice if `assert` could have a message associated to it
+
+1567666794
+Yardanico
+hello, how can I check if a value is in an array? something like "if (op in op_list". I tried searching in docs and github repo but didn't find any useful info
+
+1567666964
+Yardanico
+well, I can use for loop for that I guess, but I thought it was available with some operator or function
+
+1567667167
+Hirezias
+I don't know if it is the best solution, but you can do somthing like ``` for (op_list) |value| { if (std.meta.eql(value, op)) break true; } else false; ```
+
+1567667185
+Yardanico
+yeah, thanks, I thought roughly about the same solution
+
+1567667196
+Yardanico
+I'm just starting with Zig :)
+
+1567667236
+Hirezias
+I'm just starting too, so I took your question as an exercice, and I'm curious to see if someone else will give us a better solution :)
+
+1567667539
+Yardanico
+and another question - to make  struct fields modifiable I need to use pointers, right?
+
+1567667738
+Hirezias
+I'm not sure to understand. Pointers assume that the memory is located in an other place in the memory, so you can take it adress. You just want to change the value stored in your struct, right ?
+
+1567667744
+Yardanico
+yes
+
+1567667754
+Yardanico
+but I get " error: cannot assign to constant
+
+1567667755
+Yardanico
+self.pos = new_pos;"
+
+1567667838
+Hirezias
+Aren't you declaring the struct instance as a constant ?
+
+1567667844
+Yardanico
+ah lol
+
+1567667850
+Yardanico
+I should use "var" instead?
+
+1567667859
+Hirezias
+Yes :)
+
+1567667895
+Yardanico
+thanks with "var" it's fixed now, sadly I'm leaving soon, gonna come back in about 5-6 hours to ask more questions probably :D
+
+1567667933
+Hirezias
+See you later :)
+
+1567670007
+bgiannan
+`const MyStruct { i: i32 = 0 }; var a_struct: MyStruct = undefined;` <- I suppose `a_struct` won't get the default value of `i`?
+
+1567670457
+mikdusan
+bgiannan: correct; if you want just defaults init then `var a_struct = MyStruct{};`
+
+1567670716
+Hirezias
+I ran warn("{}", a_struct.i); just after the undefined declaration of a_struct, and I'm surprised to see that's not an error contrary to direct usage of  a_struct. Does this makes sense ? (btw, as mikdusan says, a_struct.i is not initialized)
+
+1567670866
+mikdusan
+yes undefined is undefined. I'd hazard a guess that compiler reachability analysis will improve greatly in the future and if it can, emit diagnostics about undefined cases that can be determined at comptime
+
+1567670913
+Hirezias
+Ok, thank you. Must be considered as WIP so :)
+
+1567670936
+mikdusan
+on thing to note is `= undefined` can do some pretty cool things already in debug/safe compile modes
+
+1567670966
+mikdusan
+iirc, it initializes `0xaaaaaaaaaa` patterned memory in some cases
+
+1567671005
+mikdusan
+so if you get a crash that really sticks out in a backtrace and so forth
+
+1567671255
+Hirezias
+Ok, tx
+
+1567671354
+mikdusan
+Hirezias:
+
+1567673402
+Snektron
+I did't realize you could use default struct values already
+
+1567673405
+Snektron
+Interesting
+
+1567673455
+gonz_
+I think it's been months now.
+
+1567673474
+gonz_
+On `master`, that is.
+
+1567673852
+bgiannan
+is there a release date/period set for 0.5.0?
+
+1567673865
+euantor
+it'll be after the next LLVM release
+
+1567673898
+euantor
+current due date on the milestone is 30th September
+
+1567673901
+euantor
+
+
+1567674203
+bgiannan
+alright
+
+1567674856
+Snektron
+gonz_: yeah i haven't been able to do many side projects in the last few months due to my bachelor's thesis eating up all my time, so i didn't keep up with development
+
+1567674913
+Snektron
+Now that's mostly finished so i can get back to making stuff in class
+
+1567674915
+gonz_
+I'll likely be the same in not too long because of work :/
+
+1567676483
+Yardanico
+Can I write a function with an array argument which will be able to accept arrays of different sizes of the same type?
+
+1567676528
+bgiannan
+you need a slice not an array then
+
+1567677118
+Yardanico
+Ah thanks I thought something like that should exist, didn't see them when skimming over the manual
+
+1567682187
+rivten
+hey everybody ! i've got an issue where, when trying to compile C file with zig, zig can't seem to find windows.h... should I do something specific besides linking with C in build.zig file ?
+
+1567682280
+rivten
+"zig targets" does say that my native arch is x86_64-windows-msvc
+
+1567682314
+rivten
+(but it is not listed in the Available libcs though... maybe that's the issue ^^)
+
+1567682490
+bgiannan
+maybe provide it with `--library-path /path/to/windows.h`
+
+1567682497
+bgiannan
+or the equivalent in build.zig
+
+1567683546
+gonz_
+rivten: What bgiannan said. You can actually extract the `cimport.zig` file later and remove whatever references you had to your specific directories after.
+
+1567683555
+gonz_
+I've done this with all of win32 and it works.
+
+1567683562
+rivten
+ok thanks a lot :)
+
+1567683596
+gonz_
+The import file will be in one of your object folders in the cache by default, but you can just reach in and pull it out to your source directory and give it a proper name.
+
+1567683650
+gonz_
+Depending on what you're doing you might want to use `@cDefine` to define `WIN32_LEAN_AND_MEAN`.
+
+1567684944
+Yardanico
+So you can actually gradually translate a C program to Zig if Zig can compile C?
+
+1567685058
+mq32
+yes :)
+
+1567685476
+gonz_
+Yardanico: Indeed. I was trying to be principled and adding external calls as I went for my win32 project, but it's not a good starting point. It's better to just get the C stuff from `windows.h` and add nice zig interface functions after when you know what your program is doing.
+
+1567685480
+gonz_
+At least that's my impression so far.
+
+1567690498
+Yardanico
+Is there a way to explicitly discard a return value of a function other than creating variables like "const temp = myfunc();"?
+
+1567690531
+fengb
+_ = myfunc()
+
+1567690544
+Yardanico
+thanks!
+
+1567690604
+FireFox317
+andrewrk: Thanks for merging the PR, are you streaming tonight?
+
+1567691749
+Yardanico
+I should report all compiler crashes, right?
+
+1567691905
+DutchGh0st
+Hi
+
+1567691914
+DutchGh0st
+Im trying to @cImport a library
+
+1567691929
+DutchGh0st
+but it fails
+
+1567691937
+DutchGh0st
+its not a system lib
+
+1567691987
+samtebbs
+Yardanico: You should indeed, but check if they've been reported first. What crash are you experiencing?
+
+1567692035
+Yardanico
+samtebbs: well I didn't yet make a small repro, I'm currently porting a small math expression evaluator library I wrote for Nim in the past, and after changing locations of return statements I got a "unreachable: /deps/zig/src/codegen.cpp:ir_render_un_op:3305" crash
+
+1567692045
+samtebbs
+DutchGh0st: Hi, what's the failure and how are you compiling?
+
+1567692064
+DutchGh0st
+`/mnt/c/Users/Kasper/Documents/Zig/isen/test/zig-cache/o/msNPjw8kyeDmJKpSWFzjRr4V6Nan8r4TcshRmNz2FPu8JFQ1768mMrTfKYyXg9wd/cimport.h:1:10: note: 'propeller.h' file not found#include <propeller.h>`
+
+1567692108
+DutchGh0st
+Just `zig build-exe /mnt/c/Users/Kasper/Zig/test/src/main.zig`
+
+1567692143
+fengb
+`-isystem [dir]               add additional search path for other .h files`
+
+1567692163
+fengb
+You'll probably need this too: `-L[dir]                      alias for --library-path`
+
+1567692165
+DutchGh0st
+actually also with the `--library c` option
+
+1567692180
+samtebbs
+Yardanico: I searched the issues for `ir_render_un_op` but couldn't find anything, so see if you can make a minimal example that causes the crash and then we can see if it's been reported
+
+1567692192
+samtebbs
+DutchGh0st: Maybe '--library propeller'?
+
+1567692213
+Yardanico
+samtebbs: yeah I'm currently trying to make it smaller
+
+1567692226
+DutchGh0st
+`-isystem .` beheind the `--library c` flag gives a segfault at address 0x0
+
+1567692243
+fengb
+o_O
+
+1567692245
+DutchGh0st
+`propeller.h` lives in the zig project
+
+1567692264
+DutchGh0st
+let me throw this against gdb
+
+1567692268
+fengb
+Hmm, can you try -isystem "$PWD"
+
+1567692289
+DutchGh0st
+segfault at 0x0
+
+1567692322
+samtebbs
+DutchGh0st: That would be worth reporting. Try `-L .` as a workaround
+
+1567692354
+fengb
+-L is for linking. It shouldn't solve missing headers
+
+1567692431
+DutchGh0st
+still not found
+
+1567692444
+fengb
+I must be tripping some LLVM optimizer. Changing `ref_node.next orelse return null` to `ref_node.next.?` is adding 901 bytes that I can't explain
+
+1567692551
+samtebbs
+Isn't `ref_node.next orelse return null` kinda pointless anyway?
+
+1567692574
+fengb
+I have no idea what's going on
+
+1567692598
+fengb
+The core logic doesn't have nulls, but handling them differently has wildly different impacts
+
+1567692598
+DutchGh0st
+AHHA
+
+1567692601
+DutchGh0st
+I know what went wrong
+
+1567692614
+DutchGh0st
+I just a definition that wasnt defined in the cImport thing
+
+1567692629
+DutchGh0st
+somehow that segf's the compiler
+
+1567692635
+fengb
+Compiler segfault is never solely user error :P
+
+1567692667
+samtebbs
+It shouldn't ever be user error tbh :p
+
+1567692725
+samtebbs
+fengb: Doesn't `orelse` unwrap an optional? In that case just using `ref_node.next` will have the same effect as `ref_node.next orelse null`
+
+1567692736
+fengb
+It returns the null if it's null
+
+1567692746
+fengb
+Short circuits the rest of the function
+
+1567692803
+DutchGh0st
+`#define _COGMEM __attribute__((cogmem))`
+
+1567692812
+Yardanico
+samtebbs: I managed to make the repro code to be around 50 lines long, is that okay (I'll post a link to the gist in a bug report)?
+
+1567692828
+samtebbs
+`fn foo(bar: ?T) ?T { return bar orelse null; }` is the same as `fn foo(bar: ?T) ?T { return bar; }` right?
+
+1567692847
+DutchGh0st
+`extern _COGMEM volatile unsigned int _OUTA __asm__("OUTA");`
+
+1567692854
+samtebbs
+Nice. Could you post the link here first?
+
+1567692859
+DutchGh0st
+how do I use this `_OUTA` thing in Zig?
+
+1567692881
+samtebbs
+Yardanico: Unless you've already checked if the issue's been reported first, in which case go a head and report
+
+1567692898
+samtebbs
+It's useful to include the code in the issue itself, rather than a link :)
+
+1567692906
+fengb
+
+
+1567692932
+Yardanico
+samtebbs:
+
+1567692952
+samtebbs
+fengb: Ah yes forgive me, the return is important :thumbs up:
+
+1567692973
+Yardanico
+the crash disappears if you remove the return statement from the line 34
+
+1567692986
+fengb
+None of the null code is actually reachable. I've no idea why the optimizer likes return null better than unreachable
+
+1567693005
+fengb
+And it's blocking my refactor :/
+
+1567693023
+samtebbs
+fengb: Hmm, perhaps safety checks are added?
+
+1567693028
+samtebbs
+Or something along those lines
+
+1567693030
+fengb
+release-small
+
+1567693031
+DutchGh0st
+error: expected type '[]const u8', found 'void'    @cDefine("_OUTA", {});
+
+1567693034
+DutchGh0st
+huh?
+
+1567693059
+DutchGh0st
+docs say if you dont have a value, use `{}`:
+
+1567693083
+FireFox317
+Yardanico: It probably has something to do with the fact that you use the `if(true)`
+
+1567693097
+Yardanico
+FireFox317: not really, I can post the original 150 line file and it still crashes
+
+1567693103
+Yardanico
+although I don't have any "if(true)" there
+
+1567693135
+FireFox317
+Ah okay, let me try to make this reduction smaller
+
+1567693145
+FireFox317
+You are on master right?
+
+1567693146
+Yardanico
+if you make it "if(false)" the code will compile because Zig will not even look into that if branch because it knows that it won't be ever executed
+
+1567693166
+Yardanico
+FireFox317: yes, I downloaded binary for the latest commit
+
+1567693182
+Yardanico
+0.4.0+a7fd1409
+
+1567693299
+fengb
+
+
+1567693316
+fengb
+Commenting this line out adds 377 bytes
+
+1567693320
+fengb
+Argh I'm so annoyed
+
+1567693328
+fengb
+Optimization sucks :(
+
+1567693330
+samtebbs
+I got it to this
+
+1567693347
+samtebbs
+The stdlib dependency could probably be removed too
+
+1567693407
+fengb
+`return -self.parse_factor();`
+
+1567693410
+fengb
+That's probably the culprit
+
+1567693422
+fengb
+Negating an error union
+
+1567693522
+DutchGh0st
+How do I define:
+
+1567693524
+DutchGh0st
+#define _COGMEM __attribute__((cogmem))extern _COGMEM volatile unsigned int _OUTA __asm__("OUTA");
+
+1567693526
+DutchGh0st
+in zig
+
+1567693550
+samtebbs
+fengb: You're right
+
+1567693563
+DutchGh0st
+#define _COGMEM __attribute__((cogmem));   extern _COGMEM volatile unsigned int _OUTA __asm__("OUTA");
+
+1567693587
+Yardanico
+samtebbs: so should I report an issue to github or you will do it?
+
+1567693637
+samtebbs
+Yardanico: go ahead and report with the even more reduced case :) We could reduce it even more fengb spotted the issue but this is a good starting point
+
+1567693649
+samtebbs
+Remember to include the fact that the error union is negated in the title
+
+1567693711
+samtebbs
+Yardanico: Actually we should check if it's been reported first
+
+1567693719
+FireFox317
+Yardanico: I found it
+
+1567693721
+fengb
+Might have to do with the lazy refactor
+
+1567693743
+samtebbs
+Yardanico: doesn't look like it has been reported
+
+1567693765
+FireFox317
+there is a minus sign before self.parse_factor() on line 25
+
+1567693781
+fengb
+5 mins late ;)
+
+1567693785
+Yardanico
+ah well, it seems that I can't call the function which has a error union as a return type recursively
+
+1567693795
+Yardanico
+that's a bit sad :P
+
+1567693814
+Yardanico
+"/home/dian/projects/zigtest/hello.zig:76:20: error: cannot resolve inferred error set '@typeOf(Parser.parse_factor).ReturnType.ErrorSet': function 'Parser.parse_factor' not fully analyzed yet"
+
+1567693841
+Yardanico
+but not too bad, I can change a bit of code to workaround this
+
+1567693842
+fengb
+You need to explicitly define the error set
+
+1567693849
+Yardanico
+fengb: or that
+
+1567693867
+fengb
+
+
+1567693941
+FireFox317
+Yardanico: Is there a reason you put a minus sign there or was it a typo?
+
+1567694091
+FireFox317
+Oh to negate that lol
+
+1567694094
+Yardanico
+FireFox317: well, kind of. In my original math expression evaluating lib it was used for handling unary + and -, but now that I think about it, I can probably parse them without recursion
+
+1567694144
+gonz_
+But the purpose was always `return -(try self.parse_factor());`, then?
+
+1567694165
+Yardanico
+yeah, I'm just new to Zig so I forgot to add that here :D
+
+1567694190
+gonz_
+Did I understand correctly that this segfaults the compiler?
+
+1567694212
+Yardanico
+basically the compiler reaches the part it shouldn't ever reach
+
+1567694261
+Yardanico
+This line -
+
+1567694293
+gonz_
+Spicy.
+
+1567694302
+Tetralux
+That looks like it should literally just be a compile error, no?
+
+1567694326
+Tetralux
+"error: attempt to negate <insert real type here>"
+
+1567694328
+Yardanico
+so who's gonna report it in the end? :D
+
+1567694359
+FireFox317
+Yeah, but i think you also forgot the put a `try` on that line
+
+1567694378
+Yardanico
+FireFox317: yeah, people already mentioned about that
+
+1567694423
+FireFox317
+Ah my bad, it a bug anyway so should be reported.
+
+1567694429
+Yardanico
+ok, I'm gonna report it, made it to 11 lines
+
+1567694474
+FireFox317
+👍
+
+1567694534
+Yardanico
+
+
+1567694542
+FireFox317
+Yardanico: I got it down to 4 lines xd
+
+1567694549
+Yardanico
+FireFox317: lol
+
+1567694553
+FireFox317
+Nvm, i got the same
+
+1567694564
+FireFox317
+But without main xd
+
+1567694630
+FireFox317
+Or i mean, one function less, but this is a good report anyway, thanks for reporting
+
+1567694964
+fengb
+I found it! By making the function longer, it convinced LLVM not to inline
+
+1567695600
+FireFox317
+Is it only possible to negate integers?
+
+1567696018
+samtebbs
+Yardanico: Thanks. This should actually be a contributor friendly issue
+
+1567696028
+samtebbs
+From first glance at least
+
+1567696222
+samtebbs
+fengb: Ah that makes sense :D
+
+1567696234
+samtebbs
+fengb: Are you working on something size-sensitive?
+
+1567696293
+fengb
+Yeah, zee_alloc aims to be as small as possible
+
+1567696322
+samtebbs
+fengb: Weird that release-small was causing a size increase like that
+
+1567696343
+samtebbs
+How small have you gotten it to be so far?
+
+1567696359
+fengb
+Rust's tiny allocator (wee_alloc) is under 1kb. I'm barely squeeking 1.6
+
+1567696508
+fengb
+The compiler is setting -Os. I wonder if doing -Oz would be better
+
+1567697392
+samtebbs
+fengb: What does Oz do?
+
+1567697421
+fengb
+Smaller than -Os, but it didn't do anything in this case
+
+1567697825
+andrewrk
+fengb, I'm happy to see at least 1 project using "small" as the release mode
+
+1567697973
+samtebbs
+fengb: You should write a microcontroller demo at some point
+
+1567697982
+fengb
+Eh?
+
+1567697994
+fengb
+I don't know anything about microcontrollers >_>
+
+1567698020
+samtebbs
+Well microcontrollers tend to want compact code, so it would be a good demo use case for the allocator
+
+1567698147
+andrewrk
+I believe the use case in question is web assembly
+
+1567698177
+fengb
+I suppose microcontrollers isn't out of the picture, but it hasn't been my focus. And I don't know anything about them
+
+1567698210
+fengb
+And also... this allocator doesn't try to use compact blocks so it might not be the best for limited heap
+
+1567698329
+samtebbs
+Oh I see
+
+1567698349
+samtebbs
+wasm is a cool use case
+
+1567698357
+fengb
+Memory is cheap. Codesize is expensive. Such is the web :P
+
+1567698568
+Tetralux
+What's the max amount of memory you can alloc on wasm?
+
+1567698705
+andrewrk
+however much the user allows you
+
+1567698707
+fengb
+Browser dependent
+
+1567698800
+fengb
+Technically limited by 4GB due to 32bit addressing
+
+1567699047
+mq32
+samtebbs, i did want to make a demo with zig, but i was too lazy to fixup the compiler to be able to :D
+
+1567699060
+mq32
+maybe Snektron did fix the arm cortex m3 stack pointer thingy in his arm cleanup
+
+1567699095
+andrewrk
+mq32, what's your blocking issue?
+
+1567699204
+Tetralux
+How does the user specify how much to allow it?
+
+1567699218
+Tetralux
+Like, a browser setting that you have to dig for to adjust?
+
+1567699218
+andrewrk
+Yardanico, thanks for the bug report
+
+1567699267
+samtebbs
+mq32: Nice :) Let me know when you have one, I love a nice microcontroller demo
+
+1567699964
+Yardanico
+about microcontrollers: it seems there was some work by Espressif to make a LLVM backend for their chips (ESP32 and ESP8266), however it seems it's not yet done
+
+1567699992
+samtebbs
+Hey andrewrk, I've been thinking about what it must be like to work on your own project full-time, would you be interested in doing "a day in the life" or similar during one of your streams/in a blog post?
+
+1567700024
+andrewrk
+possibly. what does that entail?
+
+1567700107
+samtebbs
+perhaps your routine, how you allocate your attention, what you think can be improved
+
+1567700182
+Yardanico
+it seems they even pushed the patches to upstream, not merged yet though
+
+1567700182
+Yardanico
+Once they get merged Zig could be probably made to compile to Xtensa (if their backend is good enough)
+
+1567700214
+samtebbs
+Yardanico: are they the wifi chips?
+
+1567700231
+Yardanico
+samtebbs: yes
+
+1567700436
+lucus16
+Hmm, zig says libc headers are not available in a nix-shell -p zig glibc
+
+1567700745
+lucus16
+andrewrk: You use Nix right? How do I make a libc available to zig?
+
+1567700823
+andrewrk
+hi lucus16 - are you perhaps not linking libc with --library c?
+
+1567700837
+andrewrk
+you don't need nix-shell -p glibc
+
+1567700855
+lucus16
+Uhm, so far I'm just trying zig run main.zig
+
+1567700867
+andrewrk
+does your main.zig depend on libc?
+
+1567700887
+lucus16
+I guess not?
+
+1567700912
+andrewrk
+can you restate your problem, perhaps with some output?
+
+1567701058
+lucus16
+andrewrk:
+
+1567701087
+lucus16
+I tried passing --library c which eliminates the note about libc but it still won't find termios
+
+1567701091
+andrewrk
+lucus16, you don't need nix-shell -p glibc
+
+1567701102
+lucus16
+sure, but what do I need?
+
+1567701149
+andrewrk
+you're trying to link against termios, which depends on libc. so you do need --library c. you also need --library termios or whatever c library that is
+
+1567701169
+andrewrk
+you probably also need to include termios in your nix shell invocation to make the c library available
+
+1567701230
+lucus16
+hmm, I thought termios was part of libc
+
+1567701260
+andrewrk
+oh, look at that, it is. I hadn't seen that before
+
+1567701287
+Yardanico
+By the way, how do I use exported symbols from .so and .dll  in Zig?
+
+1567701339
+Yardanico
+if I know declarations of functions in these libs, that is
+
+1567701352
+andrewrk
+lucus16, it's termios.h. you're missing .h
+
+1567701398
+andrewrk
+lucus16, your example works for me if you modify 2 lines. the other one is change {} to undefined
+
+1567701456
+andrewrk
+I tested with master though, not with 0.4.0 which it looks like you're doing
+
+1567701474
+andrewrk
+next release is sept 30
+
+1567701484
+Tetralux
+Note also that {} != zeroing.
+
+1567701521
+lucus16
+Hmm, so I can't pass --library c to zig build apparently, I guess I need something in build.zig?
+
+1567701549
+andrewrk
+lucus16, here's an example that links libc:
+
+1567701887
+Tetralux
+andrewrk: You know how we have `zig init-exe`? - well - what do you reckon to being able to do `zig init-exe --library c` generating a build.zig that has `b.linkSystemLibrary("c")`, for example
+
+1567702029
+lucus16
+Or the generated build.zig could include a bunch of comments that show how to do various basic things, similar to how haskell cabal files are generated with a bunch of comments
+
+1567702035
+FireFox317
+Yardanico: I added a PR for #3179
+
+1567702057
+lucus16
+Anyway, thanks a lot!
+
+1567702110
+Tetralux
+lucus16: That's also not an unreasonable idea.
+
+1567702120
+Tetralux
+I quite like that on face value.
+
+1567702166
+andrewrk
+lucus16, have fun
+
+1567702180
+andrewrk
+FireFox317, thanks!
+
+1567702234
+andrewrk
+pull request welcome to improve the init-lib init-exe templates:
+
+1567702287
+Tetralux
+Does it literally just copy the files in std/special/init-exe into the cwd?
+
+1567702294
+andrewrk
+yes
+
+1567702311
+andrewrk
+I don't think making them configurable with command line switches is worth the developer time, user's time to learn the interface, or the bytes in the binary of the compiler
+
+1567702385
+FireFox317
+I just saw i made a tiny formatting error, will amend that quickly
+
+1567702399
+andrewrk
+FireFox317, would you mind changing the message to: "negation of type '%s'" ?
+
+1567702401
+Tetralux
+RE: user time to learn the interface; already do that with build-exe; I could argue that it just makes intuitive sense for the flags to be transferrable.
+
+1567702416
+FireFox317
+andrewrk: Will do that!
+
+1567702555
+Tetralux
+Like, maybe your program started out by being a single file because it had limited scope, or you're just learning and didn't think you'd use build.zig to start, or whatever the case - maybe you just make new projects often--
+
+1567702570
+Tetralux
+So being able to just change "build-exe" to "init-exe" and generate a build.zig - that seems cool to me.
+
+1567702676
+FireFox317
+andrewrk: Updated!
+
+1567702694
+andrewrk
+FireFox317, thanks! approved, will merge in a couple hours when the tests pass
+
+1567703177
+TheLemonMan
+andrewrk, want me to add some checks to @inlineCall or are you going to do that yourself?
+
+1567703274
+andrewrk
+TheLemonMan, go for it, I wasn't planning on working on that anytime soon
+
+1567703372
+Yardanico
+I asked that before but it seems the message went unnoticed, so can I use symbols from  .dll or .so files directly from Zig without having to write .c files? So I'll  write function headers in Zig as well
+
+1567703426
+andrewrk
+Yardanico, same as C, you can use the .h files or you can write extern function prototypes
+
+1567703744
+andrewrk
+TheLemonMan, these bug fix PRs are coming at a most welcome time, it's release month
+
+1567703839
+TheLemonMan
+0.5.0 is gonna be packed with new features heh
+
+1567703883
+halosghost
+andrewrk: :D
+
+1567703894
+andrewrk
+same to you FireFox317
+
+1567703990
+Yardanico
+ah, found it
+
+1567704312
+andrewrk
+TheLemonMan, did you see what I ended up doing with regards to glibc and abilist files? I'm reasonably happy with how it turned out
+
+1567704408
+andrewrk
+we can even do comptime version checks:
+
+1567704786
+TheLemonMan
+yeah, that's extremely elegant and nice IMO
+
+1567704801
+fengb
+LemonBoy grew into a real man? 🤔
+
+1567704848
+TheLemonMan
+after my bar mitzvah of course
+
+1567705580
+companion_cube
+soon to be TheLemonDad?
+
+1567705794
+TheLemonMan
+such is life for a living citrus
+
+1567706220
+Yardanico
+TheLemonMan: did you mostly switch for Zig from Nim or are you using both right now?
+
+1567706454
+TheLemonMan
+my toolbox is slowly but steadily expanding :)
+
+1567706788
+Yardanico
+Nice, zig-lsp works in VSCode, now I don't need to re-run build command when I need to check for errors :)
+
+1567706807
+Yardanico
+although I had to edit a few things which changed in the latest version of Zig compiler and std (pretty easy though)
+
+1567706885
+mq32
+andrewrk: blocking issue is
+
+1567706892
+andrewrk
+there's a zig-lsp?
+
+1567706900
+Yardanico
+andrewrk: yes
+
+1567706919
+Yardanico
+currently it doesn't have anything other than lexer/parser diagnostics, but even with that it's useful
+
+1567706935
+andrewrk
+neat
+
+1567707175
+TheLemonMan
+r7
+
+1567707184
+TheLemonMan
+that's the stack pointer for Thumb
+
+1567707252
+TheLemonMan
+eh scrap that, I've misread stack as frame
+
+1567707297
+TheLemonMan
+I guess the llvm assembler will merrily accept "sp"
+
+1567707333
+andrewrk
+TheLemonMan, target.cpp, function arch_stack_pointer_register_name
+
+1567707384
+andrewrk
+should be able to test it by cross compiling for the target and using @newStackCall
+
+1567707447
+Yardanico
+hmm, pretty strange, std.DynLib module doesn't seem to work on a .so I'm trying to use (well, to be precise, this .so library is writte in Pascal and AFAIK it's compiled by fpc)
+
+1567707469
+Yardanico
+however I can see the exported symbol with other tools like `nm -gl liblibrouter.so`
+
+1567707539
+mq32
+andrewrk, yeah that was the problem where i got stuck
+
+1567707550
+andrewrk
+Yardanico, std.DynLib is not ready for general use yet. Are you sure you're trying to runtime-load a dynamic library rather than simply dynamic link against it?
+
+1567707563
+mq32
+probably i don't need @newStackCall at all in the final version, but for now it is required
+
+1567707591
+Yardanico
+andrewrk: oh, I thought I need DynLib for runtime-loading a dynamic library, sorry, I just really didn't find any examples without DynLib
+
+1567707593
+andrewrk
+mq32, oh, that should be a real quick fix. I'm pretty sure TheLemonMan is right, it's sp
+
+1567707623
+mq32
+cool!
+
+1567707631
+Yardanico
+this library is closed-source so I only have a .so file for it :)
+
+1567707647
+mq32
+i don't have a self-built zig version (don't want to have another project i'm working on ^^)
+
+1567707662
+mq32
+but eagerly waiting for that to be fixed
+
+1567707678
+andrewrk
+Yardanico, you can still dynamic link against it. are you using build.zig or CLI?
+
+1567707689
+Yardanico
+andrewrk: CLI, I didn't try build.zig yet
+
+1567707735
+andrewrk
+--library-path /path/to/your/lib/dir --library yourlibname
+
+1567707745
+TheLemonMan
+no need to test, check out getRegisterByName in
+
+1567707806
+andrewrk
+nice find TheLemonMan
+
+1567707820
+TheLemonMan
+8)
+
+1567707820
+andrewrk
+mq32, pushed to master. a download should be available in a couple hours
+
+1567707832
+mq32
+♥
+
+1567707836
+andrewrk
+I wish I knew you were blocking on that earlier :)
+
+1567707848
+mq32
+no thing, i have a lot of open projects i can work on
+
+1567707860
+mq32
+but yeah, a microcontroller demo sounds like a cool thing to demo :)
+
+1567707874
+mq32
+i'd go for plasma effect on LCD + some serial stuff
+
+1567707879
+mq32
+i only have to cross-port that from C++
+
+1567707900
+andrewrk
+you can also implement @newStackCall with inline assembly
+
+1567708090
+marler8997_1
+anybody every seen this error? Unable to hash /home/marler8997/git/zig/build/lib/zig/libc/musl/src/signal/sigaddset.c: file system error
+
+1567708117
+TheLemonMan
+yeah, you need to raise the number of available fds
+
+1567708118
+marler8997_1
+trying to cross-compile hello.c to aarch64-linux-musl
+
+1567708140
+TheLemonMan
+ulimit -n 4000 worksforme™
+
+1567708151
+marler8997_1
+ok will try
+
+1567708209
+marler8997_1
+if this fixes it, would this warrant an issue?  not sure how or if zig could handle this though
+
+1567708252
+TheLemonMan
+ehh, that's a known issue that stems from how the caching system works, there's a ticket with more details on gh
+
+1567708581
+marler8997_1
+it did fix it
+
+1567708637
+marler8997_1
+crazy that I can download a 40 MB archive, extract it and cross-compile C code to so many different platforms
+
+1567708665
+Tetralux
+> ehh, that's a known issue: Is it because the caching system keeps all files open or something?
+
+1567708679
+Tetralux
+marler8997_1: Also yeah - that is a pretty neat thing about Zig
+
+1567708697
+mq32
+marler8997_1: i think it's saddening
+
+1567708703
+mq32
+not that zig is doing it
+
+1567708712
+mq32
+but that nobody else seems to care about size anymore
+
+1567708727
+marler8997_1
+size and dependencies
+
+1567708732
+Tetralux
+I have long-since wanted to find a compression algorithm that is faster than gzip.
+
+1567708742
+Tetralux
+Also deps, yeah.
+
+1567708770
+marler8997_1
+Tetralux: andrew explains it well here:
+
+1567708856
+Tetralux
+The cache artifacts gets garbage collected? xD
+
+1567708889
+marler8997_1
+It sounds like he keeps the file descriptors open in order to lock them,  probably to keep another external program from deleting them?
+
+1567708981
+Snektron
+mq32: if you want a build from master, just say so
+
+1567708997
+Snektron
+it takes about 30 seconds for me to build that from scratch
+
+1567709024
+andrewrk
+TheLemonMan, marler8997, ah yeah, bnoordhuis suggested something that can fix that, and I didn't understand it at first but now I do
+
+1567709031
+andrewrk
+let me see if I can find it
+
+1567709078
+mq32
+Snektron: i don't have the hardware with me right now, would have to wait until tomorrow anyways
+
+1567709079
+andrewrk
+the caching system does keep all the files open, but that's intentional. because those open files are locks, which prevent the reaper from deleting them while an ongoing compilation is in progress
+
+1567709119
+Yardanico
+with --library and --library-path I get "Segmentation fault at address 0x0" at runtime (if I don't specify the lib it fails to find the symbol, so at least it find the symbol, but executing a function fails for some reason), IDK if that's Zig's or lib's fault
+
+1567709122
+Tetralux
+I guess I'm not clear on what the reaper is here.
+
+1567709211
+andrewrk
+Tetralux, it doesn't exist yet :) but it's planned that zig will keep cache directories to a maximum (configurable) number of bytes
+
+1567709264
+andrewrk
+Yardanico, you also need to link libc
+
+1567709269
+Yardanico
+andrewrk: oh
+
+1567709273
+andrewrk
+probably
+
+1567709282
+Tetralux
+Stupid question, but why not just run the reaper once the linker returns, and then you don't have to even care what gets evicted, because nothing will be using it.
+
+1567709299
+andrewrk
+Tetralux, because there can be another process on the system running
+
+1567709304
+Yardanico
+andrewrk: yeah you're absolutely right, Zig now correctly calls a function from the lib, thanks for answering my questions :)
+
+1567709329
+andrewrk
+Yardanico, libc isn't automatically pulled in, because it's not
+
+1567709341
+Tetralux
+andrewrk: Ahhh.
+
+1567709343
+Tetralux
+Hmmm.
+
+1567709349
+Tetralux
+I mena
+
+1567709358
+andrewrk
+you can race 2 zigs against each other and they will not clobber
+
+1567709360
+Tetralux
+Surely you just could just have one lock file?
+
+1567709372
+Tetralux
+zig-cache/cache.lock
+
+1567709391
+andrewrk
+sounds like you're working on a comprehensive proposal to fix 2280. I look forward to reading it :)
+
+1567709479
+Tetralux
+I mean, rather than everyone suffering from this problem, it could be remeded by implementing what I just said as a stop-gap - since it would prevent more than one compilation from occurring at a time.
+
+1567709482
+andrewrk
+if your suggestion contains the word "just" in it, then just go implement it real quick with tests, it should be easy
+
+1567709500
+andrewrk
+well, that's not optimal, is it?
+
+1567709529
+Tetralux
+I long learned that writing the most optimal thing the first time is a bad strategy for getting stuff done.
+
+1567709541
+Tetralux
+To this day, I still overthink my first iteration of anything.
+
+1567709556
+companion_cube
+oh, a zig lsp server :o
+
+1567709577
+Tetralux
+You wanna write the most stupid, make-this-thing-work thing, and know you'll improve it over time, as you get a better idea of what you even need it to exactly do.
+
+1567709583
+Tetralux
+#PreachingToTheChoir.
+
+1567709584
+TheLemonMan
+perfect is the enemy of good
+
+1567709592
+Tetralux
+TheLemonMan: Indeed.
+
+1567709635
+andrewrk
+zen of zig says, that's fine as long as the peak of your good mountain is perfection. otherwise you're climbing the wrong mountain
+
+1567709660
+Tetralux
+.. which assumes you even know what the best mountain is.
+
+1567709680
+fengb
+Belated: I was really disappointed when Rust didn’t include any cross compilation out of the box. Zig has spoiled me
+
+1567709693
+andrewrk
+Tetralux, no, it only suggests abandoning mountains that have been identified as not having a peak of perfection
+
+1567709714
+Tetralux
+Indeed - but for that, you must have attempted to climb the bad mountain. :3
+
+1567709728
+gonz_
+fengb: Doesn't it? I've never tried it, but I assumed at least x64 on the 3 main platforms was provided out of the box.
+
+1567709733
+Tetralux
+Or, more importantly, maybe the best mountain takes years to climb.
+
+1567709748
+Snektron
+Theres cross compiling with rust
+
+1567709748
+Tetralux
+The bad one, which also occomplishes the task, takes 30 seconds by comparison.
+
+1567709753
+Tetralux
+Stop-gap means stop-gap, right.
+
+1567709755
+Snektron
+hang on, i've used that before for arm stuff
+
+1567709780
+Tetralux
+Maybe we're kinda talking at cross-purposes a little - I imagine you know this already. xD
+
+1567709804
+Snektron
+`cargo build --target=arm-unknown-linux-gnueabihf`
+
+1567709814
+Tetralux
+And yeah - I might well take a stab at it.
+
+1567709905
+fengb
+It’s not built into the executable. The guide I used recommended rustup
+
+1567709919
+fengb
+Doesn’t build wasm
+
+1567709945
+gonz_
+Ah, but they have this oddity of an ecosystem built around it with `wasm-pack`, etc., as far as I understand.
+
+1567709976
+gonz_
+Which automatically packs it into an npm package and wraps it in JS.
+
+1567710016
+fengb
+I really wish there’s a better JS userland toolkit. Emscripten and Rust have both invented their own quirks
+
+1567710022
+companion_cube
+seems reasonable to type `rustup toolchain add <whatever>` before cross compiling, I think
+
+1567710084
+fengb
+But it doesn’t work with the binary package download
+
+1567710114
+fengb
+So I had to rebuild Rust. And I still couldn’t get wasm to work ¯(ツ)/¯
+
+1567710198
+FireFox317
+Just use Zig then :)
+
+1567710280
+companion_cube
+oh, sad. I haven't tried wasm I must say.
+
+1567710300
+andrewrk
+does rust async await work on wasm?
+
+1567710316
+companion_cube
+I think it will? once it's stable anyway
+
+1567710322
+companion_cube
+it's just state machines
+
+1567710885
+andrewrk
+I get confused because people say that "await" does a "poll"
+
+1567710898
+andrewrk
+but that's not how it works in zig
+
+1567710969
+mq32
+andrewrk, i wonder how fast it will be possible to use async/await on microcontrollers :D
+
+1567710990
+companion_cube
+there are some interesting blogposts about futures in rust
+
+1567711016
+shritesh
+andrewrk: Looks like it's going to work in Rust as of an hour ago
+
+1567711100
+andrewrk
+mq32, assuming you're using --single-threaded, zig's async/await on microcontrollers has no more overhead than functions, when compiled in release modes
+
+1567711213
+mq32
+but it will provide functional suspends, right?
+
+1567711229
+mq32
+also i forgot how to add libc with build-exe :D
+
+1567711246
+andrewrk
+marler8997_1, I tested & pushed b564e7ca59818e4 which resolves the file descriptor limit problem (in most environments) when building musl
+
+1567711269
+andrewrk
+mq32, --library c
+
+1567711292
+marler8997_1
+oh...
+
+1567711293
+mq32
+thx
+
+1567711307
+marler8997_1
+I will try
+
+1567711521
+andrewrk
+mq32, also... been meaning to do this for a long time - I just added -l as an alias for --library
+
+1567711527
+andrewrk
+-lc
+
+1567711692
+mq32
+i think it would also be helpful if the "requires libc" error message just tells you how to link libc
+
+1567711758
+mq32
+oh what the …
+
+1567711788
+mq32
+i just ran zig test on a binary file
+
+1567711803
+mq32
+
+
+1567711807
+mq32
+this is a bit broken :D
+
+1567712176
+fengb
+How about an alias `-lib` so you can type `-libc` :P
+
+1567712223
+waleee-cl
+a bit weird mixing of gnu-long-style options and bsd-style single-letters
+
+1567712259
+mq32
+just support microsoft style as well!
+
+1567712264
+mq32
+/lib:c
+
+1567712269
+mq32
+
+
+1567712273
+andrewrk
+it's for compatibility with c compilers. Often environments have $CFLAGS or something, and you can generally put that on the same line as `zig build-exe` and it will give the paths to libraries and such
+
+1567712345
+mq32
+andrewrk, i finally published a small zig project of mine :)
+
+1567712345
+mq32
+
+
+1567712476
+andrewrk
+mq32, neat!
+
+1567712500
+mq32
+yeah it was my entry project into zig and it convinced me that Zig is good
+
+1567712764
+fengb
+scientes would be disappointed you aren't using @Vector :P
+
+1567712859
+scientes
+fengb, hehehe
+
+1567712872
+scientes
+@Vector would certainly make it faster
+
+1567712874
+fengb
+ohhi
+
+1567712889
+mq32
+yeah @Vector would probably increase speed a bit
+
+1567712896
+scientes
+.R = std.math.pow(f32, a.R, gamma),
+
+1567712896
+scientes
+.G = std.math.pow(f32, a.G, gamma),
+
+1567712896
+scientes
+.B = std.math.pow(f32, a.B, gamma),
+
+1567712914
+scientes
+well, this requires my project that I am giving a talk on at the LLVM mtg
+
+1567712917
+scientes
+requires libmvec
+
+1567712920
+mq32
+but i still have no documentation and that's the stuff i want to rely on
+
+1567712935
+scientes
+the talk is just to prove that it is possible, not show a finished project
+
+1567712947
+scientes
+.R = lerp(a.R, b.R, f),
+
+1567712949
+scientes
+what is lerp?
+
+1567712957
+scientes
+return (1.0 - f) * a + f * b;
+
+1567712964
+scientes
+that needs some documentation
+
+1567712966
+TheLemonMan
+Linear intERPolation
+
+1567712979
+mq32
+what TheLemonMan says
+
+1567712988
+fengb
+That’s gotta be the dumbest acronym ever lol
+
+1567712992
+mq32
+lerp is quite a common name in the world of graphics programming :D
+
+1567713021
+companion_cube
+live erection role play? 🤔
+
+1567713023
+mq32
+opengl calls it mix, directx calls it lerp
+
+1567713047
+scientes
+mq32, please at least comment // Linear Interpolation
+
+1567713052
+scientes
+cause the wikipedia page is fine
+
+1567713054
+mq32
+ah yeah
+
+1567713084
+TheLemonMan
+there's also slerp
+
+1567713089
+mq32
+oh yeah
+
+1567713104
+mq32
+and step, smoothstep and smootherstep :D
+
+1567713140
+scientes
+snap crackle pop
+
+1567713177
+mq32
+oh btw scientes: i think we talked about this already once
+
+1567713187
+mq32
+is there "@swizzle" in the vector patch? :D
+
+1567713205
+scientes
+just use @shuffle
+
+1567713224
+scientes
+and we can add it as std.vector.swizzle
+
+1567713226
+scientes
+later
+
+1567713230
+mq32
+:)
+
+1567713272
+scientes
+what I need to work on is array[idxs] = datapoints
+
+1567713277
+scientes
+where idxs is a vector
+
+1567713285
+mq32
+huh crazy
+
+1567713290
+scientes
+I already have it where you are assigning or loading from a vector
+
+1567713317
+scientes
+its the common case of @gather and @scatter
+
+1567713476
+Sahnvour
+lerp is the standard name for this function, not sure it requires documentation
+
+1567713547
+scientes
+but the WHY is exactly when documentation is good
+
+1567713690
+fengb
+Like this?
+
+1567713766
+scientes
+🐉
+
+1567713806
+andrewrk
+var @"🐉" = "🐉";
+
+1567713813
+andrewrk
+valid zig
+
+1567713844
+scientes
+@"🐉"("🐉")
+
+1567713845
+TheLemonMan
+I like the emoji dragon
+
+1567713899
+andrewrk
+I'm gonna do a live stream today, but I want to try to get something working first
+
+1567714062
+andrewrk
+the poor CI can't keep up with all this progress in master branch today
+
+1567714182
+mikdusan
+👍
+
+1567714229
+Sahnvour
+does @sliceToBytes currently works at comptime, for some usecases at least ?
+
+1567714272
+andrewrk
+Sahnvour, looking at ir_analyze_instruction_to_bytes, there is a branch for     if (instr_is_comptime(target)) {
+
+1567714296
+mahmudov
+
+
+1567714343
+Sahnvour
+andrewrk: yeah I'm debugging it for #2861 and suspect it does not work
+
+1567714384
+Sahnvour
+was wondering if someone actually used it at comptime for stuff
+
+1567714454
+mq32
+mahmudov: :)
+
+1567714559
+andrewrk
+Sahnvour, I haven't tested it in a while, but in theory if you configure with -DZIG_TEST_COVERAGE and then build and then run the behavior tests, you can then use gcov to  look at an html output of all the lines of stage1 code and see what is covered
+
+1567714639
+andrewrk
+Sahnvour, uh, that's probably easier in a posix environment
+
+1567714679
+Sahnvour
+guess so :p I will just post a comment with my findings for now
+
+1567714730
+halosghost
+andrewrk: oh, that's awesome, I didn't realize you could use literal unicode in identifiers with @""
+
+1567714732
+halosghost
+andrewrk: very cool
+
+1567714755
+andrewrk
+you can also put invalid unicode in identifiers. it's just bytes
+
+1567714776
+halosghost
+heh
+
+1567714794
+halosghost
+interesting, so that means you could have identifiers with spaces in them
+
+1567714810
+halosghost
+I sense an opportunity for quasiquotes and arbitrary mixfix :P
+
+1567714910
+mq32
+
+
+1567714971
+andrewrk
+hahaha
+
+1567714982
+mq32
+i think that's a new one :D
+
+1567714992
+mq32
+having emojis in disassembler :D
+
+1567714996
+andrewrk
+mq32, pls post this to twitter so I can retweet it
+
+1567715005
+mq32
+sorry, don't use/have twitter anymore
+
+1567715010
+mq32
+but you can sure share it!
+
+1567715013
+andrewrk
+ok :)
+
+1567715062
+companion_cube
+@"`" could be a nice quasi quotation meta function 🤔
+
+1567715108
+mahmudov
+
+
+1567715112
+mahmudov
+any idea guys,
+
+1567715123
+mahmudov
+i am using 64 bit linux distro in qemu vm
+
+1567715428
+Yardanico
+mahmudov: change CPU model in qemu settings so it would report a different CPU model
+
+1567715477
+Yardanico
+By the way, is there a way to use the same string type for both handling literals and input? For now my parser uses []u8 which works fine for user input (e.g. from io.readLine), but doesn't work for string literals
+
+1567715500
+fengb
+Literals are probably []const u8
+
+1567715515
+fengb
+[]u8 autocasts to []const u8, but not vice versa
+
+1567715539
+fengb
+So if you don't need to mutate, you should just use []const u8 everywhere by default
+
+1567715569
+Yardanico
+ah nvm, you're right, I guess I should use []const u8 everywhere
+
+1567715584
+Yardanico
+yeah it works, thanks a lot
+
+1567715632
+Yardanico
+yeah I don't mutate my string, only read characters from it
+
+1567715743
+andrewrk
+code coverage works. I uploaded a report for current master here if anyone wants to see:
+
+1567715795
+andrewrk
+Sahnvour, ^
+
+1567715822
+Sahnvour
+thanks
+
+1567715827
+andrewrk
+this report is generated from `zig build test-behavior -Dskip-release` with a cold cache
+
+1567715849
+andrewrk
+running the rest of the test suite would increase coverage
+
+1567715988
+mahmudov
+Yardanico, it solved
+
+1567716031
+Yardanico
+Uhh, so I can't use switch to match strings?
+
+1567716294
+andrewrk
+Yardanico, use else if chains with std.mem.eql
+
+1567716322
+fengb
+Not recommending perfecthash? :P
+
+1567716334
+andrewrk
+mikdusan, if we can find Hejsil's post about string hashing, that would be another good FAQ entry
+
+1567716353
+companion_cube
+could be compiled into a decision tree, too
+
+1567716359
+andrewrk
+he found that after optimizations, else-if chains with std.mem.eql outperformed any other complicated thing he made
+
+1567716406
+Tetralux
+That sounds expected.
+
+1567716422
+Tetralux
+Branch prediction and cache coherency. :)
+
+1567716470
+Yardanico
+andrewrk: well that'll be quite big I guess, about 70 lines of if/else branches (after zig fmt) :D
+
+1567716484
+Yardanico
+but ok
+
+1567716511
+Tetralux
+More than three if-else branches => use switch.
+
+1567716522
+Yardanico
+Tetralux: I can't because I need to compare strings
+
+1567716537
+Tetralux
+You can't match on strings?
+
+1567716548
+Sahnvour
+maybe you can `inline for` over your strings if they are comptime, comparing them to the unknown one and breaking out when found
+
+1567716575
+Yardanico
+Sahnvour: yeah, I should see what comptime can do for me, I didn't really try it yet
+
+1567716782
+mikdusan
+andrewrk: this one?
+
+1567716866
+andrewrk
+mikdusan, no, there was one - it might have been on one of his own projects - where he experimented with string hashing for like a week and then had a sort of "conclusions" post
+
+1567716878
+mikdusan
+oh ok i think i remember that one
+
+1567717008
+Yardanico
+Basically I'm trying to rewrite a simple recursive math expression evaluator to Zig (the original one is in Nim and I also wrote a V version a few days ago) -
+
+1567717038
+Yardanico
+Well, it's understandable that Zig is a bit more restrictive since it counts on readability and has manual memory management
+
+1567717097
+mikdusan
+Yardanico: after you rewrite for zig, i'd be interested in your impressions/cojmparison about friction from each of the languages
+
+1567717124
+Yardanico
+mikdusan: honestly I'm not that good of a programmer, I mostly write some small projects for myself
+
+1567717176
+andrewrk
+Yardanico, you don't need {} in switch prongs
+
+1567717184
+andrewrk
+"pi" => math.pi,
+
+1567717236
+Yardanico
+mikdusan:  well, Zig of course feels very different from Nim, because one of the main points of Nim is powerful macros (operating on AST like in lisp), proper templates and a lot of other stuff to allow to create DSLs, and Zig tries to be straightforward (so you can read the code faster if you're unfamilar with it)
+
+1567717261
+andrewrk
+you can also do result = switch
+
+1567717305
+Yardanico
+and V language is very new and a little bit too "hyped", it doesn't have a half of promised features yet, their compiler doesn't even use AST yet, but somehow they say they will get 1.0 by December 2019
+
+1567717339
+andrewrk
+I'm honestly surprised that switching on strings works in v
+
+1567717339
+companion_cube
+:DDDDD
+
+1567717360
+fengb
+I'm surprised anything works in v >_>
+
+1567717375
+Yardanico
+V has a half-working small compiler and has 11k stars on GitHub (anothere example why stars on github don't represent anything other than "hype" or maybe, maaybe "popularity")
+
+1567717439
+andrewrk
+switching on []const u8 is the same problem as what we just dealt with in regards to std.AutoHashMap
+
+1567717489
+mikdusan
+Yardanico: how would you compare development time in Nim vs. Zig ?
+
+1567717501
+andrewrk
+you can be honest, we won't get mad
+
+1567717527
+fengb
+I dream of a day when npm modules bundle wasm instead of depending on gyp
+
+1567717575
+andrewrk
+fengb, yes!
+
+1567717590
+andrewrk
+fengb, and zig can even participate in this, with status quo
+
+1567717615
+companion_cube
+I dream of a day where electron apps, even if they still exist, use mostly wasm
+
+1567717667
+Yardanico
+mikdusan: well, probably you can write code faster in Nim, since it's older, has a bigger community (around 2k gtihub repos, not a lot comparing to JS or C, but bigger than some other languages), and has a pretty big stdlib which covers quite a lot of stuff. But it's also slower than Zig (well, I don't know how much slower), and has a GC, so writing low-level stuff is harder in Nim since most of stdlib doesn't work without a GC
+
+1567717682
+fengb
+wasm doesn't interopt with UI very well. People use Electron to avoid yet another gui
+
+1567717713
+companion_cube
+well wasm as it exists right now is only the MVP
+
+1567717737
+companion_cube
+I'd be curious to hear about D vs zig, actually
+
+1567717745
+companion_cube
+since D has @nogc these days
+
+1567717801
+Yardanico
+but honestly I think myself that I should learn a more "proper" language with manual memory management and pointers (well they exist in Nim as well, but auto-dereferencing works almost always) to better understand computers and be able to write very fast software :D so I decided to find a new language
+
+1567717849
+andrewrk
+rust would be another good choice
+
+1567717893
+mikdusan
+Yardanico: is the math expression evaluator something that will be a tool to standalone or integrate with something else? or just a general programming project?
+
+1567717895
+Yardanico
+yeah, I thought about it, but it's syntax scares me a bit (it's really verbose). Didn't really try it though
+
+1567717961
+Yardanico
+mikdusan: just a small programming project of mine, I didn't really do programming much in the past year , but I want to start writing more libs/stuff again, you can see my projects at
+
+1567718910
+mq32
+oh wow
+
+1567718924
+mq32
+i just read through the language page of V and that sounds ambitious for a single guy
+
+1567718943
+companion_cube
+ahahaha
+
+1567718957
+companion_cube
+also read twitter shitstorms, and issues on v's repo
+
+1567718961
+companion_cube
+a mountain of 🍿
+
+1567718967
+Yardanico
+mq32: yeah, but there's still a
+
+1567718994
+Yardanico
+however I talked with another guy which also did some work on V and he said that they will probably only add proper AST parsing to the compiler after 1.0
+
+1567719044
+Yardanico
+I think that V right now is almost just a syntax skin for C :D
+
+1567719664
+marler8997_1
+will hasField be deprecated since you can get the same info from TypeInfo?
+
+1567719837
+andrewrk
+TypeInfo isn't lazy enough for that to work yet
+
+1567719907
+andrewrk
+it's also O(1) vs O(N), and even though that's at compile-time, compilation time matters
+
+1567721364
+mq32
+Yardanico, yeah the front page just feels like "look how awesome V is! (oh and we can only compile natively for MAC, though)"
+
+1567721454
+mikdusan
+scientes: so like usually less than N ? impressive. ;)
+
+1567721474
+scientes
+mikdusan, compilation time can't get better than N
+
+1567721480
+scientes
+because you have to parse the code
+
+1567721645
+mikdusan
+bitwise xor
+
+1567721677
+Yardanico
+mq32: well V works on Linux/win/macOS, it's just that you can't cross-compile to macos
+
+1567721685
+mq32
+just xor the code with 0x23 and write that into the binary!
+
+1567721708
+mq32
+Yardanico, yeah maybe :D i have just read the vlang.io page
+
+1567721794
+scientes
+mikdusan, bitwise xor is O(N)
+
+1567721851
+mikdusan
+scientes: it was a joke. (N ^ 3)
+
+1567721890
+scientes
+mikdusan, ahhhhhhhhhhhhhhhh
+
+1567722033
+mq32
+andrewrk, have you planned to remove the llvm dependency from zig in the future?
+
+1567722052
+scientes
+mq32, do you know what that would entail?
+
+1567722074
+mq32
+yes.
+
+1567722092
+mq32
+that's why i'm asking
+
+1567722111
+scientes
+I think the plan is to add other backends
+
+1567722192
+mikdusan
+that'll be interesting. if using a different backend, will zig still get target ABI information from LLVM API, or will that also be tabled'd out?
+
+1567722204
+mahmudov
+
+
+1567722215
+mahmudov
+what does mean? i have glfw libs
+
+1567722217
+mikdusan
+i should not say tabled out. i mean to say get it from somewhere else.
+
+1567722307
+mq32
+mahmudov, is that my "zigpaint" repo?
+
+1567722312
+mahmudov
+yeah
+
+1567722320
+mq32
+it's far from anything serious :D
+
+1567722326
+mq32
+that is correct behaviour :D
+
+1567722338
+mahmudov
+oh
+
+1567722356
+mq32
+it tells you: "yes, i was able to load glGetString, but that call returns null because i don't have an OpenGL context"
+
+1567722366
+mq32
+and that's
+
+1567722377
+mahmudov
+cool :)
+
+1567722395
+mahmudov
+just i am playing zig with basic codes
+
+1567722405
+mq32
+me too D:
+
+1567722410
+mq32
+and i'm doing stupid stuff with zig
+
+1567722412
+mahmudov
+to test my zig environment
+
+1567722510
+mahmudov
+mq32 your code doesnt use glfw libs or headers?
+
+1567722524
+mahmudov
+at zigpaint
+
+1567722548
+mahmudov
+because i didn't see any differences when i have it or not
+
+1567722569
+mq32
+mahmudov, that's the point of my code :D
+
+1567722589
+mq32
+i want to create an opengl loader more similar to gl3w than glfw
+
+1567722598
+mahmudov
+ok i see
+
+1567722604
+mq32
+pure function loader for opengl profiles
+
+1567722612
+mq32
+and with zig we can do it with style :)
+
+1567722735
+mahmudov
+by the way is there any lisp implementatin attempt in zig
+
+1567722736
+mahmudov
+
+
+1567722744
+mahmudov
+i haven't see there
+
+1567722780
+mahmudov
+implementation*
+
+1567722787
+fengb
+I started one but gave up
+
+1567723251
+shritesh
+fengb: Me too
+
+1567723307
+shritesh
+
+
+1567724684
+andrewrk
+mikdusan, zig has already been moving away from getting ABI info from LLVM. for example, struct layout is now done entirely on zig's side
+
+1567724685
+komu
+mikdusan, andrewrk
+
+1567724698
+andrewrk
+komu, there it is!
+
+1567724726
+mikdusan
+good find. i'll add to fq
+
+1567724728
+mikdusan
+faq
+
+1567724848
+shachaf
+Is stack layout done by LLVM in the normal case and by the Zig compiler in the async case?
+
+1567724897
+shachaf
+I mean frame layout.
+
+1567724925
+shachaf
+I guess that's not really ABI in the former case anyway (and maybe not the latter case either).
+
+1567725168
+andrewrk
+shachaf, yes, that's how it works
+
+1567725204
+andrewrk
+and tbh it would be nice if we could do the stack layout too, because we want to know the stack size of functions, and don't have access to it currently
+
+1567725290
+shachaf
+Right, I was wondering what the plan was for that.
+
+1567725313
+shachaf
+If there are no cycles you can maybe have LLVM compile one function at a time? I don't know what the interface is.
+
+1567725347
+shachaf
+But doing stack layout presumably means doing register allocation and a bunch of other things yourself.
+
+1567725510
+andrewrk
+I have some ideas of things to try
+
+1567725591
+andrewrk
+even if we don't have access to the information until after an object file is generated, references to the size as an extern variable and then another .o file can be created which contains the needed stack sizes
+
+1567725665
+shachaf
+Hmm, would that allow comptime if on the stack size?
+
+1567725742
+andrewrk
+certain things would work but if you tried to inspect the actual integer value, it would be a compile error, the value isn't available yet
+
+1567725749
+shachaf
+Maybe that's not such an important use, but I always thought of it as a comptime value.
+
+1567725782
+andrewrk
+comptime if on that value is inherently problematic because it's highly likely to introduce a dependency loop
+
+1567725813
+shachaf
+Only if there are cycles, right?
+
+1567725840
+andrewrk
+something as simple as an expression inside the if would introduce a cycle
+
+1567725845
+shachaf
+I guess without comptime if, there's guaranteed to be a fixed point, because stack usage is monotonic or something.
+
+1567725876
+andrewrk
+the main use case is for creating a thread
+
+1567725886
+andrewrk
+and for giving the stack size value to the linker
+
+1567725903
+shachaf
+OK, for things like that it doesn't matter so much.
+
+1567725905
+andrewrk
+
+
+1567725924
+andrewrk
+here we would like to use @stackSize(startFn) instead of hard coding 8 MiB
+
+1567725961
+andrewrk
+here there are no cycles because the stack of std.Thread.spawn() is independent from the new thread's startFn
+
+1567725999
+andrewrk
+but still, trying to access the numerical value is problematic because it will change after running llvm optimizations
+
+1567726022
+andrewrk
+and ideally, if we get this working, it will take into account optimizations
+
+1567726038
+shachaf
+Right. If there are no cycles and you compile functions in topological order, it could be OK, but maybe you want comptime execution to happen before optimizations.
+
+1567726056
+shachaf
+I suspect this isn't actually that important.
+
+1567726118
+andrewrk
+I have the same suspicion. I think the important part is threads & main stack size in ELF/PE file
+
+1567726151
+andrewrk
+consider, one of the main arguments people give for goroutines is that they have segmented stacks, e.g. you can spawn more of them in parallel without running out of memory
+
+1567726199
+andrewrk
+but if we correctly solve stack size for threads, you could just spawn as many
+
+1567726208
+shachaf
+I thought the big argument was really cheap context switches.
+
+1567726229
+shachaf
+(And doing your own scheduling and so on, which can be more efficient.)
+
+1567726241
+andrewrk
+is that so? I don't have a clear enough memory about it
+
+1567726249
+andrewrk
+anyway for that use case we have std.event.Loop anyway
+
+1567726259
+shachaf
+This is an argument for coroutines/userspace threads in C, not Go, admittedly.
+
+1567726279
+shachaf
+Also I think Go doesn't use segmented stacks anymore? They grow the stacks instead. I guess the same arguments apply, though.
+
+1567726299
+andrewrk
+I believe that's the same thing. You start with 1 stack segment, and if it needs to grow, you add another segment
+
+1567726326
+shachaf
+Well, they realloc the stacks and rewrite the pointers to point to the new memory, I think.
+
+1567726349
+andrewrk
+ah interesting. yeah I think the same arguments apply
+
+1567726388
+shachaf
+I think async functions are probably ultimately better than userspace threading in most respects.
+
+1567726443
+andrewrk
+I'm excited about this proof-of-concept I'm working towards. We really are going to have the ability to express concurrency without having to put "async" in front of every function
+
+1567726480
+shachaf
+I still have that video open in a tab. I should watch it.
+
+1567726494
+andrewrk
+I'm planning on doing a late live stream tonight. I want to get one more thing working first
+
+1567726502
+andrewrk
+I also need to cook dinner for my gf
+
+1567726505
+shachaf
+But it seems like this is pretty clearly better than using a "regular" stack which is sized to the right size, and doing stack switching.
+
+1567726554
+andrewrk
+if you watch that video, there's a great question someone asked and I tried to answer it with a fibonacii example, and it crashed the compiler. I have that example working now
+
+1567726699
+shachaf
+Is the way @Frame layout works documented anywhere?
+
+1567726723
+shachaf
+Or just are there examples, I guess.
+
+1567726733
+shachaf
+Does it generate an explicit struct or just an opaque memory buffer of a certain size?
+
+1567726811
+andrewrk
+it's not documented. Here's the code that does it:
+
+1567726818
+andrewrk
+look for "fields.append"
+
+1567726866
+andrewrk
+it has stuff at the beginning that is common to all async functions, then it has return type, args, error return trace info, local variables
+
+1567726967
+shachaf
+So it just has a struct with a field for every local variable right now.
+
+1567726985
+shachaf
+Presumably local variables that are never live at the same time could share memory, like with stack layout.
+
+1567727066
+andrewrk
+yes however that requires escape analysis. one is guaranteed that pointers to local variables of async functions live until the async function returns
+
+1567727128
+andrewrk
+oh I think you're talking about a different issue, which I have one open for
+
+1567727149
+andrewrk
+
+
+1567727166
+shachaf
+It seems to me like it's more or less the same problem as stack layout, which is why sharing code would be nice.
+
+1567727172
+shachaf
+Right, that's what I mean.
+
+1567727265
+shachaf
+I should probably watch the video before asking all these questions. :-)
+
+1567727331
+andrewrk
+eh, video is not the best way to learn information, I don't blame you
+
+1567727479
+shachaf
+At one point I'd be curious to see a comparison of async functions and C-style stack switching coroutines. I don't have a good feel for how much more efficient the former is.
+
+1567727818
+shachaf
+I guess I should write some kind of asynchronous server in Zig and see how it goes.
+
+1567727832
+shachaf
+Maybe something to try out io_uring too.
+
+1567727846
+andrewrk
+if you tried that today you'd probably run into the very same issues that I'm in the middle of solving
+
+1567727852
+andrewrk
+but I think I'm close to a proof of concept
+
+1567727867
+andrewrk
+currently it's:
+

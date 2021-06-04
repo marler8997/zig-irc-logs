@@ -1,0 +1,1452 @@
+1561248137
+andrewrk
+yes, you can use an extern union
+
+1561248146
+andrewrk
+oh that doesn't have a tag though
+
+1561248185
+andrewrk
+I'd rather just fix the issue
+
+1561248341
+emekankurumeh[m]
+if you want real hacky you you can use mem.asBytes and edit the tag and payload manually
+
+1561248385
+emekankurumeh[m]
+or perhaps you can try @setRuntimeSafety
+
+1561248714
+curtisf
+It doesn't seem to have set the tag with runtime safety off
+
+1561248852
+emekankurumeh[m]
+hmm, bytes it is
+
+1561248928
+curtisf
+:|
+
+1561248952
+emekankurumeh[m]
+i'll see if i can find an example
+
+1561249427
+tgschultz
+emekankurumeh[m], curtisf I had to do that in std.io.Deserializer. There's a temporary function in there to set the tag type manually
+
+1561249465
+tgschultz
+
+
+1561249484
+curtisf
+I'll try that out, thanks!
+
+1561249707
+curtisf
+It looks like that worked, cool :)
+
+1561261741
+marler8997_
+does zig have a way to divide and get remainder (divmod) in one operation?
+
+1561261807
+andrewrk
+marijnfs, for performance reasons? you can just do them on different lines, the optimizer will figure it out
+
+1561264509
+IntoxicatedHippo
+andrewrk, debug builds just don't run at all, I haven't worked out why yet
+
+1561264551
+emekankurumeh[m]
+what's the default stack size on windows?
+
+1561264583
+andrewrk
+emekankurumeh[m],
+
+1561264632
+IntoxicatedHippo
+I worked out why, my memset function was nakedcc
+
+1561264686
+IntoxicatedHippo
+Actually that wasn't it, I ran the wrong build. Debug builds are still not working
+
+1561264914
+andrewrk
+IntoxicatedHippo, do you know what instruction it's tripping on?
+
+1561264970
+IntoxicatedHippo
+OK, it was to do with my memset function. When I was invoking lld manually it was trying to link to memset which wasn't defined so I wrote my own memset. Now that I'm using build-exe memset is defined by one of Zig's libraries. Now that I've removed my memset function debug builds work fine.
+
+1561265001
+IntoxicatedHippo
+It wasn't a GP fault or anything, it just wouldn't execute the efi application at all.
+
+1561265013
+andrewrk
+note that the default panic handler is pretty bad for the efi target. if you wanted to send some improvements it would be very welcome
+
+1561265031
+andrewrk
+
+
+1561265165
+IntoxicatedHippo
+There isn't much that can be done unless zig sets up some runtime stuff for efi. The entry point for efi applications is a function which a pointer to a struct is passed to. All IO (and everything else) is done using function pointers inside that struct.
+
+1561265209
+andrewrk
+I see. well maybe for efi it's reasonable to expect the programmer to provide their own panic function then
+
+1561265244
+emekankurumeh[m]
+IntoxicatedHippo: is that struct the same for all efi applications?
+
+1561265349
+andrewrk
+I'm down to 10 failing std lib tests in result location branch
+
+1561265551
+andrewrk
+zig fmt turned out to actually provide pretty good test coverage for result location stuff
+
+1561265558
+emekankurumeh[m]
+andrewrk i know you said that zig fmt is checked on every build, but as of 2d6520d zig fmt fails with a stack overflow for me.
+
+1561265596
+IntoxicatedHippo
+emekankurumeh[m], I believe so
+
+1561265669
+hryx
+(wave) I'm back from a bunch of travelling and stuff and trying to wrap up this translate-c PR finally
+
+1561265677
+andrewrk
+emekankurumeh[m], the command the test suite runs is `zig fmt build.zig` (where build.zig is the zig build script itself)
+
+1561265681
+andrewrk
+does that work for you?
+
+1561265688
+andrewrk
+welcome back hryx!
+
+1561265700
+andrewrk
+result location branch is so, so close
+
+1561265714
+hryx
+sooooo exciting
+
+1561265733
+emekankurumeh[m]
+no it fails with error code 127
+
+1561265749
+emekankurumeh[m]
+from a segfault in ___chkstk_ms
+
+1561265759
+andrewrk
+emekankurumeh[m], that's strange, it looks like the test suite is running it on windows to me
+
+1561265773
+andrewrk
+there's even a `test-fmt` step
+
+1561265786
+emekankurumeh[m]
+well i'm on msys64 so maybe there's an issue there?
+
+1561265800
+andrewrk
+hmm that's possible
+
+1561265806
+andrewrk
+I think the mingw checkstk function is different
+
+1561265841
+hryx
+andrewrk: on the off chance you feel like taking a short break from your branch, I'm kind of stuck on a bug in my branch. Unfortunately I let the branch get kind of big before trying to fix it
+
+1561265851
+emekankurumeh[m]
+i managed to fix the problem a while ago, but the fix wasn't to change any files, but rather recompiling a couple times
+
+1561265896
+andrewrk
+hryx, I'm sort of in tunnel vision mode at this point but I definitely want to help as soon as I get this thing merged
+
+1561265921
+hryx
+no worries, charge towards dat finish line!
+
+1561265941
+andrewrk
+emekankurumeh[m], maybe you can fiddle with these?
+
+1561265984
+andrewrk
+LemonBoy wrote
+
+1561266018
+andrewrk
+interesting comments on line 170
+
+1561266067
+andrewrk
+I believe these functions get invoked when there is a large stack frame. that is when the local variables are enough to push it over the size of 1 page
+
+1561266133
+emekankurumeh[m]
+that's what i thought too so i inspected the functions that zig fmt called and found it was returning large arrays
+
+1561266160
+emekankurumeh[m]
+i tried making the arrays smaller but i still get the same stackoverflow
+
+1561266219
+andrewrk
+it's an important clue that it only happens on msys64, maybe we need to detect that target and have different chkstk semantics
+
+1561266246
+andrewrk
+it could be useful to see if the msys64 libc has a __chkstk_ms implementation
+
+1561266265
+andrewrk
+I mean it must, and it might have the answer to the problem in t
+
+1561266448
+emekankurumeh[m]
+i'm not so sure because format worked fine when launched as a subprocess
+
+1561266626
+andrewrk
+we could simply disable stack checking for msys targets for now
+
+1561266689
+andrewrk
+oh, never mind, it seems windows is not handled through stack probing:
+
+1561266837
+andrewrk
+emekankurumeh[m], just curious, is your use case for msys64 to avoid installing msvc?
+
+1561266856
+emekankurumeh[m]
+not per se
+
+1561266894
+emekankurumeh[m]
+msys64 allows for easy installation of libraries, modern compilers, and a unix-like environment
+
+1561266926
+andrewrk
+I believe when it was invoked as a child process, it did not link libc
+
+1561266939
+emekankurumeh[m]
+hmmm
+
+1561266941
+andrewrk
+but the fmt built into stage1 does link libc
+
+1561266981
+emekankurumeh[m]
+but zig doesn't export it's own chkstk routines when we link libc
+
+1561267021
+andrewrk
+right, it assumes the libc will have them
+
+1561267061
+emekankurumeh[m]
+does zig currently copy when returning arrays?
+
+1561267068
+andrewrk
+yes
+
+1561267113
+emekankurumeh[m]
+perhaps the copies of such a large array are overflowing the stack?
+
+1561267240
+andrewrk
+that made me realize: you know what else is different about when it was running as a child process
+
+1561267256
+andrewrk
+zig was doing the linking and giving a 16MiB stack which is 2x as big
+
+1561267276
+andrewrk
+ahhh
+
+1561267291
+andrewrk
+emekankurumeh[m],
+
+1561267298
+andrewrk
+this is not getting hit for MSYS right?
+
+1561267307
+emekankurumeh[m]
+according to msdn chkstk is invoked when stack variables are over 8k on x64, and the array is about 65k
+
+1561267342
+emekankurumeh[m]
+nope, it seems you're right
+
+1561267356
+andrewrk
+that's a msvc linker flag, maybe mingw needs its own flag?
+
+1561267382
+emekankurumeh[m]
+does gcc have it's own flag for stack size?
+
+1561267387
+emekankurumeh[m]
+if so they would be the same
+
+1561267418
+andrewrk
+
+
+1561267476
+andrewrk
+this is a good find because it will be useful to bootstrap the self hosted compiler with mingw someday
+
+1561267602
+emekankurumeh[m]
+i'll test that and submit a PR if it works
+
+1561267727
+andrewrk
+thanks!
+
+1561270730
+emekankurumeh[m]
+i sent the PR
+
+1561270921
+andrewrk
+great, so that fixed it then?
+
+1561270927
+emekankurumeh[m]
+yup
+
+1561270956
+emekankurumeh[m]
+i just wonder if there is a way to refactor std.os.windows to not need such a large stack
+
+1561270974
+andrewrk
+I would just merge this but i'm worried about the logic not being exactly identical in CMakeLists.txt
+
+1561270986
+andrewrk
+I remember that " " was needed for some stupid thing
+
+1561271060
+andrewrk
+regarding the stack, the plan is to have zig actually calculate the necessary stack size and then just provide it
+
+1561271078
+andrewrk
+and recursive functions will use allocators so they won't take up stack space
+
+1561271687
+emekankurumeh[m]
+it's seems to compile fine on macos, linux, and freebsd so far
+
+1561271706
+emekankurumeh[m]
+but it might be best to wait until all ci passes
+
+1561272155
+andrewrk
+good night
+
+1561272162
+emekankurumeh[m]
+gn
+
+1561282892
+marijnfs
+what timezone are you guys in
+
+1561291068
+samtebbs
+Does anyone know if it's possible to pass values to the zig source similiar to how you would do -DFOO=something with GCC
+
+1561291082
+samtebbs
+I'd like to do this so that I can change the code path based on some parameter
+
+1561295672
+mikdusan1
+samtebbs: i suppose you could create a config.zig file and define some constants there; then use command line --pkg-begin/--pkg-end to select which config (namespace) to provide
+
+1561296581
+emekankurumeh[m]
+samtebbs if you have a build.zig you can put them in there and refer to the file through @build
+
+1561297084
+samtebbs
+emekankurumeh[m]: Has that been added since 0.4?
+
+1561297396
+emekankurumeh[m]
+no it's in 0.4.0 but it's not documented
+
+1561297622
+samtebbs
+Ah ok. I don't seem to be able to import it with @import("@build") or use it directly with @build
+
+1561297681
+samtebbs
+error: unable to find '@build'
+
+1561298866
+tralamazza
+maybe without the @
+
+1561299265
+mq32
+hey
+
+1561299301
+mq32
+i'm just reading some issues on github and wondered: is there already a proposal/project for project dependencies/libraries/...?
+
+1561299318
+mq32
+(like "cargo" for Rust or "nuget" for dotnet)
+
+1561299423
+emekankurumeh[m]
+a package manager?
+
+1561299441
+mq32
+ah yes, that's the word :D
+
+1561299499
+tralamazza
+#943
+
+1561299600
+mq32
+thanks :)
+
+1561299701
+emekankurumeh[m]
+samtebbs that's strange std/special/build_runner uses @build and src/main.cpp has logic for adding that to the package table
+
+1561300003
+tralamazza
+something like #2595 would be helpful for embedded, especially if I could query it from builtin.
+
+1561300642
+samtebbs
+tralamazza: It would! Hopefully a review can take a look at it soon
+
+1561300676
+samtebbs
+emekankurumeh[m]: It is weird. I'm gonna see if I can reproduce it with a more minimal setup
+
+1561301261
+samtebbs
+emekankurumeh[m]: Minimal example:
+
+1561301270
+samtebbs
+Bug or am I doing something wrong?
+
+1561301425
+emekankurumeh[m]
+perhaps it's not documented because it relies on special magic for just build_runner file?
+
+1561301476
+emekankurumeh[m]
+in any case just going with a config file should work
+
+1561301757
+samtebbs
+emekankurumeh[m]: Yes, perhaps. I'll go with a config file for now. Thanks emekankurumeh[m] and mikdusan1
+
+1561306417
+mikdusan
+andrewrk: copy-elision-3: when init() returns a struct that sets a union(enum) of type void; llvm-ir compare to master. looks like a store is missing on copy-elision-3
+
+1561306419
+mikdusan
+
+
+1561316320
+andrewrk
+mikdusan, nice find
+
+1561317051
+mikdusan
+the .d parser exposed it on linux so if you see any garbage .d errors it's likely that
+
+1561317739
+hryx
+stage1 renders a nameless fn proto as `fn() ...` while stage2 keeps the space: `fn () ...`. This means that I can't convert some translate-c tests to work for
+
+1561317755
+hryx
+I'm thinking about just making stage1 include the space like stage2. how does that sound?
+
+1561317805
+hryx
+since all the tests for e.g. zig fmt obey stage2 rules
+
+1561318328
+Tetralux
+Does zig fmt put a space when you declare an anonymous fn?
+
+1561318497
+hryx
+Yep, like this: `const f = fn () void{};`
+
+1561318529
+hryx
+
+
+1561319501
+marijnfs
+i'm trying to play with libsoundio in zig, but i need access to a member of the libsoundio struct
+
+1561319517
+marijnfs
+but i get type '[*c].cimport:4:11.struct_SoundIo' does not support field access
+
+1561320094
+hryx
+marijnfs: it's not an OpaqueType, is it?
+
+1561320610
+andrewrk
+marijnfs, hmm did I forget to implement field access with C pointers?
+
+1561320728
+emekankurumeh[m]
+andrewrk: whats your position on exposing the build file to userland code, i.e. through `@import("@build")`?
+
+1561320958
+andrewrk
+hmm when would this be used?
+
+1561321071
+emekankurumeh[m]
+as passing flags like -DSOME_VALUE 3 aren't supported in zig, the build file could be used to define these flags for configuring a library
+
+1561321118
+andrewrk
+the -D thing is supported with b.option()
+
+1561321140
+andrewrk
+and you can expose options to code too, I just need to document that API
+
+1561321152
+emekankurumeh[m]
+really?
+
+1561321178
+andrewrk
+it makes available @import("build_options"). it's a bit of a hack right now, but it'll evolve into something more stable and make sense with the package manager
+
+1561321197
+andrewrk
+yeah, artifact.addBuildOption()
+
+1561321224
+andrewrk
+
+
+1561321251
+hryx
+andrewrk: I can finally convert translate-c tests to work with both stage1 and stage2, but it seems the behavior still differs regarding making a fn `export`ed. Both versions should have the same behavior, right?
+
+1561321276
+hryx
+the relevant logic in both stages:
+
+1561321277
+hryx
+
+
+1561321301
+andrewrk
+hryx, I put some thought into this when I did the stage2 code, but now I'll have to go read it again to refresh my memory
+
+1561321314
+hryx
+oh ok
+
+1561321336
+andrewrk
+the "mode" arg is relevant
+
+1561321342
+hryx
+Stage2TranslateModeImport ?
+
+1561321355
+andrewrk
+yeah, and I think that corresponds to
+
+1561321407
+andrewrk
+it's never even read though. hmm
+
+1561321466
+hryx
+I'll check that out -- it might be that you just put it ahead of time but didn't get to the implementation that uses it yet
+
+1561321494
+emekankurumeh[m]
+@freenode_samtebbs:matrix.org: you can use @import("build_options") and artifact.addBuildOption():
+
+1561321515
+andrewrk
+hryx, there are also those comments at the top of test/translate_c.zig
+
+1561321541
+hryx
+Oh! I see, about #include mode
+
+1561321556
+hryx
+what's the TLDR difference between include mode and -c mode?
+
+1561321586
+andrewrk
+the idea was that in -c mode, you're translating a C project, so non-static functions should be `export` because that's what -c would do
+
+1561321610
+andrewrk
+but in #include mode, it's like you just want to call the functions
+
+1561321618
+andrewrk
+now that I'm thinking about it again though, I don't think there should be a difference
+
+1561321647
+andrewrk
+because if you were to #include a non-static function in C, it would get exported. so the @cImport equivalent of that would be indeed, creating an export function and translating its definition
+
+1561321678
+andrewrk
+so thinking about it again, I don't see why there needs to be 2 modes
+
+1561321714
+hryx
+shortest path might be, I'll make stage2 use this "mode" for now, then I can make an issue to change this
+
+1561321724
+hryx
+how does dat sound
+
+1561321724
+andrewrk
+hryx, but also, please note that that test/translate_c.zig file has the ability to have separate tests for stage1/2 impls. please feel free to regress stage2 a little bit to make progress on your branch
+
+1561321730
+andrewrk
+try not to regress on stage1 though
+
+1561321743
+andrewrk
+yeah sounds good
+
+1561321765
+hryx
+ok great
+
+1561321773
+andrewrk
+I mean it will be hard to regress on stage1 without changing the cpp code
+
+1561321809
+hryx
+I made one change to the c++ here, just a few minutes ago -- check out "other changes"
+
+1561321819
+hryx
+lmk if you disagree with the decision
+
+1561321851
+andrewrk
+your decision is great
+
+1561321870
+hryx
+yay
+
+1561322593
+marijnfs
+it works when i explicitly declare the variable as a *c.struct_SoundIO or whatever, so it's fine for now
+
+1561323888
+andrewrk
+scientes, around?
+
+1561323981
+marijnfs
+are you now supposed to use heap.direct_allocator?
+
+1561324011
+Sahnvour
+marijnfs: exactly (if you were using DirectAllocator previously)
+
+1561324018
+marijnfs
+cool cool
+
+1561324030
+Sahnvour
+this should only simplify your code
+
+1561324068
+marijnfs
+yeah for sure
+
+1561324215
+andrewrk
+scientes, nvm, I'm going to merge your PR and do some fixups
+
+1561324273
+emekankurumeh[m]
+stack traces seem broken for compiler asserts
+
+1561324291
+andrewrk
+I think I need to do some debug info code auditing
+
+1561324314
+andrewrk
+with some regression tests
+
+1561324501
+emekankurumeh[m]
+i also found a regression
+
+1561324514
+emekankurumeh[m]
+but i can't bc no stack trace
+
+1561325148
+emekankurumeh[m]
+is switching on errors supported?
+
+1561326169
+marijnfs
+is there a @ptrCast that doesn't complain about alignment?
+
+1561326219
+marijnfs
+wait i found alignCast
+
+1561327435
+Tetralux
+emekankurumeh[m], pretty sure switching on errors is supported.
+
+1561327510
+emekankurumeh[m]
+i'm trying to switch on errors from a generic function at comptime, but zig is giving me weird errors
+
+1561327718
+emekankurumeh[m]
+see
+
+1561327782
+emekankurumeh[m]
+i think we need examples for using `**` on multidimensional arrays
+
+1561328473
+Sahnvour
+andrewrk: did you consider making assignment to a temporary unnamed variable an error ?
+
+1561328515
+andrewrk
+Sahnvour, can you explain more?
+
+1561328527
+Sahnvour
+see
+
+1561328585
+Sahnvour
+their concerns are really specific, but I don't see a usecase where having a "rvalue" on both the left side of an assignment would make sense in zig
+
+1561328595
+Sahnvour
+-both
+
+1561328598
+andrewrk
+oh I see
+
+1561328609
+andrewrk
+yeah this looks like a missing compile error
+
+1561328699
+emekankurumeh[m]
+about how long does it take for the website to be updated?
+
+1561328759
+andrewrk
+emekankurumeh[m], are you talking about the CI builds?
+
+1561328771
+emekankurumeh[m]
+no the docs
+
+1561328785
+andrewrk
+yeah that's done by the CI builds. so if you look at your little orange dot on
+
+1561328798
+andrewrk
+click on the Details of the rocket ship one
+
+1561328808
+andrewrk
+you can see the windows build is still going
+
+1561328823
+andrewrk
+if that succeeds it'll do the UpdateDownloadPage job
+
+1561328834
+andrewrk
+you can look at previous builds to see how long those took
+
+1561328849
+andrewrk
+probably another 2 hours
+
+1561328910
+Tetralux
+Wait - so slicing an array gives a slice where, if it's []T you can modify the elements, and if it's []const T you cannot, but you cannot assign another slice to it to modify the elements underneath either way?
+
+1561328918
+Sahnvour
+hey, zig just hit 100 contributors :)
+
+1561328939
+andrewrk
+Tetralux, are you looking at the example in the issue?
+
+1561328947
+andrewrk
+Sahnvour, yeah! :)
+
+1561328967
+Tetralux
+I did.
+
+1561328979
+Tetralux
+I mean both generally, and in that example.
+
+1561329000
+andrewrk
+you can always reassign a variable
+
+1561329046
+andrewrk
+Sahnvour is pointing out, if I understand correctly, that reassigning a temporary value is useless and therefore very likely a bug
+
+1561329069
+Tetralux
+i guess the reason for why it's temporary is escaping me
+
+1561329072
+Tetralux
+because its a slice
+
+1561329076
+curtisf
+`[]T` is really something like `struct{ptr: *T, len: usize}`
+
+1561329078
+Tetralux
+and surely just points to data underneath.
+
+1561329092
+curtisf
+`Foo{.value = 5} = Foo{.value = 3}` doesn't mean anything
+
+1561329106
+Sahnvour
+the instance of the slice itself, which is a disguised struct, ist temporary since it's not stored anywhere, juste created via the slicing expression
+
+1561329109
+Tetralux
+i would not immediately assume that x[0..n] = y[0..n] does anything other than copies y's elements to x's.
+
+1561329139
+Tetralux
+i would be a little surprised if it did nothing.
+
+1561329169
+Sahnvour
+yeah that's confusing especially for people used to a more semantic way of dealing with collections of data
+
+1561329211
+Tetralux
+It's a little weird to me that you can assign a single element, but cannot assign a sub-slice of them at once.
+
+1561329221
+Tetralux
+esp since you can with the ptr+len.
+
+1561329242
+Tetralux
+And a slice is generally always just a ptr and a len.
+
+1561329250
+Tetralux
+Like
+
+1561329259
+Sahnvour
+well, slices are some kind of abstraction over pointers, you don't expect the pointed data to be copied when just copying the pointer itself
+
+1561329269
+Tetralux
+It's as if the slice is read-only, but one-element-at-a-time is mutable.
+
+1561329318
+Tetralux
+Like - what else would you mean by x[0..n] = y[0..n] than "please copy the elements from the r-slice to the l-slice.
+
+1561329337
+Tetralux
+Well that's not it
+
+1561329340
+Sahnvour
+my point is that it shouldn't compile
+
+1561329341
+Tetralux
+It's more what I said before
+
+1561329348
+Tetralux
+If each element of a slice is mutable
+
+1561329358
+Tetralux
+(eqiv to (ptr+len).* = ...
+
+1561329370
+Tetralux
+Then why is a range of elements immutable?
+
+1561329386
+Tetralux
+That seems a little weird to me.
+
+1561329406
+mikdusan
+except it's not a "range" it's a slice.
+
+1561329411
+curtisf
+Writing from one slice to another would require a loop. To me, it seems like that doesn't fit well with Zig's no-hidden-control-flow maxim to allow an `=` to spend an unbounded amount of time doing work
+
+1561329452
+curtisf
+maybe the compiler can detect this and just suggest using `std.mem.copy`
+
+1561329453
+emekankurumeh[m]
+well zig does hidden mencpy's so there is precedent
+
+1561329478
+curtisf
+where does it do hidden memcpys? surely just on constant sized objects?
+
+1561329478
+Tetralux
+Certainly, if you could not do it, I'd expect it to tell you what you
+
+1561329496
+Tetralux
+But like I said
+
+1561329503
+Tetralux
+If the slice's elems are mutable
+
+1561329508
+Tetralux
+But multiple at once are not
+
+1561329519
+Tetralux
+That's not intuitive to me.
+
+1561329528
+Tetralux
+But maybe that's just me.
+
+1561329553
+Tetralux
+I'd expect the error to explain it. Or at the VERY least tell me to use @memcpy instead for clarity.
+
+1561329566
+Tetralux
+Or mem.copy.
+
+1561329567
+emekankurumeh[m]
+the slice being mutable is true in rust and nim iirc
+
+1561329568
+Tetralux
+Or w/e
+
+1561329582
+Tetralux
+I mean
+
+1561329586
+Tetralux
+"The slice" is not mutable
+
+1561329592
+Tetralux
+But the contents it points to is
+
+1561329602
+Tetralux
+And that's what I'd expect you're addressing when you x[0..n]
+
+1561329606
+Tetralux
+Which you are
+
+1561329627
+Tetralux
+But you're not doing that, as above, when used as an l-value.
+
+1561329628
+Sahnvour
+they are, but the slice itself (as a whole, not for accessing a single element) is a struct, and there's no magic to make it semantically represent the elements it points to, and in this case it does not make sense to expect it to modify multiple elements at the same time (although I agree it's confusing and should be adressed)
+
+1561329660
+Tetralux
+So
+
+1561329663
+Tetralux
+Here's the thing
+
+1561329674
+Tetralux
+x[0..n] is basically just ranged-checked ptr+len.
+
+1561329695
+Tetralux
+..which means that if it's []T instead of []const T... the elements are mutable.
+
+1561329704
+Tetralux
+So therefore all of elements are.
+
+1561329715
+Tetralux
+Therefore a range -- a slice of them, if you will -- are .
+
+1561329719
+Tetralux
+And they are not.
+
+1561329723
+Tetralux
+Which is my point.
+
+1561329730
+Tetralux
+It isn't consistent.
+
+1561329734
+Tetralux
+And that's fine
+
+1561329740
+Tetralux
+If you want to make copying clear
+
+1561329748
+Tetralux
+By making programmers do a mem.copy etc.
+
+1561329762
+Tetralux
+But it
+
+1561329849
+Sahnvour
+I think it depends on where you come from and your past experience/languages, but I get your point
+
+1561329850
+Tetralux
+Maybe the whole idea is, "If you want to set one item, asisgn it - if you want to set multiple at once, loop over them or mem.copy.
+
+1561329869
+Tetralux
+To me
+
+1561329876
+Tetralux
+A slice is nothing more than a view into an array.
+
+1561329886
+Tetralux
+Except in this case
+
+1561329892
+Tetralux
+The elems can be const or non-const.
+
+1561329900
+Tetralux
+Which is fine.
+
+1561329927
+Tetralux
+But in this case, they are essentially const if you are talking about more than one at once, even if it's []T.
+
+1561329939
+Tetralux
+Yet not when you address one at a time.
+
+1561329983
+Tetralux
+Like - I know it's a ptr and a len, so x[0..n] = y[0..n] should just be a memcpy, right.
+
+1561330013
+Tetralux
+And unless it's []const T, I don't really understand why it wouldn't be.
+
+1561330017
+Sahnvour
+the thing is, as slices really are structs, having special behaviour for their assignation is akin to operator overloading/hidden control flow, which zig does not want
+
+1561330037
+Tetralux
+You already have special operator overloading.
+
+1561330040
+Tetralux
+[0..n]
+
+1561330046
+mikdusan
+what would be the rules for `x[begin..end] = y[begin2..end2]` . must end-begin always equal end2-begin ?
+
+1561330062
+mikdusan
+correction: `end2-begin2`
+
+1561330075
+Sahnvour
+also, consider the case where the slices are computed with runtime length, unknown beforehand, how would you handle putting a larger one into a smaller one, etc. that's hidden control flow again
+
+1561330078
+Tetralux
+You could have the requirement that both slices are the same length and are of the same eltype, yeah.
+
+1561330099
+emekankurumeh[m]
+runtime safety would catch that
+
+1561330109
+Tetralux
+Indeed. Exactly.
+
+1561330116
+Tetralux
+Same as when you do x[n] now
+
+1561330127
+Tetralux
+Except once for the whole thing and not once per index.
+
+1561330142
+Tetralux
+x[0..n] = y[0..n] could check the whole range before doing anything.
+
+1561330149
+Tetralux
+Unless I'm missing sometihng.
+
+1561330156
+Sahnvour
+sure
+
+1561330171
+Tetralux
+And to avoid buffer overflow
+
+1561330181
+Tetralux
+You could ensure they are the same length
+
+1561330219
+Tetralux
+Which
+
+1561330223
+Tetralux
+Correct me if I'm wrong
+
+1561330230
+Tetralux
+Is the same as what happens for single-index now
+
+1561330249
+Tetralux
+So it would have the same property of undefined behavior in release-fast.
+
+1561330251
+Sahnvour
+I have the impression this is higher-level than usual zig constructs, but that could probably be a proposal, and maybe it's already been considered
+
+1561330311
+emekankurumeh[m]
+it's not much more complex than the compiler inserting a memcpy
+
+1561330318
+Tetralux
+Precisely.
+
+1561330372
+Tetralux
+Which - is what you'd expect it to do.
+
+1561330420
+Tetralux
+Like - if you could slice linkedlists, then obviously you prob wouldn't want this.
+
+1561330424
+Sahnvour
+well as I said what you'd expect depends on the person and its background
+
+1561330431
+Tetralux
+But you can only use this syntax on arrays.
+
+1561330437
+Tetralux
+(and ptrs)
+
+1561330454
+hryx
+FWIW I would not expect the same thing you do Tetralux, but that's only based on my experiences
+
+1561330491
+Tetralux
+hryx, what would you expect x[0..n] = y[0..n] to do?
+
+1561330519
+hryx
+I'd expect a slice expression can't be used as an lvalue... maybe. I'd have to think about it for a sec
+
+1561330520
+mikdusan
+i have to be honest, supporting `x[0..n] = y[0..n]` is almost misleading - one might wish to `x[2..3] = y[0..10]` which doesn't fly
+
+1561330538
+Sahnvour
+coming from python I would expect the same thing you do, but as a C++ programmer I'm more inclined to think in the actual zig way (not to say one is better than the other)
+
+1561330562
+Tetralux
+mikdusan, you mean if y is []u8 and x is []u64 or something?
+
+1561330584
+mikdusan
+same types
+
+1561330606
+Tetralux
+mikdusan, I don't really see what a programmer could possibly mean by x[2..3] = y[0..10] then.
+
+1561330621
+mikdusan
+replace 2..3 with 0..10
+
+1561330639
+Tetralux
+If you replace that then it's fine though xD
+
+1561330668
+Tetralux
+Maybe I'm not understanding your point.
+
+1561330712
+mikdusan
+x.len != y.len
+
+1561330729
+Sahnvour
+you're arguing over slices with constants indices though, in real code it can happen pretty easily to have a variable which is a slice and that gets changed multiple times to point to different slices of element, without intending a copy of them
+
+1561330774
+Tetralux
+Sahnvour, I've been arguing over x[0..n] - note the 'n'.
+
+1561330786
+Tetralux
+But yes
+
+1561330793
+hryx
+Tetralux: just to address your ealier question to me, this is Go's behavior (hence my expectation)
+
+1561330804
+Tetralux
+If you had a slice var and changed it to point at different things
+
+1561330808
+Tetralux
+That would work as you expect.
+
+1561330826
+Tetralux
+Only if you used slicing syntax on the lhs would it assign multiple elems.
+
+1561330830
+Sahnvour
+ok
+
+1561330993
+Tetralux
+hryx, I'm not too clear as to
+
+1561331032
+Tetralux
+If there's an interesting reason for why you'd expect to not be able to, I'm interested.
+
+1561331062
+Tetralux
+But, devils advocate, why wouldn't you expect it to just do the obvious thing and memcpy
+
+1561331119
+hryx
+the reason it makes no sense is because a slice expression is the same as a struct initialization expression, which also can't be used as an lvalue
+
+1561331135
+hryx
+like this
+
+1561331191
+Tetralux
+hryx, I'm not sure that's an argument. Slicing syntax is specifically meant to address multiple elems of multi-elem sequence of contiguous things.
+
+1561331206
+Tetralux
+Whether it's a struct initialisation is an implementation detail, no?
+
+1561331215
+hryx
+from what I understand the expression `s[0..1]` is like the expression `Slice{.ptr = s, .len = 1}`
+
+1561331222
+hryx
+maybe
+
+1561331224
+Tetralux
+Yeah
+
+1561331229
+Tetralux
+Sure
+
+1561331246
+Tetralux
+But that's the same as (ptr+len).* = ...
+
+1561331262
+Tetralux
+(I've never needed to do that in Zig yet, so forgive me if you need some casts with that.)
+
+1561331289
+Tetralux
+But the fact that it is the same is just syntax sugar.
+
+1561331429
+hryx
+I encourage you to create a github issue if you're interested in proposing these semantics - it's good to have such discussions in the open where people can search for them
+
+1561331603
+mikdusan
+these discussions are awesome btw
+
+1561331622
+Tetralux
+o7
+
+1561331639
+hryx
+:D
+
+1561331687
+Tetralux
+Honestly, I'm not sure where you'd use multi-assign like this. Like - using it in a loop would probably be bad right.
+
+1561331701
+Tetralux
+In which case forcing an explicit memcpy is better.
+
+1561331868
+Tetralux
+I could be remembering wrong but I think Odin does this.
+
+1561331881
+Tetralux
+..has the feature I'm suggesting, that is.
+
+1561332222
+emekankurumeh[m]
+is there a proposal for allowing something like `pub fn foo(a, b, c: i32) void {...`?
+
+1561332246
+Tetralux
+I've actually found myself wondering about that feature a couple of times too.
+
+1561332266
+hryx
+I don't recall seeing a proposal for that
+

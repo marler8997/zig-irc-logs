@@ -1,0 +1,2656 @@
+1568855993
+stratact
+Hmm, I don't get it. When doing that static size buffer approach for fs.Dir, resolvePosix() does the path correctly the first time especially when inserting a null byte at the end of the true string, but the second time around, it pads the front of the next resolved path with garbage which throws the tests off.
+
+1568857381
+THFKA4
+thanks fengb
+
+1568858946
+stratact
+error.NameTooLong is my worst enemy
+
+1568861583
+stratact
+andrewrk: I'm not sure why my tests keep failing with `NameTooLong` each time I try something, but it's beginning to drive me nuts because of how complicated issue #2885 is at a macro scale. I feel this one issue would solve probably +5 other issues on github at the same time if completed.
+
+1568861795
+stratact
+Either way, it feels like my work is a mess and I would (or should) start over from scratch again but I'm worried about bumping into those similar barriers.
+
+1568861945
+andrewrk
+what makes it complicated? perhaps you need to experiment with the freebsd API without editing std/ until you have a good idea of how it works?
+
+1568862047
+stratact
+It's complicated because I'm editing between 4 or 5 different modules in the standard library because the allocator is passed around a lot and I'm adjusting 1 or 2 functions in each of them.
+
+1568862122
+stratact
+So I've been jumping around a lot tweaking and testing
+
+1568862261
+stratact
+it really is interconnected with a bunch of other stuff.
+
+1568862290
+stratact
+and eventually hitting the system.mkdir() syscall...
+
+1568862383
+stratact
+in one of the tests
+
+1568862399
+andrewrk
+maybe you can try stashing all that work, with a fresh std/, and then experiment with using the freebsd APIs in a separate test file, where you make a competing implementation
+
+1568862416
+andrewrk
+once you feel it is working you can try swapping out the official std/ one with it
+
+1568862474
+scientes
+stratact, you should use git workspace
+
+1568862485
+andrewrk
+idk what that is
+
+1568862488
+scientes
+so you can have multiple branches open at the same time
+
+1568862503
+scientes
+*checked out
+
+1568862512
+andrewrk
+that sounds complicated
+
+1568862539
+scientes
+ok git worktree
+
+1568862551
+scientes
+git worktree add ~/git/zig-whateverthisbranchis
+
+1568862568
+scientes
+meh, its pretty similar to regular git
+
+1568862694
+andrewrk
+scientes, not to 💩 on anyone's parade, but when someone is already struggling with complexity I think the last thing they need is another new thing to learn, that could potentially mess up
+
+1568862705
+scientes
+oh ok
+
+1568862847
+stratact
+I think starting over from scratch and making a competing implementation based on FreeBSD is a great idea, that way I can have more freedom to refactor and learn. I suppose I could learn other git workflows but that's not a high priority atm.
+
+1568862865
+andrewrk
+stratact, you will probably also benefit from whatever the freebsd equivalent of strace is
+
+1568862882
+stratact
+there is dtrace, iirc?
+
+1568862904
+andrewrk
+maybe truss?
+
+1568862911
+stratact
+That too
+
+1568862928
+scientes
+a fresh checkout is a great idea
+
+1568862938
+scientes
+and then use git diff to see what you have changed
+
+1568862939
+stratact
+indeed
+
+1568863054
+stratact
+I'm really good at refactoring and simplication but only if I understand the code well.
+
+1568863109
+stratact
+*simplification
+
+1568863362
+andrewrk
+scientes, never mind the @byteSwap thing. I typed out an entire proposal and then changed my mind
+
+1568872431
+bgiannan
+So what's the best practice to deal with with error sets? I've been mostly relying on zig inferring them but it doesn't work on recursive functions. Should I manually gather all possible errors into a custom set? Use `catch` to throw custom errors instead of using `try` ?
+
+1568875163
+mq32
+bgiannan: should be possible to just merge all possible error sets with the || operator
+
+1568875516
+stratact
+andrewrk: I made a BufTracker type that worked with std.fs.makeDir in FreeBSD
+
+1568875593
+stratact
+It was really simple to implement too
+
+1568875688
+stratact
+I was somewhat inspired by seeing that `Buf` type in your compiler code although this buffer is statically sized.
+
+1568881304
+stratact
+Oh 💩 , oh 💩, I think I did it! I think I solved the damn #2885 and #2886 issues.
+
+1568881476
+stratact
+I need to lie down for a bit
+
+1568881617
+mq32
+stratact, have you made the "hardcode test" already?
+
+1568881625
+mq32
+listing / of your system?
+
+1568882441
+stratact
+I haven't written any extra tests. But basically I just used my own written buffer tracker type to manage the assignment of bytes from other path strings directly to the static sized buffer and have know when to slice it when I need it. Such a simple implementation made my life much easier.
+
+1568882475
+stratact
+and perhaps can be used to simplify std.fs further
+
+1568882681
+stratact
+and hopefully make things more robust
+
+1568890634
+_Vi
+"Precedence" section of documentation seems to have more operators than preceding "Table of Operators" section. Is it by design or the latter is yet to be completed?
+
+1568892648
+_Vi
+Does casting from `undefined` to e.g. i32 freezes a value or leaves it as LLVM's `undef`/`poison`?
+
+1568893670
+firefox317
+I'm trying to solve the _DllMainCRTStartup issue. Should we provide the mingw implementation of _DllMainCRTStartup  when using --library c?
+
+1568893693
+mq32
+firefox317, what does the function do?
+
+1568893705
+mq32
+calling constructors/initializing values?
+
+1568893777
+firefox317
+Jupp also calling DllMain
+
+1568893821
+firefox317
+Basically initializing values yes, right now we have a implementation of the function in start_lib.zig that does nothing
+
+1568893850
+mq32
+should be doable 100% in zig and that function can mimic the _DllMainCRTStartup function
+
+1568894437
+firefox317
+Yes I see, but if we are already using library c, why don't we just use the mingw implementation?
+
+1568898709
+Tetralux
+_Vi: undefined is a value, not a type, so you cannot cast from it.
+
+1568898724
+Tetralux
+It's 0xaa in safe modes, and unknown in release-fast IIRC.
+
+1568898742
+Tetralux
+It's just a special value.
+
+1568898751
+_Vi
+Tetralux, "undefined can be implicitly cast to any type"
+
+1568898777
+_Vi
+Tetralux, "Once this happens, it is no longer possible to detect that the value is undefined." Does it correspond to LLVM's `freeze` operation?
+
+1568898788
+andrewrk
+bgiannan, when inferred error sets don't work, it's time to specify the set explicitly. you can start with an empty set and you'll get errors telling you what is missing
+
+1568898822
+andrewrk
+_Vi, which operators?
+
+1568898837
+Tetralux
+
+
+1568898849
+andrewrk
+for undefined, see
+
+1568898864
+andrewrk
+short summary: no "freeze"
+
+1568898877
+_Vi
+andrewrk, For example, array access operator []. Arrays are mentioned only twice in that table: for `++` and for `**`.
+
+1568898996
+andrewrk
+sounds like the table is incomplete
+
+1568899013
+_Vi
+[about undefined] For example, is it allowed to iterate on initially `undefined` value, expecting convergence to a known value? In Rust or C, using e.g. undefined `u8` is undefined behaviour even if for all 256 possible values it is OK.
+
+1568899096
+fengb
+It’s undefined behavior
+
+1568899128
+_Vi
+For example, taking undefined `u32` value, then doing right 1-bit shift 32 times. I should be 0 for any value. But for C in LLVM it is UB.
+
+1568899132
+fengb
+It’s LLVM undefined so the optimizer can do whatever it wants to
+
+1568899135
+andrewrk
+branching on an undefined value is undefined behavior. u8 can still be undefined.
+
+1568899142
+bgiannan
+andrewrk, right but shouldn't i always specify the errorset and only rely on inferring in particular cases?
+
+1568899167
+_Vi
+If `freeze` operation is applied on that cast, than this "poisoned" value turns into some unknown, but concrete bit pattern.
+
+1568899190
+andrewrk
+zig has no such freeze operation
+
+1568899244
+_Vi
+Then this phrase in documentation may be misleading: "undefined means the value could be anything, even something that is nonsense according to the type. ".
+
+1568899251
+andrewrk
+however some operations are defined to ignore the other operand in some cases. for example, `u32(x) >> 32` is comptime 0, even if x is undefined
+
+1568899287
+_Vi
+What about iterating `u32(x) >> 1` N number of times, where N at runtime happens to be 32?
+
+1568899353
+_Vi
+If `undefined` means unfrozen "poison" then it is not "some unknown value", but special thing, not representable by any bit pattern. It means LLVM may delete chunks of your code.
+
+1568899478
+_Vi
+Maybe Zig should expose special built-in operation like @freezeUndefined, turning undefined value into an arbitrary, but non-always-UB-inducing value.
+
+1568899545
+Tetralux
+All undefined actually is meant to be is "don't initialize this".
+
+1568899596
+Tetralux
+The fact that it's an actual value rather than just having semantic meaning is largely an implementation detail.
+
+1568899601
+andrewrk
+_Vi, there is no "freeze" so the result will continue to be an undefined value. (no undefined behavior though)
+
+1568899716
+andrewrk
+I think the use case for this is really advanced. The only reason you would do this over setting the value to some hard coded known value would be micro optimization
+
+1568899739
+_Vi
+andrewrk, How can it be undefined value, yet no UB for operations on it? As far as I understand, `int foo() { uint32_t x;  return x & (~x); }` is UB in today's C. Is similar function UB in Zig?
+
+1568899765
+andrewrk
+e.g. for modification_count here:
+
+1568899793
+andrewrk
+C has a lot of unnecssary UB. Zig has it only where it makes sense
+
+1568899832
+_Vi
+andrewrk, Is it like with infinite loop without side effects? By the rules not UB, but de-facto UB?
+
+1568899833
+Tetralux
+In safe modes, you'd get `0xaa & (~0xaa)`
+
+1568899845
+_Vi
+Tetralux, I mean in `--release-speed`.
+
+1568899860
+_Vi
+*--release-fast
+
+1568899867
+Tetralux
+In release-fast, the variable is uninitialized and you'll get `uninit & ~uninit`.
+
+1568899882
+_Vi
+Isn't `uninit` going to be removed from LLVM in favour of `poison`?
+
+1568899884
+andrewrk
+_Vi, in zig this example translates to: fn foo() c_int { var x: u32 = undefined; return x & (~x); }. The function returns undefined, and that is allowed. This is well-defined. No branching on undefined occurs
+
+1568899909
+Tetralux
+When I say 'uninit', I mean, that it's uninitialized.
+
+1568899917
+Tetralux
+I'm not talking about LLVM special values here.
+
+1568899934
+andrewrk
+_Vi, zig the language does not depend on llvm. zig defines how this program behaves. However, yes, llvm will mark that as poison, but it's not UB unless branching on it occurs
+
+1568899941
+Tetralux
+Literally the same as C, if you did `var a: u32 = undefined; return a & ~a; `
+
+1568899983
+andrewrk
+or ptr deref, or other operations than can UB depending on operands
+
+1568900027
+andrewrk
+if C has UB there then it's not literally the same as C. please be careful when speaking authoritatively Tetralux
+
+1568900043
+_Vi
+It is example of function where insertion of `freeze` would make it always return 0.  Documentation is not explicit enough for it. The only phrase that hints is "Using this value would be a bug.". But "the value could be anything, even something that is nonsense according to the type" acts in reverse and reinforces old school thinking that "it is probably something that was in that memory and register before our code gets executed".
+
+1568900059
+Tetralux
+andrewrk: Can we stop talking about undefined behavior in two different ways.
+
+1568900107
+andrewrk
+_Vi, I agree, and I will reword that before closing the issue
+
+1568900145
+Tetralux
+It's the same as C, unless I'm very much mistaken, because in both Zig and C the value will have an abitrary value, since it's uninitialized. But yes, you know what it's gonna do - it's not "undefined behavior" in a literal sense, even though C would call it that.
+
+1568900146
+andrewrk
+Tetralux, elaborate?
+
+1568900165
+Tetralux
+UB in C is "does whatever it wants" but calls things that that are not that.
+
+1568900167
+Tetralux
+Zig does not.
+
+1568900184
+Tetralux
+C calls the returning uninitialized values UB, but it's not.
+
+1568900195
+Tetralux
+Which language's UB you are referring to matters.
+
+1568900204
+Tetralux
+This is why I hate UB and using it to describe anything.
+
+1568900207
+companion_cube
+U can be "unspecified" or "undefined", right?
+
+1568900219
+andrewrk
+in this context UB means Undefined Behavior
+
+1568900226
+Tetralux
+^
+
+1568900237
+andrewrk
+Tetralux, UB means the same thing in Zig & C. C has UB in a lot of surprising places.
+
+1568900245
+companion_cube
+I mean, in C sometimes things are compiler dependent but not really UB, I thought
+
+1568900255
+companion_cube
+(please don't mind me)
+
+1568900286
+Tetralux
+You just gave a clarifying example before; C would call returning an uninit value UB, but Zig would only call it UB if you branched on it.
+
+1568900289
+Tetralux
+You literally said it yourself :)
+
+1568900298
+Tetralux
+That makes the two different.
+
+1568900300
+andrewrk
+I have not verified in the spec that returning uninitialized locals in C is UB. But it would not surprise me
+
+1568900321
+Tetralux
+Yeah but insert whatever you want there.
+
+1568900322
+andrewrk
+_Vi's claim is that in C it is UB. Meaning actual undefined behavior. Not a different definition of the same words
+
+1568900363
+Tetralux
+My point is, my definition of UB requires branching.
+
+1568900369
+Tetralux
+because that's sane.
+
+1568900381
+andrewrk
+there is only one definition of UB across all languages
+
+1568900404
+andrewrk
+the question is, what counts as UB?
+
+1568900407
+Tetralux
+.. except that C poison's it by using it for more things than it should.
+
+1568900421
+Tetralux
+Which in practice, are not.
+
+1568900436
+Tetralux
+AFAIK anyway.
+
+1568900590
+Tetralux
+I'm honestly not sure it's helpful to even use UB to describe anything.
+
+1568900641
+Tetralux
+There's platform-specific behavior.
+
+1568900652
+Tetralux
+And that's about it, off the top of my head.
+
+1568900678
+Tetralux
+Likewise, `orelse unreachable` means "you might dereference null"
+
+1568900684
+Tetralux
+(which may not segfault btw).
+
+1568900693
+Tetralux
+So I'm lead to believe.
+
+1568900709
+_Vi
+Commented on #1947 with an example.
+
+1568905609
+mq32
+just a comment on the weirdness of "no overloads":
+
+1568905617
+mq32
+EndOfTheDay vs. EndOfADAy
+
+1568905621
+mq32
+*EndOfADay
+
+1568905637
+mq32
+(how not to do self-documenting code)
+
+1568905655
+Tetralux
+I'm not sure I understand.
+
+1568905676
+mq32
+Both functions perform the same job (for a given date value, compute the end of that day)
+
+1568905703
+mq32
+one takes (int day, int month, int year)
+
+1568905710
+mq32
+the other one takes (DayTime)
+
+1568905800
+fengb
+That's heresy
+
+1568905807
+fengb
+Everyone knows it's year, month, day
+
+1568905823
+companion_cube
+^
+
+1568905824
+companion_cube
+yes please
+
+1568905832
+companion_cube
+rfc3339 ftz
+
+1568905834
+companion_cube
+ftw
+
+1568905887
+Tetralux
+First, yeah - absolutely do year-month-day order of params.
+
+1568905890
+Tetralux
+But yes
+
+1568905918
+mq32
+Tetralux: this is real-world example. not my code, i just stumbled up this in the documentation of a lib
+
+1568905926
+Tetralux
+Definitely should not have "ADay" vs "TheDay" in code xD
+
+1568905933
+mq32
+also, as "some day" there was introduction of overloads, this happend:
+
+1568905944
+mq32
+ADay(int year, int dayOfYear)
+
+1568905965
+fengb
+It should try to reorder month/day/year intelligently, like how PHP stdlib tries to reorder arguments
+
+1568905983
+Tetralux
+mq32: This clearly doesn't seem good xD
+
+1568905991
+mq32
+tell that Borland/Embarcadero :D
+
+1568905998
+Tetralux
+I'm not sure what you could do without overloading there.
+
+1568906020
+fengb
+"Day" is actually very ambiguous when it comes to date :(
+
+1568906027
+Tetralux
+Is it though?
+
+1568906041
+Tetralux
+Considering that it literally in the date format?
+
+1568906052
+fengb
+Day of week, day of month, day of year
+
+1568906062
+fengb
+Yes but context can subtly change it dramatically
+
+1568906067
+Tetralux
+I mean, you mean day of year.
+
+1568906068
+companion_cube
+in this format it's day of month, isn't it?
+
+1568906074
+Tetralux
+Or yeah
+
+1568906075
+fengb
+I'd hope so... but
+
+1568906079
+Tetralux
+I ain't awake yet lol
+
+1568906085
+companion_cube
+it's additive increments
+
+1568906087
+Tetralux
+Day = day of month.
+
+1568906095
+fengb
+I wish there's a better term than "day" when it comes to YYYY-MM-DD
+
+1568906096
+Tetralux
+But you might actually want the day of the year.
+
+1568906102
+fengb
+Or rather, less ambiguous
+
+1568906105
+companion_cube
+then remove the month
+
+1568906119
+companion_cube
+otherwise there's redundant, possibly contradictory, information
+
+1568906130
+Tetralux
+You wouldn't have both in the structure
+
+1568906130
+Tetralux
+But
+
+1568906142
+fengb
+Sometimes I wish we could fix real language
+
+1568906148
+Tetralux
+You might want always one or always the other, or the day of month, but occassionally want to compute the doy.
+
+1568906158
+fengb
+Because this is a pain point in English, and not just programming
+
+1568906168
+Tetralux
+date.dayOfYear(); :)
+
+1568906175
+Tetralux
+date.dayOfMonth();
+
+1568906184
+Tetralux
+date.dayOfWeek();
+
+1568906191
+fengb
+Sorry about the tangent :P
+
+1568906203
+Tetralux
+yearDay(), monthDay(), weekDay()
+
+1568906203
+fengb
+There's also day/night
+
+1568906221
+Tetralux
+That one you'll need to give an example for :)
+
+1568906251
+fengb
+Probably best represented as isDaylight()
+
+1568906252
+mq32
+day(kind:DayKind), DayKind = enum (OfYear, OfMonth, OfWeek, SinceUnixEpoch, SinceLastCenturiy)
+
+1568906261
+fengb
+Or between dawn and dusk
+
+1568906277
+mq32
+fengb, "isDaylight(Geolocation,height)"
+
+1568906297
+halosghost
+oh man, are we actually talking about a datetime format?
+
+1568906300
+fengb
+The more I type, the more my brain hurts :(
+
+1568906305
+halosghost
+if so, there are so many things wrong with all the ones out there
+
+1568906305
+Tetralux
+I just like the word Geolocation, so that one gets my vote xD
+
+1568906354
+Tetralux
+In my mind, YYYY-MM-DD HH:MM:SS.xxx is THE format.
+
+1568906368
+Tetralux
+(omitting the second half when you don't want it._
+
+1568906370
+Tetralux
+)*
+
+1568906371
+fengb
+Missing timezone
+
+1568906376
+Tetralux
+It's UTC :)
+
+1568906393
+fengb
+Thn it can only represent past/present
+
+1568906416
+Tetralux
+Why's that?
+
+1568906416
+fengb
+I suppose it can sorta do the future, but people almost never mean UTC future
+
+1568906448
+fengb
+Because if I want something occuring next Tuesday at 12, I almost always mean current TZ
+
+1568906453
+fengb
+And TZ offsets can shift tomorrow
+
+1568906463
+fengb
+Human time is hard :(
+
+1568906477
+mq32
+just use unix epoch everywhere!
+
+1568906481
+mq32
+Let's meet in 7200 seconds!
+
+1568906486
+Tetralux
+I don't understand how using UTC means you cannot convert to/from other timezones.
+
+1568906509
+fengb
+Because UTC doesn't represent next Tuesday. It represents next Tuesday as I am talking about it right this second
+
+1568906523
+fengb
+But if my TZ offsets shift because of the government, then the UTC time is wrong
+
+1568906543
+Tetralux
+I'd always strip the timezone off as the first thing I do.
+
+1568906556
+Tetralux
+Any user-input time - convert to UTC immediately.
+
+1568906576
+fengb
+
+
+1568906591
+fengb
+The zone is super important when talking about the future
+
+1568906622
+fengb
+You can get away with it talking about the past... but then you lose a bit of semantic meaning
+
+1568906630
+Tetralux
+I cannot help it if people change the timezone out of under me.
+
+1568906642
+fengb
+Yes you can, use a TZ aware library
+
+1568906643
+Tetralux
+I deal with ISO days, minutes, seconds, etc.
+
+1568906654
+Tetralux
+xD
+
+1568906658
+Tetralux
+Or rather I'd like to.
+
+1568906668
+Tetralux
+fengb: To quote Tom Scott :p
+
+1568906689
+mq32
+> Except for Morocco, where in the middle of summer, DST is suspended for a month during Ramadan (depending on which year it is).
+
+1568906697
+mq32
+what kind of hell is this?! :D
+
+1568906711
+fengb
+Also, storing offsets is also wrong because TZs change offsets
+
+1568906721
+fengb
+Human time is just a hard problem
+
+1568906740
+Tetralux
+Why is why I have no wish to deal with human time xD
+
+1568906744
+fengb
+We could get away with it if we just kill all humans :/
+
+1568906744
+Tetralux
+Which is*
+
+1568906749
+Tetralux
+No
+
+1568906755
+Tetralux
+Just make UTC universally used.
+
+1568906779
+Tetralux
+Oh, your in Australia? That means you get up at 8pm.
+
+1568906794
+Tetralux
+In the UK? That means you get up at 10AM.
+
+1568906796
+fengb
+Why does Australia have 8 timezones? :/
+
+1568906800
+fengb
+I thought the US was bad
+
+1568906859
+alexander92
+it doesn't
+
+1568906866
+halosghost
+Tetralux: note that that still doesn't solve all problems with calendars
+
+1568906870
+alexander92
+does it
+
+1568906874
+halosghost
+Tetralux: namely, people use different calendars
+
+1568906885
+Tetralux
+halosghost: I'd use ISO calendars xD
+
+1568906891
+halosghost
+what ISO calendar?
+
+1568906891
+Tetralux
+Whatever they are.
+
+1568906908
+halosghost
+that RFC, ISO standard, POSIX, etc. all implicitly assume Gregorian
+
+1568906922
+Tetralux
+All months are 28 days would be a good start.
+
+1568906937
+halosghost
+(technically, POSIX isn't implicit, but it's only documented in the giant spec)
+
+1568906942
+halosghost
+Tetralux: that would mess up everything
+
+1568906952
+fengb
+Islamic calendar is used for a few things, but I don't think necessarily day-to-day
+
+1568906953
+mq32
+13 months, each month has 28 days, 2 "start of the year" days without having a weekday assigned...
+
+1568906957
+halosghost
+but the point is, there are reasonably easy ways of storing dates such that you don't actually have to assume a calendar
+
+1568906962
+fengb
+Similar with the Chinese lunar calendar
+
+1568906971
+halosghost
+mq32: that's roughly the international fixed calendar, yeah
+
+1568906983
+Tetralux
+halosghost: Sounds good.
+
+1568906984
+halosghost
+personally, there's one I prefer much more than those
+
+1568906990
+Tetralux
+Name it :D
+
+1568907016
+fengb
+So detach days from years? That'd make programming easier but hurt human perception
+
+1568907021
+halosghost
+but, again, it doesn't matter; the ideal should be to allow people to use whatever calendar they want (so long as it's reproducible), and to have your datetime format respect it (just as datetime formats can reasonably respect timezones easily now)
+
+1568907042
+fengb
+Let's just change the Earth's orbit/rotation so they're perfectly aligned
+
+1568907051
+halosghost
+fengb: the way to do it is to pick a lingua franca that all calendars can be converted to/from easily (much like what UTC does for timezones)
+
+1568907060
+mq32
+fengb: nice. i like simple and pragmatic solutions to complex problems!
+
+1568907094
+fengb
+halosghost: Almost everyone is on the gregorian calendar atm so it's not a big problem
+
+1568907099
+halosghost
+fengb: in particular, most calendar folk use a fixed day number system (think UNIX epoch time, but counting integral days instead of integral seconds) with an epoch that everyone can agree upon (usually, people use Gregorian 1 January 1)
+
+1568907104
+halosghost
+fengb: that is not true
+
+1568907107
+fengb
+But gregorian is a pain to program for so... >_>
+
+1568907116
+halosghost
+fengb: and is an unfortunate myth perpetuated by our industry
+
+1568907140
+halosghost
+plus, the Gregorian leap rule is incredibly poor, and if we want to keep using things like GPS (and have clocks read the same time), we're going to have to reform it
+
+1568907178
+Tetralux
+Certainly, my inclination is that it things should be defined to an evenly divisable number of seconds.
+
+1568907192
+halosghost
+so, instead of putting all our eggs in one basket (that's already full of holes), we could instead just make it so that things actually are flexible enough to allow reform, mobility, and cross-talk
+
+1568907204
+Tetralux
+Sounds sane to me.
+
+1568907233
+Tetralux
+The work of converting between TZs should not be part of a date calcuation, that much I know.
+
+1568907235
+halosghost
+the easiest sane storage format then for a date is to just store the FDN Rata Die (the fixed day number using Gregorian 1 January 1 as the epoch)
+
+1568907258
+Tetralux
+That assumes calendar....
+
+1568907260
+halosghost
+converting from that to gregorian is pretty easy, and great work has been done to allow converting between that and many other calendars
+
+1568907270
+fengb
+TZ needs to be a part of date. Otherwise we have to agree on a new definition of "start of day"
+
+1568907278
+halosghost
+Tetralux: in the same way that UTC “assumes GMT”
+
+1568907317
+companion_cube
+there's tons of RFCs on that…
+
+1568907318
+halosghost
+Tetralux: it just gives everyone an easy and consistent target for conversion
+
+1568907319
+halosghost
+Tetralux: and, it's already the standard in calendrical circles
+
+1568907338
+Tetralux
+halosghost: Which is why I'm inclined towards it.
+
+1568907347
+halosghost
+companion_cube: oh?
+
+1568907350
+halosghost
+I'm not aware of any
+
+1568907363
+Tetralux
+But I'd rather no assumptions were being taken here.
+
+1568907369
+companion_cube
+I mean, RFC3339, store dates with that
+
+1568907403
+companion_cube
+and then the unix APIs, is all
+
+1568907437
+halosghost
+companion_cube: are you talking about what I'm talking about or about packaging TZ in the time format?
+
+1568907455
+companion_cube
+the latter
+
+1568907457
+companion_cube
+sorry
+
+1568907459
+halosghost
+no worries
+
+1568907468
+companion_cube
+was on a call, I'm probably out of context
+
+1568907479
+halosghost
+Tetralux: if you want a much better calendar than the IFC, look up Symmetry454
+
+1568907512
+halosghost
+Tetralux: the person who invented it also includes the arithmetic to convert freely between Gregorian and Sym454 (via FDN Rata Die) royalty-free and public-domain
+
+1568907517
+halosghost
+Tetralux: to give you a taste of what needs to be done
+
+1568907532
+halosghost
+(I'm also prototyping a library to make conversion between calendar dates much easier)
+
+1568907565
+fengb
+RFC3339 only captures offsets, which isn't the same as zones
+
+1568907587
+companion_cube
+hmmmmmmmm
+
+1568907591
+companion_cube
+ok then I'm lost :3
+
+1568907600
+companion_cube
+are there timezones that are not offsets?
+
+1568907621
+Tetralux
+There are 1/4, 1/8 double-BST etc.
+
+1568907622
+fengb
+A timezone can have multiple offsets
+
+1568907631
+fengb
+Daylight savings time is the prime example
+
+1568907633
+Tetralux
+1/8, double-BST*
+
+1568907644
+Tetralux
+UK had 2xBST througout WWII IIRC.
+
+1568907655
+companion_cube
+all I know is that gmtime has that info :D
+
+1568907659
+companion_cube
+(the DST)
+
+1568907664
+Tetralux
+And some countries lost half a year at, at least one point in history.
+
+1568907677
+Tetralux
+Dec 31 -> Mar 21st, or whatever it  was.
+
+1568907681
+companion_cube
+:DDDDDDDDDDD damn
+
+1568907683
+fengb
+Yeah we work with it with zones like America/New_York
+
+1568907701
+Tetralux
+.. which I always hate because UTC is never an option :")
+
+1568907723
+Tetralux
+The fact that I cannot pick UTC as my wall clock in Linux is atrocious.
+
+1568907765
+Tetralux
+Also yeah, probably should only use calendars for displaying dates to a user...
+
+1568907799
+fengb
+I fixed an offset problem by shifting Arizona local time (user) into New York local time (financial markets)
+
+1568907812
+fengb
+It sucks... but it's needed
+
+1568907844
+Tetralux
+How many of you would prefer all times are epoch timestamps? :)
+
+1568907856
+companion_cube
+I'd like all times to have an offset specified, at least
+
+1568907877
+halosghost
+let me go grab my time format string :P
+
+1568907882
+fengb
+The offset was the problem there. Arizona doesn't have DST so the times stopped correlating during summer
+
+1568907883
+Tetralux
+>:)
+
+1568907895
+halosghost
+I have one that I always use
+
+1568907901
+fengb
+We assumed consistent offsets and it broke Arizona
+
+1568907918
+Tetralux
+I want, exactly one, method of storage and quick computation, that is universal. Forever.
+
+1568907924
+halosghost
+"%H.%M (%Z) | %A, Gregorian %d %B %Y"
+
+1568907926
+fengb
+It probably broke for foreign countries too... but that wasn't as important >_>
+
+1568907934
+halosghost
+roughly, that's the string I use with strftime() ^
+
+1568907964
+Tetralux
+halosghost: So, "12:55 GMT", or "_ Gregorian 21 02 2009" ?
+
+1568907971
+Tetralux
+( I forget what %A and %B is. )
+
+1568907996
+halosghost
+how it currently renders: 10.46 (CDT) | Thursday, Gregorian 19 September 2019
+
+1568908008
+Tetralux
+Ah-ha!
+
+1568908024
+Tetralux
+I'd include seconds, but yes, otherwise I like both of those.
+
+1568908037
+Tetralux
+10:46:25 (CDT)
+
+1568908056
+halosghost
+I explicitly don't include seconds because I don't refresh my status bar every second
+
+1568908061
+halosghost
+(nor on my watch)
+
+1568908065
+halosghost
+(nor on my phone)
+
+1568908071
+Tetralux
+I do everywhere ;p
+
+1568908073
+halosghost
+otherwise, I'd likely include seconds as well
+
+1568908082
+Tetralux
+Well - where I can :angry:
+
+1568908084
+halosghost
+Tetralux: I don't really need to know seconds, and it just takes more power
+
+1568908086
+halosghost
+🤷
+
+1568908125
+Tetralux
+It takes more power to scroll the IRC window xD
+
+1568908161
+halosghost
+Tetralux: as for interchange format: two member struct: { FDN_Rata_Die, UTC_seconds }
+
+1568908174
+Tetralux
+What's the first one?
+
+1568908191
+halosghost
+FDN Rata Die is the fixed day number starting from Gregorian 1 January 1
+
+1568908208
+Tetralux
+Okay - so day-wise epoch  then :)
+
+1568908236
+halosghost
+correct, “Rata Die” refers to using Gregorian 1 January 1 as the epoch
+
+1568908270
+fengb
+Shouldn't 1970-01-01 be epoch? 🤔
+
+1568908273
+Tetralux
+struct { daywise_epoch: u128, seconds: u32, nanos: u64)
+
+1568908295
+halosghost
+Tetralux: or, for that matter, u512 nanos
+
+1568908302
+halosghost
+s/nano/micro/
+
+1568908323
+halosghost
+oh, you're assuming the start of the day is 0 in seconds and nanos
+
+1568908330
+Tetralux
+Exactly.
+
+1568908334
+Tetralux
+Because that's sane.
+
+1568908337
+halosghost
+then seconds doesn't need to be u32
+
+1568908344
+halosghost
+u16 is even overkill
+
+1568908353
+Tetralux
+Which is why you just have nanos instead.
+
+1568908396
+halosghost
+u64 is massively overkill for nanos then
+
+1568908416
+Tetralux
+Well - 1e9 - whatever size that is :P
+
+1568908420
+halosghost
+also, why nano and not micro?
+
+1568908431
+halosghost
+hell, let's just do yocto
+
+1568908443
+Tetralux
+Or attos :p
+
+1568908457
+halosghost
+yocto is the smallest
+
+1568908464
+Tetralux
+I picked nanos because that's the smallest unit of measurement on every system I've measured time on.
+
+1568908465
+fengb
+nano is smaller than micro
+
+1568908471
+Tetralux
+fengb: Yes it is.
+
+1568908488
+Tetralux
+nano, micro, milli, unit :)
+
+1568908512
+halosghost
+if you want a format that lasts forever, don't bind yourself to a system
+
+1568908514
+Tetralux
+I am however open to using smaller units.
+
+1568908527
+Tetralux
+Hey - I'd pick attos if reasonable.
+
+1568908532
+fengb
+Nothing lasts forever
+
+1568908536
+halosghost
+u97 is more than enough to store the yoctoseconds of a day
+
+1568908537
+fengb
+We'll be on a new galactic standard soon™
+
+1568908543
+Tetralux
+So long as I know the power of ten and can do it quickly and losslessly.
+
+1568908554
+fengb
+Our time is too earthcentric
+
+1568908578
+halosghost
+anywho, if y'all are actually putting together a datetime format, let me know if you want to make it actually portable
+
+1568908581
+halosghost
+:)
+
+1568908591
+companion_cube
+😅
+
+1568908616
+Tetralux
+I like portable :)
+
+1568908633
+companion_cube
+datetime is one of these rabbit holes
+
+1568908656
+fengb
+I've come to realize that time is subtly about 3 different domains
+
+1568908668
+fengb
+And we don't even realize we're talking about them differently
+
+1568908721
+Tetralux
+Shoot.
+
+1568908725
+Tetralux
+Surprise me.
+
+1568908740
+fengb
+Next Tuesday at 12
+
+1568908753
+fengb
+That could mean, exactly on UTC
+
+1568908760
+fengb
+On my local time
+
+1568908769
+fengb
+or a recurring thing that shifts depending on other contexts
+
+1568908826
+fengb
+Or it means relative to the person I'm talking to
+
+1568908844
+Tetralux
+Yeah, the timezone is implicit when you say it.
+
+1568908858
+fengb
+There's another aspect that I remember thinking about
+
+1568908873
+fengb
+Someone was building a temporal database with 2 dimensions of time... but I needed to introduce a 3rd dimension for some reason
+
+1568908882
+fengb
+I don't remember why but it really hurt my brain
+
+1568908934
+fengb
+Accounting is a good example of having an extra dimension of time
+
+1568908954
+companion_cube
+and: appointments are fixed, but alarms are always local ;)
+
+1568908961
+fengb
+When you book money, you need it booked. But sometimes that booking is wrong, so you need to fix it in the past while simultaenously not affecting the current values
+
+1568908986
+fengb
+Guh, it's too early for me to think about this
+
+1568909096
+Tetralux
+O.O
+
+1568909149
+fengb
+
+
+1568909467
+fengb
+companion_cube: Oh sure, use a relatable example
+
+1568913269
+firefox317
+stratact: Regarding the question you asked on your PR, andrewrk means this: // comment <newline> if (builtin.single_threaded) return error.SkipZigTest; <newline> //comment <newline> if (std.os.freebsd.is_the_target) return error.SkipZigTest;
+
+1568913383
+stratact
+Gotcha, thanks.
+
+1568915281
+andrewrk
+llvm 9 released
+
+1568915294
+andrewrk
+let's do this
+
+1568915338
+dimenus
+are you going to benchmark 8 vs 9 at all?
+
+1568915415
+andrewrk
+nope. are you?
+
+1568915517
+dimenus
+no, i was just curious. work got much busier in the past couple weeks so i haven't spent much time on zig lately :(
+
+1568916175
+stratact
+Phew, got that FreeBSD event hang out of the way, hopefully I can get my main PR merged in time for 0.5.0 🤞
+
+1568916379
+stratact
+Although, even though I went through hardship, solving that issue was fun. 😌
+
+1568916940
+andrewrk
+cheers stratact
+
+1568916954
+andrewrk
+dimenus, I'll do a quick bench just after merging llvm9 branch, since I have 2 checkouts of zig source
+
+1568916978
+andrewrk
+stratact, also - I am currently installing FreeBSD on an old laptop
+
+1568917028
+stratact
+Ah, that's a good idea.
+
+1568917052
+dimenus
+i wonder if anyone is running zig on a pi4
+
+1568917154
+stratact
+andrewrk: Hmm, I think for testing Zig, I'd recommend 12-STABLE rather than 12-RELEASE, because the former not only gets the latest bug fixes at the certain snapshot, but they also update llvm 6 to 8.0.1.
+
+1568917210
+firefox317
+Nice llvm 9, riscv support. I'm gonna buy a FPGA board soon and put a riscv core on it and program it using Zig :)
+
+1568917243
+stratact
+FireFox317: that sounds amazing
+
+1568917244
+firefox317
+I mean program code in Zig that runs on the riscv core xD
+
+1568917276
+fengb
+FPGAs are flexible enough to flash into RISCV?
+
+1568917286
+fengb
+s/flash/whatever-the-right-verb-is
+
+1568917292
+andrewrk
+stratact, thanks!
+
+1568917292
+mq32
+fengb, other way round
+
+1568917303
+mq32
+you can just put an RISC-V core into an FPGA and run that
+
+1568917313
+mq32
+called "configure"
+
+1568917357
+fengb
+Sure, I've only fiddled with FPGAs that had minimal configure capabilities. Never thought it'd be able to switch to a modern CPU
+
+1568917394
+firefox317
+Well, a FPGA is programmable hardware, so you can basically program any digital device on it
+
+1568917405
+mq32
+yeah what FireFox317 said
+
+1568917436
+mq32
+you can do simple logic or run a system with risc-v and AVR core in it
+
+1568917455
+mq32
+most cheap FPGAs (50$-100$) are already really powerful
+
+1568917522
+fengb
+Hmm
+
+1568917547
+mq32
+but i'm too lazy and busy to do so
+
+1568917606
+fengb
+I've only done rudimentary programming with FPGAs, like raw gates and such. I didn't expect millions of transistors to fit into it :P
+
+1568917649
+mq32
+hehe
+
+1568917659
+mq32
+the FPGA i have has 50kLUT
+
+1568917681
+mq32
+each LUT can store up to 32 values
+
+1568917700
+mq32
+also risc-v cores aren't "millions of transistors"
+
+1568917716
+firefox317
+Yeah FPGA are getting bigger really fast
+
+1568917721
+mq32
+
+
+1568917725
+mq32
+Small (750-2000 LUTs in 7-Series Xilinx Architecture)
+
+1568917749
+mq32
+so i could pack a lot of risc-v cores into my fpga board
+
+1568918246
+Tetralux
+The day that a simple dev RISC-V board has more cores than a highend server xD
+
+1568918297
+mq32
+^^
+
+1568918309
+mq32
+yeah but you also have the cost of inter-cpu-connections
+
+1568918313
+mq32
+that's the more interesting part
+
+1568918352
+firefox317
+Yeah and like the maximum frequency of a fpga chip nowadays is like 500 MHz max
+
+1568918360
+Tetralux
+MAKES THE CONNECTIONS FASTER
+
+1568918370
+firefox317
+More like 200 MHz even
+
+1568918371
+Tetralux
+I wonder if AMD could help out a bit there... :)
+
+1568918397
+mq32
+yeah, they should release the infinity-fabric as verilog code :D
+
+1568918410
+Tetralux
+What's verilog code even
+
+1568918421
+mq32
+an alternative to VHDL
+
+1568918429
+Tetralux
+WHATS THAT
+
+1568918430
+mq32
+both HDLs (hardware description language)
+
+1568918437
+mq32
+so stuff you "program" your FPGA with
+
+1568918449
+Tetralux
+I've never looked into FPGA programming.
+
+1568918451
+Tetralux
+Could be interesting.
+
+1568918460
+mq32
+it's not programming :P
+
+1568918461
+Tetralux
+You program by design, rather than coding?
+
+1568918465
+mq32
+it's ... different
+
+1568918476
+mq32
+you describe stuff that should happen
+
+1568918482
+mq32
+but unlike programming
+
+1568918496
+mq32
+a <= b; a <= b + 1; is an error
+
+1568918505
+Tetralux
+More register like?
+
+1568918506
+mq32
+because a cannot be b and b +1 at the same time
+
+1568918513
+mq32
+yeah, kinda
+
+1568918528
+firefox317
+mq32, is your background EE?
+
+1568918533
+mq32
+simplified: you describe what register transfers should happen at a clock edge
+
+1568918544
+mq32
+FireFox317, explain("EE") (non-native speaker)
+
+1568918553
+firefox317
+Electrical Engineering xd
+
+1568918580
+mq32
+ah
+
+1568918585
+mq32
+kindaish. hobbywise
+
+1568918593
+firefox317
+I'm doing my masters in electrical engineering currently, and there is a lot of research going on fpga stuff. Its fun
+
+1568918600
+mq32
+i can imagine
+
+1568918654
+firefox317
+Jup is cool stuff, zig really fits my kind of programming
+
+1568919245
+firefox317
+Nice andrewrk! You were mentioned here:
+
+1568919252
+andrewrk
+saw that :)
+
+1568919267
+andrewrk
+I caught a regression in rc4 in time to fix before the release
+
+1568919451
+andrewrk
+windows build: in progress. linux build: in progress. freebsd build: stalled, having freebsd OS installation trouble. asking for help in #freebsd. macos: about to start
+
+1568921082
+Tetralux
+mq32: You got any resources for getting into programming an FPGA?
+
+1568921175
+mq32
+whoo
+
+1568921179
+mq32
+good question
+
+1568921193
+mq32
+"just hack shit together" and read some random stuff online is my way of life
+
+1568921262
+mq32
+the first question you want to answer is: "do i want to do verilog or vhdl"
+
+1568921296
+mq32
+which is kinda weird, because you
+
+1568923137
+THFKA4
+what's the best way to interop with C++? make a shim layer in C first?
+
+1568923280
+fengb
+Yeah, there's some example shims around clang and llvm
+
+1568923359
+fengb
+
+
+1568923360
+fengb
+
+
+1568924344
+THFKA4
+great, thanks again!
+
+1568925355
+_Vi
+Why not allow `{ 4 }` / `fn z() i32 { 4 }`   instead of   `lbl: { break 4; }` / `fn z() i32 { return 4; }`?  Is it a fixed design decision or subject to change later?
+
+1568925488
+mq32
+_Vi, implicit return would be implicit control flow and does not fit zigs style of "no hidden control flow"
+
+1568925489
+_Vi
+How design decisions happen in Zig language in general? Is there an RFC process?
+
+1568925519
+_Vi
+Lack of semicolon does not look like a hidden control flow.
+
+1568925528
+mq32
+random people write proposals on github and andrewrk is making a "approved" or "declined" mark after $time
+
+1568925542
+mq32
+yeah, true. it looks like syntax error
+
+1568925559
+mq32
+also, it wouldn't fit "one obvious way to do things" as well, as then we would have two ways to return
+
+1568925575
+andrewrk
+it's mostly just me making all the decisions, consulting a few trusted people, and having an open mind to "random" proposals
+
+1568925611
+mq32
+btw, i think that's a great process for language development!
+
+1568925633
+mq32
+having one master mind who gets inspiration, but has a bigger plan which may even be too large to be written down
+
+1568925714
+fengb
+[B]DFL
+
+1568925745
+_Vi
+Such process may be not very scalable and "bus factor" is not good... On the other hand, the final result would be more cohesive.
+
+1568925754
+andrewrk
+you can always make a community fork if I go rogue ;)
+
+1568925776
+_Vi
+Community fork => design by committee.
+
+1568925793
+stratact
+I think having a more cohesive result is the best of all worlds.
+
+1568925870
+fengb
+At some point, the Zig foundation will techalnicly own the language right? :P
+
+1568925947
+_Vi
+Are there plans for making `what_label_name_to_invent_here: { ...;  break 'what_label_name_to_invent_here ...;}` nicer? Or is there standard name for label? I see `blk` multiple times in the documentation. Can it be considered a "code style" to use this particular label name for this?
+
+1568926167
+mq32
+i also think that the label syntax is kinda clunky, but i haven't had an idea how to make it more smooth
+
+1568926211
+andrewrk
+fengb, yes that's the plan
+
+1568926223
+_Vi
+Such syntax is viable when block is large and/or block value is not at the end of it.
+
+1568926252
+andrewrk
+this question is common enough I think I should answer it into the FAQ and link to it
+
+1568926261
+andrewrk
+regarding block expressions
+
+1568926298
+_Vi
+Maybe language evolution and policy making can also be a FAQ entry?
+
+1568926304
+fengb
+Split break into breakblock and breakloop :P
+
+1568926333
+andrewrk
+that's not a bad idea... I hadn't actually considered that one
+
+1568926345
+andrewrk
+lbreak bbreak
+
+1568926368
+mq32
+i would propose "blockreturn" instead of break
+
+1568926369
+andrewrk
+`break` in `switch` is currently ambiguous if you haven't read the docs
+
+1568926402
+_Vi
+Quick idea (without much thinking): 1. Use `break` only for loops, maybe with label; 2. For labeled blocks, use `return :label value;`; 3. Allow omitting `;` at the end of blocks to make non-void unlabeled blocks.
+
+1568926435
+mq32
+i like point 2, this has a good semantic read to it
+
+1568926438
+andrewrk
+we had (3) a long time ago and removed it
+
+1568926451
+mq32
+blk: { … return :blk 10; }
+
+1568926454
+fengb
+Add a <- operator
+
+1568926461
+mq32
+reads like "return to scope :blk"
+
+1568926506
+_Vi
+Special label name meaning innermost block like `return :_ 5;` or `break :_ 5;`.
+
+1568926579
+_Vi
+Maybe without lack-of-semicolon-means-result thing, `return` should be shortened to `ret`?
+
+1568926608
+mq32
+nah, i don't think all this shorting is leading anywhere exceept for unreadable code
+
+1568926614
+_Vi
+Other topic: will there be any stability commitment after Zig 1.0.0?
+
+1568926735
+_Vi
+Turning non-block switch arm into a block (to insert printf logging) and back should not be that heavyweight...
+
+1568926901
+_Vi
+Yet another topic: How to I print things for debugging from comptime{} blocks?
+
+1568926935
+mq32
+there's a compiler builtin that prints out messages or does compile errors
+
+1568926952
+mq32
+@compileLog and @compileError
+
+1568926976
+_Vi
+OK.
+
+1568927046
+_Vi
+"error: found compile log statement".    What is difference between @compileLog and @compileError ?
+
+1568927131
+andrewrk
+@compileLog prints to stderr before the compile errors
+
+1568927253
+_Vi
+Are `comptime{}` blocks supposed to be used to generate external files? For example, iterate over struct and generate external schema file based on it. What about the reverse: are `comptime` blocks supposed to read external files and generate code based on them?
+
+1568927432
+andrewrk
+if you need to generate .zig code, it's suggested to handle that at the build system layer. for the reverse, you can @embedFile and then iterate over the bytes at comptime. it depends on your use case whether or not I would recommend this
+
+1568927459
+andrewrk
+let's talk about stability commitment later, I have a lot going on at the moment
+
+1568927696
+mq32
+@embedFile is the dream for everyone who has to embed files
+
+1568927803
+_Vi
+If @embedFile result is only used in comptime, but not in runtime, will it be excluded from target object code?
+
+1568927878
+andrewrk
+that feature is planned but it requires comptime garbage collection, which is not currently implemented
+
+1568927912
+andrewrk
+well, it should get excluded by the linker, but objects will still unnecessarily have the payload
+
+1568927929
+mq32
+andrewrk: you did funny stuff
+
+1568928098
+andrewrk
+nice
+
+1568928110
+fengb
+lol
+
+1568928160
+andrewrk
+hmm I think that should probably not look outside package path. that's a recipe for system dependencies leaking into projects
+
+1568928306
+mq32
+yeah, maybe add a set of allowed paths for embedFile
+
+1568928333
+fengb
+But who's to stop someone from adding '/'?
+
+1568928374
+andrewrk
+that's fine. I just don't want accidental deps happening
+
+1568928398
+_Vi
+fengb, That would still be more explicit, especially if only root project allowed to set allowed paths, not deps.
+
+1568928665
+_Vi
+Adding new `Dummy: noreturn,` variant to `union(enum)` increases its size. Is it supposed to happen?
+
+1568928760
+andrewrk
+should be a compile error, noreturn is not a valid union field type
+
+1568928774
+_Vi
+Why?
+
+1568928801
+_Vi
+It just means that variant is 'erased' from the tagged union.
+
+1568928814
+andrewrk
+are you perhaps looking for `void`?
+
+1568928825
+_Vi
+No.
+
+1568928882
+andrewrk
+what is expected behavior?
+
+1568928885
+mq32
+huh? _Vi what do you want to achieve?
+
+1568928917
+_Vi
+Currently just playing around with type system, looking how close void and noreturn follow Unit type and Zero type.
+
+1568928984
+andrewrk
+if it's not a valid tag then it shouldn't be one of the union fields
+
+1568929032
+_Vi
+Maybe sometimes it's easier to exclude variant by making its type `noreturn` (from generated code or whatever) than to actually remove the variant.
+
+1568929038
+companion_cube
+that's an interesting point, though, `void` should have size 0, and `noreturn` should make the case impossible
+
+1568929054
+companion_cube
+(pretty sure rust is able to turn `Result<T,!>` into `T`)
+
+1568929063
+andrewrk
+_Vi, I don't buy that as a real use case
+
+1568929090
+companion_cube
+what if you have a generic type, but one of the generic parameters isn't used at all?
+
+1568929150
+_Vi
+"Short circuiting" structs into non-existance by adding a `noreturn` field is also from the same bag of tricks. But it does not work, neither in Zig nor in Rust.
+
+1568929164
+_Vi
+(because of partial initialisation)
+
+1568929244
+andrewrk
+if we can come up with a real use case - using generics for example - then alright let's do the unit/zero type thing
+
+1568929258
+_Vi
+There can be generic tagged union that you expect to be zero-sized most of the time. But for some corner cases it is actually non-zero-sized (e.g. there is indeed information to remember).
+
+1568929322
+_Vi
+All sorts of "strange, nobody would write code that way" things arise when using code generation.
+
+1568929372
+andrewrk
+zig language is designed to be source code, not output code
+
+1568929399
+andrewrk
+I understand there are reasonable use cases for the latter. but they're not primary
+
+1568929538
+companion_cube
+_Vi:
+
+1568929543
+companion_cube
+works in nightly rust
+
+1568929782
+andrewrk
+for a tagged union, it's really a question of where to put the compile error. is it at the declaration of the type? or at field access?
+
+1568929941
+companion_cube
+(also it should remove the tag from exhaustive `switch`)
+
+1568930082
+_Vi
+andrewrk, Maybe at attempt of creation of value of such variant (except of from using noreturn function).
+
+1568930254
+_Vi
+Although I think `noreturn` variants or struct fields is not an error (just tricky corner case), there still seems to be a bug about them:
+
+1568930347
+_Vi
+"not getting" why noreturn is a reasonable type is a bit like "not getting" why number zero is a reasonable number in mathematics...
+
+1568930650
+_Vi
+Why code after calling `noreturn` function is a compile-time error? This gives Golang vibes...
+
+1568930709
+companion_cube
+you mean, dead code?
+
+1568930721
+_Vi
+This also can force codegens to actually remove lines of code instead of just cascadingly "neutralizing" them.
+
+1568930743
+_Vi
+companion_cube, Yes. Can this error be disabled for a block of code?
+
+1568930774
+companion_cube
+idk
+
+1568932432
+Pwipwi
+hello, does anyone know how to replicate __attribute__((constructor)) in a shared library ?
+
+1568932445
+Pwipwi
+I'm trying to write a node addon with napi
+
+1568932455
+Pwipwi
+and I'm stuck at registering my module
+
+1568932531
+_Vi
+`error: unions must have 1 or more fields` - Why? How do I create `noreturn`-equivalent tagged union?
+
+1568933117
+_Vi
+Is something like assert_eq(a, b), so that I immediately know the value I need to insert, not just the line number?
+
+1568933231
+waleee-cl
+std.testing.expect / std.testing.expectEqual? (staring at linked_list.zig from std right now)
+
+1568933265
+_Vi
+`error: type 'noreturn' cannot be optional` => why not `?noreturn` == `void` for codegen?
+
+1568933289
+_Vi
+Looks like `noreturn` is a "second class citizen" in the land of Zig types...
+
+1568933332
+waleee-cl
+oh, it was priority_queue.zig
+
+1568933372
+brodeuralexis
+Pwipwi, what about calling your __attribute__((constructor)) function before returning from the function registered with NAPI_MODULE.  I think __attribute__((destructor)) could also be implemented with napi_add_env_cleanup_hook.
+
+1568933408
+Tetralux
+_Vi: noreturn is first class; more to the point, in what world does ?noreturn make any sense?
+
+1568933438
+_Vi
+Tetralux, As usual, for `?T` where T happens to be noreturn when instantiated from user code.
+
+1568933508
+Tetralux
+I mean, if it's noreturn, it will never return anything; so how does it make sense to either be "this will never return anything" or "will return something"
+
+1568933510
+Pwipwi
+I can call a function from toplevel ?
+
+1568933524
+Tetralux
+If it's optional, it must return a value.
+
+1568933531
+Tetralux
+Furthermore, noreturn is not a value.
+
+1568933532
+_Vi
+Tetralux, Obviously such optional will be always `null`.
+
+1568933535
+Tetralux
+So it can't be an optional.
+
+1568933558
+_Vi
+Tetralux, `noreturn` is a type with 0 possible values.
+
+1568933584
+Tetralux
+Indeed, so it can't be optional, because it's either false, or (true, value)
+
+1568933592
+_Vi
+Tetralux, Optional adds one value to the list: `null`. `&noreturn` therefore has 1 possible value, like `void`.
+
+1568933630
+Tetralux
+Optional is (bool, T) not (null | T)
+
+1568933646
+Tetralux
+You cannot take the address of a noreturn?
+
+1568933649
+_Vi
+Tetralux, Optional pointer is not (bool, T).
+
+1568933669
+Tetralux
+You have a *noreturn? xD
+
+1568933675
+_Vi
+Pointer to noreturn is also noreturn-equivalent (i.e. a type with no values).
+
+1568933694
+brodeuralexis
+Should’nt it be a compile time error to use (but not declare) a runtime variable of type `noreturn` ?
+
+1568933715
+_Vi
+brodeuralexis, Should be OK, but only in "unreachable code".
+
+1568933763
+brodeuralexis
+From what I understand, `noreturn` should behave like Rust’s `enum Void {}`.
+
+1568933786
+_Vi
+brodeuralexis, Yes. But currently it is much more restricted in Zig compared to `!` in Rust.
+
+1568933818
+_Vi
+That can be problematic for generic or codegenerated code.
+
+1568933842
+Tetralux
+What's an example of this?
+
+1568933854
+companion_cube
+I posted a rust playground link above
+
+1568933867
+companion_cube
+err, godbolt
+
+1568933896
+Tetralux
+I mean in Zig.
+
+1568933904
+companion_cube
+well, should be similar
+
+1568933904
+Tetralux
+What's an example of Zig code you can't write because of this?
+
+1568933911
+_Vi
+Tetralux, Example of what? Of optional noreturn? Of declaring / using noreturn variable?
+
+1568933953
+brodeuralexis
+What would `List(noreturn)` do ?  What about `allocator.create(noreturn)` ?
+
+1568934010
+_Vi
+brodeuralexis, `List(noreturn)` probably `void`-equivalent. It can only be empty.
+
+1568934024
+_Vi
+(Looking up what is `allocator.create`)
+
+1568934097
+_Vi
+brodeuralexis, Is `allocator.create` like a malloc?
+
+1568934114
+Tetralux
+It allocates a value of type T
+
+1568934119
+brodeuralexis
+It’s the interface for allocating memory `std.mem.Allocator`.
+
+1568934145
+brodeuralexis
+`allocator.create(T)` return `error{OutOfMemoru}!*T`
+
+1568934150
+_Vi
+In Rust, for memory purposes `void` analogue and `noreturn` analogue are considered equivalent.
+
+1568934185
+brodeuralexis
+But Zig is not Rust.
+
+1568934192
+_Vi
+What `allocator.create(void)` does?
+
+1568934231
+brodeuralexis
+`allocator.create(T)` allocates `sizeof(T)` memory (using malloc, or mmap, another allocator)...
+
+1568934267
+_Vi
+What does it do with size-0 allocations? Assuming it hands out 0-sized pointers which are all equivalent to each other.
+
+1568934388
+_Vi
+Memory allocation for storing result of function that will never return may be skipped just like allocation of `void`.
+
+1568934644
+brodeuralexis
+Right now: `if (@sizeOf(T) == 0) return &(T{});`.  A pointer to data that can never be read or written.
+
+1568934881
+brodeuralexis
+Having `noreturn` be more powerful than it already is would make the language a bit weird.
+
+1568934914
+brodeuralexis
+The only use case for `noreturn` that I have found is low-level programming where you are on a `freestanding` platform and `main` will never finish.
+
+1568935062
+brodeuralexis
+If you want to specialize a generic for an empty type, why not do so for `void` ?  In that sense, I could specialize a `Map([]const u8, void)` to behave like a `Set([]const u8)`.
+
+1568935093
+_Vi
+brodeuralexis, It is similar how in Rust there were `fn neverreturn() -> ! { ... }` from the beginning, but now that `!` gets promoted to fully-fledged zero type usable in all contexts.
+
+1568935220
+_Vi
+brodeuralexis, `noreturn` can be optimisation material if it affects memory layout of unions.
+
+1568935251
+brodeuralexis
+That I understand, it is like Haskell’s `Void` and TypeScript’s `never` type.   What gains would its presence as a fully fledged type bring to Zig ?
+
+1568935586
+_Vi
+brodeuralexis, Probably some additional abstraction abilities, acting as "neutralizer" to other types. Removal of special casings in generic code. Marking code paths as impossible from type system (without explicit branching in comptime blocks).
+
+1568935675
+_Vi
+Basically the same as "why `void` is a type`, but going further into the land of abstractions.
+
+1568935758
+brodeuralexis
+So while Zig’s `void` will act as unit, `noreturn` should act as a bottom type ?
+
+1568935843
+_Vi
+brodeuralexis, Yes.
+
+1568936209
+brodeuralexis
+From Wikipedia: The bottom type is frequently used for the following purposes:
+
+1568936215
+brodeuralexis
+1. To signal that a function or computation diverges
+
+1568936223
+brodeuralexis
+That is the purpose of `noreturn` as a return type.
+
+1568936232
+brodeuralexis
+2. As an indication of error
+
+1568936241
+brodeuralexis
+That is the `!void` return type.
+
+1568936265
+brodeuralexis
+Or `error{…}` return type if only an error can be returned from the function.
+
+1568936473
+telemach
+is @fieldParentPtr still the way to do interfaces in Zig? Can't find any updates in relevant issues, except mention of std.meta.trait, but I can't figure out how exactly to use it in this role.
+
+1568936487
+andrewrk
+telemach, yes
+
+1568936559
+andrewrk
+dimenus, here is some benchmarks with master vs llvm9:
+
+1568936592
+telemach
+also many months ago i've seen a link how to replace interfaces in zig with some kind inversion of the concept, but i struggle to remember details and find the link
+
+1568936594
+andrewrk
+first 2 are compilation performance, second 2 are runtime perf of std lib hash functions. we don't really have a good set of runtime performance benchmarks yet
+
+1568936619
+telemach
+did anyone rolled up own interface solution willing to share?
+
+1568936632
+fengb
+Looks like compilation is 0.1% slower :P
+
+1568936664
+telemach
+there are some caveats with fieldParentPtr which trick me frequently, i'm thinking about trying to avoid it for now
+
+1568936738
+andrewrk
+fengb, yeah I think that's within the error bars if I just rerun the same benchmark
+
+1568936841
+fengb
+Looks like debug mode is faster by ~3-10% and release-fast is unaffected
+
+1568936960
+fengb
+Oh LLVM posted about Rust LTO. Would that apply to Zig as well?
+
+1568937238
+andrewrk
+currently zig wouldn't benefit from LTO because it puts everything into 1 object file
+
+1568937530
+_Vi
+"everything into 1 object file" -> Including C code built with `zig cc`?
+
+1568937535
+mikdusan
+there was a post about combining clang and rust lto. they ran into an issue where lto didn't cross the 2 boundries because clang had some kind of (target?) attribution that disqualified it
+
+1568937572
+_Vi
+Does cross-language LTO between C and Zig work?
+

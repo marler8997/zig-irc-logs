@@ -1,0 +1,332 @@
+1552274062
+andrewrk
+mikdusan, to be clear: mtime is not assumed to be monotonically increasing; the caching system does an equality check:
+
+1552274107
+andrewrk
+there would never be a "timewarp detected" message. zig would just treat the file as dirty
+
+1552274156
+andrewrk
+(2) is correct if you replace > with ==
+
+1552274308
+mikdusan
+ah ok so the approach is basically → if we detect any attrs changes (!= mtime, != inode, != size) then compute new hash and compare.
+
+1552274407
+andrewrk
+yes precisely. and, importantly, when collecting the hash originally, if clock time is within the time resolution of mtime, we actually cannot cache the entry
+
+1552275120
+mikdusan
+“we actually cannot cache the entry” confuses me. is this correct: whenever creating or updating cache, if mtime.isBogus uncache { mtime } but cache { inode, size, hash }?
+
+1552275191
+andrewrk
+mikdusan, I don't understand your pseudocode
+
+1552275214
+andrewrk
+the idea is that if clock time is too close to mtime, then a future write to the file, may actually have the same mtime, which means that we would not detect an invalidation
+
+1552275236
+andrewrk
+however if an mtime is old enough, then a future write to the file is guaranteed to change the mtime
+
+1552275444
+mikdusan
+if mtime.isBogus(), what is stored to cache, if anything?
+
+1552275500
+andrewrk
+for the particular file in question - a marker that means "this file is an unconditional cache miss" - for other files that are part of the build, they may have their hashes computed and stored
+
+1552275554
+andrewrk
+note that if a build depends on 10 files, and only 1 is changed, then only 1 has their hash recomputed, and in fact the build may still be a cache hit
+
+1552277813
+mikdusan
+andrewrk: tiny note gist defining 1 case that i can think of. at step 3 i’m not sure anything work can be done.
+
+1552277945
+andrewrk
+mikdusan, in order for me to explain, your gist also needs wall clock timestamps at each step
+
+1552278061
+mikdusan
+udpated. i hope that makes sense
+
+1552278390
+andrewrk
+mikdusan, yes thank you. so here's what happens: in step 2, we look at the mtime, and notice that the nanoseconds are all 0s. And so we conclude it only has second granularity. So we look at the wall clock, and floor it to seconds. both == 10. So we know that we cannot store the hash; instead we store a special value that means foo.c is an unconditional cache miss.
+
+1552278452
+andrewrk
+in step 3, we look at the cache, and see that foo.c is an unconditional cache miss. we look at the mtime, and see that it is != floored wall clock time, and so this time after computing the hash we can save it in the cache
+
+1552278646
+mikdusan
+ok i muffed up. sorry. step 2 is supposed to be just the edit/save. no build. let me update the case.
+
+1552278807
+andrewrk
+no problem, tell me when it is done
+
+1552279240
+mikdusan
+ok updated. note step 2 is NOT a build.
+
+1552279941
+andrewrk
+mikdusan, step 1 describes an invalid state that would never happen
+
+1552280032
+andrewrk
+the cache would never have an mtime that is equal to wall clock time, within the mtime granularity, because zig would never save something into the cache if the wall clock time was that close
+
+1552280666
+mikdusan
+ah. so case is completely avoided because { truncate(WALLCLOCK) - foo.c.mtime } == 0 and as you described earlier, THIS is when cache-save is avoided. but “zig would never save something into the cache” <— “something?” if “something” means all 4 itmes { mtime/inode/size/hash } i would ask what’s issue of storing { inode/size/hash }
+
+1552280688
+mikdusan
+typo: means all 4 items
+
+1552280724
+andrewrk
+mikdusan, that's correct - it's avoided not when we later check the cache, but originally, when we consider saving something in the cache. maybe it will help if I show an example of what a cache manifest file looks like
+
+1552280787
+andrewrk
+here is an example:
+
+1552280930
+mikdusan
+ok so not currently dealing with complexity of partially populated rows; ie. null mtime.
+
+1552280956
+mikdusan
+i get that would be only a small win anyways.
+
+1552281044
+mikdusan
+thanks for clearing this up for me.
+
+1552281050
+andrewrk
+no problem
+
+1552281244
+mikdusan
+re #2044 i was testing out the “zig cc -c foo.c -MV -MD -MF foo.o.d -Ia -Ib” stuff. noticed -MG and tried it. i’m thinking -MG is actually what you may end up using/needing. it gives you deps that are as-specified in the include directive and you can run it with
+
+1552281428
+andrewrk
+mikdusan, I just tried `zig cc -c test.c -MG -M` and `zig cc -c test.c -MG -MM` and in both cases it printed: `test.o: test.c foo.h`. can you comment on the issue with an example to show what you mean?
+
+1552281499
+andrewrk
+oh, I see what you mean. it does not have the `b/` part
+
+1552281509
+mikdusan
+one sec. i have a pastie ready for your issue.
+
+1552281519
+andrewrk
+so zig could do the search itself to discover the files that must not exist
+
+1552281572
+mikdusan
+i was already half-way typing it. got too long. gave you the short version lol
+
+1552281581
+mikdusan
+(reply to issue).
+
+1552281610
+andrewrk
+yes this makes sense, thank you! and then we just need the concept of "if this file exists, invalidate the build" in the cache system
+
+1552281669
+mikdusan
+i wonder if it could even survive no rebuild: changed search.dirs, changed file locations, if the hashes match. that would be wow.
+
+1552281971
+andrewrk
+the current system would rebuild, because the search dirs go into the "input parameters hash"
+
+1552297724
+DutchGh0st
+@ptrToInt doesn't work at comptime
+
+1552297819
+DutchGh0st
+comptime { var x: usize = 0; var n = @ptrToInt(&x); }
+
+1552308200
+andrewrk
+DutchGh0st, that's another reason to avoid @ptrToInt
+
+1552308265
+andrewrk
+It actually does work at comptime in certain contexts. For example you can do comptime { var x = @intToPtr([*]u8, 0x1234); x += 1; var y = @ptrToInt(x); }
+
+1552317980
+gamester
+amateur question hour: at least when compiling c code via .addCSourceFile, header files in /usr/include are not being found unless they're part of libc (and thus are actually being found in /usr/local/lib/zig/libc/ I think). Do I pass in /usr/include explicitly?
+
+1552318034
+andrewrk
+gamester,
+
+1552318047
+andrewrk
+I'll address this today
+
+1552318099
+gamester
+ok
+
+1552318152
+andrewrk
+the workaround for now, yes, is to pass /usr/include explicitly
+
+1552318172
+gamester
+that's fine
+
+1552318933
+gamester
+I like the idea of zig not dealing with system include paths by default, however it is implemented
+
+1552319011
+andrewrk
+yeah. although I can understand how it can be frustrating for some until we have zig package manager
+
+1552325004
+andrewrk
+daurnimator, I want to merge your valgrind pull request, but not the changes to std/mem.zig and std/heap.zig yet
+
+1552325073
+andrewrk
+it's a great proof of concept you did, and I want to have an open issue with the diff to std.mem.Allocator for consideration. but I'm also thinking about
+
+1552325478
+andrewrk
+I'm typing up an issue
+
+1552325596
+andrewrk
+oh, here it already is:
+
+1552331442
+andrewrk
+Akuli, do you have a zig build from source? I have a potential fix for you for #2041 if you would like to try it
+
+1552331530
+Akuli
+ok
+
+1552331548
+Akuli
+i'm building the latest master now
+
+1552332169
+andrewrk
+Akuli, try the `system-paths` branch
+
+1552332265
+andrewrk
+you should be able to remove the addIncludeDir and addLibPath lines from your build.zig
+
+1552332369
+Akuli
+Yay it works again :D
+
+1552332378
+Akuli
+so is this the new default?
+
+1552332556
+andrewrk
+yeah I'll push this to master
+
+1552332568
+Akuli
+nice
+
+1552332595
+andrewrk
+idea being that if you're calling "linkSystemLibrary" you're obviously trying to look for a library on your system
+
+1552332603
+Akuli
+yes
+
+1552333216
+andrewrk
+gamester, ^
+
+1552333256
+andrewrk
+I think you can remove your hardcoded /usr/include now
+
+1552333311
+gamester
+will do :)
+
+1552333839
+Akuli
+this is awesome :)
+
+1552333870
+halosghost
+andrewrk: you do a good job of pleasing the mob :P
+
+1552333970
+andrewrk
+maybe some day zig will be so popular that I can't have one on one conversations with everyone who uses zig, but I can enjoy it while it lasts :)
+
+1552333983
+halosghost
+hehe
+
+1552334000
+gamester
+This does feel temporary because of special casing linkSystemLibrary("c"), maybe people should call linkCLibrary instead? Also if you're compiling some C code to be linked with the rest of your program, then you have to remember to link the system library to the C code, and not just to the final executable.
+
+1552334181
+gamester
+Right? Because you have some C files that you compile into a static library and you might have just linked it to the exe, and also called exe.linkSystemLibrary("foobar") but that doesn't work here. You have to link the system library to the static library.
+
+1552334200
+gamester
+It works but it feels a bit weird
+
+1552334586
+andrewrk
+gamester, hmm oh right, artifacts need to inherit the system dependency from their dependencies
+
+1552334687
+andrewrk
+the dependency inheriting thing is already hooked up for other stuff
+
+1552334710
+gamester
+cool
+
+1552335333
+andrewrk
+gamester, is your project open source?
+
+1552335378
+andrewrk
+feel free to show me some awkward zig code and i'll see if I can recommend something different, or become inspired to change zig to make it less awkward :)
+
+1552335620
+gamester
+I don't think I have any awkward code at the moment but I will feel free to do so in the future!
+

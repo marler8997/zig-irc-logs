@@ -1,0 +1,244 @@
+1548727050
+daurnimator
+donpdonp: btw, you can just use `i32(-1)` rather than `@intCast(i32, -1)`.
+
+1548727179
+daurnimator
+the former is fully defined and safety checked; the latter is potentially unsafe.
+
+1548727559
+daurnimator
+So I'm trying to figure out how to translate some complex structure definitions/usage to zig
+
+1548727566
+daurnimator
+and I think there's a few missing language features
+
+1548727630
+daurnimator
+lets start with: usize bytes. If the lowest bit is even, then consider it to be an aligned pointer. otherwise cast the top bit to a boolean.
+
+1548727739
+daurnimator
+Is this the right starting point? union { Ptr: align(32) *c_void, Bool: bool }
+
+1548727756
+daurnimator
+but then how can I tell zig how to pick which bit the boolean is?
+
+1548727771
+daurnimator
+or how can I tell it that the bottom bit is the "tag" bit?
+
+1548727805
+daurnimator
+s/align(32)/align(2)/
+
+1548734011
+Marumoto
+does linkSystemLibrary look in /usr/lib?
+
+1548736704
+daurnimator
+Marumoto: if I recall correctly, not by default.
+
+1548748673
+Hejsil
+daurnimator, We don't have a way to specify the location of the union tag, so I don't think a union is the right choice for your problem
+
+1548748703
+Hejsil
+I think a struct with a usize field and methods that does the conversion is the best you can do
+
+1548748748
+Hejsil
+struct {f:usize, fn toBool(me: @This()) ?bool {...} fn toPtr(me: @This()) ?align(32) *c_void {...} }
+
+1548748780
+Hejsil
+This would allow you to write you code like this:
+
+1548748802
+Hejsil
+if (me.toBool()) |b| {} else if (me.toPtr()) |p| {} else {}
+
+1548748916
+Hejsil
+You could also convert it to a union: switch (me.toUnion) {T.Bool => |b| {}, T.Ptr => |p| {}}
+
+1548748924
+Hejsil
+me.toUnion()*
+
+1548753341
+daurnimator
+Hejsil: hmmm. what about this if we had anonymous unions: union { packed struct { Ptr: align(2) *cvoid, isPtr: bool }, packed struct { Bool: bool, _: u63}, tag(self: *This()) @tagType(*This()) { if (self.isPtr) { return @typeOf(self.Ptr) } else { return @typeOf(self.Bool) } } }
+
+1548753713
+Hejsil
+Well, packed struct { Ptr: align(2) *cvoid, isPtr: bool } wont work, as isPtr is a bit outside the pointers bits. Also, it seems that your tag function tries to return a type a runtime
+
+1548753859
+Hejsil
+packed union { Data: packed struct { b: bool, _: u62, isPtr: bool }, Ptr: *align(2) c_void, } could work to represent your data I think
+
+1548753918
+Hejsil
+What is this even used for. Seems like a fearly complex packing of data
+
+1548754088
+daurnimator
+Hejsil: it's a simplified example of what I'm looking at doing
+
+1548754329
+daurnimator
+Hejsil: one thing I'm looking at is implementing the maple tree in zig.
+
+1548757792
+tiehuis
+Added a zig jpg image writer to this repository if anyone happens to need one:
+
+1548759851
+daurnimator
+Hejsil: the idea is that
+
+1548759943
+daurnimator
+one of the more interesting things in a maple tree IMO is the "sparse" format, the value idea is: {x, val1, y, val2, z }. which says that between x and y, the value is val_1, between y and z it is val_2
+
+1548759990
+daurnimator
+and the value is another tree: which can be an inline pointer, a value, or a pointer to another dense or sparse node
+
+1548760028
+daurnimator
+the size of a sparse node {w,val0,x,val1,y,val2,z} is ideally made to be the size of a cache line
+
+1548760039
+daurnimator
+and the whole thing can be made thread-safe!
+
+1548762197
+Hejsil
+daurnimator, i see. One thing we might want is more control over the layout of tagged unions (at least packed ones).
+
+1548762330
+Hejsil
+So: packed union(enum(u1)){ Bool: packed struct { b: bool, _: u62 }, Ptr: u63, __tag: u1 }
+
+1548762351
+Hejsil
+Where __tag is just a made up way of specifying where the tag is in the union
+
+1548762377
+Hejsil
+You would still need to @bitCast your union to the ptr
+
+1548762386
+Hejsil
+Ooh wait, we need usize and not u64
+
+1548762388
+Hejsil
+Hmmm
+
+1548763931
+schme245
+hello! I want to take the first 4 bytes of a byte array and convert that to a u32. here's my attempt:
+
+1548763936
+schme245
+var block: [8]u8 = undefined;
+
+1548763936
+schme245
+// ...
+
+1548763936
+schme245
+// some code to fill the block
+
+1548763938
+schme245
+// ...
+
+1548763940
+schme245
+const left: u32 = @bitCast(u32, @truncate(u32, @ptrToInt(block[0..3].ptr)));
+
+1548763951
+schme245
+is this correct? is there a better way to do it?
+
+1548764062
+euantor
+@schme245: check out `std.mem.readIntSlice`:
+
+1548764070
+euantor
+That's the easy way to do it :D
+
+1548764182
+schme245
+perfect, thanks! :D
+
+1548764973
+Hejsil
+In case you know that your bytes are of the platforms endianess, you can just use @bytesToSlice(u32, block[0..4])[0]
+
+1548786396
+donpdonp
+here's another webasm oddity. in zig i can export fn setup() [*]const u8 {} and the function 'setup' will be in the .wasm file, where without the export it wouldnt be 'exported' into the wasm. the problem im running into is I need setup to be an export in the wasm, and its not.
+
+1548788475
+donpdonp
+ah nevermind. zig HEAD fixes it :)
+
+1548791110
+schme245
+how do i bitshift left with a runtime value?
+
+1548791117
+schme245
+comptime const indices = [8]u8{58, 50, 42, 34, 26, 18, 10, 2};
+
+1548791117
+schme245
+for (indices) |i| {
+
+1548791117
+schme245
+x ^ (1 << i);
+
+1548791119
+schme245
+}
+
+1548791131
+schme245
+error: LHS of shift must be an integer type, or RHS must be compile-time known
+
+1548791132
+schme245
+x ^ (1 << i);
+
+1548792447
+schme245
+ahh,  x ^ (u64(1) << i) does the trick
+
+1548796704
+emekankurumeh[m]
+i wish zig could get some better type inference, but being explicit about types doesn't really hurt either.
+
+1548799449
+daurnimator
+emekankurumeh[m]: hmm? the only inference that is really missing is return types of functions
+
+1548799461
+daurnimator
+emekankurumeh[m]: and that was a deliberate design choice
+
+1548799474
+daurnimator
+emekankurumeh[m]: is there any other place you'd like it to be better?
+

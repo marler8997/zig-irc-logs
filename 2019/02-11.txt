@@ -1,0 +1,468 @@
+1549908008
+schme245
+getting this really strange error when trying to run some tests
+
+1549908014
+schme245
+➜  zig test des_test.zig
+
+1549908014
+schme245
+/Users/<...>/des:1:1: error: invalid character: '\xcf'
+
+1549908014
+schme245
+����
+
+1549908084
+andrewrk
+your compile error output shows a file called `des` not `des_test.zig`
+
+1549908092
+andrewrk
+are you trying to @import a non zig source file?
+
+1549908255
+schme245
+no, I have two files: des.zig and des_test.zig, and I'm trying to move the tests from the first one to the second one
+
+1549908282
+schme245
+des.zig compiles fine, and des_test.zig has this as the first line: const des = @import("des");
+
+1549908287
+andrewrk
+why does it say des:1 and not des.zig:1?
+
+1549908321
+andrewrk
+you have a file called `des` on your file system, which starts with the byte 0xcf
+
+1549908338
+schme245
+should the import be `const des = @import("des.zig");`?
+
+1549908353
+schme245
+ohh shiii... it's trying to load the eez
+
+1549908355
+andrewrk
+and you didn't give --pkg-begin des des.zig --pkg-end  args
+
+1549908356
+schme245
+*exe
+
+1549908382
+schme245
+this is PEBKAC, I need to read up on the build system
+
+1549908387
+schme245
+sorry for the noise
+
+1549908389
+andrewrk
+no worries
+
+1549908416
+andrewrk
+the build system is very experimental rigth now. I will to improve the usability and documentation greatly before really pushing for people to use it
+
+1549908506
+schme245
+I love that the build system is regular Zig code
+
+1549908509
+schme245
+Zig actually reminds me quite a bit of Clojure (my current fav language) due to it's focus on simplicity and great meta-programming/reflection facilities :)
+
+1549908749
+andrewrk
+I have big plans for the build system
+
+1549908831
+andrewrk
+once zig has its own libc and can build C libraries, and we get the package manager going, zig build is going to let you depend on any dependency tree of zig and C libraries, all while keeping your project's build instructions as simple as `zig build`
+
+1549908902
+shachaf
+Has its own libc?
+
+1549908912
+andrewrk
+
+
+1549909034
+shachaf
+Hmm. Even on Linux you need to dynamically link against the system libc if you use any other system dynamically linked libraries, don't you?
+
+1549909059
+andrewrk
+that's right - this would be for static library dependencies
+
+1549909108
+Akuli
+would that mean that using the system's dynamically linked libraries will be hard? or just use a compiler option that links everything with the system's libc?
+
+1549909110
+shachaf
+So if you have to link against some dynamic library, you'd be using parts of both the static and the dynamic libc?
+
+1549909182
+andrewrk
+linking against a system's dynamically linked library will be a supported use case, but non-default. note that when you choose to do that, your project's build instructions become 2 steps: 1. install system libraries 2. zig build
+
+1549909213
+shachaf
+I'd rather statically link everything, but for things like OpenGL that's not an option (right?)
+
+1549909227
+andrewrk
+I say "default" but really I mean "recommended by me". either way you would be specifying in your build script "depend on this zig package statically" or "depend on system library foo"
+
+1549909269
+andrewrk
+opengl is a big problem, one that I am explicitly tackling:
+
+1549909316
+andrewrk
+for the opengl case, it's actually a case of loading at runtime, which I am researching if we can do without depending on system libc
+
+1549909350
+shachaf
+Hmm, you're implementing the X protocol yourself?
+
+1549909368
+shachaf
+I've wondered whether doing that is feasible, but it looked to me like it wasn't compatible with libGL.
+
+1549909369
+andrewrk
+yes zig-window will implement the X protocol and the wayland protocol
+
+1549909410
+Akuli
+andrewrk, how is the x protocol library intended to be used, when it'll be done? just creating applications with it? will the applications be able to use e.g. gtk themes?
+
+1549909415
+andrewrk
+the problems I ran into: (1) blocking on coroutine rewrite (2) need to implement runtime library loading to load the drivers
+
+1549909422
+andrewrk
+both solvable, just will take some time
+
+1549909439
+andrewrk
+Akuli, the main use case would be for windowed or full screen games
+
+1549909456
+andrewrk
+or specality applications such as a digital audio workstation / photo editor
+
+1549909476
+shachaf
+So the plan is to do dynamic loading of libGL yourself and do your own relocations and everything?
+
+1549909480
+andrewrk
+if you want gtk themes you have to link the system gtk libraries, as far as I know
+
+1549909488
+andrewrk
+that's right
+
+1549909504
+Akuli
+ummmm
+
+1549909518
+Akuli
+is this whole project there just to avoid linking to the system's gtk libraries?
+
+1549909529
+shachaf
+OK. I've thought about doing that in the past and it seemed like it'd be too fragile. But I didn't think about it for very long.
+
+1549909543
+andrewrk
+Akuli, why would you want gtk for a full screen / windowed game that has its own ui code?
+
+1549909551
+Akuli
+this really feels like a problem that has been already solved to me
+
+1549909569
+Akuli
+tk has already cross-platform window code that uses x11 and other platform-specific apis
+
+1549909580
+Akuli
+so does gtk, and qt
+
+1549909591
+andrewrk
+shachaf, the good thing about loading is that the code is already implemented in a dozen places, you can just port it. and it's one of the most stable ABIs that never changes
+
+1549909637
+Akuli
+i see this as a thing that someone will use like let me try this thing for an image editor (for instance), ok how do i add a menubar? wut is that menubar so ugly? why isn't it using my gtk theme?
+
+1549909641
+shachaf
+What's stable?
+
+1549909652
+andrewrk
+shachaf, the ELF file format, for example
+
+1549909653
+shachaf
+The unstable part I'd be worried about is "which parts of libc libGL etc. depends on"
+
+1549909685
+andrewrk
+when we load gl at runtime, we would see that it needs libc, and we would load libc too
+
+1549909692
+shachaf
+You can look at an existing GL implementation but you never know what nvidia or whoever will use in the future.
+
+1549909699
+shachaf
+Oh, so you are talking about loading the system libc.
+
+1549909711
+shachaf
+Just replacing ld-linux
+
+1549909732
+andrewrk
+right. one of the goals is to have an actually static executable on linux
+
+1549909778
+andrewrk
+I'm not joking or exaggerating when I say zig's goal is to replace C
+
+1549909801
+shachaf
+OK, that makes more sense. But then how can you implement the X11 protocol yourself, since libGL just depends on libX11?
+
+1549909817
+andrewrk
+the protocol is actually pretty simple, it's just bytes over a socket
+
+1549909830
+andrewrk
+and the protocol has a stable ABI
+
+1549909838
+andrewrk
+libX11 is just cruft
+
+1549909847
+shachaf
+I agree with all of that.
+
+1549909859
+shachaf
+But I thought the way GL was exposed, you had to use libX11.
+
+1549909898
+andrewrk
+indeed, if you look at the dynamic libraries the gl driver depends on, it includes a bunch of libX11 libraries. which means the application will have to load them in order to use the driver
+
+1549909899
+shachaf
+Since all the glx functions take a Display * or whatever.
+
+1549909933
+andrewrk
+so some of your code speaks the X protocol directly, and some of it does it via the driver, which we can't control
+
+1549909977
+shachaf
+Huh. And that works?
+
+1549909992
+andrewrk
+that's one of the things I'm exploring. I haven't reached a proof of concept yet
+
+1549910024
+andrewrk
+but if it works - you end up with a lean, static executable that will run on
+
+1549910033
+shachaf
+I didn't look into it that deeply, like I said. I was under the impression it wouldn't work that well.
+
+1549910044
+shachaf
+Would be nice if it does, though.
+
+1549910079
+shachaf
+How much do you get out of implementing the X protocol yourself if you're also using libX anyway?
+
+1549910094
+andrewrk
+you get a static executable
+
+1549910104
+Akuli
+why is statically linking a "good" thing? is there not a reason why most things are dynamically linked nowadays?
+
+1549910137
+andrewrk
+Akuli, it's mostly a historical thing, from when hard drives were 1 MiB
+
+1549910140
+shachaf
+But it's not "really" static because it still depends on loading the system X11
+
+1549910156
+shachaf
+I mean libX11
+
+1549910161
+Akuli
+isn't a statically linked thing slower to compile?
+
+1549910181
+Akuli
+if the executable will contain a pile of libraries in it, that is
+
+1549910187
+andrewrk
+it really is - because it runs on any linux distro, and if it can't find the system driver, it can give a helpful error message, or even let the user configure at runtime with command line args or config files, which driver to load
+
+1549910221
+shachaf
+OK, sure, that part is fine. I mean, what do you get out of reimplementing the X11 protocol if you're also relying on loading the system libX11.
+
+1549910236
+andrewrk
+you don't know that the driver depends on system libX11. it might not
+
+1549910257
+andrewrk
+for all you know it's 1 big .so file that you can plunk in to contiguous memory
+
+1549910297
+shachaf
+You do because the calls in the ABI, glXSwapBuffers etc., take a Display * argument. Don't they?
+
+1549910328
+shachaf
+And you need to get that from XOpenDisplay, since it's part of the libX11 ABI, not the X11 protocol.
+
+1549910331
+shachaf
+I might be missing something.
+
+1549910348
+andrewrk
+Akuli, yes, static linking does work at compile time, that dynamic linking puts off until runtime. but it doesn't automatically mean your build is going to be slow. I have a lot of things in mind for what zig stage2 will do to compile fast
+
+1549910386
+andrewrk
+shachaf, I see your point. that would indeed be a monkey wrench in my plans. I haven't gotten to that part yet
+
+1549910420
+andrewrk
+in my opinion this would be an API deficiency and I would go so far as to open an issue with the driver team and start a discussion before giving up
+
+1549910434
+shachaf
+OK. Will be curious how you solve this.
+
+1549910463
+shachaf
+I mean, there are lots of API deficiencies, but these are the ABIs that exist. Everything's a mess. :-(
+
+1549910495
+andrewrk
+I'm going to do my part in trying to solve it in what I think is the best way, before giving up
+
+1549910521
+shachaf
+++
+
+1549910575
+shachaf
+I have some statically linked C code with no libc, and it's not that much work to get something working with the Linux kernel ABI, but then there are a bunch of annoyances for other services provided by the system.
+
+1549910601
+shachaf
+I imagine you'll also need to write code to parse /etc/passwd, /etc/resolv.conf, etc. yourself? Those are probably stable enough that it isn't a problem.
+
+1549910659
+andrewrk
+yes. and even then there are some services that rely on patching glibc to get different behavior for getusername etc, and these services are simply incompatible with static executables
+
+1549910698
+andrewrk
+that is unfortunate, since linux guarantees a stable kernel ABI, it seems these services made a poor decision to rely on patching glibc
+
+1549910798
+andrewrk
+anyway, like you said, it's a mess, but it's my intention to empower zig users to create the best possible applications, document the various pitfalls on all the operating systems, and solve everybody's use cases in reasonable ways
+
+1549910838
+andrewrk
+it's just going to take some time. there are a lot of problems to solve, and I'm leaving no rock unturned
+
+1549911419
+Akuli
+question: if zig will be a thing that c projects will use, will zig act as just a linker? or a compiler that does macro preprocessing etc as well?
+
+1549911465
+andrewrk
+zig has libclang in it, and we will expose that functionality:
+
+1549911547
+Akuli
+if i have a c project, how will this be different from just compiling with clang? i get a different libc, but will i notice any practical difference?
+
+1549911584
+andrewrk
+the main reason for this is so that zig packages can depend on C libraries, without introducing a dependency on system C compiler
+
+1549911596
+andrewrk
+which matters especially for cross compilation
+
+1549911603
+Akuli
+so this is for zig programmers who want to use clang compatible libraries?
+
+1549911633
+andrewrk
+there should not be any practical difference
+
+1549911658
+andrewrk
+in general, it's to minimize third party dependencies
+
+1549911688
+andrewrk
+I want programmers on any platform to be able to depend on each other's code, and it will "just work"
+
+1549921306
+forgot-password
+Just found this post on hn:
+
+1549921320
+forgot-password
+It's always nice to see Zig pop up from time to time :)
+
+1549921623
+emekankurumeh[m]
+"comptime means what it says: anything marked as comptime will either be known or calculated at runtime."
+
+1549924049
+andrewrk
+looks like a typo
+

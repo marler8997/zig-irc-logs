@@ -1,0 +1,776 @@
+1558399967
+fengb
+Hey I'm starting to attempt translating C into Zig. Any ideas why Zig considers this opaque?
+
+1558400106
+fengb
+Hmm... every bit struct is opaque
+
+1558400602
+fengb
+src/cpu.h:19:11: warning: struct cpu_flags demoted to opaque type - has bitfield
+
+1558400936
+fengb
+Is this a difficult edge case to handle? Or is zig not handling it at all?
+
+1558401122
+scientes
+fengb, opaque types are types where the size is not known
+
+1558401129
+scientes
+so they can only be referred to by reference
+
+1558401149
+scientes
+its used in C to minimize the size of an exported ABI
+
+1558401177
+scientes
+fengb,
+
+1558401180
+daurnimator
+scientes: is that a non sequitur? .... in the case here it just looks like bit fields are NYI
+
+1558401221
+scientes
+oh yeah I realized I'm looking at C
+
+1558401229
+scientes
+I guess zig doesn't know how to deal with bit fields yet
+
+1558401236
+scientes
+its a gnu extension
+
+1558401249
+scientes
+but zig has bit fields
+
+1558401266
+daurnimator
+huh? bit fields aren't a GNU extension to C
+
+1558401288
+scientes
+yes they are
+
+1558401298
+scientes
+Whether atomic types are permitted for bit-fields (C11 6.7.2.1).
+
+1558401302
+scientes
+oh, they made it into C11
+
+1558401308
+daurnimator
+they're in C90
+
+1558401308
+scientes
+but they were a gnu extension before that :)
+
+1558401324
+scientes
+damn
+
+1558401357
+daurnimator
+?
+
+1558401380
+scientes
+you are right
+
+1558401496
+scientes
+it just seemed so funky i assumed it was a gnu extension
+
+1558401513
+fengb
+So my question is... should I try implementing it? Or am I barking up the wrong tree
+
+1558401517
+scientes
+and it isn't in K&R C either
+
+1558401534
+daurnimator
+fengb: you probably need to add it to translate-c
+
+1558401748
+daurnimator
+fengb:
+
+1558401947
+scientes
+or if zig is re-implementing the DataLayout llvm class
+
+1558402003
+daurnimator
+scientes: seems to.
+
+1558402020
+scientes
+daurnimator, that's clang
+
+1558402022
+fengb
+daurnimator: I see. I'm a little afraid this would be beyond me so maybe I should remove the bitfields
+
+1558402026
+scientes
+zig doesn't link to clang
+
+1558402031
+daurnimator
+scientes: yes it does
+
+1558402033
+scientes
+or does it?
+
+1558402049
+daurnimator
+scientes: translate-c is literally done by linking to libclang
+
+1558402066
+scientes
+yeah but that is a utility
+
+1558402075
+scientes
+but does cImport also use clang?
+
+1558402077
+daurnimator
+scientes: yes
+
+1558402090
+daurnimator
+@cImport and translate-c use the same routines
+
+1558402114
+scientes
+yeah its probably just an oversight, because zig also has bitfields
+
+1558402129
+scientes
+there are alot of those in zig right now
+
+1558402140
+scientes
+stuff that just isn't implemented
+
+1558402162
+daurnimator
+yep. though usually they're called out with a TODO
+
+1558402178
+daurnimator
+in any case, the solution is to write the missing pieces
+
+1558402183
+fengb
+There's actually an issue to convert these into comments
+
+1558402197
+fengb
+So it's more obvious why it's missing rather than digging out a warning
+
+1558402220
+daurnimator
+fengb: indeed. there's also a project to rewrite translate-c in zig
+
+1558402236
+fengb
+In this case, it might be quite difficult. You can have uint32 : 1, uint16 : 1, etc. in C and they should all be u1 in Zig
+
+1558402288
+daurnimator
+fengb: I think you just use
+
+1558402288
+fengb
+And the padding... I don't understand how padding works
+
+1558402324
+fengb
+Oh hey look at that. I think I'll take a stab at this
+
+1558403766
+scientes
+fengb, if it requires a bunch of cpp, the style is to wrap it to a c api
+
+1558403781
+scientes
+in zig_llvm.cpp
+
+1558444909
+tgschultz
+I think interface reform mark 3 is going to be the one. I've just got one more docgen test to fix and then a little cleanup and the remaining problems will be down to #2501, #2487, and #2515.
+
+1558445540
+gonzus
+Hello. I just sent this PR:
+
+1558445571
+gonzus
+I would like to know if this is something of interest or not, to know if I should keep working on this.
+
+1558445637
+tgschultz
+gonzus: andrewrk is on vacation for a few days, so it may be a bit before you get a response on that.
+
+1558445671
+gonzus
+Ah, cool. I will keep working on this anyway then, I am having fun... :-p
+
+1558446887
+fengb
+Is there a way to make a "strict" typedef? Where it throws an error if the comptime reference isn't correct
+
+1558457450
+emekankurumeh[m]
+what do you mean by comptime reference?
+
+1558457549
+jjido
+I imagine fengb wants to put constraints on which types are allowed.
+
+1558457829
+scientes
+jjido, what do you mean?
+
+1558457841
+scientes
+jjido, some platforms are not going to support 128-bit types for example
+
+1558457908
+jjido
+I mean macros taking type argument
+
+1558457965
+scientes
+again, i need some context
+
+1558460466
+donpdonp
+std.Buffer feels like it started with the idea of a trailing null, then dropped that idea but not all the code got updated.
+
+1558460728
+donpdonp
+pub fn len(self: *const Buffer) usize { return self.list.len - 1; // assumes a trailing null byte
+
+1558460763
+donpdonp
+yet Buffer.initSize(allocator,0) does not appent a null byte to list, so len() crashes
+
+1558460815
+donpdonp
+BufferZero would be a better name, with a new Buffer that is clean of null business.
+
+1558461521
+donpdonp
+hmm initSize does reallloc to (0+1) so might not be buggy after all, but im getting an intoverflow.
+
+1558464545
+tgschultz
+scientes, I think what's being discussed is like the @distinct proposal. like, my function takes an x,y, and z, bu those must be in meters so I create a new type called Meter that's the same as float in reality, but not for type checking.
+
+1558464601
+scientes
+oh yeah that is good idea, C has that
+
+1558464640
+scientes
+can't you do that with a struct however?
+
+1558464709
+scientes
+Linux depends on that to make uid's distinct for examples, its very important for avoiding security problems
+
+1558464722
+tgschultz
+yeah, but you'll have to treat it as a struct and access members.
+
+1558464756
+scientes
+cause I would like to minimize the number of crazy features in zig
+
+1558464766
+tgschultz
+I'm in the same boat
+
+1558464770
+scientes
+like @This() is kinda for the lazy
+
+1558464779
+scientes
+and is confusing
+
+1558464799
+tgschultz
+@This() is absolutely required, because you can't call a type by name in its own definition if it isn't top-level
+
+1558464823
+scientes
+oh I C
+
+1558464834
+tgschultz
+and also a lot of generated types don't even have names.
+
+1558464844
+tgschultz
+they're just `return struct {...`
+
+1558464856
+scientes
+maybe we could somehow hack the struct thing to work
+
+1558464896
+tgschultz
+If we could, I'm not at all opposed to dropping @This(). I don't enjoy the boilerplate of `pub const Self = @This()` on things.
+
+1558464899
+scientes
+cause i find it excessive that you have to name a union in c, and then the member
+
+1558464941
+scientes
+well it makes it clearer what is going on that way...
+
+1558465047
+scientes
+how about anonymous structs to solve this problem
+
+1558465070
+scientes
+oh no that doesn't do it
+
+1558465189
+emekankurumeh[m]
+doesn't zig have a distinct "typeID" for all it's types?
+
+1558465215
+scientes
+emekankurumeh[m], no, all ints have the same typeID
+
+1558465255
+emekankurumeh[m]
+but ints have a different typeID than say floats, correct?
+
+1558465259
+scientes
+yes
+
+1558465377
+scientes
+how about if a struct only has one member, you can leave off the name, and then it will magically work like we want?
+
+1558465395
+scientes
+that is pretty hacky
+
+1558465442
+scientes
+yeah @distinct seems best
+
+1558465476
+emekankurumeh[m]
+creating structs seems to indicate that "allocating" typeIDs is somewhat trivial, so could a distinct builtin just allocate a new typeID with the same underlying type?
+
+1558465512
+scientes
+emekankurumeh[m], all structs have the same zig type ID, and it isn't trivial, in fact LLVM is going to change how it works in the future with pointers
+
+1558465526
+scientes
+emekankurumeh[m], but sometimes you want stuff to implicitely cast
+
+1558465537
+scientes
+the problem we are talking about is bikeshedding about the syntax
+
+1558465557
+emekankurumeh[m]
+i thought zig had its own typeID system.
+
+1558465568
+scientes
+it does
+
+1558465578
+scientes
+but that doesn't mean it doesn't use LLVM"s as well
+
+1558465599
+donpdonp
+$ zig test src/oneFile.zig is actually convenient enough to use. #winning
+
+1558465627
+emekankurumeh[m]
+but why would this need to extend to llvm as well@
+
+1558465670
+scientes
+it doesn't
+
+1558465676
+scientes
+nor does it in clang
+
+1558465689
+scientes
+the real issue here however is not the compiler
+
+1558465693
+scientes
+its a bikeshedding issue
+
+1558465789
+scientes
+god i hate autotools
+
+1558465907
+emekankurumeh[m]
+hmmm, since the proposal wasn't accepted yet I thought there was some other issue with distinct types
+
+1558465920
+scientes
+emekankurumeh[m], there is a lot of work to do
+
+1558465926
+scientes
+please contribute
+
+1558465939
+scientes
+but maybe start on something a little less involved first
+
+1558465942
+scientes
+like something user-space
+
+1558465976
+scientes
+emekankurumeh[m], it would probably keep the same TypeID so that the compiler doesn't break
+
+1558465988
+scientes
+but gain a new internal field special for type-checking
+
+1558470194
+marijnfs
+hi, i'm trying to find in the documentation what the ! means for return values? Does it mean an error can be thrown?
+
+1558470275
+jjido
+it separates return type from error set
+
+1558470311
+scientes
+> Does it mean an error can be thrown?
+
+1558470311
+scientes
+yes
+
+1558470332
+scientes
+that's exactly what i means
+
+1558470342
+scientes
+marijnfs, realize that errors in zig are just syntactic sugar
+
+1558470388
+scientes
+they are implemented with multiple argument returns
+
+1558470422
+scientes
+so more like the Linux kernel, than c++
+
+1558470464
+emekankurumeh[m]
+I don't think it should be too hard. I've done some work on the compiler before and it wasn't too bad
+
+1558470500
+emekankurumeh[m]
+i should probably wait until the proposal is accepted though
+
+1558471425
+marijnfs
+scientes: thanks, yeah its nice that its clear about that
+
+1558471517
+marijnfs
+it.peek().?.id
+
+1558471533
+marijnfs
+what's that question mark in a member call
+
+1558471557
+scientes
+its dereferencing the pointer
+
+1558471565
+scientes
+sorry
+
+1558471571
+scientes
+no, it is unwrapping an optional
+
+1558471581
+scientes
+and assuring that it isn't null
+
+1558471586
+scientes
+(if it is null that is UB)
+
+1558471598
+scientes
+marijnfs,
+
+1558471800
+marijnfs
+scientes: I see, so you could dereference directly also? but thats risky?
+
+1558471816
+scientes
+no, it is a compiler error to do that
+
+1558471820
+scientes
+but .? is also risky
+
+1558471821
+scientes
+it is UB
+
+1558471841
+scientes
+marijnfs, optionals are differn't types, and you can't use them until you unwrap them
+
+1558471881
+scientes
+if you want to do it safe, you have to use if (optional) |unwrapped| { do_with_unwrapped(unwrapped);}
+
+1558471936
+emekankurumeh[m]
+marinjfs, it means the same thing as `optional orelse unreachable`
+
+1558471948
+scientes
+or if you don't want to have to indent all your code, unwrapped = if (optional) |u| u else throw error.ENOENT;
+
+1558471951
+scientes
+or something like that
+
+1558471970
+scientes
+wait there is no throw
+
+1558471973
+scientes
+just return error.ENOENT
+
+1558472003
+scientes
+oh i forgot about orelse
+
+1558472017
+scientes
+which is the same as ? : gnu extension in C
+
+1558472075
+emekankurumeh[m]
+hearing about all these c extensions makes me wish I never tried writing portable code
+
+1558472108
+scientes
+emekankurumeh[m], well the gnu extensions are quite portable now, as gcc and clang support them
+
+1558472185
+scientes
+and the propritary compilers are all becoming clang-based
+
+1558472225
+emekankurumeh[m]
+really?
+
+1558472258
+emekankurumeh[m]
+is icc clang based, as well?
+
+1558472261
+scientes
+i think both arm and ibm's propritary compilers are now clang-based, microsoft is the last holdout, but have integrated clang into vscode
+
+1558472264
+scientes
+no icc is not
+
+1558472283
+Sahnvour
+not being microsoft compliant can hardly be called portable
+
+1558472329
+scientes
+Sahnvour, oh god the warning i got from
+
+1558472359
+scientes
+tells you not to use open()
+
+1558472365
+scientes
+and instead _open()
+
+1558472375
+Sahnvour
+I wish I could use clang on windows :-)
+
+1558472383
+scientes
+why not?
+
+1558472386
+via
+scientes: what gnu extension involves ? : ?
+
+1558472395
+scientes
+via, its a gnu extension to leave out the middle
+
+1558472407
+via
+huh
+
+1558472415
+scientes
+which makes it identical to zig's orelse
+
+1558472425
+Sahnvour
+I don't do C++ outside work anymore, and we're using msvc; but clang is coming in fast these years to be honest, so soon™
+
+1558472426
+via
+cool
+
+1558472453
+scientes
+Sahnvour, just start porting it
+
+1558472466
+scientes
+support two compilers is good for any code-base
+
+1558472482
+Sahnvour
+we do actually, but not on windows
+
+1558472491
+marijnfs
+I see, optionals are quite useful i think, but a bit strange as well
+
+1558472503
+Sahnvour
+probably not a really big change to have the codebase support it; it's more of an infrastructure thing
+
+1558472509
+marijnfs
+but you can test if they are set by a simple if right?
+
+1558472511
+emekankurumeh[m]
+clang on windows works fine, doesn't it?
+
+1558472517
+scientes
+marijnfs, they are also an optimization, as it allows the "nonnull" attribute to be set
+
+1558472527
+Sahnvour
+emekankurumeh[m], totally fine, they did awesome job
+
+1558472527
+scientes
+emekankurumeh[m], it builds chrome
+
+1558472569
+scientes
+emekankurumeh[m], zig on windows is built using llvm+clang (of course)
+
+1558472594
+emekankurumeh[m]
+really?
+
+1558472595
+Sahnvour
+actually no, it's built with msvc
+
+1558472601
+emekankurumeh[m]
+i thought the city used msvc
+
+1558472605
+scientes
+well yeah
+
+1558472610
+scientes
+oh yeah, but zig applications
+
+1558472621
+scientes
+sorry there is a distinction
+
+1558472634
+Sahnvour
+yep, zig itselfs embeds clang, and is using llvm
+
+1558472640
+scientes
+stage1 builds with gcc clang or msvc
+
+1558472688
+emekankurumeh[m]
+well I guess you could make the that case because stage 1 is zig and c/c++ code, linked using zig
+
+1558472892
+tgschultz
+when did --assembly get removed? how am I supposed to add an asm file now? build.zig?
+
+1558472981
+scientes
+tgschultz, try passing it as a c file
+
+1558473083
+emekankurumeh[m]
+see
+
+1558473293
+scientes
+ahh i always wondered what the difference between .S and .s was
+
+1558473907
+marijnfs_
+is there a compiler directive to print the members of a variable? Like, i imported some c-header and want to see whats available
+
+1558474989
+scientes
+marijnfs,
+

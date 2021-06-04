@@ -1,0 +1,660 @@
+1553216764
+daurnimator
+oh I only just noticed the allocator interface change
+
+1553216774
+daurnimator
+`([*]u8)(undefined)[0..0]` is... odd to me
+
+1553216800
+daurnimator
+I feel like every allocator is going to end up branching on old.len == 0.....
+
+1553216811
+daurnimator
+which makes me think the old interface made more sense...
+
+1553216844
+daurnimator
+same with shrink: almost every allocator is going to special case new_n == 0
+
+1553216932
+andrewrk
+what's the problem with that?
+
+1553216984
+daurnimator
+if you're essentially going to have two different code paths; it would be nicer to have them as two different functions
+
+1553217007
+daurnimator
+which means going via a single function is..... inefficient
+
+1553217067
+daurnimator
+==> I think the new reallocFn and shrinkFn are good. but the old interfaces should have been kept.
+
+1553217085
+andrewrk
+whether it's more or less efficient is hard to say. there is also the consideration that @sizeOf(Allocator) is now 16 instead of 24 on x86_64
+
+1553217122
+andrewrk
+I think that particular point is related to the new interface that Jimmi and tgshultz are working on
+
+1553217135
+daurnimator
+there's essentially 4 primitive operations: 1. create allocation. 2. grow allocation. 3. shrink allocation. 4. destroy allocation
+
+1553217203
+daurnimator
+we now have two callbacks to expose those 4: reallocFn: 1, 2, 3, 4; and you can error on all of them. and shrinkFn which does 3, 4. but can't error.
+
+1553217205
+andrewrk
+5. shrink allocation but allow allocator to fail if it wouldn't be able to recover the bytes
+
+1553217261
+andrewrk
+(5) is the important new one that I added
+
+1553217284
+daurnimator
+andrewrk: is shrinkFn really different to `try reallocFn(...) catch error.OutOfMemory`
+
+1553217318
+andrewrk
+isn't that catch redundant?
+
+1553217340
+andrewrk
+`try reallocFn(...) catch error.OutOfMemory` is equivalent to `reallocFn(...)`
+
+1553217361
+andrewrk
+er wait why is there a try and a catch?
+
+1553217381
+daurnimator
+andrewrk: uh I meant to say: call reallocFn and suppress out of memory errors.
+
+1553217441
+andrewrk
+the difference is in what slice length and alignment the client will next use to call one of the allocator functions
+
+1553217462
+daurnimator
+I guess we have the subtle difference that reallocFn can move on a shrink, and shrink can't/
+
+1553217477
+andrewrk
+shrink can move on a shrink
+
+1553217478
+daurnimator
+or can shrink move as well?
+
+1553217480
+andrewrk
+but it cannot fail
+
+1553217493
+andrewrk
+the only difference is whether failure is allowed
+
+1553217495
+daurnimator
+okay so really shrink could be: call reallocFn and don't propagate errors.
+
+1553217552
+andrewrk
+// Guaranteed to be the same as what was returned from most recent call to
+
+1553217553
+andrewrk
+// `reallocFn` or `shrinkFn`.
+
+1553217567
+andrewrk
+that's an important guarantee the allocator is given
+
+1553217596
+andrewrk
+also the fact that realloc is allowed to fail is meaningful
+
+1553217598
+daurnimator
+andrewrk: okay.... but I'm  not sure how that is relevant here?
+
+1553217655
+andrewrk
+if realloc fails then the allocation size and alignment properties are not updated. so the client must keep track of the size and alignment
+
+1553217666
+andrewrk
+shrink allows the client to track a new size & alignment
+
+1553217856
+andrewrk
+if we do some performance testing and find out that more interface functions is better for performance & memory, that's fine, we can do that
+
+1553217879
+andrewrk
+but that should happen after the new interface experiments are done
+
+1553217902
+andrewrk
+because this API makes sense in terms of semantics of implementing an allocator interface
+
+1553217936
+daurnimator
+shrinkFn(self: *Allocator, old_mem: []u8, old_alignment: u29, new_byte_count: usize, new_alignment: u29) []u8 { return self.reallocFn(self, old_mem, old_alignment, new_byte_count, new_alignment) catch old_mem; }
+
+1553217952
+daurnimator
+andrewrk: ^ wouldn't that be correct?
+
+1553218025
+andrewrk
+not necessarily
+
+1553218101
+andrewrk
+for example in the general purpose debug allocator, it would cause crashes, because it does not update the old_size and old_align metadata
+
+1553218130
+andrewrk
+and so when the next realloc or shrink is called, it would detect that the client used an incorrect value for old_mem.len or old_alignment
+
+1553218194
+daurnimator
+andrewrk: hang on then.... what should shrink do if it can't satisfy the new alignment?
+
+1553218203
+andrewrk
+in a fast release mode allocator it could cause undefined behavior, because the allocator implementation may rely on the interface guarantee of old_mem.len and old_alignment being the same as what was returned from most recent call to reallocFn or shrinkFn
+
+1553218269
+andrewrk
+new_alignment is guaranteed to be <= old_alignment. so if shrink cannot find a preferable new location for the allocation, it should update any internal metadata structures, if any, and then return the same pointer sliced to the new_size
+
+1553218723
+andrewrk
+there is one more modification to the Allocator interface I am considering, which is a flag that indicates the Allocator is some sort of arena and frees are not necessary. perhaps this could be indicated by making shrinkFn optional, but I'm not sure. sometimes shrink can actually work even for arena allocators
+
+1553218773
+scientes
+ouch, NaN == NaN is a pretty serious bug
+
+1553218800
+andrewrk
+but the use case is that if you're given an opaque *Allocator, and you want to make an arena out of it, it's worth checking if it's already an arena. No point in doubling up
+
+1553219112
+daurnimator
+andrewrk: no problem with making shrink an empty function....
+
+1553219131
+daurnimator
+andrewrk: arenas of arenas are useful
+
+1553219194
+andrewrk
+daurnimator, if 2 arenas have no capability of freeing, then stacking them only wastes space
+
+1553219319
+daurnimator
+andrewrk: hmm. right.
+
+1553219367
+andrewrk
+"arena" is a broad concept. it's quite possible for an arena to also handle freeing
+
+1553219407
+andrewrk
+so this flag would only be set when an arena knows it has no capability of freeing. which is why it might make sense for it to have a null shrinkFn
+
+1553219418
+daurnimator
+right
+
+1553219428
+daurnimator
+so for our arenas, we allowed freeing within the arena
+
+1553219437
+daurnimator
+but
+
+1553219447
+andrewrk
+right. for that one you would not set the flag
+
+1553219491
+daurnimator
+andrewrk: I don't particularly see the benefit of no shrinkFn over empty-body shrinkFn.
+
+1553219551
+daurnimator
+andrewrk: btw.... another misc allocator parameter that would be interesting is zero-initialised.
+
+1553219568
+daurnimator
+some allocators (mmap) will provide pre-zeroed memory.
+
+1553219616
+andrewrk
+that would re-introduce the concept of zero initialization, which currently does not exist, and, in fact, was removed from an earlier version of zig
+
+1553219616
+daurnimator
+whereas a stack allocated FixedBufferAllocator would not.
+
+1553219673
+andrewrk
+scientes, the NaN == NaN issue is scheduled for 0.4.0
+
+1553219760
+daurnimator
+andrewrk: I feel like it might be more of an optimizer hint than anything else.... is there a way to tell llvm: "btw this memory is already 0; you can optimize out a following memset(0)"
+
+1553219837
+andrewrk
+but memset(0) would already be unlikely due to zig not having the concept of zero initialization
+
+1553219880
+andrewrk
+s/already//
+
+1553219959
+daurnimator
+andrewrk: hrm. would an `assert(mem.eq(i8, []i8{0} ** len, new_mem)` be enough to tell the optimizer?
+
+1553220024
+andrewrk
+the information would be there. I doubt the optimizer is intelligent enough to use it
+
+1553220040
+andrewrk
+it's always possible to add a custom pass to detect such patterns
+
+1553220049
+andrewrk
+but I have low expections of how much benefit that would bring
+
+1553220255
+daurnimator
+Though it doesn't really solve the puzzle of e.g. "i want a zero initialised vector" => lib_allocator.zAlloc() => should call calloc rather than malloc.
+
+1553220515
+daurnimator
+andrewrk: what if alloc/grow took a "initialisation value" parameter. could be `undefined` by default...
+
+1553220554
+andrewrk
+I did that and then reverted it because it causes an extra unnecessary copy
+
+1553220562
+andrewrk
+it violates no-copy semantics
+
+1553220562
+daurnimator
+oh?
+
+1553220737
+daurnimator
+andrewrk: what gets copied?
+
+1553220806
+andrewrk
+consider the example where you want one field of a struct to point to another one
+
+1553220845
+andrewrk
+if you initialize the allocated memory directly, it works. if you construct the initialization value and then pass it as a parameter, it has to get copied into place, violating the "fixed" field
+
+1553220895
+daurnimator
+what if the initialisation value was a i8?
+
+1553220964
+daurnimator
+hmmmm. the only "reasonable" initialisation values I can think of are undefined or 0
+
+1553220999
+daurnimator
+nothing else is really going to be beneficial
+
+1553221095
+daurnimator
+so really it could be a `zero: bool` parameter
+
+1553221248
+daurnimator
+I'll make an issue for it
+
+1553225847
+scientes
+can comptime variables be global?
+
+1553225992
+daurnimator
+yes.
+
+1553226108
+scientes
+compile var...syntax error
+
+1553226111
+scientes
+comptime var
+
+1553226125
+scientes
+oh, cause it is an array
+
+1553226170
+scientes
+ome/shawn/git/zig/std/string.zig:65:10: error: invalid token: 'var'
+
+1553226171
+scientes
+comptime var combinedTable: [256]u8 = undefined;
+
+1553226388
+scientes
+ok, using an initializer function worked
+
+1553247907
+daurnimator
+andrewrk:
+
+1553264530
+andrewrk
+no global variables can't be comptime. it's a bug that it worked in any way
+
+1553282297
+Akuli
+is zig supposed to compile on 32-bit linux?
+
+1553282341
+Akuli
+this step of the instructions fails:  bin/zig  build --build-file ../build.zig test
+
+1553282376
+Akuli
+
+
+1553282377
+andrewrk
+Akuli,
+
+1553282410
+andrewrk
+
+
+1553282418
+Akuli
+is this an "occasional regression" then?
+
+1553282474
+andrewrk
+this is missing standard library implementations
+
+1553282502
+andrewrk
+here's the tracking issue
+
+1553282670
+Akuli
+so what can i do with zig on a 32-bit linux system now? can i compile it somehow? or is it just useless?
+
+1553282720
+andrewrk
+you can target i386-linux-musl or i386-linux-glibc and use --library c
+
+1553282756
+Akuli
+how do i compile it then? like i said, a step in the compilation instructions is giving all the warnings
+
+1553282771
+Akuli
+s/warnings/errors/
+
+1553282798
+andrewrk
+those are userland errors. you're trying to run the zig test suite on 32 bit linux and that's known to not pass
+
+1553282829
+Akuli
+is that just the test suite?
+
+1553282845
+andrewrk
+yes that's what `bin/zig  build --build-file ../build.zig test` does
+
+1553282849
+scientes
+Akuli, the standard library is not there for standalone on i386 linux
+
+1553282851
+Akuli
+i thought it would build something and then run the tests
+
+1553282857
+scientes
+but with libc will work
+
+1553282874
+Akuli
+thanks :)
+
+1553282874
+scientes
+i386 really isn't that common of a platform anymore
+
+1553282887
+scientes
+i did the arm64 port, and could do it rapidly
+
+1553282892
+scientes
+but I really don't see a point, yet
+
+1553282944
+Akuli
+this is a 32-bit only laptop
+
+1553282954
+scientes
+an intel netbook?
+
+1553282970
+Akuli
+thinkpad
+
+1553282974
+scientes
+wow, old
+
+1553282981
+scientes
+an IBM one?
+
+1553282984
+Akuli
+lenovo
+
+1553283021
+Akuli
+today i spent a few hours compiling an old version of a 3d game, because the newer version complained about my graphics card
+
+1553283104
+scientes
+you could look here for what you need to do
+
+1553283105
+scientes
+
+
+1553283110
+scientes
+and I could give you pointers
+
+1553283114
+scientes
+that is if you are motivated
+
+1553283169
+Akuli
+umm, how is this suposed to work if i use --library c? it can't compile anything
+
+1553283183
+Akuli
+
+
+1553283196
+Akuli
+asdf.zig contains:   test "asdf" {)
+
+1553283197
+Akuli
+{}
+
+1553283200
+andrewrk
+you'll probably have to provide your own panic function
+
+1553283212
+andrewrk
+or fix the standard library one
+
+1553283390
+Akuli
+lol, i wanted to just compile a funny game that i have written in zig and play it
+
+1553283398
+Akuli
+i'll just rewrite the game in c
+
+1553283423
+scientes
+where is the source?
+
+1553283427
+andrewrk
+there are a bunch of places in the standard library that need to be updated to use u64 instead of usize, such as in std.os.File
+
+1553283443
+Akuli
+
+
+1553283452
+andrewrk
+
+
+1553283506
+andrewrk
+Akuli, do you think I have been prioritizing my time suboptimally, or have been dishonest about zig's 32 bit linux support?
+
+1553283533
+Akuli
+no, i think that everyone knows that nobody uses 32-bit systems anymore, except for a few funny people who should just get a new laptop
+
+1553283565
+Akuli
+i'm not angry to anyone, it's fine to have no usable 32-bit support
+
+1553283573
+andrewrk
+apple has officially deprecated 32 bit hardware which is why that has Tier 4 support. Linux 32 bit support is still planned, it just takes some effort to get it up to speed
+
+1553283596
+scientes
+including armhf support
+
+1553283706
+Akuli
+i expected tier 2 to be usable
+
+1553283724
+Akuli
+maybe the readme should emphasize that only tier 1 actually works?
+
+1553283740
+scientes
+arm64/linux works
+
+1553283747
+scientes
+but yeah i386/linux doesn't really work
+
+1553283853
+scientes
+Akuli, how to I mark mines?
+
+1553283872
+Akuli
+:D did you read the help? make the terminal big enough and press h
+
+1553283880
+Akuli
+shorter answer: f
+
+1553283940
+andrewrk
+tier 2 means not guaranteed to be usable
+
+1553283967
+Akuli
+the readme game me the impression that it is usable even though it's not guaranteed to be usable
+
+1553283984
+andrewrk
+linux 32 bit is 10 minutes away from being usable by me or scientes
+
+1553283998
+scientes
+well zig is quite rough around the edges
+
+1553284003
+scientes
+still
+
+1553284021
+Akuli
+this game is about 2 hours away from being playable to me :(
+
+1553284028
+Akuli
+2 hours of porting it all to c, that is
+
+1553284055
+scientes
+and install a 32-bit user-land
+
+1553284078
+andrewrk
+you could probably rent a server for 2 hours for a few cents
+
+1553284104
+Akuli
+lol
+
+1553292107
+andrewrk
+I can't remember if I posted this on IRC yet, but, new docs for Assembly and for zig test:
+
+1553292109
+andrewrk
+
+
+1553292115
+andrewrk
+
+
+1553293367
+andrewrk
+I'm almost out of features to postpone for the 0.4.0 release, gonna have to start cutting bugs soon too, if I can't fix them fast enough
+

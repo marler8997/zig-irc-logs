@@ -1,0 +1,316 @@
+1556673388
+tgschultz
+shritesh, I don't think `for` recognizes null at all. `while` does, but I don't think it would work on a null terminated slice, it's more for iterators.
+
+1556673530
+shritesh
+tgschultz: Yeah. I used an if inside the for to deal with that
+
+1556676981
+tgschultz
+hmmm, interesting. It appears impossible to pass an empty struct instance to a varargs fn. It ends up having type `void`
+
+1556677105
+tgschultz
+...kinda. @typeOf(args[index]) is correct, but if you try to assign it it becomes void.
+
+1556679804
+emekankurumeh[m]
+i thought the empty struct is how "instantiate" void
+
+1556679867
+emekankurumeh[m]
+for example with tagged unions with no a void payload you have to do Union { .VoidField = {} }
+
+1556680031
+tgschultz
+`@typeOf({}) == void` but `struct{} != void`.
+
+1556680193
+tgschultz
+in fact, `struct{} != struct{}`
+
+1556680203
+tgschultz
+each `struct{}` is a unique type.
+
+1556680407
+tgschultz
+normally given `const Empty = struct{};` `@typeOf(Empty(undefined)) == Empty`. The issue is, if you pass `Empty(undefined)` to a varargs and try to assign it to a var of type Empty, it is suddenly of type `void`. See the test in #2393
+
+1556680818
+mikdusan
+looks like the type is lost. if you simply add a field to the struct, it's type is retained in var args fn
+
+1556680857
+tgschultz
+but the type isn't lost. if you do @typeOf(args[0]) it will be correct.
+
+1556680876
+tgschultz
+but when you assign it, it's void.
+
+1556680888
+tgschultz
+its weird, but irrelevant really since varargs are going away.
+
+1556681011
+mikdusan
+
+
+1556681069
+tgschultz
+huh, ok, I stand corrected. I could have sworn it didn't when I tried it.
+
+1556684300
+shritesh
+andrewrk: How can I add wasi to `test_std`? I want to implement the APIs that make sense and make sure they compile during CI.
+
+1556690356
+andrewrk
+daurnimator, so it begins:
+
+1556690483
+andrewrk
+mikdusan, yes that's still a goal. it makes the binary downloads more reliable
+
+1556690524
+andrewrk
+shritesh, the null pointer thing will get better after
+
+1556690597
+andrewrk
+shritesh, to test wasi with the std lib tests we need a wasi interpreter - that's why I keep mentioning it
+
+1556690640
+andrewrk
+I'd like to avoid a dependency on wasmer or the other one for the zig test suite
+
+1556690696
+daurnimator
+andrewrk: hrm. idea from reading that diff: is there a way to go from<>to a function signature to a struct?
+
+1556690734
+andrewrk
+daurnimator, I'm lost. what?
+
+1556691001
+daurnimator
+andrewrk: uh, lost on what?
+
+1556691274
+daurnimator
+andrewrk: It's related to calling arbitrary functions: e.g. something like `@call(myfunc, @argsType(myfunc){.a=1, .b=myslice})` to call a function `fn myfunc(a: u32, b: []u8) sometype;`
+
+1556692616
+andrewrk
+daurnimator, are you talking about C++ or Zig?
+
+1556692662
+daurnimator
+andrewrk: sorry; it's a bit of a tangent. I was meaning that many of the functions that got changes as part of that diff are ones I feel like such a @call function might need to change too
+
+1556695176
+tiehuis
+Updated the vscode zig extension to 0.2.0 if you are using that
+
+1556695195
+tiehuis
+sorry it took so long!
+
+1556695199
+andrewrk
+nice!
+
+1556695230
+tiehuis
+vscode wasn't working locally for me for a while which added to the delay
+
+1556695241
+tiehuis
+well, debugging extensions, that is
+
+1556712616
+bketelsen
+tiehuis: Thanks for the vs code extension!
+
+1556717193
+Sahnvour
+andrewrk, I think I have a reduced example for
+
+1556717209
+Sahnvour
+but from what I can tell so far, it seems indeed a behaviour of LLVM rather than zig
+
+1556734487
+adrusi_
+What is the error set for creating a promise?
+
+1556734520
+adrusi_
+@compileLog(@typeOf(async<std.debug.global_allocator> foo())); gives "std.mem.Error", but there is no std.mem.Error.
+
+1556734531
+andrewrk
+adrusi_, I'm about to rip out all that code and change the way it works
+
+1556734630
+adrusi
+yeah I guess, I'm watching the issue thread for the rewrite
+
+1556734659
+adrusi
+I'm curious what's going on with the current implementation though. How is it returning an error set that doesn't exist?
+
+1556734700
+tgschultz
+fascinating. I've triggered an assert with comptime using only a perfectly valid function call in an extern union. If I change it to a non-extern union the compiler is happy.
+
+1556734851
+andrewrk
+adrusi, it's supposed to be the error set of the allocator
+
+1556734859
+tgschultz
+andrewrk, adrusi, I think I saw that same thing on a completely non-async function.
+
+1556734882
+tgschultz
+the std.mem.Error being reported as the ErrorSet I mean.
+
+1556735374
+adrusi
+Yeah I'm pretty confused about how async functions interface with the type system. I understand they're all implictly generic but I'm still wrapping my head around what that means.
+
+1556735432
+adrusi
+the type of "fn bar() !void { _ = try async<std.debug.global_allocator> foo(); }" is reported as "fn() @typeOf(bar).ReturnType.ErrorSet!void"
+
+1556735684
+adrusi
+"@compileLog(std.mem.Allocator.Error);" prints "std.mem.Error". That seems like a bug.
+
+1556736208
+tgschultz
+I'd say so yes.
+
+1556736242
+tgschultz
+ok, this compiler crash (not an assert, no message) seems to be due to creating an extern union with a single void field.
+
+1556736543
+tgschultz
+hmm... it's more complicated than that though.
+
+1556737018
+tgschultz
+weird, it seems related to calling std.mem.eql, not on the 0-sized union but on a definition in its namespace.
+
+1556739256
+tgschultz
+bug has nothing to do with comptime. issue incoming.
+
+1556739501
+tgschultz
+#2401
+
+1556739663
+andrewrk
+thanks
+
+1556741426
+fengb
+Is there a way to make bitwise array types? I'd like to do 4 elements of 4 bits
+
+1556741493
+andrewrk
+currently no
+
+1556741920
+halosghost
+oh, really? so it's not possible to have an []i4?
+
+1556742147
+andrewrk
+it's possible but @sizeOf(i4) == 1
+
+1556742151
+andrewrk
+each element is 1 byte
+
+1556742288
+emekankurumeh[m]
+are the values packed?
+
+1556742400
+halosghost
+andrewrk: ahh, I see
+
+1556742410
+fengb
+Is it feasible to support it? I'm assuming there's potentially weird edge cases
+
+1556742411
+halosghost
+that makes sense really
+
+1556742439
+halosghost
+yet another reason I wish I had a 1-bit-byte machine
+
+1556742525
+andrewrk
+emekankurumeh[m], zig does not currently have packed arrays
+
+1556742543
+companion_cube
+does any language have such a feature?
+
+1556742569
+andrewrk
+fengb, it's not out of the question
+
+1556742580
+companion_cube
+(to me it sounds like it could be done in a library, like bitvectors usually are)
+
+1556743039
+fengb
+I haven't seen it done in a language but it'd be more natural to do `a[3]` instead of `a >>(4 * 3) & 0b1111` or even `a.get(3)`
+
+1556744931
+tgschultz
+it shouldn't be tremendously difficult to create a PackedArray type in userland. Bit(In/Out)Stream should get you a good chunk of the way there.
+
+1556745111
+scientes
+or something like this
+
+1556747408
+hryx
+andrewrk: since the recursive parser is almost ready, I'm thinking about opening a draft PR for visibility. Helpful, or would that just create a crap ton of email spam for you? There will definitely be more commits this week
+
+1556747482
+andrewrk
+hryx, feel free to do that - no complaints on my end
+
+1556747551
+hryx
+great!
+
+1556747692
+andrewrk
+scientes, I think that if you look closely at
+
+1556747749
+scientes
+OK, it will improove
+
+1556747791
+andrewrk
+here is an example of hryx making things easier on me:
+
+1556747866
+andrewrk
+you can see how that would have been more difficult to handle appropriately if it were a pull request with no description
+

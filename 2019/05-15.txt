@@ -1,0 +1,2248 @@
+1557878766
+hryx
+daurnimator: you mean like just calling this a whole bunch?
+
+1557878906
+daurnimator
+hryx: I guess :)
+
+1557878916
+daurnimator
+I always forget the names of build methods
+
+1557879445
+hryx
+triplefox: you probably already thought of this, but I assume the best resources are existing build.zig files like this
+
+1557879450
+hryx
+and that stdlib file I linked above
+
+1557879528
+daurnimator
+hryx: there's nothing in there to help someone compile a C project though
+
+1557879794
+hryx
+hm true. I guess start with a single file `hello_world.c` and try `exe_step.addCSourceFile()` as a first shot?
+
+1557880205
+andrewrk
+triplefox, here's an example of building a simple C library:
+
+1557880744
+andrewrk
+triplefox, detecting libc on windows should work fine. you can see what zig detects if you run `zig.exe libc`
+
+1557880786
+andrewrk
+after
+
+1557880797
+triplefox
+andrewrk, it says Unable to determine vcruntime.h path. i forget what the state of my msvc installs is right now, but i've been using mingw
+
+1557880798
+andrewrk
+on windows. this is already the case for linux
+
+1557881042
+triplefox
+hmm i have "Visual Studio Build Tools 2017 (2)" installed
+
+1557881058
+triplefox
+i don't know if that (2) is something i should worry about
+
+1557881215
+triplefox
+it didn't have some c++ things checked, so hopefully that's it. downloading 4gb
+
+1557882049
+triplefox
+okay, it can find libc -- but now i have to figure out dependency things i think?
+
+1557882068
+triplefox
+oh, "windows.h" not found
+
+1557883023
+triplefox
+wait a minute, i'm approaching this all wrong. my ultimate goal is a wasm build, not a windows build
+
+1557883425
+andrewrk
+triplefox, ah, yes. if you tell zig to target wasm it does not look for a libc
+
+1557883471
+triplefox
+what is the command to retarget in build.zig
+
+1557883476
+triplefox
+or is that separate?
+
+1557883653
+andrewrk
+triplefox, setTarget:
+
+1557883700
+triplefox
+aha
+
+1557884899
+tgschultz
+so andrewrk, does freestanding always dump an ELF? Even for microcontrollers? I would have though flat, non-relocatable code or something.
+
+1557884939
+andrewrk
+tgschultz, currently yes but that is something we can talk about
+
+1557884957
+andrewrk
+as a workaround right now you can use binutils to extract the raw executable binary
+
+1557884974
+andrewrk
+
+
+1557885003
+andrewrk
+somewhere around here I have a "todo: avoid dependency on objcopy"
+
+1557885029
+daurnimator
+readme line 63 :)
+
+1557885064
+andrewrk
+:) thanks
+
+1557885089
+daurnimator
+Each target should have a "default" format, but it should be overridable
+
+1557885113
+daurnimator
+e.g. freestanding should probably default to raw output; but might be swappable to ELF or even hex encoded?
+
+1557885138
+daurnimator
+linux could conceivably have both ELF and a.out
+
+1557885150
+daurnimator
+windows could have PE and COM
+
+1557885167
+tgschultz
+that's a place to start I suppose, thanks. It seems to me though that if DOS is actually going to be a target we'll need to be able to output an MZ exe.
+
+1557885178
+daurnimator
+oh TIL: > The final deprecation of the a.out file format on Linux will take place with the release 5.1 of the Linux Kernel
+
+1557885348
+andrewrk
+daurnimator, I agree
+
+1557885413
+andrewrk
+huh, neat, actually a pretty coherent discussion on the youtube comments of my philly ete talk
+
+1557885443
+torque
+most of the (gcc-based) microcontroller toolchains I've used generate an elf and then postprocess it
+
+1557885922
+triplefox
+hmm if i do wasm build libc is not found. or maybe i have the wrong target settings: exe.setTarget(builtin.Arch.wasm32, builtin.Os.wasi, builtin.Abi.none);
+
+1557886855
+andrewrk
+triplefox, are you sure you want wasi?
+
+1557886873
+andrewrk
+are you targeting the web browser or node.js? or are you targeting WASI?
+
+1557886876
+triplefox
+i actually don't, but if i put it to none it also doesn't work
+
+1557886892
+triplefox
+i am targeting a custom wasm environment
+
+1557886900
+andrewrk
+you want freestanding for the os
+
+1557886925
+andrewrk
+what output do you get that tells you you're getting libc not found?
+
+1557886928
+triplefox
+it thinks the target is 'wasm32-unknown-unknown-unknown'
+
+1557886936
+triplefox
+Zig is unable to provide a libc for the chosen target 'wasm32-unknown-unknown-unknown'.
+
+1557886936
+triplefox
+The target is non-native, so Zig also cannot use the native libc installation.
+
+1557886966
+andrewrk
+I can explain the unknown thing. That's accidentally printing LLVM's notion of a target, which thinks that "freestanding" is "unknown"
+
+1557886989
+andrewrk
+triplefox, let me take a quick look, this is probably a trivial fix
+
+1557887026
+triplefox
+ok. i might be ducking out but i'll check
+
+1557887141
+andrewrk
+triplefox, can I see your build script?
+
+1557887205
+andrewrk
+I don't see how you can get to that error message unless you are linking against libc
+
+1557887334
+triplefox
+uh, i might be actually
+
+1557887370
+andrewrk
+triplefox, ok cool, this all makes sense and I can explain what's going on now
+
+1557887387
+daurnimator
+triplefox: `exe.linkSystemLibrary("c");` <-- freestanding wasm doesn't have a libc.
+
+1557887394
+andrewrk
+you're trying to build lua for wasm, which is a cool idea, and of course it depends on libc
+
+1557887406
+andrewrk
+so it makes sense that you have  exe.linkSystemLibrary("c");
+
+1557887440
+andrewrk
+zig - so far - does not know how to provide libc for wasm32-freestanding-none
+
+1557887486
+andrewrk
+but, it should! that's one of the targets which should be listed in
+
+1557887570
+andrewrk
+triplefox, I want to help you with this experiment so I'll put aside some time tomorrow morning to start those changes
+
+1557887578
+triplefox
+yeah, that kinda makes sense. i'll be available
+
+1557887633
+andrewrk
+zig's std/special/builtin.zig is essentially the beginnings of a multi-target libc. I should rename it to std/special/libc.zig
+
+1557887742
+scientes
+yep
+
+1557887867
+tgschultz
+I think I'd feel icky importing package "libc"
+
+1557887917
+scientes
+well @import("builtin") should continue to exist and be split off
+
+1557887961
+scientes
+those exports should be linked by default (because llvm needs them), but with a differn't namespace
+
+1557888035
+scientes
+it would be nice if glibc's libm no longer depended on libc
+
+1557888071
+scientes
+or if it could be used on windows for example
+
+1557888091
+tgschultz
+curious note: apparently someone out there has created a long-mode version of DPMI, so it is theoretically possible to run 64-bit code in DOS.
+
+1557888179
+scientes
+libm doesn't have the problems that libc has
+
+1557888230
+scientes
+well rand() is kinda dumb
+
+1557888367
+andrewrk
+tgschultz, yeah that's another reason to rename it - it's not in any way related to @import("builtin")
+
+1557888385
+andrewrk
+there's no splitting  off to do, it's just a name collision
+
+1557888389
+tgschultz
+well that's just confusing, so yeah.
+
+1557888435
+scientes
+and its interface is defined by libc
+
+1557888461
+daurnimator
+Can someone add a radix tree implementation to the standard library?
+
+1557888474
+scientes
+daurnimator, or xarray
+
+1557888501
+daurnimator
+scientes: no need for xarray; maple trees are where it's at :)
+
+1557888537
+scientes
+its hard to google for maple trees however
+
+1557888544
+scientes
+all you get is sweet things
+
+1557888563
+daurnimator
+and yeah... I do have a tab open on one pf my laptops open called "zig-maple-tree"
+
+1557888610
+daurnimator
+one mild blocker there was a zig userspace rcu library
+
+1557888671
+scientes
+daurnimator, do you mean user-space as in zig, or user-space as in not kernel mode?
+
+1557888680
+daurnimator
+scientes: both
+
+1557888691
+scientes
+cause the code should be able to work in kernel mode if the locking API is done right
+
+1557888715
+scientes
+aware that you can't disable preemption in user-mode
+
+1557888725
+scientes
+so you can never use spin locks
+
+1557888740
+daurnimator
+scientes: rcu needs to be done differently in kernelspace (C macros and assembly) vs userspace (magic and use of membarrier() syscall)
+
+1557888773
+scientes
+daurnimator, yeah but it should have the same API
+
+1557888777
+daurnimator
+yep.
+
+1557888790
+scientes
+there is also transactional memory
+
+1557888793
+scientes
+which x86 and ppc has
+
+1557888823
+daurnimator
+and going further, the only non-kernelspace rcu implementation is 1. dependent on pthreads and 2. GPL-only
+
+1557888853
+daurnimator
+--> we need a userspace (not kernel) implementation of rcu that the zig standard library can use
+
+1557888859
+scientes
+I didn't know about this membarrier syscall
+
+1557888864
+scientes
+so you can do it without futexes?
+
+1557888869
+daurnimator
+yep
+
+1557888894
+daurnimator
+and you only need to use membarrier in rare situations
+
+1557888900
+daurnimator
+its
+
+1557888908
+scientes
+same with futexes
+
+1557888916
+scientes
+hence the name
+
+1557889163
+daurnimator
+scientes: if you've got a few mins, maybe you could send a PR to std/os/linux adding membarrier syscalls?
+
+1557889216
+scientes
+just use linux.syscall2() until you have a patch
+
+1557889240
+scientes
+that actually uses them
+
+1557889307
+scientes
+daurnimator, i have enough pull request in the queue right now :)
+
+1557889528
+andrewrk
+scientes, speaking of - I'm looking at #2240 right now, looks like you're still working on it?
+
+1557889550
+scientes
+well there is a bug in the stage2 that I have no idea what it is
+
+1557889567
+scientes
+and i can't break on it either, stage2_panic should send a signal so it breaks in gdb
+
+1557889576
+scientes
+using raise
+
+1557889869
+andrewrk
+it does
+
+1557890175
+daurnimator
+sigh.... why does everything get so intertwined
+
+1557890219
+daurnimator
+I want to finish the allocator, but now I'm wanting to finish the maple tree implementation... so I can use it in the allocator; which means I need to write userspace rcu first... which itself is like a month long project
+
+1557890467
+scientes
+if (@popCount(Limb, self.limbs[self.len - 1]) == 1) {
+
+1557890470
+scientes
+this is crashing the compiler
+
+1557890503
+scientes
+its not resolving the type of the second argument
+
+1557890527
+scientes
+wait, it might be my problem, i'll look into it more
+
+1557890666
+daurnimator
+andrewrk: how does one add to process or thread initialisation in zig?
+
+1557890759
+scientes
+daurnimator, createThread
+
+1557890770
+scientes
+what is your question?
+
+1557890789
+scientes
+*spawnThread
+
+1557890805
+daurnimator
+scientes: no... I mean e.g. imagine if our standard library LinkedList implementation needed the process to call membarrier(MEMBARRIER_CMD_REGISTER_GLOBAL_EXPEDITED) on startup.
+
+1557890821
+scientes
+yeah, TLS already does something similar
+
+1557890839
+scientes
+but do only do that when needed, that is a big project
+
+1557890846
+scientes
+as it requires static analysis
+
+1557907438
+komu
+Hi, should I treat all segmentation faults in zig as a complier bug that needs to be reported?
+
+1557908613
+komu
+submitted issue;
+
+1557908984
+komu
+In a semi-related question, anyone know why I can be able to print(std.debug.warn) a `std.Buffer` but I cannot print a `std.ArrayList` ?
+
+1557908990
+komu
+ie:
+
+1557909154
+mikdusan1
+komu if the compiler segfaults then it's considered a bug. but 2495 the compiler generates executable and then runtime segfaults.
+
+1557909223
+komu
+mikdusan1 thanks
+
+1557911147
+kristoff_it
+komu: I read your gist, it's the inverse in zig: std.debug.warn inspects the types you try to pass and decides what to do at comptime
+
+1557911937
+komu
+kristoff_it: thanks. but looking at;
+
+1557911950
+komu
+I could also be mis-reading something
+
+1557912872
+kristoff_it
+komu: sorry I know only enough to point you in that direction, I don't know anything about the details, maybe when one of the core contributors wakes up they will be able to help you :)
+
+1557913024
+very-mediocre
+std.Buffer uses ArrayList internally
+
+1557913076
+very-mediocre
+you're able to use `std.debug.warn` on `some_buffer.list` just as you would on `some_arraylist.items`
+
+1557913148
+very-mediocre
+correct -- `some_buffer.list.items`
+
+1557913151
+very-mediocre
+correction*
+
+1557913410
+very-mediocre
+komu: in your example, the std.Buffer contains a std.ArrayList(u8) while the second bit uses std.ArrayList(i32)
+
+1557913426
+very-mediocre
+bytes are printable
+
+1557913493
+very-mediocre
+what i'm saying is one of them working doesn't imply the other will work
+
+1557913518
+very-mediocre
+whether the 2nd case is a bug is another question
+
+1557914249
+BitPuffin
+can zig be debugged in lldb or gdb?
+
+1557914392
+rivten
+hello BitPuffin ! yeah, I got my executable running and breaking in gdb with zig ;) do you have trouble doing so ?
+
+1557914409
+BitPuffin
+Great to hear that!
+
+1557914429
+BitPuffin
+No I'm just getting started looking at Zig, thinking I might wanna try using it for something as long as it checks all the boxes
+
+1557914771
+BitPuffin
+pretty excited about what I'm seeing so far :)
+
+1557916366
+very-mediocre
+is there a clean workaround for this issue currently?
+
+1557916383
+very-mediocre
+I'd like to store a `std.io.InStream` as a struct member
+
+1557916456
+very-mediocre
+but i'm obligated to specify an error type when defining the struct member; and making it `std.io.Instream(anyerror)` doesn't work
+
+1557916493
+very-mediocre
+meaning I can't pass a `std.File.InStream` to be stored there
+
+1557916519
+very-mediocre
+it gives me this error: error: expected type 'std.io.InStream(anyerror)', found 'std.io.InStream(error{OperationAborted,BrokenPipe,Unexpected,InputOutput,SystemResources,IsDir,})'
+
+1557916665
+very-mediocre
+the only way I can think of is to use a function that returns the struct, and have the stream type as a comptime param, but that seems a bit ugly
+
+1557916752
+very-mediocre
+I thought any error set would satisfy "anyerror"?
+
+1557919525
+tgschultz
+very-mediocre: the type system doesn't work that way in this case. InStream(X) is a completely different type than InStream(Y). If you're only storing a File.InStream, you can should be able to store it as type File.InStream
+
+1557919567
+tgschultz
+if you want to store a "any" InStream, there is no way to do that without making your struct generic as well, currently.
+
+1557919689
+very-mediocre_
+right, what i really want here is interfaces i guess
+
+1557919706
+very-mediocre_
+i'm doing the function/generic workaround for now, just feels "wrong" in terms of my instincts
+
+1557919713
+tgschultz
+InStream is an interface, but it isn't a generic one. That's the design flaw.
+
+1557919750
+very-mediocre_
+it's an interface by convention
+
+1557919768
+tgschultz
+yeah, that's the design flaw, it isn't actually usable as one.
+
+1557919819
+very-mediocre_
+it also seems all error sets satisfy `anyerror` for function return types
+
+1557919830
+very-mediocre_
+i expected it to behave that way across the board
+
+1557919876
+very-mediocre_
+as you said though InStream(anyerror) seems to create a unique type
+
+1557919914
+BitPuffin
+just a noob question: when people wanna do printf style debugging they use warn?
+
+1557919959
+very-mediocre_
+BitPuffin: yep, there's also @compileLog and @compileError for comptime stuff
+
+1557919971
+BitPuffin
+awesome
+
+1557919972
+tgschultz
+it's because of how the the InStream is constructed. ErrorUnions are understood by the compilerm but every call to InStream() generates a completely new type in userland code. That means that each one could potentially have a different layout and they can't be casted between even if the compiler understood that only the ErrorSet was different.
+
+1557920017
+BitPuffin
+I was thinking while eating lunch. That it would kind of be nice to have a print function that's only allowed in debug builds. Because there has been so many times when I've used debug printing and forgot to remove it later on haha
+
+1557920038
+tgschultz
+This is something I'm actuvely working on improving, but I've hit a few stumbling blocks.
+
+1557920088
+tgschultz
+that'd be easy enough to create BitPuffin. you could have a function that wraps debug.warn in an if(builtin.mode == .Debug)
+
+1557920119
+BitPuffin
+ah nice!
+
+1557920124
+very-mediocre_
+the cool thing is since builtin.mode is a comptime-known constant the entire code branch would be omitted for release builds
+
+1557920141
+BitPuffin
+I guess I could probably even check for some arbitrarily defined symbol like you'd do with -D in C+
+
+1557920194
+very-mediocre_
+tgschultz: your suggestionf for `var<trait>` param type would fix everything, as would any kind of "native" interface functionality
+
+1557920251
+very-mediocre_
+if any error set satisfies `anyerror` in return types that's like a hard-coded interface
+
+1557920263
+very-mediocre_
+er, sorta.
+
+1557920265
+tgschultz
+Unfortunately it wouldn't fix everything, because it's comptime dynamic. You still couldn't store interfaces in structs without abstracting them into generic versions of themselves.
+
+1557920271
+very-mediocre_
+at the very least it's polymorphic
+
+1557920274
+tgschultz
+and therefore losing all ErrorSet information.
+
+1557920332
+tgschultz
+The first attempt I did at interface reform handled that, it verified that any errorsets it wrapped were subsets of the one definied in the interface.
+
+1557920394
+very-mediocre_
+i'm not following you 100%
+
+1557920406
+tgschultz
+on which part?
+
+1557920421
+very-mediocre_
+storing interfaces in structs
+
+1557920440
+very-mediocre_
+to me interfaces are useful for comptime validation
+
+1557920457
+very-mediocre_
+no different than asserting that a param has certain fields
+
+1557920500
+very-mediocre_
+(a struct passed in as a param)
+
+1557920600
+very-mediocre_
+hm i think i get your point now
+
+1557920652
+very-mediocre_
+but i'm unclear as to whether it's necessary to do much more than validation
+
+1557920790
+very-mediocre_
+i guess what i'm saying is i want comptime polymorphism
+
+1557920808
+tgschultz
+WEll, there's two flavors of "interface". One is as you described, a check that some type meets some specification. The problem with that is it is comptime variadic. As you discovered, because they have different types you can't store InStream(A) and InStream(B) in the same field. In order to do that, you have to lose all the ErrorSet information (abstract the interface, in my own terminology). That's also true of non-variadic
+
+1557920809
+tgschultz
+functions that, say, are in a dll you've loaded.
+
+1557920891
+very-mediocre_
+gotcha.
+
+1557920933
+tgschultz
+Thus there is a difference between 'comptime interfaces' and 'runtime interfaces'. So what I'm trying to do is make both types of interface reasonable to create and use. You'll be able to take any InStream using `var` and have all the errorset information, but if you want to store it you'll either have to make the struct you store it in generic or `abstract` the interface and loose comptime information like error sets.
+
+1557920981
+tgschultz
+I'm on my fourth attempt though, and I've had to give up changing Allocator for now because of `async`.
+
+1557921002
+very-mediocre_
+currently you can use var params and assert that the fields you want are defined, and you can do that for fields using codegen (generic functions)
+
+1557921011
+tgschultz
+my first attempt was here, if you want to see how things might look:
+
+1557921055
+very-mediocre_
+cool, i'll take a peek
+
+1557921118
+very-mediocre_
+another possibly dumb thought: you can use a union for such fields
+
+1557921122
+very-mediocre_
+although that probably sucks for alignment
+
+1557921126
+tgschultz
+I believe I can do better than that though. My blockers right now are async (due for a rewrite) and that abstracted interfaces don't work at comptime (and I'm not sure they should anyway).
+
+1557921215
+tgschultz
+You'd have to know every type to union ahead of time. There's no good way to do that in userland so you'd have to rely on the compiler working it out, and what InStreams are available in one compilation unit might not be the same as the other and how do you normalize that?
+
+1557921264
+very-mediocre_
+if "comptime dynamic" becomes possible it's doable
+
+1557921325
+tgschultz
+comptime dynamic unions are already possible, actually. Well, kinda:
+
+1557921346
+very-mediocre_
+cool
+
+1557921360
+very-mediocre_
+i thought of doing nested structs with 2 fields each
+
+1557921375
+tgschultz
+that's basically how it works, yes
+
+1557921376
+very-mediocre_
+thus storing unlimited types
+
+1557921377
+very-mediocre_
+oh
+
+1557921386
+very-mediocre_
+i hit a roadblock when doing it though
+
+1557921404
+very-mediocre_
+that was ages ago and I can't remember why it failed
+
+1557921454
+very-mediocre_
+rants.tgshultz.com is a hilarious subdomain :)
+
+1557921535
+BitPuffin
+can I add to package path from the command line or do I have to use a builder
+
+1557921554
+tgschultz
+compiler asserts are still quite common when you do things like this in comptime. I can change a single use of a variable in that code and assert the compiler.
+
+1557921598
+tgschultz
+BitPuffin --pkg-begin "name" "path/to/package.zig" --pkg-end
+
+1557921638
+BitPuffin
+aaaaaaahhh
+
+1557921645
+BitPuffin
+now I understand what's meant by package stack
+
+1557921648
+BitPuffin
+thank you
+
+1557921752
+tgschultz
+oops, found a typo I missed in that blog post
+
+1557921938
+BitPuffin
+tgschultz: I'm a bit confused by the .Debug syntax you used with the if(builtin.mode == .Debug) example. Can you do that type of .X on any expression?
+
+1557921963
+BitPuffin
+if I do if(foo.bar == .A) is it the same as if(foo.bar == foo.bar.A) or something?
+
+1557922026
+tgschultz
+It's a relatively new feature called "enum literals'. For anywhere you use an enum you can shorten it like that. builtin.mode is of type builtin.Mode, so when you compare it to the enum literal .Debug the compiler knows that .Debug should also be a builtin.Mode.
+
+1557922084
+tgschultz
+you've got the right idea.
+
+1557922091
+BitPuffin
+ah so I could also do like
+
+1557922112
+BitPuffin
+const x: bar = .A;
+
+1557922127
+BitPuffin
+and it will be the same as const x: bar = bar.A;
+
+1557922132
+tgschultz
+yes
+
+1557922142
+BitPuffin
+nice! ergonomic :)
+
+1557922149
+BitPuffin
+and noise reducing
+
+1557922153
+tgschultz
+there are a few cases where it doesn't work, but those are bugs right now.
+
+1557922204
+tgschultz
+Yeah, it's super handy. builtin.TypeInfo.Pointer.Size.One can now usually just be written as .One
+
+1557922233
+very-mediocre_
+another huge ergonomic thing would be not having to do SomeAllocator.allocator or SomeStream.stream
+
+1557922238
+very-mediocre_
+also fixed by interfaces :}
+
+1557922305
+tgschultz
+very-mediocre, actually that isn't, because interfaces contain convenience functions over the actual interface implementations (see: std.Allocator, which has like 20 functions that work on reallocFn and shrinkFn, the only things implemented by the implementer).
+
+1557922350
+tgschultz
+allocator.alloc is actually implemented by Allocator interface, not the implementation.
+
+1557922359
+BitPuffin
+do you have to define the tagged union tags enum separately all the time or is there shorthand syntax for that
+
+1557922379
+tgschultz
+So at the very least you're still doing something like: some_allocator.allocator();
+
+1557922413
+tgschultz
+BitPuffin: you don't have to, no. Simply declaring it as union(enum) will automatically make an enum out of the field names
+
+1557922434
+BitPuffin
+I'm relieved to hear that
+
+1557922450
+BitPuffin
+ah oops that's acutally in the docs
+
+1557922450
+tgschultz
+I believe you can also specify the size of the enum if you really want: union(enum(u8))
+
+1557922531
+very-mediocre
+tgschultz: i see. I keep disconnecting, I'd written that my suggestions are bordering on abstract class territory
+
+1557922556
+very-mediocre
+but i'm aware inheritance is not in vogue at all lately
+
+1557922598
+very-mediocre
+i think it's underrated
+
+1557922627
+tgschultz
+Another advantage of enum literals is that they encourage the use of enums instead of booleans in a lot of cases:
+
+1557922683
+very-mediocre
+I think I'd prefer having an "abstract class" for things like streams and allocators since it's being used that way currently anyway, only more verbose
+
+1557922709
+tgschultz
+abstract classes come with a lot of hidden things or they'd be this verbose anyway.
+
+1557922723
+very-mediocre
+I'm not sure I agree with that
+
+1557922743
+tgschultz
+well you need a vtable at the very least. For everything that could be abstracted.
+
+1557922767
+very-mediocre
+again we're hitting that comptime vs runtime dichotomy
+
+1557922774
+tgschultz
+which is of course what we do anyway in interface reform, but it is out in the open.
+
+1557922781
+very-mediocre
+I'm personally only in it for the comptime benefits
+
+1557922784
+very-mediocre
+ergonomics and validation
+
+1557922792
+very-mediocre
+no vtable necessary for that
+
+1557922793
+tgschultz
+it is unavoidable. If you have an interface you're going to want to store it.
+
+1557922843
+very-mediocre
+i mean, take streams for example. Would you not prefer to pass a some_stream directly rather than having to pass some_stream.stream?
+
+1557922858
+tgschultz
+and it will be unexpected if you go to store something that looks like one type (InStream) and is actually a bunch of different types. Now your struct is generic too.
+
+1557922869
+tgschultz
+eh, that's minor.
+
+1557922869
+very-mediocre
+and what i have in mind would just be validation that the correct fields exist
+
+1557922879
+very-mediocre
+well that's the bit about ergonomics
+
+1557922888
+tgschultz
+that would require every implementation to implement all functions though.
+
+1557922913
+very-mediocre
+can you currently not access "static" functions?
+
+1557922914
+tgschultz
+As noted previously, Allocator implements most of the functionality we use from the interface itself.
+
+1557922917
+very-mediocre
+since structs double as namespaces
+
+1557922929
+tgschultz
+`self` doesn't work on those
+
+1557922934
+very-mediocre
+oh state is being stored
+
+1557922980
+very-mediocre
+i'd inherit that state
+
+1557922992
+very-mediocre
+right into the child struct that's implementing the interface
+
+1557922994
+tgschultz
+I think it is A) a minor ergonimic thing and B) of some benefit to readability that you pass an interface as some_implementor_instance.interface().
+
+1557923011
+very-mediocre
+I'm sorry, I disagree, I find it unnecessarily verbose
+
+1557923043
+very-mediocre
+and it's annoying to follow when structs wrap other structs
+
+1557923082
+very-mediocre
+i also find it easier to reason about the stream itself being a stream
+
+1557923096
+very-mediocre
+i.e. having certain fields/functions
+
+1557923189
+very-mediocre
+tbh i'd have the compiler codegen the required state for any inherited functions
+
+1557923201
+tgschultz
+ok, but then ArrayList(u8) now has to be ArrayList(u8, AllocatorType), because it can't store arbitrary types in a field. Maybe that's the right way to go, but it does make things more complicated.
+
+1557923241
+very-mediocre
+or i'd even just refactor the reused functions into a module
+
+1557923272
+very-mediocre
+i'd use composition there, like a stream "has" a struct of those state variables
+
+1557923294
+very-mediocre
+hmm
+
+1557923478
+very-mediocre
+are you assuming runtime support?
+
+1557923602
+BitPuffin
+tgschultz: that's really nice to show intent :)
+
+1557923663
+very-mediocre
+scratch my last question.
+
+1557923734
+very-mediocre
+also, apologies for my crappy timing with responses, experiencing lag
+
+1557923756
+very-mediocre
+(it comes off like I'm trying to talk over people)
+
+1557923916
+very-mediocre
+tgschultz: actually you just need a pointer to an allocator
+
+1557923999
+very-mediocre
+so there should be no size/layout concern there
+
+1557924003
+very-mediocre
+unless I'm misunderstanding something
+
+1557924447
+rivten
+hello everyone ! so I'm back after investigating some weird parameters offset in string that makes me unable to load file on windows only (I wrote something about that a few days ago). I've understood what's going on but not what causes it. Where should I put the write-up ? Maybe not in here because it's pretty long and technical ?
+
+1557924476
+daurnimator
+rivten: either an issue on github or the mailing list?
+
+1557924504
+rivten
+hmmm ok. do you think there is any preference ? both a very fine for me
+
+1557924510
+BitPuffin
+very-mediocre: didn't jai have some elegantish solution to the whole ah I don't wanna pass some_stream.stream without having to take it all the way to abstract classes
+
+1557924542
+daurnimator
+rivten: a github issue if you need a fix to zig itself; the mailing list if it's an interesting puzzle that you don't know even
+
+1557924569
+rivten
+ok. mailing list it is then. What's the mail address ?
+
+1557924632
+rivten
+~andrewrk/ziglang@lists.sr.ht ?
+
+1557924836
+very-mediocre
+BitPuffin: dunno, tbh I haven't looked at Jai seriously as its progress has been glacial and I'm not inspired by the idea of improving some of the things C++ does wrong. I prefer zig's idea of C being the kind of baseline.
+
+1557924882
+BitPuffin
+Hmm well I get a C is the baseline feeling from it as well
+
+1557924889
+BitPuffin
+and I haven't actually caught up with it in years
+
+1557924896
+BitPuffin
+the polymorphism stuff was many years ago
+
+1557924906
+BitPuffin
+but apparently they're probably releasing a public beta this year
+
+1557924909
+very-mediocre
+my exposure to it was years ago and back then JB was saying it'd be a better C++
+
+1557924914
+BitPuffin
+either way it's buried in some of the old vids :P
+
+1557924925
+very-mediocre
+it'll be interesting to see :]
+
+1557924952
+BitPuffin
+yeah and the approach he's taking to that is basically removing all the ++ and then thoughtfully addin things, Zig reminds me a lot about it, with the compile time stuff etc
+
+1557924962
+daurnimator
+rivten: yes I think that's i
+
+1557924964
+daurnimator
+*it
+
+1557925130
+rivten
+thanks a lot daurnimator :) :)
+
+1557926472
+tgschultz
+very-mediocre: re: you just need a pointer to an allocator: what do I pass the pointer to? the function would depend on the type. Ok, so next you store the function pointer too... and now you've lost all error set information again.
+
+1557926483
+tgschultz
+in fact, you have status quo interfaces
+
+1557926643
+tgschultz
+rivten, I'd make a github issue about it. It doesn't really matter who's wrong. If it is LLVM and we need to upstream a fix we probably still want a record of it, and even if it is the OS or something we still need a workaround.
+
+1557926680
+rivten
+tgschultz you are talking about my email ? you have already read it ? ^^"
+
+1557926691
+rivten
+oh no sorry
+
+1557926695
+rivten
+didn't really understand :p
+
+1557926696
+rivten
+okok
+
+1557926707
+rivten
+well it's too late as I've just sent the mail :/
+
+1557926753
+tgschultz
+it is possible to do both. I haven't read the email yet, I just got to work and was catching up on IRC.
+
+1557927139
+very-mediocre
+tgschultz: i'm clearly missing something fundamental, i have it so the error sets in the hypothetical zig-with-polymorphism would be known as the error types of any allocator function of an allocator implementing the allocator interface would be the same
+
+1557927179
+very-mediocre
+I don't want to impose, if you gotta work we can defer this discussion or I'll review it later with a fresh mind :]
+
+1557927188
+very-mediocre
+and attempt to figure it out
+
+1557927218
+tgschultz
+that's true for Allocator, but it isn't at all true of Streams.
+
+1557927235
+very-mediocre
+ohh, I see what you're getting at
+
+1557927263
+very-mediocre
+fair enough, I kind of left that loose with a vague notion that they'd standardize that
+
+1557927318
+very-mediocre
+as in, with the knowledge that interfaces are a thing, and that streams are meant to be consumed a certain way, you might have an interface-esque standardization of the error sets
+
+1557927377
+tgschultz
+yeah. There's potentially an argument to be made that error sets are more problematic then they are worth, but for now I'm trying to work out how to preserve that information when possible.
+
+1557927409
+very-mediocre
+my instinct is for the error set to be part of the interface
+
+1557927428
+very-mediocre
+as in a stream can throw certain types of errors
+
+1557927478
+very-mediocre
+i have not thought this part through though, i kind of relegated it to a secondary place in the discussion as i was drooling over interfaces :)
+
+1557927502
+companion_cube
+this kind of things have been studied in academia, btw
+
+1557927504
+tgschultz
+that could be done, but then a lot of the usefulness of error sets for IO go away.
+
+1557927534
+tgschultz
+and maybe that's ultimately where we'll end up, but I don't want to give up just yet.
+
+1557927554
+very-mediocre
+i appreciate uncompromisingness
+
+1557927559
+very-mediocre
+if that's even a word
+
+1557927600
+very-mediocre
+i guess you could support a superset of the errors defined in an interface
+
+1557927600
+tgschultz
+english is flexible about these things
+
+1557927664
+very-mediocre
+like say you were to support an error set defined by the hypothetical IStream interface, that doesn't prevent you from returning other errors
+
+1557927677
+very-mediocre
+all the interface does is guaranteeting a certain set exists
+
+1557927680
+tgschultz
+Then it may as well be anyerror
+
+1557927706
+tgschultz
+because I'll still need an else prong to cover cases of unknown errors being thrown
+
+1557927710
+very-mediocre
+hmmm, true
+
+1557927756
+very-mediocre
+bold suggestion: i would ditch error sets
+
+1557927759
+tgschultz
+which is what I do for runtime/abstracted Stream interfaces, but I thik that's acceptable if you need to abstract, but you don't always and in those cases you'd want to have the error sets.
+
+1557927764
+tgschultz
+That has been suggested
+
+1557927770
+very-mediocre
+and replace them with polymorphic error struct thingies
+
+1557927787
+tgschultz
+....isn't that just ErrorSets with a different name?
+
+1557927815
+very-mediocre
+possibly, i have not thought this through deeply
+
+1557927836
+very-mediocre
+actually you're right, that was silly of me
+
+1557927846
+very-mediocre
+i was trying to mirror the dynamic that works for interfaces
+
+1557928000
+very-mediocre
+actually it's different from anyerror
+
+1557928038
+very-mediocre
+it'd contain the expanded set (errors guaranteed by interface compliance + other errors the interface implementor might return)
+
+1557928046
+very-mediocre
+but that's still not the global error set
+
+1557928076
+very-mediocre
+although you are right in the bigger picture, that this information has to be stored somehow
+
+1557928080
+very-mediocre
+and i don't know how that'd work
+
+1557928156
+very-mediocre
+and again you are right that in comptime this is a non-issue
+
+1557928196
+very-mediocre
+the actual error set can be inferred if the interface implementor (with interface-defined errors + its own errors) is comptime-known
+
+1557928229
+very-mediocre
+i'm slower than you but i've reached the same conclusion as you now :)
+
+1557928258
+very-mediocre
+i would like this level of compiler validation for comptime known interface implementors, and runtime ought to be OK with anyerror
+
+1557928348
+kristoff_it
+hi all, question: is it possible to have a tentative comptime execution and bail out of it in case it can't be solved? I'm thinking something like receiving a slice in input to a function and trying to test its length. If it's backed by static memory, if I understand correctly, .len is known at comptime. So I wanted to try and make it a comptime error to pass a slice with the wrong length, when possible.
+
+1557928454
+tgschultz
+.len is known at comptime for arrays, slices explicitly are not known length at comptime. You could take a pointer to an array? I'm struggling to understand what you're trying to do here.
+
+1557928560
+tgschultz
+rivten: unsure if it is related to your issue, but it is worth noting that on Windows DirectAllocator has state, but it doesn't on Linux. Issues involving DirectAllocator will show up in Windows and not Linux. I don't see an obvious way that DirectAllocator could be the cause here, but it is something to consider.
+
+1557928636
+rivten
+tgschultz, thanks a lot for the heads up :) hmmm yeah, something to consider probably, I'll keep that in mind when I'll investigate further
+
+1557928657
+tgschultz
+very-mediocre: I've been thinking about this problem for a long time now, so you're not necessarily slower.
+
+1557928773
+very-mediocre
+the lack of ego is appreciated :}
+
+1557928968
+kristoff_it
+tgshultz: I have the .init function for my filter struct that takes slices, sometimes the slice is backed by static memory, sometimes by dynamic memory. I was wondering if I could statically check its length at comptime for the former case. Anyway you told me the answer: it's not possible unless I start generalizing the function, which I'd like not to do, for now.
+
+1557929016
+kristoff_it
+ehm sorry for butchering your name, tgschultz
+
+1557929056
+tgschultz
+there are something like 7 different spellings of "schultz" in the world, I am not offended.
+
+1557929111
+daurnimator
+kristoff_it: use tab completion :)
+
+1557929176
+tgschultz
+yeah, to do what you want to do, you'd take `var` and use if (comptime std.meta.trait.isArray(@typeOf(param))) { //do the array thing } else { //do the slice thing }. The optimizer might do the right thing anyway.
+
+1557929201
+tgschultz
+daurnimator: that assumes the IRC client has tab completion
+
+1557929239
+daurnimator
+tgschultz: I haven't seen one that doesn't
+
+1557929271
+kristoff_it
+tgschultz: daurnimator: it does have it, thanks, it's been a while since I last used IRC, I forgot too many things about the ecosystem
+
+1557929281
+tgschultz
+or actually, if you took `var` you could just check param.len since both arrays and slices have it... assuming we got around to implementing `.len` on pointers to arrays...
+
+1557929301
+kristoff_it
+I still remember downloading songs and tv shows from bots though :)
+
+1557929349
+daurnimator
+I feel like I'm going crazy trying to figure out how to implement zig's allocator contract for alignment
+
+1557929401
+daurnimator
+The problem is that when I align the returned pointer.... I need to move all the allocation metadata with it!
+
+1557929422
+daurnimator
+otherwise I can't recover the metadata from the pointer at free-time
+
+1557929616
+daurnimator
+so I've ended up with a structure like: [-<>-align space-<>-|-<>-size of align space-<>-|-<>-bucket_len-<>-|-<>user's data<>-] where every member is variably sized, and the whole structure is aligned to pointer requirements
+
+1557929720
+daurnimator
+so if you have the pointer to start of user's data, you first recover the bucket_len, then look up the bucket metadata, and use that to find out the size of the size of the align space, then use that to find the pointer to the start of the structure
+
+1557929804
+daurnimator
+why is it all variable sized? so that metadata overhead is proportional to the size of the allocation. <128 byte allocation? => 2 bytes of metadata.
+
+1557930954
+daurnimator
+and infact, if the allocation is not aligned more than a pointer, then only 1 byte of metadata is required.
+
+1557931162
+scientes
+daurnimator, Arena allocator doesn't need any metadata
+
+1557931170
+scientes
+and is ideal for many use-cases
+
+1557931238
+daurnimator
+scientes: I'm not sure what your point is... is that just a non-sequitur?
+
+1557931424
+scientes
+oh, yes it is, I didn't read the whole context
+
+1557931475
+scientes
+also look at google tcmalloc()
+
+1557931494
+daurnimator
+scientes: keep reading that context....
+
+1557931507
+daurnimator
+> trying to finish my non-radixtree/non-mapletree version
+
+1557931534
+scientes
+you could just give the user an allocation the size of the alignment
+
+1557931545
+scientes
+and never smaller
+
+1557931549
+daurnimator
+how would that help?
+
+1557931561
+scientes
+then you wouldn't have to worry about alignment
+
+1557931567
+scientes
+you just bump the size
+
+1557931585
+daurnimator
+Howso? I could end up giving them a 4096 byte aligned to 4
+
+1557931605
+scientes
+like if they ask for 2 aligned to 4, you give them 4 aligned to 4
+
+1557931657
+daurnimator
+that's actually worst case for allocation efficiency
+
+1557931679
+scientes
+otherwise you need specialized pools
+
+1557931691
+scientes
+which is half 2 aligned 4 and half 2 aligned 2
+
+1557931706
+daurnimator
+because when I need to store the metadata for a e.g. 4096 byte bucket, I would use 4 bytes for the metadata; then waste 4092 bytes for alignment :P
+
+1557931744
+scientes
+but why do you need metadata, the caller has the pointer and the length
+
+1557931763
+daurnimator
+metadata includes which bucket it came from; so that I know which freelist to add it to
+
+1557931782
+scientes
+that can be determined by the pointer
+
+1557931796
+scientes
+and a routing table of pools
+
+1557931804
+daurnimator
+> trying to finish my non-radixtree/non-mapletree version
+
+1557931843
+scientes
+well, if you aren't going to optimize it then just leave it unoptimized
+
+1557931849
+scientes
+premature optimization is the root of all evil
+
+1557931852
+daurnimator
+it
+
+1557931861
+scientes
+I don't see why you wouldn
+
+1557931865
+scientes
+wouldn't want a radix tree
+
+1557931869
+tgschultz
+he's just using a different strategy
+
+1557931885
+daurnimator
+because the radix tree approach has terrible performance in certain multithreaded workloads
+
+1557931896
+daurnimator
+I'm using the other main approach
+
+1557931899
+scientes
+not if you look at tcmalloc, i believe
+
+1557931910
+scientes
+and have thread-specific pools
+
+1557931928
+scientes
+you can also have differn't pools for differn't data structures
+
+1557931952
+scientes
+by specializing the allocator with a pool option
+
+1557931954
+daurnimator
+now you can mitigate the radix tree overhead (as tcmalloc does). but that requires a huge amount of work; and hooks into thread creation+destruction
+
+1557931975
+daurnimator
+now if you have pool allocators, you don't really want to be hooking thread create/destroy: as pools become no longer cheap
+
+1557931987
+scientes
+it would also be cool if it could work with the MMU and page tables
+
+1557931999
+scientes
+but i don't think that is reasonable
+
+1557932003
+daurnimator
+the tcmalloc approach only really works well when it is the process wide allocator
+
+1557932032
+daurnimator
+now... jemalloc has a few ways around that.. but that would probably be 5 years of work to replicate.
+
+1557932036
+scientes
+daurnimator, you could also have a getcpu() function, and then have per-cpu pools
+
+1557932071
+scientes
+that would make it more NUMA aware
+
+1557932100
+daurnimator
+NUMA barely matters for this sort of thing, it's mainly about keeping things within a cache line
+
+1557932157
+scientes
+I still think more use of arena allocators is a huge potential for improovement
+
+1557932169
+daurnimator
+anyway, the approach I'm taking is a classic well-worn road in other languages/libraries
+
+1557932169
+scientes
+as the best way to improove efficiency is to do LESS
+
+1557932181
+daurnimator
+the trouble is that zig's allocator interface has alignment... no others do
+
+1557932193
+daurnimator
+it really confounds the whole structure
+
+1557932194
+scientes
+yes they do
+
+1557932212
+scientes
+well, malloc max alignment is the max alignment requires by the ABI
+
+1557932215
+scientes
+it can't go higher
+
+1557932231
+scientes
+while zig's is suitable for circular buffers
+
+1557932249
+daurnimator
+scientes: C malloc maxes out at long double alignment.
+
+1557932259
+daurnimator
+which gives you a small upper bound
+
+1557932263
+daurnimator
+which would be easy for me to take care of
+
+1557932278
+daurnimator
+but.... zig's allocator interface doesn't have that
+
+1557932297
+scientes
+again, I think you should just bump the size, except for an exception at common page sizes: 4K, 64K and 2M
+
+1557932346
+daurnimator
+that's a huge waste that usurps the whole point of the design
+
+1557932465
+scientes
+you can pool these metadatas
+
+1557932511
+daurnimator
+you're going in loops here
+
+1557932532
+scientes
+just take the pointer, subtract the mmap base of that alignment bucket, and then access it as a growing downwards array
+
+1557932562
+kristoff_it
+oh no, why is this syntax not supported?
+
+1557932572
+scientes
+so the metadata grows the other direction as the pool
+
+1557932683
+very-mediocre
+kristoff_it: this compiles
+
+1557932712
+kristoff_it
+that's interesting
+
+1557932714
+very-mediocre
+just need curly braces for your second switch case
+
+1557932730
+very-mediocre
+and also change `!void` to `void` because you're not returning any errors.
+
+1557932742
+kristoff_it
+sure it was just a simplified example
+
+1557932778
+scientes
+very-mediocre, you need the curly braces to have code in the switch
+
+1557932801
+scientes
+just like with if and while, et cetera
+
+1557932804
+very-mediocre
+indeed.
+
+1557932814
+scientes
+it doesn't do the same-line thing that if and while does
+
+1557932819
+scientes
+and for
+
+1557932840
+scientes
+maybe it should
+
+1557932853
+very-mediocre
+i'd like that because i'm lazy
+
+1557932875
+kristoff_it
+I have some code that doesn't have those curly braces around .warn and that compiles
+
+1557932888
+kristoff_it
+inside a catch |err| switch (err) ...
+
+1557932899
+scientes
+that's cause you have a lvalue there
+
+1557932926
+kristoff_it
+true
+
+1557932948
+kristoff_it
+although I can't see all the implications of that difference
+
+1557932975
+tgschultz
+this also works:
+
+1557932976
+scientes
+i think it should be supported for same-line
+
+1557932996
+very-mediocre
+tgschultz: wellthereitis.gif
+
+1557933007
+very-mediocre
+good catch, that's subtle
+
+1557933019
+scientes
+ahhh yes i knew that
+
+1557933088
+very-mediocre
+i just wrote code like that too... |:
+
+1557933099
+kristoff_it
+tgschultz: ah nice thanks.
+
+1557933188
+kristoff_it
+it's a bit confusing when the semicolon is required and when it's not. now I see that it was not needed, because it never is in a switch case, unless you open a nested block
+
+1557933194
+kristoff_it
+but I got confused in the beginning
+
+1557933214
+tgschultz
+error message could possibly be a little better in cases like that. Maybe ',' should be mandatory in such lists, even at the end. Then it would have said it expected ',' and got ';'
+
+1557933229
+kristoff_it
+yeah true
+
+1557933250
+scientes
+also needs a error message when you try to do math on a function pointer
+
+1557933256
+scientes
+instead it just crashes
+
+1557933272
+tgschultz
+yeah, that's a bug
+
+1557933293
+scientes
+gcc/clang have a good error message for that
+
+1557933343
+tgschultz
+though, one could argue that function pointers should be compatable with pointer arithmetic. I can't think of a usecase offhand though. Some kind of dispatch table?
+
+1557933364
+scientes
+they can't because they require the linker to resolve the symbol
+
+1557933387
+tgschultz
+only for relocatable code
+
+1557933396
+scientes
+even with static linking
+
+1557933404
+tgschultz
+what about with no linking?
+
+1557933420
+scientes
+then llvm links it
+
+1557933460
+scientes
+And I just proposed a llvm optimization that would definitely not work with such a thing
+
+1557933483
+scientes
+but it still is linked
+
+1557933486
+scientes
+
+
+1557937015
+kristoff_it
+what's the equivalent of this line but without the zeroing? I can't figure out how to mix = undefined with align()
+
+1557937018
+kristoff_it
+here's the line: var memory align(cuckoo.Filter8.Align) = []u8{0} ** memsize;
+
+1557937237
+andrewrk
+var memory: [memsize]u8 align(8) = undefined;
+
+1557937243
+andrewrk
+var memory align(8) = ([memsize]u8)(undefined);
+
+1557937249
+andrewrk
+these are semantically equivalent
+
+1557937300
+andrewrk
+that's a strange place to put the alignment annotation, probably it can move to after the `var` or `const`
+
+1557937316
+kristoff_it
+oh dammit I tried every possible combination, except placing align at the end of the type
+
+1557937320
+kristoff_it
+thanks
+
+1557937349
+kristoff_it
+usually with slices is []align(N) u8, right?
+
+1557937481
+andrewrk
+right for pointers & slices the align annotation is after the pointer sigil
+
+1557937536
+andrewrk
+zig doesn't have syntax for alignment annotations on parameters yet, but that's another place they belong
+
+1557937548
+andrewrk
+that will probably be before the parameter name
+
+1557937947
+kristoff_it
+im very satisfied, I think I got a very good interface out of my cuckoo filter implementation, definitely much better than anything I would have been able to come up with if left alone in a room with C and the preprocessor.
+
+1557937987
+kristoff_it
+thanks for helping me through the alignment stuff (tgschultz in primis)
+
+1557938090
+kristoff_it
+a couple more features (e.g. a few exported functions for C usage) and I think it might be perfect software, at least from my point of view :)
+
+1557938105
+kristoff_it
+looking forward to make a package out of it in the future
+
+1557938158
+andrewrk
+sweet
+
+1557938194
+kristoff_it
+also andrewrk: I'm looking forward to try to write a Redis client in Zig once the networking stuff is ready, I think hiredis (the C client) needs competition
+
+1557938233
+kristoff_it
+I have great plans about automatically filling structs and various containers with data coming from redis using clever comptime reflection
+
+1557938265
+andrewrk
+yeah! for sure the M:N threaded event-based I/O will be very competitive in terms of performance. as long as we can make data races / threaded issues not be footguns
+
+1557938349
+kristoff_it
+cool, I'm also interested in blowing some minds. This is taken from the protocol specification, it's about Hash maps coming from redis:
+
+1557938352
+kristoff_it
+`Client libraries should return Maps using the idiomatic dictionary type available. However low level languages like C will likely still return an array of items, but with type information so that the user can tell the reply is actually a dictionary.`
+
+1557938418
+kristoff_it
+can't wait to see people make a weird face when I say that I can do both with one function definition :)
+
+1557941420
+donpdonp
+i see std.json has a parser from json_string to ValueTree, but I dont see a json builder - is there one?
+
+1557943952
+DutchGh0st
+I found another bug :3
+
+1557944961
+tgschultz
+me too, it's a new one for me, I've never encountered  `assert(mem_len != SIZE_MAX);` before.
+
+1557945095
+DutchGh0st
+did you alloc(@maxValue(usize)) ? :3
+
+1557945184
+DutchGh0st
+or std.math.maxInt these days
+
+1557945286
+shollrollah951
+Hi guys. I've been adding experimental support for zig in the geany-IDE. It's quite rough, but at this point it is possible to keep refining it:
+
+1557945332
+shollrollah951
+Aside from that, what programming environments are people here using for zig?
+
+1557946702
+tgschultz
+DutchGh0st it's a compiler assert trying to run tests
+
+1557946732
+tgschultz
+tests I didn't even modify I might add
+
+1557946742
+DutchGh0st
+mh?
+
+1557946795
+tgschultz
+shollrollah951: I don't use an IDE personally.
+
+1557946854
+tgschultz
+I think this is some kind of namespace loop, but it occurs even when using --override-std-dir
+
+1557947562
+tgschultz
+interesting, has to do with the usage of @import("../std.zig") pattern, which I don't think is necessary anymore.
+
+1557947588
+tgschultz
+it appears it is infinitely appending the directory
+
+1557949853
+nrdmn
+is it possible to write generators with zig's coroutines?
+
+1557949885
+andrewrk
+currently no
+
+1557949993
+hoppetosse
+shollrollah951: I use vscode in C mode, as the syntax highlighting is reasonable and you end up being able to use the gdb debugger integration to peek into variables and stuff
+
+1557950109
+shollrollah951
+hoppetosse: Isn't there a zig plugin for vscode?
+
+1557950129
+hoppetosse
+Yes, there is, but it doesn't work with the debugger
+
+1557950145
+shollrollah951
+I see.
+
+1557950169
+hoppetosse
+In c mode, you can literally use a graphical debugger, set breakpoints, watch vars =)
+
+1557950177
+hoppetosse
+it pretty much just works
+
+1557950185
+shollrollah951
+That's great.
+
+1557950202
+hoppetosse
+it doesn't know about slices and stuff, but it usually decays to a pointer
+
+1557950239
+shollrollah951
+You can't set breakpoints inside geany, but I think there is a plugin for it with gdb support.
+
+1557950469
+hoppetosse
+geany was my fav editor for a long time
+
+1557950486
+hoppetosse
+been a while since I've used it
+
+1557950491
+hoppetosse
+is there a windows version?
+
+1557950507
+shollrollah951
+I think there is.
+
+1557950510
+hoppetosse
+yes there is!
+
+1557950580
+shollrollah951
+If you wanna test geany with zig, you can just get the default version and then add the basic language support file I made.
+
+1557950604
+shollrollah951
+"For lightweight support (syntax highlighting) for zig in a regular geany release: copy "/data/filetypes/filetypes.ZigBasicSupport.conf" from this repository into "$/.config/geany/filedefs"."
+
+1557950739
+shollrollah951
+my forked geany version only has proof-of-concept support for zig really, so it might not be worth the trouble to compile it when just this one config file gets you basic support.
+
+1557952223
+andrewrk
+triplefox, ah, I just sent you an email
+
+1557953266
+triplefox
+@andrewk i'm looking at that rn
+
+1557954372
+shritesh
+andrewrk: Just saw your ping. I am between moving and vacations rn. Does the PR affect all wasm freestanding binaries or just those compiled with libc?
+
+1557956322
+andrewrk
+shritesh, all wasm freestanding binaries. in summary you'll usually want to use build-lib instead of build-exe when targeting the browser
+
+1557961081
+tgschultz
+so is it just the compiler being a dick to me, or does `Struct`sometimes magically become *const Struct after passing through a few functions, none of which ever take *const Struct?
+
+1557961201
+tgschultz
+@compileLog even confirms it isn't *const
+
+1557961218
+tgschultz
+immediately before the call where it complainst that it is *const
+
+1557961382
+tgschultz
+`self.bytes(rand_bytes[0..]);` => 'derp, I'm magically *const!' => `@typeOf(self).bytes(self, rand_bytes[0..]);` no problems.
+
+1557962206
+tgschultz
+this is extremely annoying
+
+1557962518
+tgschultz
+...and it defies minimization. That's great.
+
+1557963588
+mikdusan1
+tgschultz: is it possible you have 2 definitions of bytes(), one inside struct, one outside?
+
+1557963609
+tgschultz
+no
+
+1557963659
+tgschultz
+if I put a compile log immediately before the statement that fails, it tells me @typeOf(self) is Struct, followed immediately by the compile error that it expected Struct and got *const Struct
+
+1557963696
+tgschultz
+thus far I have been unable to reproduce it in a minimal test case. Also, Struct passed through about 5 other functions with no issue before mysteriously failing on this one.
+
+1557963747
+tgschultz
+I really wanted this one to be my fault so I could fix it and move on, but as far as I can tell there's just something about this situation that causes the compiler to derp, so I'm blocked.
+
+1557963815
+tgschultz
+more to your question: There are 2 occurances of the word 'bytes' in that file. One is the definition and the other is the call
+
+1557963900
+tgschultz
+I'm also fairly confident this issue is unique to comptime evaluation
+
+1557963952
+mikdusan1
+oh yeah sometimes running the comptime guantlet something comes up as const. i seem to recall something like that. and it was actually my own fault, just the compiler error didn't pinpoint it.
+
+1557964021
+tgschultz
+I'm fairly confident it isn't my fault this time
+
+1557964024
+tgschultz
+I wish it were
+
+1557964103
+tgschultz
+there's a call to a function taking *Struct. The call gets evaluated just fine, but the an assignment complains about it being const. Comptime is just randomly deciding things are const in the middle of evaluations it looks like.
+
+1557964486
+mikdusan1
+`@typeOf(self).bytes(self, rand_bytes[0..]);` <-- what happens if you change to `@typeOf(self.*).bytes(self, rand_bytes[0..]);`
+

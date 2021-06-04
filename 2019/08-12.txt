@@ -1,0 +1,2392 @@
+1565568014
+daurnimator
+tav: doc parsing+rendering is on the roadmap
+
+1565568024
+andrewrk
+tav,  not yet. see:
+
+1565568025
+daurnimator
+tav: but yes, there is a zig parser in zig
+
+1565568033
+andrewrk
+for the second question, see the std.zig module
+
+1565568136
+tav
+thanks
+
+1565568694
+daurnimator
+andrewrk: er, looking at that paste; which is the location where the return-as-cancellation point is required?
+
+1565568817
+andrewrk
+daurnimator, have a look at the mmap/munmap in strace with different values of simulate_fail_* constants
+
+1565568842
+andrewrk
+you'll notice that no resources leak because cancel causes the errdefers in scope to run before completing the return statement
+
+1565568892
+fengb
+andrewrk: what if non async functions are noncancellable by default?
+
+1565568962
+andrewrk
+I'm not satisfied with that solution
+
+1565569250
+daurnimator
+andrewrk: I'm still lost/confused
+
+1565569632
+daurnimator
+
+
+1565569671
+daurnimator
+I get output
+
+1565569712
+daurnimator
+And I am confused by the fact that `cancel download_frame` causes "fetchUrl returning" to happen
+
+1565569802
+daurnimator
+I guess that's done so that you can e.g. call some cancellation API
+
+1565569824
+daurnimator
+But I still don't then follow about why/how `return` is a cancellation point
+
+1565569893
+andrewrk
+daurnimator, `cancel download_frame` does nothing except for suspend until download_frame finishes
+
+1565569926
+andrewrk
+when fetchUrl gets to the return statement, it will run the errdefer as well as defers because it has been cancelled
+
+1565570072
+andrewrk
+you can think of `cancel` as being the same thing as `await` except you are choosing not to accept the return value
+
+1565570181
+daurnimator
+andrewrk: why not have it just immediately after the `suspend`?
+
+1565570198
+daurnimator
+*just immediately stop (after running any deferred handlers)
+
+1565570227
+andrewrk
+you're proposing to make every suspend point a cancellation point?
+
+1565570283
+daurnimator
+uh. yes?
+
+1565570447
+andrewrk
+one of the improvements I made from master branch is to change it so that suspend is no longer a cancellation point. it greatly simplified the semantics, ease of understanding, and better aligns with async-functions-are-just-functions
+
+1565570461
+andrewrk
+the performance is better as well
+
+1565570462
+tav
+newbie question: the documentation implies that there is support for var_args, but there's no example given — any pointers?
+
+1565570502
+andrewrk
+tav, avoid var args for now, it's about to get removed in favor of tuples or something like that. you can look at std.fmt.format for an example of var args
+
+1565570505
+daurnimator
+tav: `fn foo(blah: u32, args: ...) void {` now use args like an array, but of mixed types
+
+1565570588
+tav
+"variadic" tuples?
+
+1565570589
+andrewrk
+there are plenty of things that would benefit from being reconsidered, but I'm confident in how `suspend` and `resume` work in this branch being correct.
+
+1565570707
+daurnimator
+FWIW we still need to be able to support varags for C interop: but that vararg handling would be different too.
+
+1565570753
+daurnimator
+andrewrk: I don't expect a directive called "cancel" to make something "keep going"....
+
+1565570827
+andrewrk
+it doesn't make it keep going. it will keep going all by itself.
+
+1565570837
+andrewrk
+cancel sets a flag and then suspends until it finishes
+
+1565570875
+andrewrk
+"I'm not going to accept your return value, so stop as soon as you can. Wake me up when you're done."
+
+1565570972
+daurnimator
+oh right... and cancel can happen at
+
+1565570982
+daurnimator
+(e.g. if you cancel from another thread?)
+
+1565571000
+andrewrk
+yes, it's atomic. the least significant bit of the awaiter frame pointer is used as the cancel bit
+
+1565571053
+andrewrk
+@cancelRequested() is essentially an @atomicLoad followed by @truncate(u1)
+
+1565571078
+andrewrk
+suspend doesn't have any reason to check the awaiter pointer or cancel bit. it makes sense that it would be a separate, explicit request
+
+1565571098
+daurnimator
+okay that makes sense
+
+1565571122
+andrewrk
+it also means that suspending inside defer and errdefer is now allowed (was not allowed in master branch)
+
+1565571154
+andrewrk
+note that `async fn Drop` is a much-desired feature that Rust does not (and cannot without significant design changes) have
+
+1565571165
+daurnimator
+so going further: the "cancellation point" in 'return' is to run any defers or errdefers?
+
+1565571170
+andrewrk
+equivalent in zig being the ability to suspend inside defers
+
+1565571212
+andrewrk
+yes that's it, it's just that `return` might run your errdefers even if you didn't return an error
+
+1565571308
+daurnimator
+that's..... odd
+
+1565571441
+andrewrk
+that's the one thing that affects normal functions: we are introducing the ability to do a function call, but then say "never mind, don't give me the result."
+
+1565571594
+daurnimator
+erk, I can't think of many ways around this that don't essentially boil down to "introduce RAII"
+
+1565571965
+andrewrk
+daurnimator, here's the other way to do this:
+
+1565572003
+andrewrk
+with this way of writing code, we could get rid of `cancel`. but then returning an error is not allowed in between async/await calls
+
+1565572038
+andrewrk
+(this does compile & run in the branch btw; it's strictly simpler)
+
+1565572121
+andrewrk
+IMO having an area of code where you can't use `try` is a pretty huge downside
+
+1565572156
+Tetralux
+its also not obvious why
+
+1565572189
+scientes
+why can't you just _ = await, and would be cancel?
+
+1565572306
+scientes
+nvm
+
+1565572593
+daurnimator
+andrewrk: if every .init() is meant to be paired with a .deinit().... perhaps we should annotate that on return types?
+
+1565572633
+mikdusan
+is this one way to bail early from inside async fn? `suspend; if (@cancelRequested()) return;`
+
+1565572643
+daurnimator
+like.... `fn init() cleanup(.deinit) @This() { ..... `
+
+1565572653
+daurnimator
+mikdusan: yes.
+
+1565572655
+andrewrk
+mikdusan, yes, that's the idea.
+
+1565572663
+andrewrk
+there are a couple of syntaxes I'm considering
+
+1565572674
+daurnimator
+mikdusan: though you obviously need to return
+
+1565572693
+andrewrk
+well that's the thing though. if you're returning due to a cancel, you actually don't have to return anything. the caller is not interested in the return value
+
+1565572713
+andrewrk
+you also don't want to necessarily return an error because it will add an incorrect error set item to your signature
+
+1565572724
+andrewrk
+which is why I'm considering this `cancelpoint` block:
+
+1565572763
+andrewrk
+so you'd start a cancelpoint {} block, and have the option to break out of it if you want to, if you change your mind. but if you let it get to the end then your fn returns (no value), and runs defers/errdefers at that point
+
+1565573073
+mikdusan
+what does block syntax for suspend do? `suspend { ... }`
+
+1565573120
+andrewrk
+the suspend starts at the beginning, before entry into the block. so if `resume` happens on your @frame() it will begin executing after the suspend point - potentially racing with the code inside the suspend block
+
+1565573177
+andrewrk
+so for example, if a function wants to put itself into an epoll set, it's going to call epoll_add(@frame()) or something like that, right? but as soon as that syscall starts, it could get resumed in another thread. so you actually need to be suspended before making the syscall
+
+1565573228
+mikdusan
+(heh i was going to suggest make the block a cancelpoint)
+
+1565573262
+daurnimator
+andrewrk: `canceldefer`?
+
+1565573275
+daurnimator
+I guess it's not really deferred
+
+1565573319
+fengb
+`cancel cancelpoint` :P
+
+1565573358
+daurnimator
+I like that idea; just not the token 'cancelpoint'. `ifcancelled` is ugly....
+
+1565573527
+daurnimator
+(and has the spelling issues mentioned on stream)
+
+1565573696
+daurnimator
+andrewrk: I guess re-open 782?
+
+1565579541
+tav
+is there some way to annotate struct fields with tags by any chance?
+
+1565579761
+daurnimator
+tav: 'tags'? and why?
+
+1565579920
+andrewrk
+
+
+1565579940
+tav
+so, in languages like Go, one can annotate a struct field with tags, e.g. `json:"some_name,omitempty" postgres:"varchar(66);primary_key;not null"`, etc.
+
+1565579984
+daurnimator
+tav: okay so those sort of tags. yeah see e.g.
+
+1565580279
+tav
+sorry, I don't understand what the implications are of using `@field(ptr, f.name)` as an lvalue — does it set the value of the field when used on the lhs?
+
+1565580375
+tav
+and is the general idea in the comment that you could use a secondary data structure to hold/lookup the tag info?
+
+1565580408
+daurnimator
+yeah. or other decoding/encoding perculiarities.
+
+1565580493
+tav
+nice. it's certainly richer/more flexible — albeit at the cost of having to duplicate field names and keep them in sync
+
+1565580525
+tav
+what does it mean to assign to `@field(ptr, f.name)` btw?
+
+1565580525
+daurnimator
+should be a compiler error if something is mismatched
+
+1565580560
+daurnimator
+tav: essentially `@field(ptr, "foo")` is the same as writing `ptr.foo`. but it allows you compute "foo" at comptime.
+
+1565580596
+tav
+nice
+
+1565580603
+andrewrk
+@field gives you direct access to `a.b` syntax, except `b` is a comptime string
+
+1565580613
+tav
+alright, no need for struct tags then :)
+
+1565580819
+tav
+are there any existing libraries for formats like json/protobuf/etc. by any chance?
+
+1565580876
+andrewrk
+std.json exists
+
+1565580878
+daurnimator
+tav: there's some json basics in the standard library
+
+1565580974
+tav
+thx
+
+1565581054
+tav
+if one wants to emit different asm based on compiler target, then is the idea to do that using comptime?
+
+1565581063
+daurnimator
+tav: yep.
+
+1565581077
+daurnimator
+tav: have a look at std/valgrind.zig
+
+1565582279
+andrewrk
+it looks like there are 2 ways in which
+
+1565582319
+andrewrk
+1. lazy values is needed to resolve some false positive circular dependency loops regarding frames (such as ability for an async function to destroy its own frame in a defer)
+
+1565582386
+andrewrk
+2. release mode builds are failing tests right now because optimizations do vectorizations on sret pointers which introduces a 16 byte alignment requirement, and alignments of variables are currently not respected in async functions, so this functionality is needed to address the problem
+
+1565582424
+andrewrk
+so that's the next thing I'm going to work on. I think it'll be best to do in master branch and then deal with the merge conflicts
+
+1565582481
+daurnimator
+sounds good
+
+1565582537
+andrewrk
+good night
+
+1565582814
+mikdusan
+ghost is popular. he has 1.9k followers.
+
+1565582854
+daurnimator
+idea while reading over #2201 .....  what if slices were 'duck typed' where you could pass anything with `.ptr` and `.len` members?
+
+1565582892
+daurnimator
+could also help with #2255....
+
+1565582909
+tav
+g'nite andrewrk
+
+1565583027
+tav
+I'm off too — and thanks everyone for a very helpful first day in the community
+
+1565583537
+mikdusan
+#2255 syntax would restrict field names to never be { .ptr, .len }
+
+1565583705
+daurnimator
+mikdusan: howso?
+
+1565583760
+daurnimator
+oh right
+
+1565583761
+daurnimator
+interesting
+
+1565583773
+daurnimator
+I hadn't thought about it from that angle
+
+1565596108
+dftxbs3e
+hi, how big can the zig std make a program for say, basic network I/O?
+
+1565596343
+gonz_
+Network stuff is currently a bit in flux since it'll be impacted quite heavily by the async/await rewrite.
+
+1565607293
+mschwaig
+andrewrk, if you are looking into struct alignment you might want to take a look at
+
+1565613389
+bheads
+andrewk, what about   cancledefer;
+
+1565616300
+fengb
+
+
+1565616530
+fengb
+bheads: I like having cancel be an error state. It feels a little weird but I can't think of many cases where I don't want to run errdefers on cancel
+
+1565616670
+mq32
+fengb: there was some discussion about cancel the last days, could you do a tl;dr? I'm interested in this topic, but i don't have the full chat log
+
+1565616749
+fengb
+It's primarily discussing semantics from the stream
+
+1565616760
+mq32
+ah
+
+1565616773
+fengb
+Any async function can be cancelled
+
+1565616779
+fengb
+And cancellation triggers errdefers
+
+1565616796
+mq32
+yeah i have some question on that topic too, but they are kinda special^^
+
+1565616830
+mq32
+the current cancel semantics is that the function runs till the end, but then returns an error instead of a value, right?
+
+1565616922
+fengb
+Current meaning current rewritten behavior?
+
+1565616986
+mq32
+yes
+
+1565617021
+fengb
+There's a discussion of what it means to error out. Returning an error doesn't make sense since there's no "return point". Cancel implies "go away, I don't care about your response"
+
+1565617072
+fengb
+There's also an explicit cancellation point. If you add a special `error.Cancelled`, you have an extra error value that's never supposed to be a part of the API
+
+1565617091
+mq32
+yeah
+
+1565617097
+mq32
+my use case would be "endless coroutines"
+
+1565617099
+mq32
+like
+
+1565617118
+mq32
+fn foo() { while(1) { /* do stuff */ await nextFrame(); } }
+
+1565617141
+mq32
+which is a convenient way to express game object logic
+
+1565617161
+fengb
+
+
+1565617188
+fengb
+The tail end of this discussion is pretty good
+
+1565617239
+fengb
+mq32: that's not possible based on current semantics as async functions can only be awaited once. We'll need generators for multiple awaits
+
+1565617314
+fengb
+andrewrk just mentioned that he's open to generators and async generators on stream so that might be a thing
+
+1565617375
+mq32
+hmm
+
+1565617396
+mq32
+is multiple resumes a thing in the new system?
+
+1565617408
+mq32
+andrew didn't show that in the stream, but it may be required by some functions
+
+1565617421
+fengb
+Yes, but there's only 1 return value
+
+1565617484
+fengb
+Once returned, the async function is "dead" and can't be restored
+
+1565617495
+mq32
+yeah that's totally okay for my use case
+
+1565617503
+dimenus
+andrewrk: you should do a run of zig tshirts
+
+1565617510
+fengb
+I'd totally buy one
+
+1565617512
+mq32
++1
+
+1565617519
+fengb
+What's our motto?
+
+1565617534
+fengb
+tagline
+
+1565617535
+fengb
+Thing
+
+1565617619
+mq32
+Move 'zig!
+
+1565617663
+fengb
+Also the past 2 streams have been very helpful for the new semantics
+
+1565617698
+fengb
+"Synchronous or asynchronous is something up to the caller to the decide – not to the function itself."
+
+1565617703
+fengb
+Part of the thread about await in rust
+
+1565617708
+fengb
+I kinda want to respond heh
+
+1565617788
+mq32
+oh there was a second stream!
+
+1565617792
+mq32
+have to watch it later :)
+
+1565617836
+fengb
+mq32: oh your example, you'd need something like await async nextFrame(), which is semantically identical as nextFrame()
+
+1565617917
+fengb
+I believe in an async context, any function call that's detected as async gets automatically translated as async await under the hood
+
+1565617933
+mq32
+ah yeah
+
+1565617946
+mq32
+i would build nextFrame() so that it returns a @frame()
+
+1565617957
+mq32
+(i just like that syntax, beat me!)
+
+1565617958
+fengb
+Ah
+
+1565617980
+mq32
+nextFrame() would "schedule stuff and pauses the coroutine until the next frame was rendered"
+
+1565617994
+fengb
+I feel like that's a good candidate for generators: for(generateFrames()) { ]
+
+1565618004
+mq32
+hm
+
+1565618012
+mq32
+my example is much simplified
+
+1565618014
+fengb
+But... that's not a real proposal yet so don't quote me :P
+
+1565618029
+mq32
+you could have arbitrary complex code in an entity logic code
+
+1565618037
+mq32
+even loops where you suspend inbetween
+
+1565618058
+mq32
+like "count this value from 0 to 360 over the count of 16 frames"
+
+1565618062
+fengb
+I suppose having an implicit await inside the for loop looks weird
+
+1565618100
+fengb
+Yeah I think your solution is more explicit and probably better :P
+
+1565618109
+mq32
+thank gamestudio a8 for this
+
+1565618124
+mq32
+they have a function "wait(n)" where n is the number of frames to wait
+
+1565618139
+mq32
+pretty cool concept, but their scheduler is so broken that it hurts
+
+1565618158
+fengb
+Good news! Zig has no scheduler >_>
+
+1565618196
+mq32
+yeah, so i have control over what my code does <3
+
+1565618200
+fengb
+I've never written low level event-loop stuff before, so I'm curious how suspend/resume will work in practice
+
+1565618228
+fengb
+I'm a Javascript junkie. await is the lowest I understand
+
+1565618240
+mq32
+yeah i'm also quite interested in the event-loop stuff
+
+1565618276
+mq32
+but i'm no JS dude :D
+
+1565618351
+mq32
+i have to compile a zig version myself
+
+1565618381
+mq32
+want to get zig build for cortex-m3 processors and other lowlevel hardware (AVR)
+
+1565618451
+fengb
+Hmm, so based on current semantics, if there's no event loop, the caller of the async function will just terminate right?
+
+1565618458
+fengb
+Since it's not waiting for anything
+
+1565618472
+mq32
+hmm, good question
+
+1565618498
+fengb
+I think andrewrk showed that on stream how there's a resource leak
+
+1565618524
+fengb
+I wonder if we should detect that, especially if the frame is on the stack
+
+1565618623
+lluchs
+How do I get a pointer [*]u8 from a slice []u8?
+
+1565618678
+fengb
+slice.ptr
+
+1565618724
+lluchs
+thanks, missed that part in the documentation somehow
+
+1565620663
+fengb
+We're all learners here :)
+
+1565620857
+andrewrk
+fengb, without an event loop, anything waiting on I/O will hit a `suspend` and then there will be no event loop to call `resume`
+
+1565620928
+fengb
+Will there be a way to detect that?
+
+1565620936
+andrewrk
+or: if the code detects there is no event loop (which yes is possible)
+
+1565620953
+andrewrk
+then the code could simply do blocking I/O and then your application seamlessly is now blocking instead of event-based
+
+1565620956
+huuskes
+is the new function definition syntax still planned for next milestone?
+
+1565620987
+andrewrk
+huuskes, much of what is tagged 0.5.0 will have to get postponed. after merging async/await I'll be prioritizing bug fixes until the release
+
+1565621064
+andrewrk
+fengb, that's the big idea here: (1) don't call suspend if you don't have a plan to get resumed, and (2) allow the presence of suspend to decide whether something is async or not
+
+1565621278
+autodidaddict
+working on some stuff where I'm trying to import from protobuf generated C... I'm curious how Zig handles importing a #define ?
+
+1565621297
+autodidaddict
+so, the define looks like this:
+
+1565621300
+autodidaddict
+#define CORE__COMMAND__INIT \ { PROTOBUF_C_MESSAGE_INIT (&core__command__descriptor) \    , (char *)protobuf_c_empty_string, (char *)protobuf_c_empty_string, NULL }
+
+1565621338
+autodidaddict
+and my import is named `c` , but the compiler tells me that ".cimport:8:11 has no member called CORE__COMMAND__INIT
+
+1565621353
+dimenus
+autodidaddict: can you run the header through translate-c separately?
+
+1565621356
+dimenus
+what does it generate?
+
+1565621371
+autodidaddict
+I don't know what that is or how to do it ;)
+
+1565621393
+dimenus
+zig translate.c my_impl.c (which includes the header)
+
+1565621399
+dimenus
+*translate-c
+
+1565621424
+dimenus
+or just translate-c the header directly
+
+1565621472
+autodidaddict
+I don't have an included header. I have a `.pb-c,h` and a `.pb-c.c` file
+
+1565621476
+fengb
+andrewrk: I'm more concerned that the caller failed to initiate the loop correctly in main. Maybe it'll just need examples
+
+1565621508
+autodidaddict
+and I'm using `@cInclude` on the .h file
+
+1565621529
+dimenus
+that IS an included header then
+
+1565621540
+dimenus
+you can generate zig symbols for that independently of your main application
+
+1565621562
+dimenus
+by running zig translate-c pb.h or whatever the real name is
+
+1565621586
+fengb
+
+
+1565621603
+autodidaddict
+dimenus: ok I was able to get a list of "pub const"s
+
+1565621624
+dimenus
+now search that for your symbol
+
+1565621649
+autodidaddict
+the define isn't there
+
+1565621650
+dimenus
+fengb: it doesn't look like his example above is trying to call anything
+
+1565621665
+fengb
+
+
+1565621675
+dimenus
+autodidaddict: you can also pass '--verbose-cimport' to see if the c translator ran into any issues
+
+1565621792
+fengb
+That looks like a complex macro that's probably hard to translate properly. I think it's doing a block but I'm not sure what the comma arguments are doing
+
+1565621812
+fengb
+... oh is it a block of struct init?
+
+1565621817
+autodidaddict
+the core of what I'm trying to do is this:
+
+1565621841
+autodidaddict
+I want to instantiate the protobuf C object, populate fields, and encode it. This sample uses the "__INIT" macro that gets generated in the header files
+
+1565621862
+dimenus
+autodidaddict: zig has default initialization for structs
+
+1565621888
+fengb
+So... the meat of this is, C macros are just text so sometimes it's really hard to glean semantic info
+
+1565621902
+fengb
+I'm not sure if this will be possible to translate correctly
+
+1565621915
+autodidaddict
+so I can do `var cmd: c.Core__Comand;` instead of `var cmd: c.Core__Command = c.CORE__COMMAND__INIT` ?
+
+1565621922
+dimenus
+eg
+
+1565621955
+fengb
+This isn't translating at all atm. There's an issue to append a comment into the generated file instead of silently ignoring it
+
+1565621967
+dimenus
+autodidaddict: I would recommend that you 'zig translate-c' your header code ahead of time and include it in your zig file
+
+1565621973
+dimenus
+that way you can setup default init yourself
+
+1565621980
+dimenus
+eg like what I did in the vulkan header example above
+
+1565622007
+autodidaddict
+so don't use [at]cImport ?
+
+1565622014
+dimenus
+nope
+
+1565622054
+dimenus
+i'm not saying you can't, but it's more useful for platform headers or libc headers
+
+1565622086
+autodidaddict
+this is generated code, so I'd have to regenerate and then re-translate every time I modify the proto ?
+
+1565622107
+mq32
+autodidaddict: or get protobuf to emit zig code ;)
+
+1565622121
+mq32
+i was thinking about porting the OpenGL headers to zig, but it seems better to generate them from the registry directly
+
+1565622136
+autodidaddict
+I'm not really worried about the most efficient thing... I just want to be able to encode and decode a protobuf inside a Zig function.
+
+1565622143
+mq32
+dimenus, you're doing vulkan with zig?
+
+1565622203
+dimenus
+autodidaddict: i'm not familiar enough with protobuf to comment on that part
+
+1565622213
+dimenus
+but you could run the generation step in your build.zig file
+
+1565622238
+autodidaddict
+protobuf I'm familiar with... but not in C. The C examples don't tell me when/where I need to allocate in Zig, etc
+
+1565622258
+dimenus
+mq32: yep, i'm first building the Breakout game from learnopengl.com into zig ->
+
+1565622267
+dimenus
+*in zig/vulkan
+
+1565622283
+dimenus
+then I'm probably going to write some kind of gpu accelerated gdb frontend
+
+1565622283
+dimenus
+I think
+
+1565622294
+autodidaddict
+I also don't have a build.zig file. I can't figure out how to get that to work with the protobuf generated code, so I'm passing `--object` to include `libprotobuf-c.a`
+
+1565622333
+dimenus
+Vulkan hasn't been near as bad as expected so far
+
+1565622392
+fengb
+Short term solution is to separately maintain the empty struct variables in a different file. You might be able to define this in the C file: struct CORE__COMMAND__INIT = { PROTOBUF_C_MESSAGE_INIT (&core__command__descriptor) , (char *)protobuf_c_empty_string, (char *)protobuf_c_empty_string, NULL };
+
+1565622394
+fengb
+And stick it in a C header
+
+1565622428
+fengb
+Actually might be easier to maintain in zig
+
+1565622458
+mq32
+dimenus: neat. i'm thinking about a two-level OpenGL library for zig. first level would be the pure binding stuff done right (so allowing multiple contexts for different threads and so on) as well as the second layer which does semantic binding of OpenGL objects (so buffer.bind() instead of glBindBuffer(buffer))
+
+1565622468
+autodidaddict
+I don't have any idea how to "maintain in zig"
+
+1565622551
+fengb
+Sorry, it's getting messy. I've not really maintained messing compatibility with C before
+
+1565622683
+dimenus
+autodidaddict: since Zig can't translate some of those macros, I'm not sure this is going to be a worthwile endeavor for you
+
+1565622693
+dimenus
+we'd be better off having a generator that itself outputs zig
+
+1565622713
+fengb
+Yeah this is one of those complex macros that probably won't translate too well
+
+1565622724
+autodidaddict
+I'd love that, but what I really need is the ability to encode and decode the structs using the protobuf wire format ;)
+
+1565622784
+autodidaddict
+and so I assumed that the best way to do that would be to import the C generated structs (the structs are there just fine, just no helper macros) and use libprotobuf-c to encode and decode
+
+1565622834
+autodidaddict
+so in zig, how does one create an instance of a C struct?
+
+1565622851
+dimenus
+same as a zig struct
+
+1565622867
+dimenus
+either var foo: Type = undefined;
+
+1565622885
+dimenus
+or var foo = TypeLiteral { .field1 = "foo" .field2 = 42 };'
+
+1565622886
+dimenus
+etc
+
+1565622920
+dimenus
+autodidaddict: have you seen the zig documentation?
+
+1565622945
+autodidaddict
+blick, it looks like the helper macros are what deal with a `ProtobufCMessage` which is embedded in each generated struct
+
+1565622952
+autodidaddict
+so it's not like I can just manually set values
+
+1565622970
+autodidaddict
+yeah, I've seen that document. It doesn't specifically say (at least I couldn't find) that C structs are initialized the same way Zig ones are
+
+1565622988
+gonz_
+It seems to me like you have to figure out what the macro actually does and have a zig function that does those things.
+
+1565623029
+dimenus
+autodidaddict: only basic types have separate C types
+
+1565623048
+andrewrk
+autodidaddict, unfortunately it seems the API of the library you are trying to read is not in C, it's actually in a different language, the C preprocessor
+
+1565623076
+andrewrk
+the C preprocessor is a much worse language than C, I don't know why people choose to use it for their APIs
+
+1565623077
+gonz_
+I can't think of many things I want to deal with less than automatically generated macros :D
+
+1565623108
+gonz_
+It seems to me that once you've gone ahead and relied on code generation, why wouldn't you just generate procedures?
+
+1565623135
+scientes
+
+
+1565623135
+autodidaddict
+"why wouldn't you just generate procedures?" -> because I don't own the code generator
+
+1565623146
+autodidaddict
+the code generator is protoc
+
+1565623157
+scientes
+Some buy wrote a prime number generator in the preprocessor, that doesn't even use preprocessor arithmatic
+
+1565623161
+scientes
+but only define/undefine
+
+1565623171
+gonz_
+Yes, I know you're not responsible for protobuf, I'm just complaining out loud.
+
+1565623196
+autodidaddict
+hah, it looks like the macro initializes it to null
+
+1565623266
+fengb
+Because macros are "faster"
+
+1565623269
+gonz_
+It could be different for different types, maybe
+
+1565623270
+fengb
+™
+
+1565623319
+scientes
+fengb, ^ that program written in the preprocessor includes itsself 6.8 million times
+
+1565623339
+fengb
+lolwat
+
+1565623340
+scientes
+just to do a Sieve of Erostates up to 1024
+
+1565623376
+fengb
+I meant the protobuf example, where it's guaranteed to be an inline struct init, despite the weirdo syntax, whereas a function call could add precious cycles
+
+1565623439
+scientes
+you can even #define O #ifdef
+
+1565623482
+samtebbs
+fengb: LLVM has instruction schedulers so Zig does by proxy
+
+1565623493
+scientes
+they are important
+
+1565623508
+scientes
+I was writing some code and removing volatile from my inline assembly sped it up 2X
+
+1565623551
+andrewrk
+samtebbs, the conversation about scheduling was in context of event-based I/O, e.g. when async functions get resumed
+
+1565623599
+andrewrk
+the `suspend` keyword essentially means: "I'm suspending now. I've scheduled myself for when to get resumed."
+
+1565623979
+autodidaddict
+almost got a compilation to pass ;)  When I try and set the c string literals, e.g. .foo = c"foo" , I get a "cast discards const qualifier" error
+
+1565624043
+autodidaddict
+I guess I need to convert that into `char *`
+
+1565624111
+andrewrk
+string literals do not point to mutable data
+
+1565624152
+autodidaddict
+so my C struct types are `char *` . ... what's the right way to set those values from Zig?
+
+1565624222
+andrewrk
+that should be documented by the API you're using
+
+1565624232
+andrewrk
+who owns the memory
+
+1565624245
+autodidaddict
+setting a C `char *` isn't an API. This is a struct, and I own it.
+
+1565624267
+andrewrk
+if you made the struct then why are you using c strings?
+
+1565624279
+autodidaddict
+It's a C struct
+
+1565624281
+autodidaddict
+generated by protoc
+
+1565624298
+andrewrk
+the protoc API should describe who owns the memory of that mutable char * field
+
+1565624305
+autodidaddict
+the compiler wants [*c]u8
+
+1565624325
+autodidaddict
+no, the protoc API doesn't describe any such thing. protoc generates the structs and expects me to manage them
+
+1565624337
+andrewrk
+there's your answer: you own the memory
+
+1565624343
+autodidaddict
+^^ I just said I own it
+
+1565624350
+andrewrk
+but this raises the question: why must it be mutable?
+
+1565624379
+autodidaddict
+because protoc generated a `char *` , all the protoc-generated structs are assumed to be mutable in place
+
+1565624389
+andrewrk
+assumed by whom?
+
+1565624400
+andrewrk
+sounds like you don't fully own it
+
+1565624404
+autodidaddict
+the protocol buffers standards
+
+1565624422
+autodidaddict
+nearly every generator for protoc builds mutable structs / types
+
+1565624449
+autodidaddict
+All I need to know is how to make a `[*c]u8` from a zig literal :(
+
+1565624454
+andrewrk
+in this case it is your job to manage the memory of your field, and you're not going to be able to use string literals
+
+1565624469
+andrewrk
+you would hit this error in C code as well
+
+1565624493
+autodidaddict
+I fully understand that I can't use a literal in a mutable field. But most languages allow me some way to construct a mutable pointer from a string literal
+
+1565624497
+autodidaddict
+Rust, `from_str` etc
+
+1565624531
+autodidaddict
+I'm looking at the docs and don't see a way to do that for the `[*c]u8` type
+
+1565624538
+andrewrk
+I'm sorry I assumed that you knew how to code in C
+
+1565624556
+andrewrk
+you need to allocate memory and copy your string literal
+
+1565624566
+autodidaddict
+maybe I am just not phrasing my question right. I'm trying to populate this value
+
+1565624577
+autodidaddict
+the code was imported via cImport
+
+1565624582
+autodidaddict
+so the C code is a char *
+
+1565624588
+autodidaddict
+but I want to use Zig to create the mutable pointer
+
+1565624678
+andrewrk
+autodidaddict,
+
+1565624768
+autodidaddict
+I've read that section. Is your point that a) I'm too dumb for this and b) manually construct a Zig u8 pointer, fill it with a string literal, and it should auto-cast to a [*c]u8 ?
+
+1565624791
+andrewrk
+I'm certainly not saying (a). Did you try what I just suggested above?
+
+1565624875
+autodidaddict
+I'm trying to, but it's not compiling my intent (and no intellisense makes it difficult). I think my exposure to Rust is preventing me from understanding what's going on
+
+1565624946
+gonz_
+`std.fmt.allocPrint` takes an allocator and a format string (doesn't need to have any actual interpolations in it) and allocates a string for you based on what you passed in
+
+1565624950
+gonz_
+That would be one alternative
+
+1565624966
+autodidaddict
+where is `std.fmt.allocPrint` documented?
+
+1565624979
+samtebbs
+andrewrk, fengb: Ah sorry, I struggled to follow the whole conversation
+
+1565624985
+gonz_
+In `std/fmt.zig` :D
+
+1565624985
+andrewrk
+
+
+1565625034
+autodidaddict
+I guess I would never have thought to look in fmt for a string allocator
+
+1565625063
+andrewrk
+autodidaddict, I agree with gonz_ about generating zig code for protobuf. (I also don't endorse protobuf, I think it's poorly designed) you're trying to bend 2 APIs over backwards and learn zig at the same time
+
+1565625078
+gonz_
+If you want to allocate your string separately you can also just use `std.mem.copy` to copy the contents of the literal to the allocated memory
+
+1565625096
+andrewrk
+right now you are chasing a local maximum
+
+1565625106
+andrewrk
+I suggest aiming for the global maximum instead.
+
+1565625138
+autodidaddict
+andrewk: since there's no protoc plugin for Zig, C was the only other way to explore decoding and encoding
+
+1565625230
+gonz_
+autodidaddict: Coming from Rust, one thing to keep in mind is that allocating things explicitly is how you're going to keep them around. There's no magic involving things moving out of scope and analysis done to determine whether or not it should be freed or not, etc.
+
+1565625263
+autodidaddict
+Rust also goes out of its way to hide the explicit allocations
+
+1565625291
+autodidaddict
+if you use a `Vec::new()` , you're getting a pointer to a pre-allocated vector with some unknown (usually 10) capacity
+
+1565625333
+autodidaddict
+but `let mut s = std::str::from_str("hello")` would then let me use that string as a mutable pointer
+
+1565625385
+andrewrk
+I'm guessing in rust you also weren't using C FFI bindings, but using a rust implementation of protobuf
+
+1565625420
+autodidaddict
+there are 3 different protobuf crates I've used, 1 of them uses a C++ library underneath, the other 2 are native Rust
+
+1565625438
+andrewrk
+what you're trying to do is possible, but you should probably get some practice with manual memory management on a simpler project
+
+1565625455
+gonz_
+Zig (from my perspective) aims to make allocation as explicit and obvious as possible, whereas Rust wants something that seems like a GCd language when it's not.
+
+1565625461
+autodidaddict
+but my point above about the allocations is what I'm getting at... Rust is a full level of abstraction higher when it comes to allocation
+
+1565625493
+andrewrk
+yep
+
+1565625502
+gonz_
+Exactly.
+
+1565625519
+autodidaddict
+gonz: Rust's language hiding of allocations follows the same pattern as most ARC languages (e.g. Objective-C with ARC turned on, Swift, etc).
+
+1565625546
+gonz_
+This is mostly a question of values
+
+1565625575
+gonz_
+Direct control vs. initial ease of use
+
+1565625638
+autodidaddict
+I'm not sure what's causing the struggle for me. Switching between Rust and Go and Elixir, I usually have very little penalty for context dropping. But switching from Rust to trying to interpret Zig... I don't know, there's a lot of friction there I can't explain yet
+
+1565625660
+gonz_
+Controlling which allocator to use for a given thing is much easier if you have explicit memory allocation and a good interface to it, like the `std.mem.Allocator` we have.
+
+1565625690
+autodidaddict
+the use of explicit, loosely-coupled memory allocators is an inspired design choice, and I love it.
+
+1565625732
+andrewrk
+autodidaddict, it sounds like you've never done manual resource management before. that's a new concept to learn. the main thing to remember is that the language does nothing: it's up to you to decide when something gets allocated and when something gets freed
+
+1565625768
+autodidaddict
+I've done manual resource management in other languages (C)
+
+1565625786
+autodidaddict
+I just keep expecting Zig to do things it's not doing
+
+1565625798
+autodidaddict
+like I said, I'm not sure why the context switch is harder than with other languages
+
+1565625814
+andrewrk
+zig will never allocate memory on your behalf
+
+1565625838
+andrewrk
+you'll have to use the std lib for that
+
+1565625845
+autodidaddict
+Maybe I just need more coffee
+
+1565625872
+gonz_
+Is it possible that all this time with languages that don't emphasize this has made you a bit rusty? Before I got going with Zig (not that long ago) I had been away from C++ for something like 7 years and I can tell you I was absolutely not "with it" anymore.
+
+1565625893
+autodidaddict
+I haven't used C in 20 years
+
+1565625898
+autodidaddict
+I'm older than dirt.
+
+1565625924
+autodidaddict
+no, I take that back.. I used a variant of C (wiring, e.g. Arduino) last year
+
+1565625951
+autodidaddict
+but that was different also, because that program had
+
+1565625981
+gonz_
+Right. I think it's very possible that things like this just need some practice when you come back.
+
+1565626033
+autodidaddict
+Or I just admit defeat. I iz teh dumb
+
+1565626197
+gonz_
+Well, the question is mostly one of other motivation, no? If there's something that catches your eye about Zig you'll just work on it and get used to it. For me it's the relentless simplicity and obviousness of most things.
+
+1565626258
+gonz_
+But I'll add that I'm here because I overdosed on abstractions and I feel like we're losing touch with how to write lower level things as an industry in general.
+
+1565626334
+autodidaddict
+I got into FP because I was feeling overdosed on abstractions
+
+1565626348
+autodidaddict
+... then I got into Rust because I overdosed on FP :P
+
+1565627435
+autodidaddict
+okay, so last question. I'm allocating the memory (var buf = a.alloc....), I'm filling it (std.mem.copy....) , but the struct still requires a `char *` and I'm getting a type mismatch between `[*c]u8` and `*[]u8` .. which foolish noobsauce thing have I done?
+
+1565627502
+autodidaddict
+sorry the error is ` error: expected type '[*c]u8', found '[]u8'`
+
+1565628065
+gonz_
+Have you tried `&string_variable`?
+
+1565628086
+autodidaddict
+yes, that produces a `*[]u8`
+
+1565628214
+lunamn
+slice.ptr?
+
+1565628220
+gonz_
+Yeah, exactly
+
+1565628224
+gonz_
+`string.ptr`
+
+1565628226
+gonz_
+Should work
+
+1565628247
+autodidaddict
+that works
+
+1565628271
+autodidaddict
+.ptr only shows up on 3 lines of the docs
+
+1565628298
+autodidaddict
+is that field available on things other than slices?
+
+1565628305
+lunamn
+don't think so
+
+1565628309
+autodidaddict
+ok
+
+1565628353
+gonz_
+Not in the standard library, I think, but I guess it depends entirely on what's going on. It's mostly that slices have the pointer and the length, so you effectively have to downgrade to only having the pointer for `[*]`
+
+1565628912
+autodidaddict
+how do you refer to a struct field called "error" ? Zig won't let me use `.error` because it's reserved
+
+1565628956
+Akuli
+maybe call it 'eror' or something? i use lizt, indeks, klass etc in my python code
+
+1565628966
+halosghost
+yikes
+
+1565628977
+halosghost
+.err seems like a lot more pleasant than adding a misspelling
+
+1565628980
+autodidaddict
+the code I have (in C) is generated, I can't readily change the field name
+
+1565628996
+autodidaddict
+I'm not sure why structs can't have a field named `error`
+
+1565629065
+fengb
+You can use @“error” for access
+
+1565629069
+autodidaddict
+I get not being able to create a new type called error, because it conflicts with the keyword
+
+1565629069
+fengb
+error is a keyword
+
+1565629071
+autodidaddict
+ok cool
+
+1565630807
+autodidaddict
+is there a static link alternative to `--library` when I compile with a C lib?
+
+1565631915
+dimenus
+huh?
+
+1565631922
+dimenus
+zig links statically by default
+
+1565632291
+autodidaddict
+not when you target wasm
+
+1565632324
+autodidaddict
+when I pass `--library (path to C library` while targeting wasm, all the functions that used to be satisfied by that library appear as unsatisfied wasm imports in the output module
+
+1565632369
+Jenz
+It'd be amazing if someone did an exercism.io course on zig
+
+1565632384
+Jenz
+(
+
+1565632389
+gonz_
+Jenz: Being that Zig i
+
+1565632399
+gonz_
+Zig is in very early days, it's likely that you will have to be that someone
+
+1565632458
+Jenz
+Well, unfortunately I can barely write a hello world program DX
+
+1565632468
+Jenz
+Which is why I want a zig course XD
+
+1565632501
+Jenz
+Anyways, I'm sure zig will do well
+
+1565632501
+fengb
+autodidaddict: can you show the compiler output? --verbose-cc --verbose-link
+
+1565632567
+dftxbs3e
+hi, what can zig do about kernel failing to physically commit a page and returning SIGBUS?
+
+1565632597
+dftxbs3e
+on modern Linux, mmap of 140TB can work, but it's when you try to actually access memory that it crashes the program
+
+1565632602
+autodidaddict
+fengb: zig build-lib src/main.zig --object /usr/local/lib/libprotobuf-c.a -isystem /usr/local/include --c-source proto/core.pb-c.c -target wasm32-freestanding-musl --library c --verbose-cc --verbose-linklld -error-limit=0 --no-entry --export-all --allow-undefined -o ./main.wasm /usr/local/lib/libprotobuf-c.a zig-cache/o/Vn04E770QL4js46KbNQkIe--kbww
+
+1565632602
+autodidaddict
+jaFzhwgtvvqd5jLqQwen676GcoolXSLG2jeW/core.pb-c.o ./main.o /Users/kevin/Library/Application Support/zig/stage1/o/zeBzLFjDcpITw-oQ6twU-wsFwCEA7YnNB5zeDBTWDDWyLT8fOGUlRLxoVEXeUDSK/c.o /Users/kevin/Library/Application Support/zig/stage1/o/m4ErfeNqa8WhxW_CPG61Ra4qEhSAm-hqRUyAQ6E47TJh3_Ij--x_B8i1udX8Z_T3/compiler_rt.o
+
+1565632618
+fengb
+I think there are problems detecting what’s needed for C vs WASM output so a workaround might be exporting everything
+
+1565632651
+gonz_
+Jenz:
+
+1565632706
+autodidaddict
+not sure how that would help... the functions that are "missing" from the wasm module are the functions that are exported from `libprotobuf-c.a`
+
+1565632759
+fengb
+Huh... it’s exporting all but not linking it in :/
+
+1565632804
+autodidaddict
+as an example.. when I try and load the .wasm file compiled here, it complains that it's missing an import from the "env" (default wasm) namespace called "protobuf_c_message_pack" , which is a function that my code invokes that is in `libprotobuf-c`
+
+1565632840
+autodidaddict
+the code from the library is not statically converted into wasm
+
+1565632939
+autodidaddict
+it even thinks "__assert_fail" is a wasm import in the "env" namespace
+
+1565632977
+autodidaddict
+wow, it even flagged "main" as a missing import
+
+1565633548
+fengb
+Try --static? I’m not at my computer and I’m not that familiar with linking existing libraries
+
+1565633743
+autodidaddict
+hmm. --static doesn't appear in the help
+
+1565634076
+donpdonp
+im missing something here. struct { tags: []string } is a slice of strings yes? (const string = []const u8;)
+
+1565634107
+donpdonp
+myStruct = struct {.tags = []string{}} => error: expected array type or [_], found slice
+
+1565634134
+donpdonp
+whoops should say myStruct{..}
+
+1565634275
+fengb
+donpdonp: new syntax requires literals to be [_], e.g. [_]string{}
+
+1565634286
+fengb
+Oops
+
+1565634287
+fengb
+[_]string{}
+
+1565634311
+donpdonp
+isnt that an array literal? I want to make an empty slice to put into the tags slice variable
+
+1565634360
+fengb
+I don't think there's a way to make a literal slice by itself, but an empty array coerces to a slice
+
+1565634373
+donpdonp
+hmm, ok thx.
+
+1565634482
+donpdonp
+a slice always derives from an array, so it makes no sense to try and create an slice.
+
+1565634504
+donpdonp
+i wish the compiler error could state that somehow
+
+1565634765
+donpdonp
+when the error says 'found slice' it looks like I did successfully create a slice from an empty array, which leads me to think it should be assignable to tags
+
+1565634796
+donpdonp
+instead, []string{} should be a syntax error?
+
+1565635123
+DutchGh0st
+why cant I `curl
+
+1565635135
+DutchGh0st
+AccessDenied
+
+1565635211
+fengb
+It's xz
+
+1565635211
+fengb
+
+
+1565635363
+DutchGh0st
+okey cool
+
+1565635369
+DutchGh0st
+cuz I found another compilerbug
+
+1565635381
+DutchGh0st
+but I removed the ubuntu subsystem from my machine because it was broken
+
+1565635385
+DutchGh0st
+but I need gdb :3
+
+1565635891
+nrdmn
+I made a list \o/
+
+1565636351
+fengb
+That tells me I need a better description for zee_alloc :P
+
+1565636539
+DutchGh0st
+routez is verry clear tbh
+
+1565636567
+DutchGh0st
+just compiletime checks to check the handler functions for the right number of args, right parameters
+
+1565636569
+DutchGh0st
+hehe
+
+1565637005
+donpdonp
+nrdmn: thx for the zig list.
+
+1565637080
+donpdonp
+gameboy emulator in zig that runs in webasm is awesome.
+
+1565637125
+fengb
+It only supports 3 games atm :P
+
+1565637141
+fengb
+I need to get back to it
+
+1565637317
+donpdonp
+fengb: haha. i only just now realized the first step is to click on 'Bootloader'. perhaps another msg up there would be a good idea
+
+1565637334
+fengb
+I should rename that to "insert cart"
+
+1565637355
+fengb
+Haven't really done much user studies yet heh
+
+1565637371
+nrdmn
+I'm glad I could motivate you to work on your zig projects :P
+
+1565637428
+DutchGh0st
+where does the global allocator live?
+
+1565637433
+fengb
+Well, I started looking at audio, then got scared at its scope...
+
+1565637480
+fengb
+DutchGh0st: std.heap.direct_allocator is available in OSs but there isn't a default allocator
+
+1565637552
+DutchGh0st
+mhhh
+
+1565637580
+fengb
+There's also no general purpose allocator atm
+
+1565637652
+DutchGh0st
+I thought you could default assign members of a struct
+
+1565638341
+fengb
+I didn't know tiehuis is writing a Gameboy emulator
+
+1565638779
+tgschultz
+Someday I may understand why people are so obsessed with WASM, but not today
+
+1565638976
+fengb
+I dunno about others, but I'm much more comfortable in the browser UI than native anything
+
+1565638977
+fengb
+And it's easier to demo :)
+
+1565638991
+fengb
+At some point, I'll probably port fundude to SDL or something
+
+1565639010
+Sahnvour
+at least that's an important performance improvement over javascript
+
+1565639100
+mq32
+tgschultz: i think it's sucklessness
+
+1565639114
+mq32
+JS has so many quirks and weird behaviour that people already transpile code to JS
+
+1565639124
+mq32
+why not make it a performance-oriented thing then
+
+1565639172
+fengb
+asm.js isn't quirky. But it's also pretty fugly
+
+1565639198
+halosghost
+asm.js is amazing and horrifying
+
+1565639200
+fengb
+And obviously not a good compile target so I'm glad wasm is a thing :P
+
+1565639238
+gonz_
+I'm surprised how negative people are about WASM, mostly. It's a no-brainer if not pushed by one single entity that's just trying a land-grab for the web.
+
+1565639277
+mq32
+fengb: JSfuck is pretty fugly :D
+
+1565639284
+mq32
+but also funny that it even works
+
+1565639419
+halosghost
+gonz_: I'm not a fan of anything that furthers the march of the web toward webapps
+
+1565639425
+halosghost
+hence my not-love of wasm
+
+1565639632
+gonz_
+halosghost: I don't know how to tell you this, but that race has already finished. :D
+
+1565639645
+gonz_
+They're already on the desktop at this point.
+
+1565639680
+gonz_
+We may as well have ones available from more languages with the possibility of executing them more efficiently.
+
+1565639695
+halosghost
+gonz_: alternatively, I could just become a hermit and drive a podbike everywhere
+
+1565639806
+halosghost
+I wish I could switch entirely to links
+
+1565639868
+mq32
+i would like to have separation of "apps" and "informational databases" in the web
+
+1565639884
+mq32
+right now we have news pages that do only 5% news display and 95% "stuff"
+
+1565639972
+gonz_
+halosghost: Unrelated to the web, but my plan is to reach a point where I don't really have to cut code for anyone else anymore and just live out my life working on private libraries in some lower level language that I know every nook and cranny of (preferably Zig) and that doesn't do much magic.
+
+1565640043
+gonz_
+I envy the people who've amassed their own private C89 (pick your year, really) libraries over the last 15+ years and they don't care about anything.
+
+1565640098
+halosghost
+lol
+
+1565640119
+gonz_
+This is best done as a hermit without any care for the rest of the world.
+
+1565640132
+halosghost
+I'd get a podbike nowish if I could, but they're illegal in America
+
+1565640135
+halosghost
+because of course they are
+
+1565640178
+mq32
+gonz_: word
+
+1565641381
+tgschultz
+I'm kinda with halosghost here. The way the web browser has been perverted from a simple document render into a horrifically bad application platofrm that may as well be its own OS now pushed with every application on to devices that already have an os... I believe history will look back upon it as one of early computing's most awful crimes.
+
+1565641467
+mq32
+true dat as well
+
+1565641469
+tgschultz
+I too would really like to go back to simpler days of computing, and nuts to the modern web.
+
+1565641484
+mq32
+but: html/css is a really nice way to make frontends
+
+1565641484
+Sahnvour
+s/crime/idiocie/ :p
+
+1565641490
+mq32
+except for some good layouting engine
+
+1565641492
+tgschultz
+incidentally: #dinghy
+
+1565641555
+fengb
+But also... the web is one of the few sandboxed engines. I'd rather run untrusted code in a browser than locally
+
+1565641600
+nrdmn
+documents have been non-interactive because they were printed on paper
+
+1565641622
+nrdmn
+there's no reason in this day and age to not make documents interactive and thus applications
+
+1565641638
+tgschultz
+There have been countless sandboxed virtual machines for applications over the decades. almost all of them were better than a web browser at being an application platform.
+
+1565641643
+mq32
+i think nobody has anything against hyperlinked documents
+
+1565641663
+fengb
+None of them have been standardized. The web may be shitty, but it's the most portable shitty env we have
+
+1565641681
+tgschultz
+"standardized" meaning "whatever google says, goes"
+
+1565641684
+nrdmn
+mq32: interactive as in "contains logic that reacts to input"
+
+1565641684
+mq32
+and i have to admit: there are some tutorials in the web that make great use of javascript
+
+1565641702
+mq32
+
+
+1565641703
+fengb
+I'm not a big fan of Chrome eating the web :(
+
+1565641748
+mq32
+above link is an example for an exceptionell web document
+
+1565641896
+fengb
+Honestly though, the wasm design has very little to do with the actual web. It's basically a traditional stack machine
+
+1565641937
+mq32
+yeah
+
+1565641955
+mq32
+i heared of cloud services serving wasm instead of native apps
+
+1565641956
+fengb
+So "runs in the browser" is only one of its benefits. More generally, it's a great "portable" sandbox... much better than JS anyway
+
+1565641959
+mq32
+sounds reasonable to me
+
+1565641979
+fengb
+Basically what the JVM was promised, without the baggage of a corporate entity or an object system
+
+1565641999
+fengb
+But maybe I'm wrong... maybe it'll be as useful as Java applets :P
+
+1565642002
+mq32
+one thing i did not understand:
+
+1565642008
+mq32
+how does wasm interfaces "the outside"?
+
+1565642014
+tgschultz
+Or a way to free memory
+
+1565642031
+tgschultz
+or a standardized interface to the os
+
+1565642136
+fengb
+You define symbols that don't exist locally and it expects to be there upon wasm initialization
+
+1565642137
+fengb
+OS => WASI. free()... >_>
+
+1565642177
+mq32
+fengb: so similar to object files?
+
+1565642185
+mq32
+or dynamic libaries?
+
+1565642190
+fengb
+Yeah basically
+
+1565642248
+mq32
+hm, okay
+
+1565642258
+fengb
+I don't know how they work outside of the browser, but in Javascript, you pass in an object with functions or values and "it works". There's a lot of memory ownership that can get complicated but it's doable
+
+1565642282
+fengb
+Also... to the outside world, there's only floats and ints in wasm. So working with pointers is a bit of a pita
+
+1565642304
+mq32
+huh, weird
+
+1565642312
+mq32
+so a simple write("foo") is hard then?
+
+1565642495
+fengb
+Yeah, you need to copy the string into special wasm memory. It doesn't have access outside of its own vm
+
+1565642539
+fengb
+Emscripten and Rust (I think) sets up bindings for you
+
+1565642573
+tgschultz
+WASI is only one of several such runtimes
+
+1565642596
+mq32
+hm
+
+1565642598
+tgschultz
+which means we're following the FOSS definition of standard I suppose
+
+1565642615
+fengb
+But the spec doesn't actually help and I kinda wish there's a better, standardized userland system
+
+1565642621
+tgschultz
+how long until someone comes along and writes an abstraction layer for the OS interface runtimeS?
+
+1565642741
+mq32
+
+
+1565642742
+mq32
+hm
+
+1565642746
+mq32
+doesn't sound very promising yet
+
+1565642803
+fengb
+
+
+1565642804
+fengb
+I malloc the space I need for the cartridge, copy the data over, and then pass the pointer into my emulator
+
+1565643466
+fengb
+
+
+1565643795
+mq32
+curl
+
+1565643804
+mq32
+those are the most trustworthy projects ever
+
+1565643816
+mq32
+"hey, just run some code you've never seen!"
+
+1565643925
+fengb
+If we had proper sandboxing, that might actually be safe >_>
+
+1565643982
+mq32
+hah!
+
+1565644082
+mq32
+classic egg or chicken problem
+
+1565644345
+fengb
+
+
+1565644355
+fengb
+You know it's hip if it run on the blockchain :P
+
+1565645313
+mq32
+if i interface C which returns "void*"
+
+1565645318
+mq32
+and this may be NULL
+
+1565645323
+mq32
+how do i wrap this into Zig?
+
+1565645395
+fengb
+?*c_void
+
+1565645418
+scientes
+yeah c_void is very different from zig void
+
+1565645425
+scientes
+its basically the same as char *
+
+1565645437
+fengb
+Or ?[*] if it's always an array
+
+1565645486
+mq32
+writing a wrapper for dlopen/LoadLibrary right now…
+
+1565645578
+fengb
+Oh it explicitly calls out "opaque handle". You can create an @OpaqueType and use that as a pointer
+
+1565645681
+scientes
+mq32, it would be cool if that could be made to work without libc
+
+1565645713
+scientes
+e.g. you still use musl's dynamic loader
+
+1565645719
+scientes
+but zig would be static
+
+1565645781
+mq32
+scientes: i'll take a look :)
+
+1565645800
+mq32
+for windows we only require kernel32.dll
+
+1565645861
+gonz_
+`std.os.windows.HANDLE` exists, by the way
+
+1565645900
+scientes
+but maybe its best to just use --library c in these cases
+
+1565645912
+scientes
+yeah it would reduce the amount of pain
+
+1565646006
+mq32
+hmm
+
+1565646013
+mq32
+how do i make my string zero terminated?
+
+1565646031
+mq32
+alloc a slice of u8 with len+1 and fill it?
+
+1565646036
+scientes
+yep
+
+1565646041
+mq32
+okidokey
+
+1565646051
+scientes
+there is a propasal to make such things part of zig
+
+1565646058
+scientes
+but that isn't implemented, and not clear
+
+1565646152
+gonz_
+mq32: Ah, actually, I saw now that `std.os.windows.HMODULE` exists
+
+1565646309
+mq32
+yeah right now i'm doing the linux part first :)
+
+1565646599
+mq32
+lld: error: undefined symbol: dlopen
+
+1565646603
+mq32
+okay, time to go to bed :)
+
+1565646606
+mq32
+code compiles so far :)
+

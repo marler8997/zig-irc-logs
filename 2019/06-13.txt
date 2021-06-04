@@ -1,0 +1,1060 @@
+1560386340
+geemili
+Is there any documentation on the `build.zig` format?
+
+1560387010
+daurnimator
+no
+
+1560387601
+geemili
+Ah, okay
+
+1560392468
+andrewrk
+daurnimator, here's a sense of progress on the result location branch:
+
+1560392496
+scientes
+nice
+
+1560392539
+andrewrk
+so now it's matter of working through those and getting them all passing again, then doing the same for std lib tests
+
+1560392655
+andrewrk
+fengb, in place merge sorting has the option to give an allocator and it will allocate N/2 (or sqrt(N) for some impls) memory for cache. then perf should be roughly the same as a stack based solution
+
+1560392667
+curtisf
+about how long does it take to run all of zig's tests?
+
+1560392688
+andrewrk
+a couple hours if you do all of them including the release mode builds
+
+1560392696
+andrewrk
+about 15 minutes if you do -Dskip-release
+
+1560392723
+andrewrk
+depending on what you actually changed there is probably a much faster subset of tests to run
+
+1560392774
+andrewrk
+geemili, here's the issue to subscribe to to get notified when there are docs for zig build system:
+
+1560392827
+curtisf
+what's in the release mode builds that makes it so much slower?
+
+1560392950
+andrewrk
+LLVM optimizations
+
+1560392994
+curtisf
+ah, does -Dskip-release run the same tests just without optimizing?
+
+1560393019
+andrewrk
+yes. it's a test matrix and so there are considerably fewer cells in the table with -Dskip-release
+
+1560393075
+andrewrk
+it's [libc, nolibc] * [debug, release-fast, release-small, release-safe] * [macos, windows, linux] * [multithreaded, single-threaded]
+
+1560393200
+andrewrk
+plus some other miscellaneous stuff
+
+1560393213
+andrewrk
+I really should disable non-debug builds for compile errors, that's rather pointless
+
+1560395926
+scientes
+you can also do test-behavior, et cetera
+
+1560395929
+scientes
+to just run specific tests
+
+1560397188
+marler8997
+looks like `zig run` is passing the executable twice to the generated exe...
+
+1560397195
+marler8997
+is this one known?
+
+1560397258
+andrewrk
+marler8997, are you sure it's a problem? that's how execve works
+
+1560397277
+marler8997
+yeah definitely happening
+
+1560397281
+andrewrk
+oh is this a windows/posix issue maybe?
+
+1560397292
+marler8997
+Well, I know that CreateProcess and execve work differently
+
+1560397300
+marler8997
+execve passes the program to the first arg, and the array
+
+1560397304
+marler8997
+but CreateProcess doesn't
+
+1560397332
+marler8997
+I'm guessing that however `zig run` creates the command-line, it's adding the exe path to the "args" parameter as well, like you should for execve
+
+1560397362
+marler8997
+
+
+1560397370
+marler8997
+lpApplicationName and lpCommandLine
+
+1560397390
+scientes
+in Linux you can query both
+
+1560397394
+marler8997
+basically, lpApplicationName shouldn't be included with lpCommandLine
+
+1560397403
+marler8997
+whereas with execve, you do pass the exe path to both
+
+1560397407
+scientes
+the path it was invoked under is in the auxv, and the first arg is in ARGV[0]
+
+1560397438
+marler8997
+yeah not talking about how to access it
+
+1560397446
+marler8997
+talking about the correct way to call CreateProcess
+
+1560397460
+marler8997
+basically it looks like zig is calling CreateProcess the same way it calls execve, which is incorrect
+
+1560397498
+scientes
+well I am asking what
+
+1560397498
+scientes
+LPCSTR                lpApplicationName,
+
+1560397499
+scientes
+is
+
+1560397499
+scientes
+LPSTR                 lpCommandLine,
+
+1560397499
+marler8997
+I'm guessing the fix is to child_process.zig in the windowsCreateCommandLine function?
+
+1560397511
+scientes
+which is the path it was invoked under, and which is ARGV[0]?
+
+1560397523
+marler8997
+lpApplicationName will get passed to ARGV[0]
+
+1560397545
+scientes
+and command line starts with ARGV[1]?
+
+1560397559
+marler8997
+correct
+
+1560397565
+marler8997
+at least that's the convention
+
+1560397576
+marler8997
+that's how windows' cruntime works
+
+1560397597
+marler8997
+basically, they use GetCommandLine to get the arguments for argv[1]...
+
+1560397792
+scientes
+marler8997, if you can prepare a patch that would be best
+
+1560397800
+scientes
+as you could test it
+
+1560397812
+marler8997
+I can create a patch
+
+1560397820
+marler8997
+but I haven't built the compiler yet
+
+1560397823
+marler8997
+so I can't really test it
+
+1560397829
+marler8997
+
+
+1560397863
+marler8997
+I'll see if I can build the compiler though, at some point I'll need to anyway
+
+1560397878
+marler8997
+It's been a few years since I've built it, hopefully it's easier than it was :)
+
+1560398029
+scientes
+well as long as the test suite tests it it should be good
+
+1560398066
+scientes
+... and I don't see any tests
+
+1560400119
+daurnimator
+andrewrk: getting closer :) seems like you've had to work around a few things in e.g. bootstrap. Will you clean up with a rebase?
+
+1560401540
+marler8997
+hey, looks like I was actually able to build zig on windows...having the pre-built llvm really helped
+
+1560422910
+SamTebbs33
+I love Zig more and more every day.
+
+1560422937
+SamTebbs33
+When debugging some of my kernel code written in Zig I get an index out of bounds error that I can easily trace and fix.
+
+1560422962
+SamTebbs33
+With C that would have just happened silently in the background without me ever knowing.
+
+1560431417
+daurnimator
+How can I cast an array?
+
+1560432986
+SamTebbs33
+`var arr1 = u8{x}
+
+1560433006
+SamTebbs33
+jk
+
+1560435501
+daurnimator
+hrm.... how can I cast a slice to a pointer to an array?
+
+1560435642
+andrewrk
+daurnimator, nah I don't rebase once a branch gets big like this, it's pointless
+
+1560435808
+daurnimator
+error: expected type '*[8]u8', found '[]align(4) u8'
+
+1560435840
+daurnimator
+andrewrk: ^ I know the slice is at least 8 bytes.... how can I cast the slice to an array pointer?
+
+1560436555
+BitPuffin
+is the use keyword undocumented?
+
+1560436577
+marijnfs
+daurnimator: .ptr()
+
+1560436591
+daurnimator
+BitPuffin: was renamed to 'usingnamespace'
+
+1560436685
+BitPuffin
+daurnimator: also undocumented? :)
+
+1560436762
+BitPuffin
+but nice
+
+1560436764
+BitPuffin
+I didn't know about it
+
+1560436770
+BitPuffin
+saved me a lot of boilerplate
+
+1560436775
+daurnimator
+BitPuffin: at least its in the grammar ;)
+
+1560436784
+BitPuffin
+
+
+1560436802
+BitPuffin
+yeah haha
+
+1560441071
+andrewrk
+BitPuffin,
+
+1560441302
+BitPuffin
+andrewrk: are you still considering removing it or is it ok for me to use it
+
+1560441336
+andrewrk
+BitPuffin, it's stable now
+
+1560441357
+BitPuffin
+oh nice!
+
+1560441386
+BitPuffin
+Can I add a comment about that on the issue? Just in case someone reading the issue is deterred from using it
+
+1560441408
+andrewrk
+I do plan to put some deterrents in the documentation for it
+
+1560441447
+andrewrk
+current best practice is to use 1 layer of namespacing, so you can see where something comes from in the file
+
+1560441458
+BitPuffin
+I agree
+
+1560441463
+andrewrk
+but `usingnamespace` has some important use cases
+
+1560441465
+BitPuffin
+with that decision
+
+1560441497
+BitPuffin
+I generally think the explicitness of assigning my imported symbols is probably a good thing even though it can be cumbersome
+
+1560441497
+andrewrk
+for example in the standard library it's used to organize cross platform abstractions
+
+1560441552
+BitPuffin
+but when it comes to importing a C header with hundreds of definitions it's kind of not nice, I did it with keyboard macros in the file I linked above
+
+1560441690
+andrewrk
+that's reasonable. I usually do that like this:
+
+1560441701
+andrewrk
+so then usage will look like c.foo()
+
+1560441728
+BitPuffin
+that's really nice
+
+1560441738
+BitPuffin
+in my case there was some things that the cInclude couldn't handle
+
+1560441745
+BitPuffin
+so I had to define them myself, and then somehow merge them into the same zig namespace
+
+1560441759
+andrewrk
+ah yes, so there's the use case for it then
+
+1560441783
+cameris
+Hi, given a `comptime T: type` and a function with parameter `a: T`. How would I cast `a` into a `[]const u8`?
+
+1560441815
+BitPuffin
+in this case it was these ones if you're curious
+
+1560441817
+BitPuffin
+
+
+1560441838
+BitPuffin
+
+
+1560441838
+BitPuffin
+that's the actual macro
+
+1560441849
+andrewrk
+cameris, if I understand correctly, my reccomendation would be to have T be the element type. this is what std.mem functions do:
+
+1560441925
+andrewrk
+BitPuffin, it's theoretically possible for zig to be able to translate those macros, but it would be pretty advanced
+
+1560441938
+BitPuffin
+does the compiler output any information that could be useful for IDEs?
+
+1560441969
+BitPuffin
+yeah
+
+1560441978
+BitPuffin
+I know it only supports a subset of the pre-proc for simplicity
+
+1560441984
+andrewrk
+I'm not aware of anything like that currently. IDEs are considered important but not a problem I've tackled yet. big plans for the self hosted compiler with IDEs
+
+1560442010
+andrewrk
+self hosted compiler is designed from the ground up to be a long running process providing deep introspection into the compilation
+
+1560442023
+cameris
+andrewrk, but std.mem.toBytes and asBytes do not work for slices.
+
+1560442085
+andrewrk
+cameris, I'd be happy to make more suggestions if I could see some code from your use case
+
+1560442106
+andrewrk
+right now though I'm going to close IRC and make some progress on my result location branch
+
+1560442134
+donpdonp
+
+
+1560442387
+cameris
+
+
+1560442465
+cameris
+but thats the whole thing. But all the occurences of std.mem.toBytes should be replaced by a function that return `[]const u8`
+
+1560442591
+tgschultz
+it is deliberate that toBytes and asBytes don't work for slices
+
+1560442761
+cameris
+tgschultz, i think so, because somewhere down the function AsBytesReturnType checks for `trait.isSingleItemPtr`
+
+1560443133
+tgschultz
+I don't understand your use case. Given `a` of known type T, you want a slice of the bytes of `a, right? assuming T is a pointer then `std.mem.asBytes(a)` will give you a `*[@sizeOf(T)]u8` which can be sliced.
+
+1560443187
+cameris
+yeah, but T could also be a primitive type.
+
+1560443315
+tgschultz
+then you have to branch on that: `const my_slice = if(comptime std.meta.trait.isPointer(T)) std.mem.asBytes(a)[0..] else std.mem.asBytes(&a)[0..];`or something.
+
+1560443343
+tgschultz
+if T is a slice, then @sliceToBytes(a) is what you want.
+
+1560443363
+tgschultz
+well, probably
+
+1560443410
+tgschultz
+the trait fucntion may be `isPtr` I don't remembeer.
+
+1560443418
+cameris
+also the toBytes does return a copy of the given primitive type, not a pointer/slice
+
+1560443448
+tgschultz
+yes, that's the difference between `asBytes` and `toBytes`
+
+1560443482
+cameris
+thats why I thought i would cast primitves with `@ptrCast([*]const u8, &a)[0..@sizeOf(T)]`
+
+1560443581
+Sahnvour
+andrewrk: saw this talk in my feed the other day, only watchde the beginning for now but might be of interest
+
+1560443670
+Sahnvour
+the parallel with an ECS particularly resonnates with me, and I think there might be a lot to draw from the data-oriented approach for stage2 ... just didn't thought this through yet (and I have very very little experience actually implementing compilers so...)
+
+1560448832
+SeedOfOnan
+I'm trying to add support for cross target cpu features. I thought it just needed a small addition to codegen.cpp at the call to LLVMCreateTargetMachine. I tried hard-coding there "cortex-m4" and "+no-movt", but that didn't work. Can anyone give me some ideas?
+
+1560449923
+andrewrk
+Sahnvour, nice, I actually already have this bookmarked to watch
+
+1560449945
+andrewrk
+SeedOfOnan, as a last resort you can read the clang source code
+
+1560449996
+scientes
+Sahnvour, interesting, that is what zig has already wanted to do
+
+1560450010
+scientes
+the old model was becuase ram was scarse
+
+1560450014
+scientes
+it was designed for punch cards
+
+1560453388
+cameris
+tgschultz, thx. This pointed me in the right direction.
+
+1560453568
+scientes
+do GPUs have simd?
+
+1560453630
+scientes
+oh yes they do
+
+1560455130
+marijnfs__
+i got a Risc V board that has a c-like toolchain
+
+1560455148
+marijnfs__
+is riscv targetable with zig? I think there are clang branches that have it
+
+1560455160
+scientes
+marijnfs__, it is
+
+1560455401
+marijnfs__
+hmm ill try to have a look, would be cool
+
+1560455442
+marijnfs__
+i was thinking of a timsort that doesn't need an allocator
+
+1560455448
+marijnfs__
+I think it's mostly possible
+
+1560455695
+Sahnvour
+scientes: they kind of are simd
+
+1560455708
+scientes
+yeah but do they have simd instructions too
+
+1560455718
+scientes
+how big are the registers
+
+1560455727
+scientes
+and how much memory do you have in the __local and __private sections?
+
+1560455740
+scientes
+it is amazingly difficult just to get an overview of these things
+
+1560455768
+Sahnvour
+that I do not know specifically but I believe there should be good resources, depending on the architectures
+
+1560455782
+scientes
+probably AMDGPU as there is llvm support for that
+
+1560455804
+Sahnvour
+amd GCN is pretty well documented adn understood
+
+1560455810
+Sahnvour
+and*
+
+1560455829
+scientes
+GCN?
+
+1560455856
+scientes
+and what is even the target to pass to clang?
+
+1560455864
+scientes
+I want to see something on godbolt.org
+
+1560455882
+Sahnvour
+that's the architecture family of AMD GPUs until recently, for example used in the ps4/xone
+
+1560456034
+Sahnvour
+andrewrk: nice, by always wanted to do you are referring the low latency compiling for use in IDEs and such yeah ?
+
+1560456236
+Sahnvour
+oops sorry, wrong tag ... I meant scientes
+
+1560456253
+scientes
+well its andrew that has been leading that
+
+1560456258
+scientes
+its his idea
+
+1560456302
+scientes
+I really want to get to cross-platform simd programming with zig
+
+1560456309
+scientes
+because C is not delivering that
+
+1560456323
+scientes
+IBM is even trying to support the x86 API on PowerPC
+
+1560456339
+scientes
+(a subset of course)
+
+1560459034
+andrewrk
+woo, all the array tests passing in result location branch
+
+1560459338
+jjido
+what is "result location" branch?
+
+1560459379
+andrewrk
+jjido, it's
+
+1560459386
+andrewrk
+which is starting now
+
+1560459498
+jjido
+not too interested in that sorry. Copy or no copy, same semantics (hopefully)
+
+1560459559
+marijnfs__
+sweet
+
+1560462885
+mikdusan
+not to detract from twitch stream so I'll put it here; the math seemed off for 64-bit address space exhaustion
+
+1560462892
+mikdusan
+96 GiB/5mins = 96 * 2^30 / (5 * 60) = 343597383 bytes/s (327 MiB/s)
+
+1560462900
+mikdusan
+343597383 * (365 * 24 * 60 * 60) = 10835687070288000 bytes/year (9.6 PiB/year)
+
+1560462906
+mikdusan
+2^64 / 10835687070288000 = 1702 years until 64-bit address space exhaustion
+
+1560463170
+cameris
+was the purpose to reach the virtual memory limit?
+
+1560463263
+cameris
+some shells, e.g. bash, provide the `ulimit -v` to set a limit for the shell and therefore its children.
+
+1560463266
+mikdusan
+i wasn't following too close but it had to do with mmap and what if you don't go thru trouble of munmap
+
+1560463291
+mikdusan
+(in reference to a (general purpose?) debug allocator
+
+1560464354
+squeek502
+mikdusan, iirc only 48 bits of the 64 bits are actually usable
+
+1560464412
+mikdusan
+right. also related if i'm not mistaken, new sunnycove microarch from intel is bumping to 57 (yes 57, not 56) bits.
+
+1560464637
+mikdusan
+squeek502: and good that you brought it up. if my math is true, 48-bits would be exhausted in 9.5 days?
+
+1560467062
+andrewrk
+yeah I think we need a plan for address space exhaustion
+
+1560467121
+scientes
+mmap on Linux won't give you addresses > 48 bits unless you pass a flag asking for them
+
+1560467124
+scientes
+which is fine
+
+1560467129
+andrewrk
+why would there be a limit on virtual memory? :( that's unreasonable
+
+1560467161
+andrewrk
+my system says "unlimited". I wonder what the defaults are on other systems
+
+1560467190
+scientes
+there is a big problem where lots of graphics cards only implement 48-bit DMA, so the memory has to be mapped flat, which isn't the case on PowerPC
+
+1560467218
+scientes
+wut, ulimit on virtual memory, that makes no sense
+
+1560467226
+andrewrk
+yeah that's what I'm saying
+
+1560467227
+scientes
+maybe a limit on the number of mappings
+
+1560467232
+scientes
+but not the amount of VM
+
+1560467232
+andrewrk
+sure that's reasonable
+
+1560467250
+scientes
+or on the number of dirty pages
+
+1560467327
+andrewrk
+hmm I just realized something potentially problematic
+
+1560467350
+andrewrk
+if you accidentally get mappings close together, you might be using less mappings than you expect, and so then when doing unmap later it might fail unexpectedly
+
+1560467387
+andrewrk
+I think it was a mistake to design mmap such that unmapping can fail if you split a vm page. it might be actually impossible to design stable software with that interface
+
+1560467389
+scientes
+munmap can handle that
+
+1560467393
+scientes
+i thought...
+
+1560467415
+andrewrk
+yeah the problem is that unmap can actually be resource
+
+1560467451
+andrewrk
+who in their right mind thought it would be a good idea to make a function simultaneously do (fallible) resource allocation and resource deallocation in the same call?
+
+1560467452
+scientes
+if it guarantees SIGSEGV, sure
+
+1560467488
+scientes
+yes wasm felt that mmap() was a bad interface
+
+1560467621
+andrewrk
+I actually think windows gets it right
+
+1560467643
+andrewrk
+with VirtualAlloc. it's basically mmap/munmap except VirtualFree doesn't let you split pages and it can't fail.
+
+1560467666
+scientes
+oh I see, yeah splitting pages is stupid
+
+1560467675
+andrewrk
+the debug allocator won't be safe for the wasm target
+
+1560467677
+scientes
+however PowerPC has multiple page sizes, so it can still do that....
+
+1560467703
+andrewrk
+this trick doesn't work for "sbrk" backing APIs
+
+1560468643
+andrewrk
+handling address space exhaustion will be an interesting problem. because currently it's "fire and forget" - address space is permanently leaked on free
+
+1560469001
+mikdusan
+it sounds like munmap return EINVAL is going to have to be ignored since mmap
+
+1560469040
+andrewrk
+I think that's right
+
+1560469046
+scientes
+I don't get it
+
+1560469048
+andrewrk
+but not EINVAL, it's ENOMEM
+
+1560469056
+scientes
+i though you could jsut munmap anything, as long as it is page aligned?
+
+1560469080
+andrewrk
+"ENOMEM The process's maximum number of mappings would have been  exceeded.   This  error  can also occur for munmap(), when unmapping a region in the middle of an existing mapping, since this results in two  smaller  mappings  on  either  side  of  the  region  being unmapped."
+
+1560469082
+scientes
+oh ENOMEM yes i see
+
+1560469091
+scientes
+yeah you just ignore it
+
+1560469093
+scientes
+simple
+
+1560469109
+scientes
+but there should be a flag so that the kernel doesn't even try to unmap it
+
+1560469118
+andrewrk
+if it ever gets ignored it's a leak though
+
+1560469143
+scientes
+what if you try to unmap mapped memory?
+
+1560469146
+scientes
+that that fail too?
+
+1560469154
+scientes
+*unmap unmapped memory
+
+1560469157
+andrewrk
+basically every posix system based on mmap/munmap can leak memory under rare conditions
+
+1560469174
+scientes
+this could be fixed by allowing unmapping unmaped memory
+
+1560469181
+andrewrk
+how?
+
+1560469191
+mikdusan
+unmapping unmapped memory is NOT an error as indicated by manpage
+
+1560469207
+scientes
+you just later unmap the whole mapping
+
+1560469214
+scientes
+and that won't fail with ENOMEM
+
+1560469224
+scientes
+you have to store a pointer and length for every mapping you ever make
+
+1560469247
+andrewrk
+the problem is that when you unmap something, you're clearly going to get rid of that pointer/length for it, because it should be gone now
+
+1560469248
+scientes
+(or you could even ask proc from that info)
+
+1560469268
+andrewrk
+this is what I'm talking about - they've mixed together a function that is supposed to deallocate a resource, with a function that allocates a resource
+
+1560469273
+scientes
+andrewrk, yeah but later you can unmap the whole thing, instead of that segment
+
+1560469285
+scientes
+it should also work if you always unmap the same size that you allocate
+
+1560469302
+andrewrk
+what whole thing? that's my point about if you "accidentally" mmap 2 independent things next to each other
+
+1560469319
+mikdusan
+yeah i found some link that says glibc workaround is to use mmap for max 65535 mappings, then they pivot to using sbrk.
+
+1560469375
+andrewrk
+if the kernel says oh look at this I'm merging these vm pages together now, then it incorrectly gives you an extra mapping that you shouldn't have, and then an unmap will fail and you can't do anything about it
+
+1560469376
+scientes
+ewwwwwwwwwwwww
+
+1560469384
+scientes
+you could also just space mappings out
+
+1560469389
+andrewrk
+how?
+
+1560469390
+scientes
+that would work on 64-bit systems
+
+1560469397
+scientes
+oh you would have to pass addresses
+
+1560469398
+scientes
+ugghhhh
+
+1560469429
+scientes
+you have so much friggen address space it might actually work however
+
+1560469448
+andrewrk
+it will be ok if the kernel devs were smart enough to not get too clever and keep vm mappings separate if they came from separate mmap calls
+
+1560469458
+mikdusan
+scientes: but you'd have to know how much space guarantees no merging
+
+1560469465
+scientes
+just start at 0x4200000000, and each mapping is 2^32 bytes apart
+
+1560469467
+andrewrk
+in this case the caller can be guaranteed munmap will fail if they always remove full mappings
+
+1560469502
+andrewrk
+
+
+1560469505
+scientes
+or other horrible hacks.....
+
+1560469546
+mikdusan
+hey kernel, create me 1 file. then another. merge them but don't tell me about it. thanks!
+
+1560469574
+andrewrk
+I mean that's basically what overcommit is
+
+1560469585
+scientes
+....that is a whole other can of worms
+
+1560469597
+andrewrk
+the kernel tells you you have more memory than you have, and then yanks the rug out from under you when you try to use it
+
+1560469623
+scientes
+but its really hard to undo that decision
+
+1560469626
+scientes
+after the fact
+
+1560469629
+andrewrk
+agreed
+
+1560469774
+scientes
+VMs these days are also overcommited on memory
+
+1560469780
+scientes
+and then they migrate when things get tight
+

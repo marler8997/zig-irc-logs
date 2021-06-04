@@ -1,0 +1,2688 @@
+1574380833
+andrewrk
+but you could build the assumption into your documented API. "Using this function asserts that the host operating system supports timers"
+
+1574380834
+protty
+hmm, alrighty. Have a worst-case work around in mind
+
+1574380886
+andrewrk
+I believe it is extremely rare for this case to happen, so if you had some simple degenerate handling of this case that had horrible perf, that would be OK IMO
+
+1574380908
+andrewrk
+"why is my perf crap?" -> "my OS does not support timers" -> this is a reasonable debugging experience
+
+1574380960
+andrewrk
+I'd also expect most applications that need this functionality to exit with an error message pretty close to main() if this functionality does not exist
+
+1574381148
+protty
+the TODO comment in `std.time.timestamp` is a bit hazy too. Could I assume that wouldn't fail either? If not, am not entirely sure how to tackle this without a timer... busy loop maybe?
+
+1574384207
+andrewrk
+protty, throw a catch unreachable there for now, and open an issue to solve this design problem later
+
+1574384250
+protty
+will do
+
+1574385288
+daurnimator
+andrewrk: saw your Dir.open commit: FYI there are a couple of things in #3715 you might want
+
+1574385323
+daurnimator
+also I'm not sure what happended with CI on #3715... the jobs just say "cancelled"; and not who by or why
+
+1574385457
+gruebite
+for casting ints, is @intCast the way to do it
+
+1574385466
+daurnimator
+gruebite: depends....
+
+1574385474
+gruebite
+@intCast(c_uint, some_c_int)
+
+1574385488
+gruebite
+C api has an unsigned int for its enum
+
+1574385495
+gruebite
+but only @intToEnum exists
+
+1574385496
+daurnimator
+gruebite: you probably want @bitCast for that
+
+1574385499
+gruebite
+so i have to do 2 casts
+
+1574385507
+gruebite
+gotcha
+
+1574385544
+daurnimator
+gruebite: @intCast is if you know the integer is valid in the new type. e.g. you have a u64 and you
+
+1574385560
+gruebite
+also, how do i ignore a reference removing const? the C code takes a non cost reference to a function, but a function pointer is *const
+
+1574385563
+daurnimator
+gruebite: @truncate is if you aren't sure it can fit and want to discard the extra bits
+
+1574385568
+gruebite
+so doing `&some_func` is an error
+
+1574385582
+daurnimator
+@as() can be used if you are casting to a super-set type
+
+1574385604
+daurnimator
+(e.g. u16 to u64; though you can also use @intCast for that; or even *nothing*)
+
+1574385645
+daurnimator
+and then you have @bitCast, which is for going between same-sized things, where the bits need to be re-interpreted. such as signed to unsigned.
+
+1574385729
+gruebite
+and regarding the const pointer passing to C?
+
+1574385768
+daurnimator
+gruebite: huh?
+
+1574385831
+gruebite
+i have a function i need to pass to C, but the C code doesn't take a const pointer, just a regular one
+
+1574385845
+gruebite
+getting `error: cast discards const qualifier`
+
+1574385851
+gruebite
+how can i ignore that?
+
+1574385875
+daurnimator
+gruebite: ah zig makes this hard to get out of: I think you have to @intToPtr(*c_void, @ptrToInt(ptr))
+
+1574385887
+gruebite
+the C API is b0rked a bit and doesn't take a const pointer
+
+1574385889
+gruebite
+ahh
+
+1574385975
+andrewrk
+gruebite, your best bet is to not do this cast, and instead make your data mutable
+
+1574385998
+gruebite
+i'm passing it to a C api i do not control
+
+1574386016
+daurnimator
+andrewrk: but if the C function is e.g. documented as not modifying arguments, and the header just has it wrong.
+
+1574386029
+gruebite
+yeah
+
+1574386062
+andrewrk
+if the header file is wrong then you might consider writing correct extern definitions rather than auto-translating the incorrect .h file
+
+1574386074
+andrewrk
+better yet, send an upstream patch to fix the .h file
+
+1574386149
+daurnimator
+I've encountered this sort of thing quite a bit in respect to apis on windows, e.g. they'll have a function taking a LPWSTR and say it doesn't modify. because windows doesn't have a const-variant of LPWSTR
+
+1574386151
+gruebite
+is there a way i can import my own zig extern def with @cImport
+
+1574386224
+andrewrk
+gruebite, you can just declare the extern functions and types in a file
+
+1574386237
+andrewrk
+start with your @cImport version and then modify it to be more correct
+
+1574386252
+daurnimator
+#2383 is also relevant here
+
+1574389398
+daurnimator
+andrewrk: I guess you need me to rebase 3715 now...
+
+1574389777
+daurnimator
+done.
+
+1574391078
+daurnimator
+so... um... iovec
+
+1574391087
+daurnimator
+its in os/bits.zig
+
+1574391100
+daurnimator
+but windows doesn't have it all the time
+
+1574391113
+daurnimator
+and in some situations where it does: it has the member order swapped
+
+1574392480
+Cucumbas
+Completely new to irc and zig, where do i go to ask questions about zig?
+
+1574392501
+daurnimator
+Cucumbas: you are here.
+
+1574392601
+Cucumbas
+In the documentation, under 'choosing an allocator' it says if you're making a library, you should pass an *Allocator as a parameter-- does that mean a param to every function?
+
+1574392614
+daurnimator
+Cucumbas: usually to your initialisers
+
+1574392643
+Cucumbas
+is there an article or somewhere I could look for tips about writing libraries in zig? like the general structure?
+
+1574392643
+daurnimator
+Cucumbas: e.g. `yourlib.SomeDataStructure.init(my_allocator, otherparam, anotherparam);`
+
+1574392667
+daurnimator
+Cucumbas: not really; best to look at the standard library. e.g. have a look at std/array_list.zig
+
+1574392825
+Cucumbas
+How are you tagging me? @?
+
+1574392871
+Cucumbas
+Ah, thanks! I didn't think of looking at std lib, oops.
+
+1574393164
+daurnimator
+Cucumbas: I'm just typing your name :P (actually I'm typing the first 3 letter then pressing <tab>)
+
+1574393225
+Cucumbas
+daurnimator: oh haha, cause it's showing up highlighted, I guess thats just the client doing that. cool, thanks. Is there a channel for learning irc?
+
+1574393488
+daurnimator
+not really. you've got it :P people use a lot of different clients
+
+1574393767
+Cucumbas
+daurnimator: well thanks so much for the help, I'm gonna go spelunking in the std lib now :)
+
+1574394607
+Cucumbas
+daurnimator: quick question, in the examples I see you store the allocator in the struct with the data. I want to write a vector math lib and it seems very inefficient to store an allocator in every vec. Am I missing something?
+
+1574394628
+Cucumbas
+They will all be fix sized so maybe I should just always used a fixed allocator and not give the option?
+
+1574394799
+andrewrk
+I don't think you'll need an allocator for a vector math lib, since the size of everything is always known at compile time
+
+1574394837
+andrewrk
+daurnimator, we don't yet have any cross-platform abstractions for writing to a file handle with more than 1 buffer
+
+1574394948
+daurnimator
+andrewrk: event/fs has WriteV...
+
+1574395000
+andrewrk
+daurnimator, all that is bit rotted and needs to be audited
+
+1574395041
+andrewrk
+similar to how std.event.net is gone now; properly merged into std.net, and works both for evented and blocking
+
+1574396095
+daurnimator
+andrewrk: okay.
+
+1574396106
+daurnimator
+andrewrk: I'm struggling at the moment with windows/bits vs bits/windows.
+
+1574396219
+andrewrk
+here's a flow chart: is the set of declarations you are adding defined by POSIX? if so, put it in bits/windows. is it defined by windows.h or related headers? if so, put it in windows/bits. otherwise, it does not belong in either
+
+1574396395
+daurnimator
+andrewrk: so e.g. AF_UNSPEC: it originates in afd (the windows kernel module), and is exposed normally via ws2_32 (winsock; the user mode dll), but is also defined by posix
+
+1574396440
+daurnimator
+which file gets the "source of truth"? bits/windows? and then I @import that from e.g. ws2_32?
+
+1574396603
+andrewrk
+os/bits/windows includes windows/bits, so if it's in both, put it in the latter
+
+1574396637
+andrewrk
+what is this afd thing anyway? is that the lowest level networking API on windows?
+
+1574396642
+daurnimator
+andrewrk: yes.
+
+1574396728
+daurnimator
+afd = undocumented (but stable) kernel api. winsock = documented user-land wrapper (with some broken idiosyncracies)
+
+1574397418
+pixelherodev
+...really loving comptime / inline while loops
+
+1574398469
+Cucumbas
+if i have a function with comptime type, how can i pass an arrray of that type into the function and modify it's contents?
+
+1574398733
+Cucumbas
+when i try this it says "unable to evaluate constant expression"
+
+1574398780
+Cucumbas
+I think it's wanting me to only pass const params to the function, is there a way around this?
+
+1574399172
+andrewrk
+Cucumbas, sounds like you want to pass a mutable pointer to an array
+
+1574399323
+Cucumbas
+andrewrk: would the syntax be "ptr: *[3]T", if my array is size 3 and T is the comptime type?
+
+1574399386
+Cucumbas
+in the function def that is
+
+1574404394
+traviss
+Cucumbas, it would be easier for me if you shared some code, maybe on godbolt.org ?
+
+1574404630
+traviss
+here is a zig template you could use if possible:
+
+1574404637
+adamkowalski
+How do I check objects for deep equality?
+
+1574404644
+adamkowalski
+I tried std.testing.expectEqual
+
+1574404659
+adamkowalski
+but that doesn't seem to work for custom types
+
+1574404677
+adamkowalski
+std.mem.eql also doesn't like custom types
+
+1574404782
+traviss
+adamkowalski, i am curious about this too. i tried making eql methods in my custom types and this works ok. but a general method be really nice.
+
+1574404834
+adamkowalski
+if everybody ends up adding .eql to their types aren't we just reinventing operator overloading all over again haha
+
+1574404866
+adamkowalski
+it would be nice to just say std.testing.expect(a == b);
+
+1574404888
+adamkowalski
+I might add a .eql method on my type for now though, thanks
+
+1574404946
+adamkowalski
+traviss: for comparing arrays of custom types did you actually write a for loop and check for equality element by element?
+
+1574404955
+adamkowalski
+or is there maybe a nicer way?
+
+1574404985
+traviss
+std.mem.eql will check for array/slice equality
+
+1574404998
+adamkowalski
+not for custom types though
+
+1574405002
+adamkowalski
+it works for f64
+
+1574405006
+adamkowalski
+but not for my date object
+
+1574405023
+adamkowalski
+even though my date is just a simple type with a year/month/day which are all ints
+
+1574405089
+traviss
+oic, sorry misundestood you. yes, i just used something like `for (std.meta.fields(T)) |f| along with @field(self, f.name) == @field(other, f.name)`
+
+1574405124
+adamkowalski
+hmm yeah I like that.
+
+1574405133
+traviss
+`inline for` i mean
+
+1574405141
+adamkowalski
+so what is the rational for not having == do that in the first place?
+
+1574405150
+adamkowalski
+I'm genuinly curious?
+
+1574405182
+adamkowalski
+i've heard the argument against overloading * because you can have a hidden allocation which may fail
+
+1574405194
+traviss
+of course, this will only work for simple types. i ended up with a switch on typeinfo and doing different things for .Array, .Pointer, ...
+
+1574405213
+adamkowalski
+is it just that you don't know the cost of the == anymore?
+
+1574405227
+adamkowalski
+because like you mentioned, even that solution is brittle
+
+1574405233
+adamkowalski
+and it isn't extensible to custom types
+
+1574405262
+adamkowalski
+what if I want to customize how equality is checked for my type and opt out of the generic version you provided
+
+1574405278
+traviss
+i'm not 100% sure. i know that for instance std.testing.expectEqual doesn't work with tagged unions.. but not sure why yet.
+
+1574405278
+adamkowalski
+I feel like we are really missing a trait/protocol/whatever you want to call it system
+
+1574405330
+torque
+operator overloading hides complexity and possible side effects in expressions that don't appear to be function calls
+
+1574405361
+torque
+there is absolutely nobody stopping you from always creating a function to perform an equality comparison, you just have to call it like an actual function
+
+1574405426
+adamkowalski
+I mean I get that to a point. But isn't the whole point of generic programming to seperate the definition of algorithms and the data that they operate on?
+
+1574405430
+traviss
+maybe you have to make you own equality method which checks if the type has an eql() method and uses that, otherwise, use std.meta.eql?
+
+1574405458
+adamkowalski
+So if I want to write a sort function that relies on < determine where to put the elements
+
+1574405465
+adamkowalski
+you don't want to limit your sort to only work on floats
+
+1574405471
+adamkowalski
+how do you handle arrays of custom types?
+
+1574405482
+torque
+you make a sort function that accepts a callback that it uses to compare the types
+
+1574405521
+adamkowalski
+okay how about now I want to relax my sort function to work on anything which supports random access?
+
+1574405531
+adamkowalski
+if I rely on [i] for indexing
+
+1574405538
+adamkowalski
+I can only operate on slices/arrays
+
+1574405552
+adamkowalski
+I can't make my own type which has an array like interface
+
+1574405565
+adamkowalski
+which is huge for linear algebra. Where for example I want to implement a sparse matrix
+
+1574405583
+adamkowalski
+now if I build a sparse matrix I can't leverage any of the existing code which is written in terms of slices.
+
+1574405585
+torque
+you don't need operators to perform any of those operations though is the thing
+
+1574405589
+traviss
+have you looked at how the std lib does sorting?
+
+1574405610
+adamkowalski
+torque: my point is that by operating on the concrete type we are dramatically limiting code reuse
+
+1574405620
+adamkowalski
+and we are driving a wedge between built in types and custom types
+
+1574405644
+adamkowalski
+there is no way for me to build a type that feels native to the language. It will always feel like a second class citizen compared to the standard arrays
+
+1574405648
+adamkowalski
+I can't implement slicing
+
+1574405655
+adamkowalski
+I can't implement array access
+
+1574405663
+adamkowalski
+comparsion
+
+1574405664
+torque
+you can implement all those things
+
+1574405671
+torque
+they just don't use operator syntax
+
+1574405680
+pixelherodev
+Literally, have you looked at the standard library at all?
+
+1574405682
+adamkowalski
+right they have to be defined as methods on the type
+
+1574405689
+torque
+would you prefer if the built-in types did not use operators as well
+
+1574405694
+adamkowalski
+yes
+
+1574405697
+adamkowalski
+100%
+
+1574405716
+pixelherodev
+The whole point is that it's separated by complexity
+
+1574405716
+adamkowalski
+because then there would be a uniform syntax for dealing with all types that behave a certain way
+
+1574405722
+pixelherodev
+i64 + i64 is simple
+
+1574405731
+pixelherodev
+ComplexType1 + ComplexType2 is not
+
+1574405739
+adamkowalski
+which I get
+
+1574405744
+adamkowalski
+but
+
+1574405750
+pixelherodev
+The problem is that you're assuming all types would in fact behave the same
+
+1574405763
+pixelherodev
+I've seen so many examples of people abusing operator overloading that's come back to bite them - or others - later
+
+1574405773
+adamkowalski
+suppose that now I want to change my inputs so that rather than dealing with just floats
+
+1574405777
+adamkowalski
+I want to have meters
+
+1574405790
+adamkowalski
+or I have a certain amount of uncertainty about each measurement
+
+1574405799
+adamkowalski
+so I want to say it's 3 +- 0.5
+
+1574405811
+adamkowalski
+now I need to refactor ALL my code
+
+1574405827
+adamkowalski
+everything that uses + directly will be useless
+
+1574405849
+pixelherodev
+Sure, but what if you change the type used without realizing that the overloaded operators behave subtly differently?
+
+1574405849
+adamkowalski
+and if you didn't write your algorithms in terms of vars you can't pass meters where f64 was expectd
+
+1574405854
+torque
+I think I generally agree that zig would benefit from formal interface definitions but I think your argument is falling flat because you're consistently conflating this with operator overloading which is Bad
+
+1574405867
+adamkowalski
+i'm not saying operator overload is the solution
+
+1574405882
+adamkowalski
+i'm saying I want to have a way of expressing algorithsm independent of concrete types they are dealing with
+
+1574405892
+pixelherodev
+There are ways to do that already
+
+1574405894
+adamkowalski
+and I think var is not satisfactory
+
+1574405907
+adamkowalski
+it communicates nothing about the requirements about the type
+
+1574405922
+pixelherodev
+Check out e.g. math.sqrt
+
+1574405924
+adamkowalski
+reading through the standard library whenever I see generic code I just see var everywhere
+
+1574405935
+adamkowalski
+or you pass in a compile time parameter T as the first one
+
+1574405936
+pixelherodev
+Wait nope sorry conflating examples
+
+1574405947
+pixelherodev
+
+
+1574405962
+pixelherodev
+Example is shown of using comptime blocks to verify that passed in args are valid
+
+1574405971
+adamkowalski
+right thats on the implementation side
+
+1574405975
+adamkowalski
+thats not on the caller side
+
+1574405989
+adamkowalski
+so you can't easily look at the signature of the function and know what to pas sin
+
+1574405994
+adamkowalski
+you have to read the implementation
+
+1574405999
+adamkowalski
+which leaks the abstraction
+
+1574405999
+traviss
+for instance, many of the sorting algorithms in std/sort require a less than param: `lessThan: fn (T, T) bool`
+
+1574406026
+pixelherodev
+You don't need to read the implementation of math.sqrt to know that it takes in numbers of some sort
+
+1574406043
+adamkowalski
+then why not just use a dynamically typed language
+
+1574406046
+adamkowalski
+you can make that same argument
+
+1574406051
+adamkowalski
+we don't need types, just make the names clear enough
+
+1574406056
+pixelherodev
+And if you're deciding how to call a function purely based on the signature then there's deeper underlying problems
+
+1574406073
+pixelherodev
+If you're
+
+1574406110
+adamkowalski
+there are other concerns I have as well
+
+1574406127
+adamkowalski
+right now the way that you all seem to recommend solving equality checking for example is to make a function
+
+1574406138
+adamkowalski
+typically in Zig it seems like this happens as a method on the struct
+
+1574406144
+adamkowalski
+so you can call a.eql(b)
+
+1574406155
+adamkowalski
+now I have no mechanism by which to add behavior to a type I don't own
+
+1574406169
+adamkowalski
+suppose you write a library, and didn't provide equality checking
+
+1574406173
+adamkowalski
+now what do I do?
+
+1574406183
+Cucumbas
+quick question, what is the way to compare floats in zig? I'm getting unreachable code because of an assert thats failing but should be passing
+
+1574406207
+adamkowalski
+(float_x - float_y) < acceptable_threshold
+
+1574406219
+Cucumbas
+adamkowalski: oh nice, thanks!
+
+1574406225
+adamkowalski
+you can put that in a function called approximately equal or something
+
+1574406233
+pixelherodev
+Maybe write a method that's called as `type_eql(a, b)` ?
+
+1574406238
+torque
+the method syntax is just syntactic sugar
+
+1574406244
+pixelherodev
+There are solutions, but I think that generally this is true regardless of language
+
+1574406270
+adamkowalski
+pixelherodev: yeah but if you have the function you described it's a closed system
+
+1574406274
+adamkowalski
+I have no mechanism to extend it
+
+1574406277
+pixelherodev
+You really shouldn't be able to modify types you don't own in general, if the type is badly designed and you can't control it or work around it then the language can't be reasonably held at fault
+
+1574406298
+adamkowalski
+well I think that depends on your perspective and what other languages you've used
+
+1574406308
+pixelherodev
+If I give you the header for, say, a C++ class without explaining how any of the functions work, and after working around numerous bugs you realize it's missing features, you can't change it there either
+
+1574406308
+traviss
+Cucumbas, there is std.math.approxEqual
+
+1574406325
+adamkowalski
+thats why I think the notion of classes is broken
+
+1574406333
+Cucumbas
+traviss: sweet!! I was hoping there was a built-in way
+
+1574406335
+adamkowalski
+you shouldn't couple data and methods
+
+1574406353
+adamkowalski
+then if a type is missing something like equality
+
+1574406359
+adamkowalski
+I can easily add an overload and boom
+
+1574406361
+adamkowalski
+I move on
+
+1574406369
+pixelherodev
+but the methods are inherently linked to the data regardless
+
+1574406377
+adamkowalski
+with our system the way to solve it would be to create a new type, wrap the old type and add a method
+
+1574406380
+pixelherodev
+An equality function has to be intimately aware of the data it's comparing
+
+1574406390
+adamkowalski
+I disagree
+
+1574406399
+adamkowalski
+it can recursively equality check each field
+
+1574406411
+pixelherodev
+What if it contains nested pointers?
+
+1574406411
+Cucumbas
+traviss: i get this error 'error: container 'std.math' has no member called 'approxEqual''
+
+1574406419
+andrewrk
+automatic recursive quality checking is a footgun
+
+1574406420
+pixelherodev
+a contains a pointer to b contains a pointer to a
+
+1574406427
+andrewrk
+*equality
+
+1574406427
+Cucumbas
+traviss: is that bc maybe my version of zig is behind the current source code?
+
+1574406442
+pixelherodev
+I can probably think of other ways to cause such a comparison to fail
+
+1574406455
+pixelherodev
+Strings are another obvious one
+
+1574406470
+traviss
+oops its approxEq :
+
+1574406477
+adamkowalski
+andrewrk care to elaborate?
+
+1574406478
+andrewrk
+nothing in the language prevents you from using comptime reflection from implementing this though. I believe the hash map API even supports deep equality if you opt in to it
+
+1574406478
+pixelherodev
+If you have two u8 slices, should they be compared by memory? By pointer + length?
+
+1574406490
+adamkowalski
+I'm open to doing things in a different way
+
+1574406500
+adamkowalski
+I just want to know what the rational is before I get behind an idea
+
+1574406515
+pixelherodev
+On the topic of comptime reflection, how performant is it generally?
+
+1574406534
+pixelherodev
+Will over-relying on it bloat compile times the way e.g. templates do to C++?
+
+1574406535
+andrewrk
+sure, give me a real world application you are writing where you need this and I will explain why I automatic recursive equality checking is a potential footgun
+
+1574406557
+adamkowalski
+okay i'll tell you the current problem i'm working on
+
+1574406566
+adamkowalski
+it's a simple problem but maybe thats better
+
+1574406575
+mq32
+hey
+
+1574406595
+Cucumbas
+traviss: ah, thank you :) test passes now.
+
+1574406596
+adamkowalski
+I'm reading in a bunch of measurements
+
+1574406600
+andrewrk
+pixelherodev, if you're using it, then presumably you would have either had to type out all the code manually anyway, or you would have done some kind of code generation. in either case, having zig generate the code with comptime features, and properly cache it, will be as fast or faster
+
+1574406616
+adamkowalski
+I store those measurements in a dataset class
+
+1574406623
+andrewrk
+caveat being that stage1 does not do incremental compilation
+
+1574406630
+adamkowalski
+it just has two arrays the dates and the thickness readings
+
+1574406632
+pixelherodev
+It caches it now? Actually, how is comptime implemented in stage1?
+
+1574406642
+adamkowalski
+I want to write a unit test and check if the parsing is done correctly
+
+1574406664
+adamkowalski
+so I instantiate the dataset expliclity, this is my expected value. then I call my parsing code and generate a dataset
+
+1574406670
+adamkowalski
+I want to check if the actual is equal to the expected
+
+1574406678
+pixelherodev
+Or I can just look through the code if you don't have time to explain
+
+1574406706
+andrewrk
+pixelherodev, I think I did a live coding stream where I showed an overview of how that stuff works once
+
+1574406712
+mq32
+adamkowalski:
+
+1574406722
+mq32
+there is flat, generic equality checking available
+
+1574406731
+adamkowalski
+std.meta.eql
+
+1574406737
+adamkowalski
+i'll try it, thanks
+
+1574406760
+adamkowalski
+andrewrk: but about vars. have you heard about concepts from C++20? Are you against that idea?
+
+1574406768
+adamkowalski
+we can probably do something more zig like
+
+1574406782
+adamkowalski
+what if instead of var you can put a function which takes a type and returns a bool
+
+1574406793
+andrewrk
+that's an open proposal
+
+1574406802
+adamkowalski
+at compile time it will pass the type of the parameter and if the function returns true then the constraint is satisfied
+
+1574406815
+adamkowalski
+but now we have a name assocaited with the generic concept
+
+1574406847
+adamkowalski
+it's already been proposed? awesome.
+
+1574406895
+mq32
+adamkowalski: i've sent you the link to the proposal the first time you talked about concepts ;)
+
+1574406961
+mq32
+pixelherodev: how's your kernel coming along?
+
+1574406975
+pixelherodev
+mq32, been using it to build a game for the GitHub Game Off jam
+
+1574406982
+mq32
+neat!
+
+1574406990
+pixelherodev
+So far, the only real tweaks have been directly related to that game
+
+1574406990
+mq32
+i have now a working floppy and ATA driver
+
+1574406994
+pixelherodev
+So some terminal improvements
+
+1574407001
+pixelherodev
+Neat, I have ATA working also :)
+
+1574407011
+mq32
+but sadly, it's yet untested with real hardware
+
+1574407022
+adamkowalski
+mq32 okay I tried std.meta.eql. It says the test fails but doesn't say anything about why haha
+
+1574407026
+pixelherodev
+Need to redo it though because the current abstraction for AHCI vs PATA is very very sloppy
+
+1574407038
+adamkowalski
+|| /Users/adamkowalski/zig/build/lib/zig/std/testing.zig:149:14: 0x10e4cace8 in _std.testing.expect (test.o)
+
+1574407041
+adamkowalski
+||     if (!ok) @panic("test failure");
+
+1574407044
+adamkowalski
+||              ^
+
+1574407063
+adamkowalski
+when I compare manually it passes though
+
+1574407076
+pixelherodev
+It means that the expectation failed, no? Wait, but the panic is in std.testing.expect - isn't there a stack trace?
+
+1574407077
+mq32
+yeah, meta.eql does a flat comparison, not recursive
+
+1574407088
+andrewrk
+pixelherodev, maybe this one?
+
+1574407101
+andrewrk
+I should probably do another "how to contribute to the stage1 c++ compiler" tutorial video
+
+1574407149
+mq32
+andrewrk: +1
+
+1574407151
+pixelherodev
+Thanks!
+
+1574407161
+pixelherodev
+I'm more interesting in contributing to stage2 though
+
+1574407164
+adamkowalski
+do we have anything for recursive equality comparison?
+
+1574407168
+mq32
+i'm still kinda scared of this, so i always just report bugs
+
+1574407179
+mq32
+adamkowalski: nope, and i don't think it's reasonable to have this in std
+
+1574407192
+mq32
+recursive comparison is a footgun as andrewrk said
+
+1574407197
+adamkowalski
+can you all elaborate on these so called footguns
+
+1574407204
+traviss
++1 for any kind of contributions tutorial videos
+
+1574407206
+adamkowalski
+just bad aliasing
+
+1574407212
+andrewrk
+pixelherodev, the next step to that is going to be improving std lib's evented I/O support, because I plan to take full advantage of that for self-hosted
+
+1574407215
+adamkowalski
+what if we promise we don't have them
+
+1574407219
+mq32
+Node = struct { node: *Child };
+
+1574407233
+mq32
+var n : Node = undefined; n = .{ .node = &n; };
+
+1574407239
+mq32
+now compare n recursively
+
+1574407243
+adamkowalski
+okay well if you do that thats on you
+
+1574407247
+andrewrk
+even if you don't have aliasing, your data types may not fully describe the notion of equality that is correct for the application, and in fact is likely to be subtly wrong
+
+1574407260
+mq32
+you either run out of stack or you require an allocator for caching
+
+1574407274
+adamkowalski
+okay so what is the alternative that you all would do?
+
+1574407275
+andrewrk
+maybe you add a field which is an allocator, or a logging ID, or some other out-of-band data
+
+1574407296
+mq32
+write a equality function, that is sane?
+
+1574407317
+andrewrk
+yes alternative is to be explicit
+
+1574407383
+andrewrk
+you could even have a comptime assertion in there that the number of fields is X. to remind yourself with a compile error to check the equality function's correctness when adding or removing a field
+
+1574407428
+adamkowalski
+yeah I can do that, thanks
+
+1574407430
+andrewrk
+nothing is stopping you from implementing deep equality checking using zig's comptime features
+
+1574407437
+andrewrk
+but I'm just recommending to do the simple thing
+
+1574407459
+adamkowalski
+but so you think thats less error prone then implementing deep equality by default and then opting out of it when it's not safe?
+
+1574407490
+pixelherodev
+People tend not to realize when it's not safe.
+
+1574407491
+andrewrk
+idk, do whatever makes sense for the data you have
+
+1574407496
+mq32
+i know no language that has deep equality
+
+1574407502
+adamkowalski
+D language
+
+1574407520
+mq32
+looks like D has even more features than c++ :D
+
+1574407536
+andrewrk
+adamkowalski, I wonder if you will enjoy this talk:
+
+1574407547
+pixelherodev
+The problem is this: any generic recursive equality algorithm
+
+1574407565
+adamkowalski
+andrewrk: yeah I love mike acton! thats a great talk
+
+1574407587
+andrewrk
+he would definitely say to just write your equality function rather than trying to solve it with meta programming
+
+1574407592
+adamkowalski
+that was actually one of the things that got me excited about your language, it seems like it embodies the spirit of that talk
+
+1574407680
+adamkowalski
+however, I also think people like Alexander Stephanov were briliant and his book elmements of programming is a masterpiece
+
+1574407730
+adamkowalski
+I don't think writing code which is performant, simple to reason about, and maintanable need to be disjoint from writing generic code
+
+1574407788
+pixelherodev
+Regarding kernel-game:
+
+1574407808
+pixelherodev
+I made a thingy which takes an enum and outputs output and input instructions :P
+
+1574407838
+pixelherodev
+That `expect_char` thing is one of many many tricks I needed to get the same code working identically natively and as a kernel :)
+
+1574407852
+adamkowalski
+anyway thanks for all the feedback! i'll implement the equality explicitly. I'm off for the night. have a good one everyone!
+
+1574407859
+pixelherodev
+Night!
+
+1574407879
+pixelherodev
+I enjoyed the debate and look forwards to the next one :)
+
+1574407896
+pixelherodev
+It's always good to hear other perspectives on things I don't generally think about
+
+1574407912
+mq32
+btw, pixelherodev: i have my x86 IO now in zig style
+
+1574407917
+pixelherodev
+?
+
+1574407923
+mq32
+IO.in(u8, port) and IO.out(u16, port, value)
+
+1574407926
+pixelherodev
+Ah
+
+1574407931
+pixelherodev
+Yeah, I've had that for a while now :)
+
+1574407937
+mq32
+which is MUCH MORE readable than inb, inl, inw and the latter
+
+1574407954
+pixelherodev
+Wait, you mean as opposed to using inline asm everywhere, or?
+
+1574407959
+pixelherodev
+Ohhhhh
+
+1574407961
+pixelherodev
+Neat!
+
+1574407964
+mq32
+yes
+
+1574407964
+mq32
+:D
+
+1574407967
+pixelherodev
+That's brilliant, I'm totally stealing that
+
+1574407970
+pixelherodev
+;)
+
+1574407971
+mq32
+GO! :D
+
+1574407989
+mq32
+i need to make some "intrinsincs" file though
+
+1574407994
+pixelherodev
+The fun part with that comptime/runtime hybrid function is I can probably now hijack it and use it to auto-implement, say, saving/loading, to interface to the basic inventory system I implemented earlier...
+
+1574407995
+mq32
+have too much inline assembly over the place
+
+1574408002
+pixelherodev
+That's a good idea
+
+1574408010
+mq32
+so something like
+
+1574408012
+mq32
+CPU.halt();
+
+1574408019
+mq32
+instead of inline assembly
+
+1574408033
+mq32
+also andrewrk: is it wanted that error return traces may be
+
+1574408054
+mq32
+i discovered that a return trace may be weird if the error is handled with a retry loop
+
+1574408069
+andrewrk
+mq32, unless you're hitting an old bug, they should be capped at 32 items, and they include when you "catch" an error even if you don't return it
+
+1574408103
+bgiannan
+andrewrk, i definitely had some over 32 items
+
+1574408141
+pixelherodev
+Reminds me of my fun "panic within panic" errors :P
+
+1574408271
+mq32
+andrewrk: this got me confused some times
+
+1574408271
+mq32
+
+
+1574408286
+mq32
+pixelherodev, oh yeah, i got those as well :D
+
+1574408315
+pixelherodev
+Wait what.
+
+1574408321
+pixelherodev
+Why are those errors printing at all?
+
+1574408322
+andrewrk
+bgiannan, mq32:
+
+1574408373
+mq32
+ah thanks
+
+1574408374
+pixelherodev
+Ah
+
+1574408377
+mq32
+will read that
+
+1574408381
+andrewrk
+an item is added to the error trace every time an error is returned from a function
+
+1574408386
+andrewrk
+regardless of catch
+
+1574408406
+andrewrk
+if you can look past the noise, it's actually useful, to see when an error is translated to a different one
+
+1574408480
+andrewrk
+the linked issue would have the index resut in mq32's example, because it does not return the error in the block
+
+1574408518
+andrewrk
+s/resut/reset/
+
+1574409313
+mq32
+ah!
+
+1574409320
+mq32
+so this is expected :)
+
+1574409334
+mq32
+andrewrk: when i'm at asking questions :D
+
+1574409349
+mq32
+is it possible to include C headers without libc?
+
+1574409413
+mq32
+last time i checked it forced me to link a libc
+
+1574409419
+pixelherodev
+non-libc headers?
+
+1574409424
+pixelherodev
+Yeah
+
+1574409465
+pixelherodev
+Source: I include the ACPICA C header in Zig code
+
+1574409504
+andrewrk
+mq32, are you sure that wasn't a libc header? if it forced you to link a libc
+
+1574409515
+andrewrk
+or maybe the header you included accidentally included a libc header
+
+1574409525
+mq32
+/tmp/c.zig:2:11: note: libc headers not available; compilation does not link against libc
+
+1574409533
+mq32
+the header is literally
+
+1574409533
+mq32
+extern void * fooFunc();
+
+1574409543
+pixelherodev
+Does it share a name with a libc header?
+
+1574409546
+andrewrk
+mq32, that warning has no idea what C compilation errors happened
+
+1574409559
+pixelherodev
+Ah
+
+1574409560
+andrewrk
+it's just a common mistake - people try to use libc headers without -lc and get confused
+
+1574409574
+andrewrk
+what was the error you got (not the note)
+
+1574409594
+mq32
+ah now i see
+
+1574409603
+mq32
+it failed to find the header file
+
+1574409610
+mq32
+hmm
+
+1574409614
+andrewrk
+I think you might just need a -I
+
+1574409619
+mq32
+yeah, that's it
+
+1574409621
+mq32
+okay, so to my next problem:
+
+1574409633
+mq32
+how can i create a custom DLL import file?
+
+1574409650
+andrewrk
+hmm that's a question I don't have a quick answer for
+
+1574409725
+mq32
+huh
+
+1574409730
+mq32
+zig build-lib -I . c.zig
+
+1574409734
+mq32
+error: dependency on dynamic library 'foolib' requires enabling Position Independent Code
+
+1574409746
+mq32
+how do i do this? i search over zig --help doesn't yield something helpful
+
+1574409774
+pixelherodev
+0fPIC
+
+1574409779
+pixelherodev
+s/0/-
+
+1574409786
+pixelherodev
+It's in zig --help
+
+1574409795
+mq32
+oops :D
+
+1574409801
+pixelherodev
+`zig --help | grep PIC` popped it right up :P
+
+1574409814
+andrewrk
+hm you shouldn't have to do -fPIC manually
+
+1574409867
+andrewrk
+I think you're missing a -l arg?
+
+1574409871
+mq32
+okay, now i have a .obj file
+
+1574409879
+andrewrk
+-lfoolib
+
+1574409881
+mq32
+how do i get a DLL out of this? :D
+
+1574409907
+mq32
+with "zig build-lib"
+
+1574409918
+andrewrk
+`zig build-lib -dynamic foo.zig` makes DLLs
+
+1574409995
+mq32
+huuh
+
+1574410002
+mq32
+why is that in compile options and not linker options? :D
+
+1574410012
+andrewrk
+it affects both
+
+1574410020
+mq32
+ah!
+
+1574410021
+andrewrk
+but I see why you would expect it in the linker section
+
+1574410037
+mq32
+Link...lld: error: could not open 'foolib.lib': No such file or directory
+
+1574410049
+mq32
+okay, now what file type does the linker expect here?
+
+1574410057
+mq32
+i don't have a lib file  :(
+
+1574410260
+andrewrk
+mq32, looks like it is creating one but not installing it. that's a quick fix to std/build.zig
+
+1574410273
+andrewrk
+damn, both of my zig checkouts have wip code in them
+
+1574410362
+Pistahh
+andrewrk: git worktree add ../newcheckout ;)
+
+1574410382
+mq32
+andrewrk, wrong side
+
+1574410387
+mq32
+foolib is an import, not an export
+
+1574410458
+andrewrk
+mq32, you're trying to link against your own DLL right?
+
+1574410498
+mq32
+no
+
+1574410505
+mq32
+i have "acknex.dll", with a documentation and headers
+
+1574410508
+mq32
+but no library fil
+
+1574410510
+mq32
+*file
+
+1574410531
+FireFox317
+andrewrk: what is the zasm you are working on? btw is your sleeping schedule a bit off? xd
+
+1574410549
+andrewrk
+is my sleep schedule is foobar'd
+
+1574410552
+andrewrk
+*yes
+
+1574410575
+andrewrk
+you might even say it is quuxed
+
+1574410637
+andrewrk
+up until recently zig would auto generate import .lib files for dlls when you use extern "acknex" fn (...) syntax
+
+1574410667
+andrewrk
+LemonBoy did some legitimate improvements in this regard, especially with regards to non-x86_64 windows targets. But I'm not sure where we're at anymore with that feature
+
+1574410703
+andrewrk
+mq32, my recommendation will be to try to do that, and let's get that feature working again if it broke
+
+1574410742
+mq32
+okay, i'll get my gamestudio installation later :D
+
+1574410753
+mq32
+it would be really funny to code games in acknex, from linux
+
+1574410758
+andrewrk
+in the meantime a workaround will be manually generating the .lib file from a hand coded .def file using LLD or link.exe
+
+1574410759
+mq32
+for a windows/lite-c based engine :D
+
+1574410772
+FireFox317
+trips always shrew up my sleeping schedule too hahah, but zasm is just a beginning of an assembler in zig?
+
+1574410778
+mq32
+yeah, would be lld then, i don't have a windows installation near me :D
+
+1574410820
+andrewrk
+FireFox317, yes, zasm is my "fun after hours" project right now, where I'm learing how to do direct-to-machine-code
+
+1574410881
+andrewrk
+*learning. I looked at the LLVM and NASM instruction database files but they were too hard for me to understand. So my plan is to start building my own instruction database up from first principles, and then once I understand the problem enough I can toss out my amateur hour database and port LLVM's
+
+1574410910
+FireFox317
+ah cool! I'm preparing a PR for clashos to get it working on hardware again, and will change the structure a bit, such that people can learn from it :)
+
+1574410915
+andrewrk
+but the main idea behind zasm is that it will enable a direct-to-machine-code backend in self-hosted eventually
+
+1574410932
+andrewrk
+as well as non-llvm backends in general
+
+1574410975
+mq32
+that would be really cool!
+
+1574411039
+andrewrk
+I'm tired of people asking if zig is as fast as jai, I decided I want the answer to this question to be "it's faster"
+
+1574411094
+mq32
+heh
+
+1574411098
+mq32
++1
+
+1574411192
+mq32
+git commit -m "Adds FTL drive to zig"
+
+1574411254
+andrewrk
+it'll probably be more like "Merge pull request #6666 from kprotty, new event loop implementation"
+
+1574411308
+mq32
+yeah true, but i want to believe! :D
+
+1574411333
+FireFox317
+people really want fast compilation times for some reason, i really like that fact that zig has so many targets thanks to llvm :)
+
+1574411895
+mq32
+FireFox317: targets, compilation speed and code optimization are all valid targetss to optimize for
+
+1574421011
+FireFox317
+does someone know how i would reach LemonBoy?
+
+1574421210
+FireFox317
+nvm found a email address
+
+1574428569
+tgschultz
+jai has a lot of hype but who cares how fast it is if you can't even use it.
+
+1574428591
+scientes
+^^^
+
+1574428600
+scientes
+hype is overrated :)
+
+1574428900
+bgiannan
+is there an IDE where i can see compile errors on the code as i'm typing?
+
+1574429585
+scientes
+bgiannan, that requries language server
+
+1574429593
+scientes
+which is not supported ATM
+
+1574429804
+bgiannan
+does it?
+
+1574429959
+mq32
+the vscode plugin also recompiles sometimes
+
+1574429963
+mq32
+and shows errors
+
+1574429975
+mq32
+but it's much worse than just run "clear && zig build" in the console
+
+1574430113
+bgiannan
+if i have highlighted code instead of looking at the error in the terminal and navigating to the file:line, it's still better
+
+1574436812
+adamkowalski
+andrewrk: do you have any tips for how to approach dealing with lifetimes if I want to implement this
+
+1574436834
+adamkowalski
+this is one of the PyTorch devs discussing how their auto diff works and how they represent the computation graph
+
+1574436981
+adamkowalski
+Should I just use the same allocator for the entire forward pass as well as the computation graph then deallocate all at once?
+
+1574437588
+fengb
+So... I'm not sure if that's the best solution, but arena_allocator helps you do that easily
+
+1574437690
+fengb
+Most of our parsers use an arena
+
+1574437770
+adamkowalski
+yeah that sounds like a good fit
+
+1574437784
+adamkowalski
+so each training loop you create the arena and defer to deinit it
+
+1574437797
+adamkowalski
+then you build up the computation graph and you know you can safely store references to other parts of it
+
+1574437802
+adamkowalski
+then just blow it all away at the end
+
+1574437831
+mq32
+yeah the arena allocator is really great of all kind of graph wor
+
+1574437833
+mq32
+*work
+
+1574437837
+adamkowalski
+perfect!
+
+1574437877
+adamkowalski
+Once it's ready we should choose a project that shows off why people should use Zig for machine learning rather than Python
+
+1574437895
+mq32
+heh
+
+1574437899
+adamkowalski
+One thing Intel was working on that we were going to help with was differentiable ray tracing
+
+1574437905
+mq32
+i think people should use less python anyways
+
+1574437912
+adamkowalski
+well the libraries are too damn good
+
+1574437921
+mq32
+yeah, i know
+
+1574437923
+mq32
+but the overhead
+
+1574437930
+adamkowalski
+it makes doing data science in anything but that a really hard sell
+
+1574437954
+adamkowalski
+but it struggles when the library support isnt there because the key to writing fast python is to shell all the work out to C++ haha
+
+1574437956
+mq32
+yeah, but a lot of software shouldn't be python. that costs so much energy :D
+
+1574437970
+adamkowalski
+yeah thats why I'm trying to convince my boss to switch to Zig
+
+1574437983
+adamkowalski
+but i'm tasked with showing alternatives to all the libraries we use in Python
+
+1574437987
+adamkowalski
+so it will be a while
+
+1574437994
+adamkowalski
+I'm working on a plotting library for now
+
+1574438022
+adamkowalski
+we also need a way to deal with large tabular data (they have data frames which are unified abstractions for dealing with excel, sql tables, etc)
+
+1574438032
+adamkowalski
+a tensor (nd array) library that supports auto diff
+
+1574438035
+adamkowalski
+and then I think we are done
+
+1574438049
+adamkowalski
+well actually we also need probability distributions
+
+1574438088
+adamkowalski
+the auto diff one is what i'm thinking is gonna be hardest to implement haha. So I could use any help I can get
+
+1574438292
+adamkowalski
+On an unrelated note. Do you all tend to keep tests in the same file as the code they are testing? Or in a seperate directory? Or whats the best practice
+
+1574438382
+Snektron
+I usually do them in the same file, since Zig's system makes that so east
+
+1574438386
+Snektron
+Easy
+
+1574438398
+adamkowalski
+okay cool, thats what I've been doing so far too
+
+1574438398
+Snektron
+Also gives you example usage on functions
+
+1574438404
+adamkowalski
+thats true
+
+1574438601
+Snektron
+I think theres no reason to not put them in there
+
+1574438622
+Snektron
+If your file grows too large its probably wiser to split out some functionality
+
+1574438883
+adamkowalski
+Would it be a valid strategy to use a series of arena alocators. Each section of your program uses an arena and then when that portion of the work is done then you deallocate the whole region
+
+1574438900
+adamkowalski
+then you go upwards deallocating regions until the whole program finishes
+
+1574438946
+adamkowalski
+Then you only pay for deallocation at predetermined times and you get something that almost feels like a garbage collected language since you know the lifetimes are always valid
+
+1574439086
+Snektron
+If the parent of an arena allocator is another arena allocator you might as well just use the one
+
+1574439135
+mq32
+i kinda remember that zig std has some kind of iterator for multiple slices
+
+1574439149
+mq32
+can somebody hint me the name?
+
+1574439418
+kenaryn
+Hello, please what does it mean the '&' character? It is not explained in the official documentation. Here is an example: `var buf: [100]u8 = undefined; const amt = try self.file.read(&buf);`
+
+1574439497
+mq32
+& is the "address operator"
+
+1574439503
+mq32
+it takes the address of a certain value
+
+1574439521
+mq32
+the `&buf` expression would return a pointer of type `*[100]u8`
+
+1574439756
+Snektron
+Interesting how there seem to be more people programming zig lately that dont have experience with C
+
+1574439774
+Snektron
+Seems like a small victory
+
+1574439825
+companion_cube
+if you want to replace C, requiring prior experience with C seems asking a bit much!
+
+1574440345
+kenaryn
+Thank you buddy!
+
+1574440625
+kenaryn
+Please what is the difference between the pointer and the address operator? Is there a discrepancy between (for example) *buf and &buf?
+
+1574440662
+kenaryn
+Andrew use both in this server.zig live stream example and I admit I'm lost.
+
+1574440688
+companion_cube
+they're inverse operations, & takes the address of something
+
+1574440695
+companion_cube
+and * follows the address back to the object
+
+1574440720
+kenaryn
+Thank you my dear french fellow.
+
+1574440725
+fengb
+That used to be the same syntax but it caused parser ambiguity
+
+1574440735
+companion_cube
+:D
+
+1574440838
+kenaryn
+I hope one day the Zig documentation will be written to allow people to learn it as a first programming language because currently it requires a lot of prerequisite concepts.
+
+1574440864
+kenaryn
+The entry barrier is quite high you know.
+
+1574440875
+companion_cube
+it's 0.5, so, very early days
+
+1574440944
+kenaryn
+I need a Zig book for Christmas :D
+
+1574441317
+fengb
+And documentation isn't the best. We have decent resources for C programmers, but probably need more for newbies
+
+1574441435
+kenaryn
+I read all 0.5.0 release notes and the official documentation, read some github examples and followed the live chat tcp server stream but it is cleary not enough, I'm still unable to code anything.
+
+1574442438
+Snektron
+Ability to program doesnt come overnight, and Zig is not reallt the easiest place to start
+
+1574442445
+Snektron
+But sont let that demotivate you
+
+1574442452
+Snektron
+dont
+
+1574445853
+Cucumbas
+If you want to write code that can be compiled to C, do you have to use a subset of zig? Because how could
+
+1574445865
+Cucumbas
+You express generic stuff in C
+
+1574446187
+fengb
+Yes, Zig only adheres to C ABI with data structures/functions marked extern
+
+1574446215
+fengb
+And Zig things like error unions and slices are not supported in extern
+
+1574447883
+gruebite
+how can i convert a c string to a zig string?
+
+1574447898
+gruebite
+and how do i build c strings without literal `c"string"` syntax?
+
+1574447910
+gruebite
+is it just u8 and add a 0 at the end and cast?
+
+1574448238
+fengb
+
+
+1574448359
+gruebite
+niiiice
+
+1574448732
+Cucumbas
+how does zig compile a generic function to C?
+
+1574448754
+gruebite
+regarding
+
+1574448760
+gruebite
+null is the only one i know of used
+
+1574448764
+gruebite
+null/0
+
+1574449919
+pixelherodev
+Are strings literals currently null-terminated in memory (before #3728)?
+
+1574450401
+fengb
+They are not by default but you can build a cstring with c”foo”
+
+1574450518
+andrewrk
+this PR deletes C string literals from the language because they become unnecessary
+
+1574450560
+andrewrk
+Cucumbas, zig does not compile to C, it compiles to machine code
+
+1574450614
+andrewrk
+I would love to see a "learn programming from scratch with zig" book. I think that becomes possible once the language stabilizes
+
+1574450637
+Cucumbas
+andrewrk: sorry not sure what the right verbage is, I'm talking about this:
+
+1574450705
+andrewrk
+Cucumbas, generic functions are not compatible with the C ABI. if you want to create an ABI you have to use C ABI only types. You could call a generic function in your implementation of a function though
+
+1574450748
+mikdusan
+andrewrk: re: "unembeds ConstExprValue from IrInstruction",
+
+1574450786
+mikdusan
+i should have some time to re-engage with this PR. the current state is,
+
+1574450823
+Cucumbas
+andrewrk: ah, so it would be a matter of wrapping the code. would my code have to use C ABI types internally too?
+
+1574450846
+andrewrk
+Cucumbas, it's up to you how you organize this
+
+1574450876
+andrewrk
+generally, I would advise to create your C ABI as a "layer" on top of a Zig API. This way you could have a zig package and also export a C library
+
+1574450908
+andrewrk
+one nice trick is that you can have
+
+1574450941
+andrewrk
+so you could have an API like `export fn createFoo() *Foo` and your Foo can be a zig struct with zig types in it
+
+1574450981
+mikdusan
+i'll merge with master/head again and take out "flagged" (conditional) implementation for interning and settle on const value interning only for 1-possible-value types,
+
+1574451036
+Cucumbas
+andrewrk: oh awesome! thanks for explanation, super helpful
+
+1574451088
+andrewrk
+mikdusan, I think this will be a big step in the right direction, for tackling the memory issues, looking forward to merging that
+
+1574451096
+mikdusan
+but friendly reminder this unembedding will pretty much hit any stage1 forked work out there with the need to merge (trivial) struct changes
+
+1574451110
+andrewrk
+yes that's unfortunate, but has to happen
+
+1574451127
+mikdusan
+is there a "time" you feel this kind of merge would be easier to do? i can try and hit that time for you if you want.
+
+1574451157
+andrewrk
+any time. this would have already made #3728 easier to do
+
+1574451166
+andrewrk
+since I need to intern the sentinel value
+
+1574451207
+mikdusan
+okie dokie
+
+1574451824
+fengb
+Seems like every "error as value" language reinvents stacktraces in the userland :(
+
+1574451895
+fengb
+I hope Zig error traces become more commonly adopted
+
+1574451937
+andrewrk
+we also need something to help with async function (non-error) traces
+
+1574451967
+andrewrk
+if you never used async/await and only made async calls, we actually could set up the frames so that the normal stack unwinding code would see no difference between async fns and normal fns
+
+1574451999
+andrewrk
+the problem is that the trace we care about flows through the async, not the await, and the calling frame might not exist at time of stack unwinding
+
+1574452151
+andrewrk
+there's also the problem of using a debugger. it would be nice if the debugger could find the async fn trace
+
+1574452217
+andrewrk
+languages that allow hidden memory allocations have such an advantage in ergonomics. you can do a lot with the assumption of infinite memory
+
+1574452292
+andrewrk
+there's absolutely no excuse for a garbage collected language that doesn't have python-style integers
+
+1574452301
+pixelherodev
+Does #3728 make it so that normal string literals are null-terminated?
+
+1574452307
+andrewrk
+pixelherodev, yes
+
+1574452343
+andrewrk
+with this, string literals can type coerce both to `[]const u8` as well as `[*:0]const u8` (C strings)
+
+1574452361
+fengb
+andrewrk: you mean automatic promotion to BigInt?
+
+1574452371
+pixelherodev
+Hmm, so that means that there's an extra byte for each string once that's merged? :(
+
+1574452388
+andrewrk
+fengb, yes but that's an implementation detail. I mean that in a garbage collected language, integers should have unlimited range of values
+
+1574452420
+andrewrk
+pixelherodev, yes. do you foresee a problem with this? larger binary size?
+
+1574452427
+pixelherodev
+Mostly joking, it should probably be negligible
+
+1574452441
+fengb
+Yeah that makes sense. Although a reasonable argument is that accidental promotion can non-obviously destroy performance
+
+1574452486
+andrewrk
+fengb, yes that's a reasonable argument. But my counter to that is you're already using a garbage collector (and probably a JIT). non-obvious performance is a given
+
+1574452494
+fengb
+Might be a Java centric argument since that's the only language I know that forces primitive boxing shenanigans
+
+1574452525
+fengb
+There's no perfect language, only tradeoffs
+
+1574452527
+pixelherodev
+Though I'm not sure I see the need for null termination, personally
+
+1574452537
+THFKA4
+wrong, zig will be perfect
+
+1574452541
+THFKA4
+begone heathen
+
+1574452544
+andrewrk
+pixelherodev, that's great, don't use it
+
+1574452572
+pixelherodev
+No, I mean I don't see the need for string literals to be null terminated in situations in which the null byte is never used
+
+1574452615
+pixelherodev
+One byte isn't a big deal, but it still seems wasteful when it's being coerced into a `[]const u8` anyways
+
+1574452653
+andrewrk
+in theory zig should be able to determine when the null byte could not possibly be observed and omit it. but I'm guessing this would be a lot of work for negligible gain
+
+1574452671
+andrewrk
+this is one of those things where if it was done from the start you wouldn't think twice about it, but since it's a change that's requiring effort, it's under scrutiny
+
+1574452706
+pixelherodev
+That's definitely true
+
+1574452717
+pixelherodev
+I think the biggest use case for doing that would be embedded targets
+
+1574452734
+pixelherodev
+e.g. AVR, where RAM is measured in KB, every byte counts for some real-world applications
+
+1574452765
+andrewrk
+in this use case, embedded targets might actually want null termination, since each string requires 1 null byte rather than a usize for the len
+
+1574452796
+pixelherodev
+String literals will store both after #3728?
+
+1574452815
+pixelherodev
+Proposal: add an explicit "non null-terminated string literal" syntax, and an explicit "only null-terminated (no usize for length) string literal" syntax
+
+1574452869
+andrewrk
+existing code will work the same, except the `c` from C string literals gets dropped, and string literals are pointers now, so if you want the array value, dereference it
+
+1574452909
+pixelherodev
+Wait, is the usize part of the literal itself? Or is that in-memory for the slice?
+
+1574452949
+andrewrk
+the type of "hello" is *const [5:0]u8`
+
+1574452957
+andrewrk
+the length is part of the type
+
+1574453003
+pixelherodev
+Right, I mean does it show up in the binary, or is it set aside in the stack when that value is used?
+
+1574453029
+pixelherodev
+And on a different note, is there a way to basically "jump" to another function? e.g. if function x wants to under certain conditions `return x(other_args)`, is there a way to avoid wasting stack?
+
+1574453030
+Pistahh
+andrewrk: what if a c library, when used with zig, decides to put a \0 in the middle of an existing string (as some kind of "chop" operation), screwing up the zig semantics with the length still referring to the full length?
+
+1574453064
+gruebite
+that would throw off existing stdlib strlen operations too
+
+1574453066
+andrewrk
+Pistahh, the semantics do not guarantee that the sentinel is not present before the length, only that it is present at the len index
+
+1574453116
+andrewrk
+the main use case for this type is a foot-shield, to make sure you don't forget to null-terminate stuff. the language doesn't really do much with this type information other than typecheck
+
+1574453202
+andrewrk
+I think this change is going to be a lot less disruptive than people fear
+
+1574453241
+andrewrk
+pixelherodev, the issue for semantically guaranteeing this is:
+
+1574453256
+Pistahh
+andrewrk: still, it can cause weird issues, when using such a "malformed" string with pure c functions would have different result than the "same" functions in zig. i.e. appending one char to it. C would find the first \0 and append there; zig would use the length
+
+1574453257
+andrewrk
+pixelherodev, optimized builds will already do this optimization
+
+1574453283
+pixelherodev
+Thanks!
+
+1574453286
+andrewrk
+Pistahh, I challenge you to provide a zig example code where a weird issue occurs
+
+1574453388
+pixelherodev
+C and Zig disagreeing on the string's length might be problematic, but it also might be useful
+
+1574453465
+fengb
+It already disagreed before this change. This isn't making it worse
+
+1574455432
+Srekel
+Hi everyone, got a question that I asked on Discord but got conflicting answers, so wanted to check here. What would be the corresponding way to do C-style void* userdata? @OpaqueType seems to be the best option.
+
+1574457320
+bgiannan
+weirdest bug i'm having: seems like any allocation crashes because of a std.debug.warn in an unrelated code...
+
+1574457647
+daurnimator
+andrewrk: stream today?
+
+1574457689
+bgiannan
+whats [c*] vs [*] ?
+
+1574457709
+bgiannan
+just updated zig and it complains of *.cimport:19:17.struct_SDL_Surface != [*c].cimport:19:17.struct_SDL_Surface
+
+1574457779
+daurnimator
+bgiannan: [c*] is a "c pointer" => which is a pointer that zig doesn't know if its to many or one.
+
+1574457788
+daurnimator
+it should coerce to both "many" and "one" pointer types
+
+1574457794
+daurnimator
+so that error seems.... "wrong"
+
+1574457797
+daurnimator
+what were you trying to do?
+
+1574457806
+bgiannan
+it was working before i updated
+
+1574457873
+bgiannan
+
+
+1574457882
+bgiannan
+so how do i coerce it to "one" ?
+
+1574457896
+daurnimator
+pixelherodev: indeed. it makes e.g. openC() and open() actually different
+
+1574457900
+bgiannan
+bmp[0..1] ?
+
+1574457909
+daurnimator
+bgiannan: try using @as()?
+
+1574457936
+bgiannan
+works thx
+
+1574459973
+kenaryn
+Please does someone know where the @builtin functions have been exported from the official documentation? I cannot find them anymore and I'm looking for the meaning of @Frame because Andrew said it was very memory-efficient.
+
+1574460001
+daurnimator
+kenaryn: what do you mean exported?
+
+1574460008
+daurnimator
+kenaryn: builtins are.... builtin
+
+1574460365
+kenaryn
+Hello daurnimator, I mean 'moved', or 'migrated'
+
+1574460389
+daurnimator
+kenaryn:
+
+1574460395
+kenaryn
+It was within the home page of ziglang.org until a few days ago and now I do not find them.
+
+1574460414
+jmiven
+kenaryn: are you looking for this?
+
+1574460489
+jmiven
+oh sorry didn't see that the link was already posted :-)
+
+1574460527
+kenaryn
+Well done guys! I was deceived by the similar look of the home page.
+
+1574460540
+kenaryn
+Both begin by the same table of contents.
+
+1574460675
+kenaryn
+It is very difficult to grasp the 'frame' concept without any explanation anyway. :/
+
+1574460712
+andrewrk
+I'll do a live stream in 1hr50min. coding on zasm, should be fun.
+
+1574460730
+andrewrk
+until then, gonna focus on #3728
+
+1574460866
+FireFox317
+kenaryn: you really don't need all these frame things when start to code in Zig or coding in general, is really for advanced stuff basically
+
+1574460894
+FireFox317
+I mean if you would like to dive into it, sure :)
+
+1574460912
+reductum
+Looking forward to the stream!
+
+1574462140
+pixelherodev
+mq32, wait, your OS/FC works?!
+
+1574462418
+kenaryn
+:)
+
+1574462432
+pixelherodev
+It can run games already?
+
+1574462641
+kenaryn
+Is it planned to include at least one example for each function into the documentation to help apprehend the concept or is it considered information pollution?
+
+1574462821
+kenaryn
+off-topic: thank you pixelherodev for sharing your experience on your blog. I liked reading your feed-back about programming and zig's deviations from ambiant conformism (e.g. shadowing forbidden, etc.).
+
+1574462880
+kenaryn
+perhaps a follow-up in a few months would be interesting.
+
+1574465321
+daurnimator
+andrewrk: x86 instructions:
+
+1574465441
+daurnimator
+andrewrk: also: if you write your zasm as a library that works at both runtime and compile time, then we might just end up on the path to a JIT compiler... :)
+
+1574465778
+pixelherodev
+Ooh
+
+1574466130
+Snektron
+Whats the idea of zasm? Assembler with common language and different output languages? or just a library for generating binaries containing machine code?
+
+1574466208
+daurnimator
+Snektron: I think its a project for andrew to experiment with machine code generation
+
+1574466256
+Snektron
+I saw the repository with just an initial commit containing some tokenization code. Im not sure if that should be part of a library for code generation
+
+1574467075
+shachaf
+andrewrk: Oh man, I wrote a little amd64 assembler in C a few months ago.
+
+1574467084
+shachaf
+Good times.
+
+1574467145
+shachaf
+(I mostly wrote it to test my ELF emitting code, but then I started implementing a bunch of addressing modes and things.)
+
+1574467160
+pixelherodev
+On the topic of writing an assembler: if it's meant to be multi-target, I'd highly suggest having the actual ISA spec separate from the code
+
+1574467174
+pixelherodev
+Makes it nearly trivial to retarget
+
+1574467192
+pixelherodev
+Then again, if it's meant to go straight from IR, that's probably not really possible
+
+1574467193
+daurnimator
+stream is live
+

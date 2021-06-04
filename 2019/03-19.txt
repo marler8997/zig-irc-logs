@@ -1,0 +1,248 @@
+1552958055
+diltsman
+Trying to add a compiler-rt function to Zig.  I get this error: error: use of undeclared identifier '__aeabi_memcpy4'
+
+1552958086
+diltsman
+I added the file name to ZIG_STD_FILES.
+
+1552958113
+diltsman
+And I added the @export to compiler_rt.zig.
+
+1552958837
+andrewrk
+can you show the file that you're getting the error in?
+
+1552960067
+diltsman
+The error is on the @export line.
+
+1552960085
+diltsman
+Seems like it can't find the file that I created.
+
+1552960441
+andrewrk
+diltsman, "use of undeclared identifier" means that the identifier isn't found in the current scope
+
+1552960455
+andrewrk
+e.g. it's not in the file that it's being referenced in
+
+1552960487
+andrewrk
+if you're doing @export(__aeabi_memcpy4) then __aeabi_memcpy4 has to be in scope
+
+1552960517
+andrewrk
+e.g. in vim put the cursor on __aeabi_memcpy4 and press `*` and it should find it declared
+
+1552960877
+diltsman
+andrewrk: That means that I don't declare the @export in compiler_rt, right?
+
+1552960888
+diltsman
+Do I just need to add the file name to the CMakeLists.txt file?
+
+1552960968
+andrewrk
+diltsman, that's not correct. why not follow the example set by __aeabi_uidivmod?
+
+1552961114
+diltsman
+andrewrk, __aeabi_uidivmod is in compiler_rt.zig along with the export.  Should I just put all of the ARM function in that file?  I was trying to follow the same directory layout that compiler-rt has.
+
+1552961221
+andrewrk
+you can put it in another file if you want
+
+1552961267
+andrewrk
+then you'll need the CMakeLists.txt change, and you have to @import the file
+
+1552961315
+diltsman
+@import the file in compiler_rt.zig?
+
+1552961333
+diltsman
+Nevermind, I see it.
+
+1552961688
+diltsman
+Now that that is fixed...I have my aeabi_memcpy.zig file.  When I build Zig it reformats the file and replaces all of the line endings with CRLF.
+
+1552961729
+andrewrk
+when you say "it reformats the file", what software are you referring to?
+
+1552961840
+diltsman
+I build the VS solution that CMake generated using "msbuild -p:Configuration=Release INSTALL.vcxproj"
+
+1552961855
+diltsman
+During the build the file gets reformatted.
+
+1552962012
+andrewrk
+are you sure it's not your text editor?
+
+1552962029
+andrewrk
+I've never experienced that happening when using msbuild -p:Configuration=Release INSTALL.vcxproj
+
+1552962065
+andrewrk
+maybe you are accidentally editing the installed copy rather than the source copy?
+
+1552962074
+diltsman
+I'm using VS Code.  I save the file, run the build, and then the file is reformatted in the editor.
+
+1552962081
+diltsman
+Let me look at that.
+
+1552962103
+diltsman
+You're right.  I am looking at the installed copy.
+
+1552962203
+diltsman
+So many things to trip you up.  Finally hitting the compile error that I was expecting.  Thanks!
+
+1552962300
+andrewrk
+no problem. thanks for working on compiler_rt
+
+1552962357
+diltsman
+At the very least I am going to get __aeabi_memcpy* and __aeabi_memset* done.
+
+1552963679
+diltsman
+error: 'memcpy' is private
+
+1552963687
+diltsman
+export fn memcpy(noalias dest: ?[*]u8, noalias src: ?[*]const u8, n: usize) ?[*]u8 {
+
+1552963695
+diltsman
+Doesn't that mean that memcpy is public?
+
+1552963846
+andrewrk
+export and pub are different concepts - you can add a `pub` to that
+
+1552963937
+diltsman
+How do I have my function call the memcpy that is in builtin.zig?
+
+1552963989
+andrewrk
+diltsman, @memcpy
+
+1552964002
+diltsman
+Ah.
+
+1552964368
+daurnimator
+andrewrk: so how does that end up working? I recall that llvm can sometimes end up optimizing the implementation in there to a call to __aeabi_memcpy
+
+1552964455
+andrewrk
+daurnimator, yeah if it's the body of __aeabi_memcpy then it can't do that. it should probably just be 1 line of inline assembly that jumps to memcpy
+
+1552964465
+andrewrk
+I haven't looked at llvm's implementation yet
+
+1552964493
+daurnimator
+andrewrk: but memcpy ends up being a jump to __aeabi_memcpy...
+
+1552964559
+daurnimator
+there has to be some sort of annotation to tell llvm "this
+
+1552964600
+andrewrk
+if you name the function `memcpy` then it knows that
+
+1552964606
+andrewrk
+and export it
+
+1552964639
+daurnimator
+okay. I thought we might have been relying on e.g. `asm volatile` to avoid such things.
+
+1552971773
+andrewrk
+new documentation section:
+
+1552977050
+daurnimator
+andrewrk: thanks :)
+
+1552992326
+mikdusan
+heh so now an older Xcode version 8.2.1: `clang —version` yields “Apple LLVM version 8.0.0 (clang-800.0.42.1)”
+
+1552992357
+mikdusan
+and a fresh build of llvm8, `/opt/clang-8.0.0/bin/clang —version` yields “clang version 8.0.0”
+
+1552992389
+mikdusan
+we have sync! bad sync. but sync nonetheless
+
+1553015655
+mikdusan
+is there any way to short-circuit and jump straight into an alternate switch case? here’s a code reduction of what i’m currently going with.
+
+1553019598
+andrewrk
+mikdusan,
+
+1553019715
+andrewrk
+mikdusan, if you can show that the optimized code in release fast mode would benefit further from computed goto, I'll open an issue to add a feature to zig detecting this pattern and ensuring the optimization occurs
+
+1553031216
+Sahnvour
+hi
+
+1553031261
+Sahnvour
+andrewrk: I skimmed through the system V doc at
+
+1553031335
+andrewrk
+hi Sahnvour, just read your patch. looks great
+
+1553031349
+Sahnvour
+I shamelessly did not spend much time on this, so maybe that makes no difference for zig, just wanted to let you know
+
+1553031351
+andrewrk
+that's interesting, I wouldn't have expected the system v ABI to change so rapidly
+
+1553031383
+andrewrk
+thanks for letting me know
+
+1553031803
+andrewrk
+I'm about to give a 10 min talk on zig, should be fun. not sure if it's going to be recorded or not, but I'll turn the content into a blog post regardless
+
+1553033292
+Sahnvour
+yay for blog posts
+

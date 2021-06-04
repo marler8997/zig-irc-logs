@@ -1,0 +1,3404 @@
+1566952445
+daurnimator
+juturnas: fwiw I'm the main one thinking about http things
+
+1566952744
+daurnimator
+juturnas: at the moment I'm still focused on lower level socket abstractions. But I have a lot of opinions on how HTTP should be done
+
+1566956289
+scientes
+daurnimator, http 1.1 or 2 or 3?
+
+1566956313
+daurnimator
+1.0, 1.1 and 2. 3 is a bit too crazy for me right now
+
+1566956325
+Tetralux
+there's a 3????
+
+1566956363
+daurnimator
+Yep. I've still got
+
+1566956378
+Tetralux
+Oh. Ta xD
+
+1566956520
+torque
+hell, why bother with written specifications at all in the neocyber era? we should just specify everything with youtube videos
+
+1566956558
+Tetralux
+I think I'd be okay with that.
+
+1566956817
+daurnimator
+torque: oh there's a written specification.... a lot of very long ones. with hundreds of footguns
+
+1566956944
+daurnimator
+
+
+1566957368
+juturnas
+daurnimator: do you have any of your http thoughts written down somewhere? I'd be interested in keeping them in mind while I work on this proxy
+
+1566957410
+daurnimator
+juturnas: FWIW I'm the author of
+
+1566957515
+daurnimator
+juturnas: do you have particular questions I could try to answer?
+
+1566957838
+daurnimator
+first I guess I'll say that there are two main interfaces: "connection" and "stream". a connection may have many streams. in http2 they are parallel. in http1 they are pipelined. a stream is made up of "header" and "data" packets/chunks.
+
+1566957879
+daurnimator
+let me know if you want to know more about those concepts
+
+1566957963
+daurnimator
+second I'll mention that you want to optimise the socket abstractions to take advantage of all the modern features available including TCP fast-open, TLS early data and in-kernel TLS. Note that this means that the traditional berkerley sockets API is not a good model or starting point
+
+1566957990
+juturnas
+I'm familiar with the concepts of http2 but I haven't implemented it before.  I'll have a look over lua-http tonight and if I'll make note of any questions I have regarding how you think concepts should translate to zig
+
+1566958061
+juturnas
+Not familiar with TLS early data either - is that separate from session resumption?
+
+1566958093
+daurnimator
+juturnas: yep. TLS early data lets you send encrypted data in the first packet; and then in the 2nd packet after key negoiation you provide the key to decrypt the early data
+
+1566958113
+daurnimator
+juturnas: essentially it removes 1RTT from making requests
+
+1566958191
+daurnimator
+and you can send that early data in the TCP fast-open too. Which means that you actually want to have e.g. your GET request ready before you even call connect()
+
+1566958282
+juturnas
+Does http-lua implement most of these?  Wondering what the interface between the http lib and the tls implementation looks like
+
+1566958388
+daurnimator
+juturnas: not right now; but the interface is designed so be able to add it transparently behind the scenes
+
+1566958513
+daurnimator
+juturnas: lua-http uses a library called cqueues to do socket operations; cqueues has a sort of "queue operation" for socket operations. so e.g. if you call socket:write() it doesn't have to be connected yet. see
+
+1566958564
+Tetralux
+Does that turn out to be a good for the PI?
+
+1566958570
+Tetralux
+API*
+
+1566958581
+Tetralux
+(.. of cqueues)
+
+1566958590
+daurnimator
+juturnas: for zig I want to do something that is both simpler and more complex. the abstraction I'm working on is based on the new linux kernel uring API (
+
+1566958644
+daurnimator
+Tetralux: yes.... though that wasn't a very precise question
+
+1566958678
+daurnimator
+juturnas: oh. and the other thing to keep in mind for setup of http connections is happy eyeballs.
+
+1566959204
+Tetralux
+daurnimator: I was fishing for an example of how it makes it better xD
+
+1566959346
+Tetralux
+And how you bound it.
+
+1566959364
+Tetralux
+I'm guessing it eventually blocks if there's a certain amount of stuff queued.
+
+1566959603
+daurnimator
+Tetralux: yep. you get to pick the size of your buffers. if you try and write more than you get a synthesized EAGAIN
+
+1566959641
+Tetralux
+EAGAIN, presumably meaning, "You should try that again."
+
+1566959718
+daurnimator
+Tetralux: EAGAIN usually means "select/poll/wait" and try again once there's room
+
+1566959747
+Tetralux
+You can poll writing to a socket?
+
+1566959762
+daurnimator
+of course
+
+1566959768
+Tetralux
+Oh wait
+
+1566959779
+Tetralux
+I guess you give it flag for "Tell me when there's room"
+
+1566959799
+daurnimator
+thats what POLLOUT is
+
+1566959804
+Tetralux
+Ah-ha.
+
+1566959813
+daurnimator
+(see `man poll`)
+
+1566959954
+Tetralux
+.. convieniently, POLLOUT is the only one in `man poll` without a description xD
+
+1566960034
+daurnimator
+really? what OS/set of man pages
+
+1566960041
+daurnimator
+try googling for it instead :P
+
+1566960047
+Tetralux
+FreeBSD
+
+1566960066
+Tetralux
+I wouldn't know how to determine the set of man pages.
+
+1566960092
+daurnimator
+Tetralux: oh, POLLWRNORM I think is an alias for it on freebsd. i.e. the description is for both of them
+
+1566960124
+Tetralux
+Yeah - that'd make sense.
+
+1566960131
+Tetralux
+That's the next one down.
+
+1566960146
+daurnimator
+yeah I looked at
+
+1566960183
+Tetralux
+You dastardely creature you. x'D
+
+1566960212
+Tetralux
+I'm still a little bummed that FreeBSD requires libc.
+
+1566960218
+Tetralux
+Or seems to, at any rate.
+
+1566960268
+Tetralux
+Wait
+
+1566960287
+Tetralux
+If you --library pthread, as you seemingly have to do on FreeBSD, you auto include libc?
+
+1566960299
+Tetralux
+(have to do if you want to use threads)
+
+1566960459
+Tetralux
+That is interesting though.
+
+1566960472
+Tetralux
+I've only ever done blocking socket IO.
+
+1566960489
+Tetralux
+Well - I've used async .Net socket calls, but that's about it.
+
+1566962883
+andrewrk
+mikdusan, I'm happy to discuss this with you tomorrow, but for now, good night
+
+1566970277
+bgiannan
+what's the difference between []u8 and []const u8 exactly?
+
+1566970385
+mikdusan
+andrewrk: ah ok i finally get it: `var p: [*]u32 = undefined; var slice = p[n..n];` is always allowed because [*] is always unknown size. (i was incorrectly fixating on `undefined`)
+
+1566970577
+mikdusan
+bgiannan: a slice is "pointer + length". pointers can be eg. `*u32` or `*const u32` and the pointer of a slice is marked as const with syntax `[]const u32` and prevents writes to elements therein. `slice[3] = 10` would fail
+
+1566970622
+bgiannan
+mikdusan, i just figuered it out yes: i had a slice and i didn't understand why my data was messed up with until i put const
+
+1566982667
+bgiannan
+daurnimator, Tetralux found a way to test the type of instances in my OOP pointers solution but it crashes zig:
+
+1566983125
+samtebbs
+bgiannan: Why do the structs have to be packed?
+
+1566983149
+daurnimator
+samtebbs: so that layout is defined; which means that you can cast it to other similar structs
+
+1566983204
+samtebbs
+daurnimator: I see. I removed the packed keyword and it doesn't crash zig
+
+1566983220
+samtebbs
+Packed structs are a bit touchy right now
+
+1566983271
+daurnimator
+samtebbs: layout of members in structs is undefined unless they are extern or packed.
+
+1566983321
+daurnimator
+==> in future they could be packed for effcient use of memory; or for large structs, putting frequency used members together so they share a cache line
+
+1566983337
+daurnimator
+but at the moment I think it's just the order that you write them in source
+
+1566983725
+bgiannan
+so i'm stuck, the union solution is far too verbose and will result of a bunch of function calls just to access simple struct members
+
+1566983769
+daurnimator
+bgiannan: link to latest?
+
+1566983788
+daurnimator
+bgiannan: I think I've said it before, but I think the "best" solution is the @fieldParentPtr one
+
+1566983806
+bgiannan
+daurnimator,
+
+1566984056
+samtebbs
+bgiannan: And doing `grass.unit` rather than a cast isn't suitable?
+
+1566984131
+bgiannan
+no because i'll iterate over a list of Units without knowing which actual type they have
+
+1566984177
+bgiannan
+ah sorry just understood your point
+
+1566984189
+bgiannan
+yes would be similara and less ugly
+
+1566984229
+bgiannan
+but that test is not really what will happen when i'm using that pattern
+
+1566984237
+samtebbs
+bgiannan: Well you'd still need to know the type if you were doing a ptrCast
+
+1566984244
+samtebbs
+This worked for me btw:
+
+1566984251
+samtebbs
+it may help narrow down the problem
+
+1566984268
+bgiannan
+most likely i'll add Units to an array without knowing how to get the unit field
+
+1566984303
+bgiannan
+samtebbs, i already got that working
+
+1566984312
+bgiannan
+it's the `instanceOf` bit that's crashing zig
+
+1566984317
+samtebbs
+bgiannan: Ok, but how do you make an array of structs implementing Unit since they're of different types?
+
+1566984320
+samtebbs
+bgiannan: Oh ok
+
+1566984339
+bgiannan
+samtebbs, that's why i need packed struct
+
+1566984348
+bgiannan
+Agent's first field is a Unit
+
+1566984360
+bgiannan
+so @ptrCast an Agent to a Unit will work
+
+1566984462
+samtebbs
+So you'll do the ptrCast before putting it in the array, rather than afterwords
+
+1566984492
+samtebbs
+I read your messages as though you were going to make an array of structs that implement Unit, then ptrCast them when reading them from the array
+
+1566984522
+bgiannan
+right ptrCast first
+
+1566984532
+samtebbs
+Makes sense
+
+1566984547
+bgiannan
+so i need a way given a Unit to know if it's actually an Agent or a Terrain
+
+1566984616
+bgiannan
+the instanceOf methods seemed to be the solution but i think a function member with a comptime T in it must be a little to weird for zig
+
+1566984627
+bgiannan
+in a packed struct i mean
+
+1566984782
+daurnimator
+bgiannan: have a member 'unit type' that is an enum?
+
+1566984837
+bgiannan
+daurnimator, i need to be able to tell that it's an instanceOf A>B>C, not just C
+
+1566984885
+samtebbs
+Removing packed gives this "error: parameter of type '*const Agent' must be declared comptime"
+
+1566984886
+bgiannan
+i can pass types as strings for now and replace them with actual types when zig is fixed
+
+1566984889
+daurnimator
+bgiannan: could C have a "parent" field that says B? and B have a parent field that says A?
+
+1566984913
+daurnimator
+bgiannan: switch over an enum?
+
+1566984919
+bgiannan
+hum why not
+
+1566984949
+bgiannan
+wouldn't it grow slower and slower as i create more types?
+
+1566984968
+samtebbs
+bgiannan: instanceOf wouldn't work at runtime because the type has to be known at comptime
+
+1566984997
+bgiannan
+that would be comptime
+
+1566985018
+daurnimator
+I really think we need tschultz on this question :P
+
+1566985022
+bgiannan
+i would write things like: `if (a.instanceOf(Agent)) {...}`
+
+1566985048
+daurnimator
+bgiannan: so there's a weird hack around to add functions into a struct that they used in a demo
+
+1566985052
+samtebbs
+bgiannan: Oh of course ignore that
+
+1566985317
+bgiannan
+daurnimator, samtebbs, using strings instead of actual types ->
+
+1566985558
+samtebbs
+bgiannan: It would be worth reporting this. Check if there are issues similar first though as packed structs have been causing problems.
+
+1566985576
+bgiannan
+yes
+
+1566985601
+bgiannan
+daurnimator, does zig internize short string like lua would do?
+
+1566985606
+daurnimator
+bgiannan: no
+
+1566985616
+daurnimator
+bgiannan: hence why use an enum instead :P
+
+1566985637
+bgiannan
+ah yes
+
+1566985996
+bgiannan
+daurnimator, like that
+
+1566986335
+bgiannan
+now that i think about it i should know how to get the unit instance when adding something to my collection so i can do without the packed struct
+
+1566986875
+samtebbs
+bgiannan: Yeah that was my thought :)
+
+1566996101
+Tetralux
+bgiannan: `typ: UnitType` <- Can be Agent, Terrian, etc.
+
+1566996113
+Tetralux
+@fieldParentPtr to this field
+
+1566996123
+Tetralux
+You now know what kind of thing it is.
+
+1566996138
+Tetralux
+Also, make the zero value UNINITIALIZED or something
+
+1566996149
+Tetralux
+typ: UnitType = .Unitialized,
+
+1566996162
+alexander92
+hey
+
+1566996166
+Tetralux
+That way, if you forget to set it in a new type, it'll realise immediately.
+
+1566996170
+Tetralux
+alex: Hiya!
+
+1566996173
+bgiannan
+a type field would not be useful Tetralux
+
+1566996177
+alexander92
+i was reading about  async from
+
+1566996187
+bgiannan
+i need to be able to tell which typeS an instance belongs to
+
+1566996195
+alexander92
+and later i took a look through the async web docs
+
+1566996203
+alexander92
+i wonder how much of this remained in the final impl
+
+1566996211
+alexander92
+e.g. i cant seem to see io_mode in those docs
+
+1566996216
+bgiannan
+so say you have Unit>Agent>Tree, i have to be able to tell that such instance is Unit and Agent and Tree
+
+1566996224
+alexander92
+can one currently write blocking/async agnostic code easily
+
+1566996243
+Tetralux
+Aren't all of them Unit's because they all inherit from it.
+
+1566996262
+Tetralux
+And then an Agent or a Tree is just an .Agent or a .Tree.
+
+1566996277
+bgiannan
+you can have more than 2 levels of inheritance
+
+1566996297
+fengb
+alexander92: async is “ready” but the libraries aren’t yet. Anything that’s blocking should theoretically translate to async automatically
+
+1566996303
+Tetralux
+I'm not sure you should xD
+
+1566996352
+Tetralux
+But yeah, short of having some sort of dynamicness to it...
+
+1566996354
+bgiannan
+yeah but i do
+
+1566996357
+Tetralux
+I'm not sure you'd do that.
+
+1566996372
+Tetralux
+You could have a parent pointer.
+
+1566996374
+Tetralux
+Chain link them.
+
+1566996383
+bgiannan
+yes daurnimator had the same idea
+
+1566996396
+Tetralux
+I didn't see what they suggested
+
+1566996399
+Tetralux
+But I mean this:
+
+1566996408
+fengb
+But it’s not quite proven yet. andrewrk is currently doing a revamp on a lot of supporting async stuff to make sure they’ll work
+
+1566996440
+Tetralux
+`parent: *void` <- cast this to unit, and get the typ field to figure out what any specific object is.
+
+1566996462
+Tetralux
+Then when you make an Agent or whatever, set its typ to .Agent, and it's parent to an instance of a Unit.
+
+1566996471
+alexander92
+fengb, so how would it work: based on this io_mode const?
+
+1566996473
+Tetralux
+Assuming that's the heirachy you want.
+
+1566996509
+daurnimator
+alexander92: yep
+
+1566996512
+Tetralux
+alex: You declare io_mode as 'pub const' in your root file (the one with main).
+
+1566996521
+Tetralux
+That was the last I heard about that variable.
+
+1566996544
+fengb
+io_mode should be a low level thing. Most code shouldn’t care about it
+
+1566996554
+daurnimator
+alexander92: fn read(...) usize { if (@hasDecl(root, "io_mode")) { doAsyncRead() } else { doSyncRead() } }
+
+1566996561
+bgiannan
+Tetralux, yes but i'm not a fan of having to follow a trail of pointers to find out the type of my instance instead of just calling a `instanceOf` method that will just tell me
+
+1566996566
+daurnimator
+^ something liek that would be the internals of a .read function
+
+1566996582
+daurnimator
+we haven't got that written yet though
+
+1566996600
+fengb
+If your code uses a blocking fs call, it should automatically run as async when io_mode is switched
+
+1566996839
+Tetralux
+bgiannan: I'm not sure there's a better way.
+
+1566997057
+alexander92
+daurnimator thanks: i am playing with nim's multisync and trying to see if there are parallels, i was surprised to see zig supporting this
+
+1566997109
+alexander92
+is there a way to forcefully "await" an async call in blocking context then?
+
+1566997128
+alexander92
+that's the other thing that i usually use there in similar context
+
+1566997158
+daurnimator
+alexander92: yes. `await` :)
+
+1566997173
+alexander92
+i see, we call it waitFor
+
+1566997189
+alexander92
+ok, will play with it later
+
+1566997190
+daurnimator
+alexander92: one way to think about things is that a
+
+1566997220
+daurnimator
+i.e. all function can be called "asyncly".
+
+1566997369
+alexander92
+yeah, the way it's done in nim is that you can write something like an "async-generic" function which specializes two instantiations : one async, and one sync which mostly accepts await as no op
+
+1566997406
+alexander92
+so it's kinda similar, but i wonder if this dependency on io_mode is cleaner
+
+1566997433
+daurnimator
+alexander92: so the key thing in 1778 is that async is.... "inherited". like, if
+
+1566997488
+daurnimator
+however if you
+
+1566997511
+alexander92
+but is it like "you become async
+
+1566997542
+Tetralux
+The second one.
+
+1566997546
+daurnimator
+alexander92: so to delve in one layer deeper: you become async if you hit a `suspend` statement
+
+1566997571
+daurnimator
+alexander92: however the point of the global `io_mode`, is that you can switch (at compile time) if you want to hit suspend statements or not
+
+1566997637
+alexander92
+i see: so, in this case this means, that if you want your lib to be "generic" for async-ness(suspend-hitting), you need to write it with async annotations
+
+1566997648
+alexander92
+and that's all you need to do
+
+1566997650
+daurnimator
+alexander92: huh? no...
+
+1566997656
+alexander92
+hm
+
+1566997667
+daurnimator
+alexander92: in practice it means almost nothing needs to care about async vs non-async
+
+1566997681
+daurnimator
+the internals of (e.g.) the .read() function are the only ones that decide
+
+1566997687
+daurnimator
+and then it gets "inherited" up the call chain
+
+1566997696
+alexander92
+yeah, what i meant was that
+
+1566997702
+alexander92
+if i write a lib with similar "primitives"
+
+1566997734
+alexander92
+ah, i see: i need to do it explicitly
+
+1566997749
+Tetralux
+If you write a lib using `async f()`, suspend, resume, await, etc, then it can be used in a blocking and a non-blocking fashion.
+
+1566997760
+Tetralux
+Otherwise, it's blocking.
+
+1566997771
+alexander92
+yes, that's something like what i wondered
+
+1566997882
+alexander92
+we've had some discussions about this approach, as some people dont see any value in supporting blocking IO (as you can always "await asyncLibCall()" in your blocking app)
+
+1566997897
+alexander92
+but i also like it
+
+1566997928
+daurnimator
+alexander92: you can always turn a sync function into async. but not always the other way
+
+1566997937
+daurnimator
+alexander92: which means: that async should essentially be the default.
+
+1566997963
+Tetralux
+SeeThe whole problem I have with async anything is that I now have to understand stuff about how async is implemented.
+
+1566997965
+daurnimator
+alexander92: you should have a read of
+
+1566997970
+daurnimator
+Tetralux: no you don't though...
+
+1566997987
+Tetralux
+I do if I want to understand both what my program is doing, and performance implications.
+
+1566997991
+alexander92
+oh, i read it
+
+1566997997
+alexander92
+i've seen this link like 5 times
+
+1566998001
+alexander92
+the last two days :D :D
+
+1566998011
+alexander92
+everybody always pastes it in those discussions
+
+1566998020
+daurnimator
+its a good introductory article :p
+
+1566998031
+alexander92
+i know that: but the problem some people see is that this really doesnt solve the color problem
+
+1566998047
+alexander92
+it merely helps with implementing a bit more "generic" abstractions
+
+1566998138
+alexander92
+as you still have io_mode .. Blocking, and also functions-working-only-in-blocking-fashio and still cant really call blocking functions from async code (right .. ?)
+
+1566998152
+daurnimator
+alexander92: sure you can....
+
+1566998176
+daurnimator
+alexander92: the big thing though is: it doesn't matter if you "become" async
+
+1566998177
+alexander92
+hm?
+
+1566998183
+alexander92
+but it does?
+
+1566998189
+daurnimator
+alexander92: why?
+
+1566998192
+alexander92
+if you call a blocking e.g. file read
+
+1566998197
+alexander92
+your whole event loop can hang
+
+1566998244
+daurnimator
+that would be a flaw in your file read function for not respecting the io mode (or you not reading the docs of the read function and seeing that it blocks)
+
+1566998247
+alexander92
+i can't see how changing the default fixes that
+
+1566998260
+alexander92
+but that's what i am saying:
+
+1566998269
+alexander92
+you can't call functions that block from async functions
+
+1566998280
+daurnimator
+you
+
+1566998292
+alexander92
+ok, that's what i meant, sorry
+
+1566998301
+alexander92
+let's say a better type system can catch this
+
+1566998305
+alexander92
+and make it "can't"
+
+1566998305
+daurnimator
+?
+
+1566998319
+daurnimator
+I don't think that's possible
+
+1566998329
+alexander92
+there shouldn't be a difference between "can't" and "shouldn't" if possible in lang design imho
+
+1566998332
+fengb
+I don’t see how that solves anything
+
+1566998357
+fengb
+That’s basically saying this execution context can’t run anything computationally expensive
+
+1566998363
+daurnimator
+you can always have functions that "block" e.g. if they call out to some C function; or if they even just do a long math operation. either way your main loop doesn't get to tick for a while
+
+1566998371
+alexander92
+it's inevitable, but if it's possible for X to be checked instead of expecting a human to read its docs, it should be checked
+
+1566998374
+daurnimator
+solving that is really what preemptive multi threading is about
+
+1566998380
+daurnimator
+which is an OS concern; not a language one
+
+1566998397
+alexander92
+daurnimator: but that
+
+1566998409
+fengb
+But preventing a call doesn’t solve it
+
+1566998418
+alexander92
+and one can easily imagine "blocking" annotations/type qualifiers
+
+1566998427
+fengb
+It just bifrocates the userland more
+
+1566998429
+alexander92
+which are checked by the compiler in a similar way like async
+
+1566998451
+fengb
+And technically every function is blocking. So we’ll need things like async pow()?
+
+1566998467
+alexander92
+but i
+
+1566998478
+fengb
+Define  heavy math
+
+1566998482
+mq32
+daurnimator, in the case of async-await it gets a language problem as the event loop is actually a cooperative task scheduler
+
+1566998483
+alexander92
+obviously there is more nuance
+
+1566998491
+Tetralux
+.. And when you don't actually want that xD
+
+1566998501
+alexander92
+and this is something that the language can give options for
+
+1566998511
+Tetralux
+My point was, how?
+
+1566998524
+Tetralux
+By having the human mark functions blocking?
+
+1566998530
+alexander92
+e.g. 1) you might manually mark your heavy cpu functions  2) you can run some kind of "cost" inferrence
+
+1566998533
+fengb
+mq32: we’re building in a threadpool worker so it’s not just cooperative
+
+1566998540
+alexander92
+3) you can have primitives that the stdlib marks
+
+1566998549
+alexander92
+and inferrence can figure out that your function calls them
+
+1566998551
+mq32
+fengb: as long as our threadpool is large enough ;)
+
+1566998575
+mq32
+and also only for I/O-heavy stuff, not for computanional heavy stuff
+
+1566998601
+Tetralux
+I think a better counter question is this:
+
+1566998604
+Tetralux
+In a complicated system
+
+1566998615
+alexander92
+4) it might be possible for the compiler to autoinstrument such heavy code with "cooperative" yields in async mode
+
+1566998627
+Tetralux
+How do you determine if you are calling a blocking function in an async function which is taking too long and is grinding your event loop to a halt?
+
+1566998633
+Snektron
+Hello, im trying to improve arm (32-bit) support for the zig std, however the linux headers got me confused. I'm starting with the constants, equivalent to std/os/bits/linux/arm64.zig and x86_64.zig, which i'm just taking from the headers on my old raspberry pi. While looking around though, i found that some constants are defined multiple times, for example F_GETLK is defined to 5 in /usr/include/asm-generic/fcntl.h and to 12
+
+1566998633
+Snektron
+in /usr/include/bits/fcntl.h. How do i know which one is correct?
+
+1566998673
+daurnimator
+Snektron: IIRC asm-generic is base definitions; those are used if an arch-specific definition isn't available
+
+1566998687
+Tetralux
+alex: A good idea in theory
+
+1566998688
+Tetralux
+But
+
+1566998693
+alexander92
+Tetralux: if [1) + 3)](which use the same mechanism) and 4) is implemented, it seems easy to me
+
+1566998700
+Tetralux
+What if you need a certain instruction to occur before suspending?
+
+1566998729
+Tetralux
+Like: you can't suspend here-to-here, but you might here.
+
+1566998739
+alexander92
+well, i guess that the compiler can work with a bit higher level code , not really instruction level
+
+1566998765
+alexander92
+and try to separate it into non-blocking/fast-enough pieces: if this is not possible: it can just refuse to typecheck that
+
+1566998768
+Tetralux
+I suspect that this is too complicated.
+
+1566998772
+Tetralux
+That's my gut reaction.
+
+1566998786
+alexander92
+and let the user either enforce it with a manual annotation, or rewrite it in more async way himself
+
+1566998807
+alexander92
+the another option is of course smarter auto .. threading?
+
+1566998816
+daurnimator
+alexander92: one cornerstone of zig is *no hidden control flow*. what you're suggesting sounds like hidden control flow.
+
+1566998818
+alexander92
+but i admit i have no idea if this is efficient enough
+
+1566998853
+alexander92
+well, in this case, you can just detect those possibly-blocking calls and always refusing them
+
+1566998871
+fengb
+Vague thought: a library function that asyncifies by creating its own thread pool
+
+1566998872
+alexander92
+and let the user async-ify / "run-in-threadpool-and-return"
+
+1566998873
+alexander92
+them
+
+1566998881
+Snektron
+whats the point of having a fallback definition if it's not correct anyway
+
+1566998887
+alexander92
+fengb: exactly
+
+1566998887
+fengb
+Er, execution thread, not pool
+
+1566998895
+mq32
+alexander92, what you are trying to do is solving the halting problem. not possible for the compiler to determine "code heaviness"
+
+1566998901
+daurnimator
+fengb: I'm sort of getting to that point in some of the uring fallback code
+
+1566998928
+alexander92
+mq32: this was optional: the most important thing is to infer internal "blocking calls" and add the ability for the user to mark his own "heavy" code
+
+1566998975
+mq32
+yeah but what's the real advantage of that? i have two options: either execute "heavy" code because i have to or not execute heavy code (but then i don't have to mark it as "heavy")
+
+1566998977
+alexander92
+fengb: i mentioned this asyncify-in-threadpool idea as it's something that i need in nim as well
+
+1566999005
+fengb
+snektron: I'd guess it's based on the generic spec, which doesn't necessarily match the specific subarch
+
+1566999010
+alexander92
+mq32: it can help with detecting stuff that can block your event loop
+
+1566999029
+daurnimator
+Snektron: often there is 20 architectures; but only 2 of them have different definitions
+
+1566999033
+alexander92
+i admit: it would be better to have some kind of number with which this is measured
+
+1566999034
+fengb
+alexander92: but it's not async vs sync. Because you can write an async function that still blocks badly
+
+1566999045
+alexander92
+that's true, but it's one possible issue imo
+
+1566999049
+alexander92
+with async
+
+1566999055
+fengb
+I think it's more of a execution cost problem
+
+1566999059
+alexander92
+e.g. i run an async server and i want low latency
+
+1566999075
+alexander92
+and ugh: this call can hypothetically take 2s
+
+1566999081
+mq32
+i think that's not a problem a language should solve
+
+1566999087
+mq32
+but good software architecture
+
+1566999101
+alexander92
+but this heavy code thing is more an edge case
+
+1566999109
+alexander92
+the main case imho are stuff like blocking io
+
+1566999117
+fengb
+At some point, some idiot will write while (i < 10) : (while i += 0)
+
+1566999123
+fengb
+And hang the server >_>
+
+1566999126
+alexander92
+but this can be fine i guess, if one has async alternatives for all of its io primitives
+
+1566999152
+alexander92
+fengb: except, if you auto-cooperativify the loop :P
+
+1566999181
+mq32
+alexander92, tell me a generic-purpose way how to "auto-cooperativy" any control structure?
+
+1566999193
+mq32
+whould this happen every loop? at the beginnning, at the end?
+
+1566999206
+alexander92
+this was tongue in cheek in this case
+
+1566999216
+mq32
+and as andrew said: "if you suspend, you should have a plan to resume it"
+
+1566999219
+alexander92
+i haven't really thought about that deeply
+
+1566999224
+mq32
+auto-generated code has no plan to resume
+
+1566999257
+fengb
+There should be a built-in for "resume whenever you come back to me"
+
+1566999259
+Tetralux
+mq32: You don't know that. xD
+
+1566999260
+alexander92
+andrewk: does this apply to compiler-assisted cooperativeness
+
+1566999273
+fengb
+I do that all the time in JS
+
+1566999302
+Tetralux
+fengb: Doesn't that just mean "resume when you resume me?" xD
+
+1566999308
+mq32
+fengb: i think zigs async is much more lowlevel than the one in js
+
+1566999329
+mq32
+as we have to actually store the suspend frame position somewhere
+
+1566999359
+fengb
+It's implicit at the callsite if there isn't one
+
+1566999385
+fengb
+std.event.resumeNextTick(@frame()); suspend;
+
+1566999388
+fengb
+Something like that
+
+1566999418
+daurnimator
+fengb: that's a big assumption: that there is only one thing ticking
+
+1566999429
+fengb
+next tick isn't what I care about really
+
+1566999448
+fengb
+Sometimes I know my function is slow so I want to defer it until the loop is free
+
+1566999459
+daurnimator
+In my programs I often have multiple nested event loops
+
+1566999466
+fengb
+Time doesn't matter as much as availability
+
+1566999470
+fengb
+Hmm
+
+1566999481
+alexander92
+btw my other question:
+
+1566999482
+daurnimator
+fengb: we can have a yield() function that e.g. yields to the top
+
+1566999496
+alexander92
+why did zig decide to use async/await instead of green threads
+
+1566999503
+alexander92
+is there any issue explaining that
+
+1566999513
+daurnimator
+alexander92: same issue you linked earlier: scroll down :P
+
+1566999523
+alexander92
+(as this probably solves the color problem better)
+
+1566999524
+daurnimator
+alexander92: that question is called stackless coroutines vs stackful coroutines
+
+1566999529
+alexander92
+ah
+
+1566999625
+fengb
+Everything that has green threads has generally also implemented async/await
+
+1566999641
+fengb
+Except Go >_>
+
+1566999664
+mq32
+what is a "green thread"? stackful coroutine or OS thread?
+
+1566999670
+daurnimator
+fengb: Lua? :)
+
+1566999695
+Tetralux
+mq32: I was actually wondered that myself.
+
+1566999705
+Tetralux
+Well - more if it was stackless or not.
+
+1566999716
+daurnimator
+mq32: a green thread is a stackful coroutine. its used to explicitly mean a non-OS thread.
+
+1566999762
+mq32
+ah okay
+
+1566999786
+alexander92
+eh, then this means to me that
+
+1566999792
+alexander92
+maybe the color problem is a bit overrated
+
+1566999807
+alexander92
+if most modern langs run to async/await so quickly
+
+1566999818
+alexander92
+(crystal and ruby also chose fibers without `async for now)
+
+1566999843
+mq32
+alexander92: have you ever coded C# with async/await?
+
+1566999859
+mq32
+there is now for every I/O function two versions: Read, ReadAsync, Write, WriteAsync, …
+
+1566999867
+mq32
+this is horrible
+
+1566999894
+Tetralux
+mq32: I'm kinda on the fence about that one. I like the clarity, but... eh.
+
+1566999905
+daurnimator
+"green threads" essentially became a requirement for high performance servers since "the C10k problem"
+
+1566999919
+Tetralux
+The use of Await/Async and not knowing how that works, and that it corrupts the stack traces make it awkward.
+
+1566999924
+Tetralux
+Though that was improved.
+
+1566999925
+kristoff_it
+C# is worse than horrible, take a look at this blog post
+
+1566999938
+fengb
+Ruby isn't a good benchmark for performance :P
+
+1566999939
+kristoff_it
+the TLDR is near the bottom in a table
+
+1566999964
+kristoff_it
+in C# using async/await has great chances of deadlocking an application depending on the ecosystem and load
+
+1566999975
+kristoff_it
+it's bonkers that people put up with this design
+
+1566999993
+Tetralux
+Personally, I only used Async/Await in DotNet because it made making my UI not lock up easier.
+
+1567000050
+fengb
+I think this is why people hopped on the node bandwagon. Cannot block actually works decently for the architecture
+
+1567000061
+fengb
+Just don't do math and you're okay!
+
+1567000064
+Tetralux
+One word: Verbose.
+
+1567000066
+fengb
+Or expect debugging help
+
+1567000135
+kristoff_it
+Yes, and I think it's similarly why some moved from Node to Go: you get a concurrency model that you can reason about (I find the C# one inscrutable) and you get multithreading compared to Node
+
+1567000153
+Tetralux
+Personally, I'd like to be able to very easily say "Hey, I don't want to wait for this, but I need it later. Do this on another thread", and maybe specify the thread pool, or something
+
+1567000157
+fengb
+Yeah I like Go's model really well
+
+1567000164
+alexander92
+mq32: but i agree with you: my question was more open
+
+1567000182
+alexander92
+it was : why then nobody adopts pure green threads/goroutines instead
+
+1567000210
+Tetralux
+Stackful?
+
+1567000229
+mq32
+because working with blocking is easier to
+
+1567000241
+fengb
+Because writing a scheduler is hard and coordinating it with the OS scheduler is super hard
+
+1567000254
+Tetralux
+Though, I should note that you can get almost all the way there synchronously.
+
+1567000270
+Tetralux
+The only thing you can't do,
+
+1567000276
+Tetralux
+How much that matters, depends on a few things.
+
+1567000279
+fengb
+mq32: goroutines are basically blocking green threads. It's really nice
+
+1567000316
+fengb
+For Zig: green threads require stackful context and is semantically unsound with the rest of the language
+
+1567000347
+fengb
+It required cascading an allocator everywhere and failed for a lot of usecases
+
+1567000361
+daurnimator
+fengb: except... it doesn't :)
+
+1567000400
+daurnimator
+biggest trouble right now is that you can't pass comptime arguments when making a @Frame()
+
+1567000413
+fengb
+Which statement were you replying to? >_>
+
+1567000423
+kristoff_it
+This talk dives a bit into the concept that I think mq32 was referring to
+
+1567000476
+kristoff_it
+It's from the commenter that a few weeks ago helped explain comptime in Zig on HN when my blog post rose to the front page
+
+1567000488
+daurnimator
+fengb: with zig we can pretty much emulate green threads with stackless resumption
+
+1567000514
+fengb
+daurnimator: I mean actual preemptive green threads, which is what I assume alexander92 was describing
+
+1567000534
+fengb
+We can fake it with a threadpool + async, but it's not quite the same
+
+1567000544
+daurnimator
+fengb: preemptive green threads are...... super rare. I don't think I've seen them this millenium
+
+1567000552
+fengb
+goroutines are preemptive
+
+1567000558
+daurnimator
+are they?
+
+1567000562
+fengb
+yes
+
+1567000589
+daurnimator
+isn't it only at certain boundaries?
+
+1567000598
+kristoff_it
+IIRC you don't yield from Goroutines, but the compiler adds yields statements for you when it thinks it's appropriate
+
+1567000606
+mq32
+how do you even do preemptive green threads?
+
+1567000609
+daurnimator
+otherwise I can't imagine anyone writing safe container management code in Go......
+
+1567000611
+mq32
+signals?
+
+1567000620
+daurnimator
+mq32: signals were the old way.
+
+1567000637
+mq32
+can't image how that should work with either instrumentation or some kind of interrupts
+
+1567000654
+fengb
+Oh... maybe I'm wrong
+
+1567000659
+daurnimator
+mq32: you can do it with a 2nd OS thread that interrupts your "first" one. if you're in something like Go you use the garbage collection check-times to do it I think
+
+1567000677
+fengb
+The userland feels preemptive but architecturally it's not
+
+1567000683
+daurnimator
+for VM languages you could IR instructions
+
+1567000687
+daurnimator
+s/could/count/
+
+1567000693
+kristoff_it
+fengb: yes I think that's how it is
+
+1567000709
+fengb
+
+
+1567000715
+fengb
+But that might be changing >_>
+
+1567000776
+alexander92
+kristoff_it : yeah, thats what i meant by compiler making it cooperative
+
+1567000799
+alexander92
+i think i saw it from some go scheduler tutorial
+
+1567000800
+alexander92
+indeed
+
+1567000859
+alexander92
+and this is a similar problem to while in async call:
+
+1567000896
+fengb
+lol... I've actually wondered if I could make "real" multithreaded JS by making every function async
+
+1567000907
+fengb
+Go is way ahead of me
+
+1567000960
+daurnimator
+fengb: there was a project for ES6 in ES3 that made that possible
+
+1567000995
+daurnimator
+Continuum
+
+1567000997
+mikdusan
+andrewrk: re: hoisting bounds-checking to IR, is there value to create a new IR instruction-type to represent a single bounds check, or just generate IR using existing instruction-types?
+
+1567001002
+fengb
+Note to self: if I think I have a smart idea, it's probably been tried half a dozen times
+
+1567001015
+andrewrk
+Sahnvour, tiehuis: nice work on the auto hash stuff
+
+1567001082
+kristoff_it
+fengb: but maybe it takes 13 tries to execute correctly, and you have the advantage of being able to observe 12 of them :)
+
+1567001122
+daurnimator
+fengb: but also; the DOM is full of weird corner cases of things that cannot be async
+
+1567001141
+andrewrk
+mikdusan, I'm not sure. One thing I would want to try doing (which is difficult / big project) would be to emit the safety checks as existing instructions, and then do some kind of control flow analysis / value tracking, and try to eliminate the checks if it can be proven that a branch is never taken
+
+1567001146
+fengb
+Yeah I like to pretend the DOM doesn't exist when doing heavy JS stuff :P
+
+1567001156
+daurnimator
+fengb: e.g. IIRC, you can only make a popup in direct response to a user click. not asyncly after a onClick handler returns
+
+1567001187
+fengb
+Yeah that bit me quite a few times. My coworkers disabled that check on their browsers and it drove me bananas
+
+1567001194
+fengb
+"It works for me" -_-
+
+1567001199
+daurnimator
+there's enough little things like that around that you can't "async all the things"
+
+1567001246
+fengb
+But I meant more JS-JS. I'm one of those weirdos that uses JS for non-DOM stuff too
+
+1567001255
+daurnimator
+it's also why we couldn't use IndexedDB for a project where it would have been a perfect fit: all IndexedDB operations are async... but we needed to fetch something in response to a click that had to be done instantly
+
+1567001345
+fengb
+Ohhhh Ron Pressler == pron
+
+1567001358
+fengb
+That is not a googlable username
+
+1567001419
+Tetralux
+You should see some of the usernames of original Bell Labs people.
+
+1567001424
+Tetralux
+It's things like
+
+1567001427
+Tetralux
+"qr"
+
+1567001456
+mq32
+Tetralux: I'm actually using "xq" as my nickname nowadays, but there's someone on freenode who uses that already :D
+
+1567001491
+Tetralux
+Maybe I should be Tl or something. :3
+
+1567001594
+mq32
+but: xq is actually "x q" which is a substring of my real name... :D
+
+1567001607
+mq32
+x_q just looked to much emoji-like to be used for a nickname
+
+1567001610
+Tetralux
+You have a surname that starts with Q? O.O
+
+1567001621
+mq32
+and first name that ends with x, correct :D
+
+1567001631
+Tetralux
+Well then.
+
+1567001640
+Tetralux
+Clearly, I've now met one of the Chosen Ones.
+
+1567001640
+fengb
+I'm assuming your first name is Tetralux
+
+1567001647
+mq32
+
+
+1567001649
+kristoff_it
+haha
+
+1567001650
+Tetralux
+Naturally. ;)
+
+1567001665
+kristoff_it
+then, according to my IRC client, his surname starts with `:`
+
+1567001669
+Tetralux
+But my name does have a W in it, so. :)
+
+1567001682
+Tetralux
+And a U too.
+
+1567001698
+Tetralux
+So. Pretty even I think. :p
+
+1567001706
+samtebbs
+Does anyone get tagged when anyone writes "nickname"?
+
+1567001721
+Tetralux
+You mean like if I mention samtebbs like this?
+
+1567001729
+Tetralux
+Yeah, that works for me too.
+
+1567001730
+samtebbs
+Tetralux: indeed
+
+1567002070
+samtebbs
+Is there a page with the zig fmt style guide?
+
+1567002130
+andrewrk
+samtebbs, no
+
+1567002159
+kristoff_it
+`gq` in Vim is amazing, is there a way to make it work with doc comments?
+
+1567002185
+samtebbs
+andrewrk: Ok, since I would like to use it in my project and providing documentation for a style is a good idea
+
+1567002238
+Tetralux
+kristoff_it: gq?
+
+1567002280
+kristoff_it
+Tetralux: re-flows comments to a fixed length. This way you don't have to manually adjust each line.
+
+1567002301
+Tetralux
+Ah. Curious
+
+1567002305
+kristoff_it
+but it doesn't recognize properly `///` comments
+
+1567002338
+kristoff_it
+It's great, with it, if you have a big comment, you don't have to manually groom it to make it look nice
+
+1567002389
+kristoff_it
+
+
+1567002591
+kristoff_it
+to be precise: you don't need to write a single line, you can also use `gq` to reflow an existing multiline comment
+
+1567003023
+euantor
+Interesting looking project there kristoff_it! I started a RESP3 library a while back but ran into some issues when dealing with maps and sets and I've not tried since
+
+1567003099
+kristoff_it
+euantor: thanks, I think I got that part mostly figured out. I just need to finish implementing all types, but what you can read in the README is there already.
+
+1567003139
+kristoff_it
+euantor: one thing that I really wanted to achieve with comptime is being able to resolve simple replies with no allocations, if you know what to expect from redis
+
+1567003185
+andrewrk
+haha I am so good at predicting when llvm will release
+
+1567003188
+euantor
+Yeah, I was taking a slightly different approach where I has a `Resp3Value` union
+
+1567003203
+euantor
+But zero allocation is very cool
+
+1567003236
+kristoff_it
+euantor: Yes I called that DynamicReply, it's at the bottom of the readme. It was a union until yesterday, now it's a struct because it also captures attributes
+
+1567003247
+andrewrk
+6 months ago I chose sept 30 as a guess of 1 week after llvm 9. they had planned for months to release 1 month earlier than that, but there's an email just now saying it's late, new release date for llvm 9 is in 2 weeks... leaving exactly 1 week until sept 30
+
+1567003302
+euantor
+kristoff_it: I should probably dig into comptime more...
+
+1567003399
+kristoff_it
+euantor: the doc is very clear on the subject. I also wrote a blog post about it
+
+1567003410
+kristoff_it
+I love this type of metaprogramming :)
+
+1567003424
+euantor
+kristoff_it: Yep, I've added that to my list of things to read eventually :)
+
+1567003561
+daurnimator
+kristoff_it: I always found the redis protocol a bit weird. especially the different "modes"
+
+1567003666
+daurnimator
+there was always really poorly documented corners where the actual behaviour was difficult to model correctly, e.g. if you subscribe as part of a transaction, then the subscription only takes effect when you commit
+
+1567003708
+daurnimator
+==> so you have to know
+
+1567003723
+kristoff_it
+daurnimator: yes, you're right the push type of communication was bolted on top of the old protocol. RESP3 removes all of that stuff
+
+1567003758
+kristoff_it
+no more modes, and the replies are more structured now, so you don't need to reason about the command to know how to shape the reply
+
+1567003926
+daurnimator
+mm k. I recall seeing a design doc for it but didn't really look too closely
+
+1567003946
+kristoff_it
+daurnimator:
+
+1567004004
+kristoff_it
+you might be interested in just reading the first part, where the rationale behind RESP3, and the breaking differences from RESP2 are explained
+
+1567004739
+shritesh
+donpdonp: I stumbled into your Zootdeck project looking for Zig LMDB bindings and it looks REALLY COOL!
+
+1567005293
+andrewrk
+yeah I'm impressed too. my jaw dropped when donpdonp came in here and learned about heap allocation stuff. I was thinking, "how did you do this amazing thing without even knowing that??"
+
+1567005945
+donpdonp
+hey thx guys.
+
+1567006056
+donpdonp
+i wouldnt say im proud of the zig in zootdeck (especially those 50line methods), but its been a fun/educational journey.
+
+1567006100
+donpdonp
+the heap stuff was more hey how does this work in zig, but i can come across as "whats a heap?" :)
+
+1567006125
+donpdonp
+shritesh: lmdb is incredible. what are you using it for?
+
+1567006348
+fengb
+Anyone else think that that it's weird the memory heap isn't really a heap data structure?
+
+1567006387
+andrewrk
+wow. I learned about "the heap" before I learned about heap data structures, and I never made that connection
+
+1567006416
+andrewrk
+are you sure it's not though? maybe in the kernel it is?
+
+1567006431
+fengb
+I think it was originally but most modern implementations aren't heaps
+
+1567006503
+fengb
+At least not solely heaps
+
+1567008786
+shritesh_
+donpdonp: I'm not using it yet but we are looking to build a fast disk persistence solution for Erlang at NashFP. RocksDB has been suggested and I'm not a fan.
+
+1567009364
+Snektron
+I've ran into a problem while improving arm32 support: The kernel on my raspberry pi doesnt expose mmap, but rather mmap2. The man pages of mmap2 state that this variant can be used when off_t is 32 bits, yet off_t is 64 bits on my raspberry pi?
+
+1567009510
+samtebbs
+Snektron: Which raspi do you have?
+
+1567009541
+Snektron
+B+, the old one, so its proper 32-bit arm if thats what you're wondering
+
+1567009579
+Snektron
+(armv6)
+
+1567009675
+andrewrk
+Snektron, there is a pattern you can follow in the std lib to solve this
+
+1567009729
+andrewrk
+Snektron, look for @hasDecl in std/os/linux.zig, for example in the pipe function
+
+1567009822
+Snektron
+andrewrk: since the old mmap requires the offset to be i on a page boundary anyway (and mmap2 takes the offset in number of pages), i think mmap can safely be implemented in terms of mmap2
+
+1567009866
+Snektron
+yet im confused of which type of parameter i actually should pass, considering the documentation
+
+1567009903
+Snektron
+im fairly convices that it should be a u32/usize, yet does that mean off_t is incorrectly defined to be a long long, or is the documentation simply wrong?
+
+1567010035
+andrewrk
+Snektron, on linux, long long corresponds to u64
+
+1567010051
+andrewrk
+sorry, i64
+
+1567010108
+andrewrk
+I'd need to double check the calling conventions, but I believe for 32 bit linux, i64 is passed in 2 registers
+
+1567010164
+andrewrk
+we probably need to check the linux kernel source of the syscall, to find out the type it's expecting. we need to know the ABI
+
+1567010179
+Snektron
+andewrk: The problem is that i doubt mmap2 actually takes a 64 bit int on 32 bit linux, considering the implied usage of mmap2 and the fact that there arent enough registers to pass an i64
+
+1567010193
+andrewrk
+one thing to consider is that the man page is for libc, not necessarily the raw syscall
+
+1567010216
+andrewrk
+oh, have you looked at musl source code for this target?
+
+1567010244
+andrewrk
+I'm looking now, and I think it answers your questions
+
+1567010252
+andrewrk
+src/mman/mmap.c
+
+1567010400
+andrewrk
+I believe the reason that offset is 64 bits even on 32 bit linux is because mmap can be used for file descriptors. you can e.g. have a 6 GiB file on a 32 bit system
+
+1567010464
+Snektron
+looks like i was indeed confusing libc and syscall prototypes
+
+1567010563
+alexander92
+this seems as a common gotcha with 32bit api-s
+
+1567010586
+Snektron
+yes, the whole syscall convention is a fiasco too
+
+1567010589
+alexander92
+i've seen it with int32 stream indicies
+
+1567010605
+Snektron
+what with the aligning of 64-it parameters to pairs of registers
+
+1567010612
+alexander92
+no, i mean the "something must be 64 bits sometimes even on 32bit sys"
+
+1567010749
+alexander92
+are there any zig TUI libs btw
+
+1567010790
+andrewrk
+not that I'm aware of
+
+1567010803
+andrewrk
+other than C libraries
+
+1567010941
+alexander92
+i wondered about a simple zig project to get a feel for the lang
+
+1567010984
+alexander92
+my other ideas were a simple gc or a copy of stuff like `ls`
+
+1567011015
+Tetralux
+I use 'which' for that.
+
+1567011092
+andrewrk
+a .tar.gz extractor would be very welcome
+
+1567011175
+alexander92
+something that reuses zlib?
+
+1567011200
+fengb
+No, we'll need something written in zig
+
+1567011267
+andrewrk
+I'll probably make all the C compatibility stuff an "optional extension" in the zig language specification
+
+1567011336
+andrewrk
+I could see there being a third-party fully self hosted compiler that didn't use llvm and didn't have translate-c or c compilation capabilities
+
+1567011435
+alexander92
+i'll think about it, i maybe prefer something i can port to rust/nim to be able to compare those (my goal is to get a better grip of rust/zig/ocaml this year)
+
+1567011491
+fengb
+Which one of those is not like the other? :P
+
+1567011515
+andrewrk
+marler8997, unless you're in the middle of it, I'll merge your PR #3119 into a local branch and fix the issues
+
+1567011658
+gonz_
+alexander92: What made you choose this lineup of languages? (Just curious, I have no agenda.)
+
+1567011699
+alexander92
+well, rust and zig are lower level system languages which i am mostly interested in currently
+
+1567011738
+alexander92
+(and i already have a bit more xp with c/c++/nim)
+
+1567011809
+gonz_
+OCaml is a very well put together language and learning it is not a lot of work because of the size of it.
+
+1567011813
+alexander92
+and ocaml : i want to use a strong FP language for some lang experiments, but haskell seems .. too much over there, ocaml seems very pragmatic, but still powerful (and very popular in those circles )
+
+1567011869
+gonz_
+The pragmatism bit I don't quite agree with; Haskell is much better off for industry in many ways, but OCaml is still a very good language.
+
+1567011952
+Tetralux
+I'm guessing an error that doesn't tell me where in my source code the problem  is...
+
+1567011960
+Tetralux
+The new auto hash stuff.
+
+1567011974
+Tetralux
+"autoHash does not allow slices"
+
+1567012014
+gonz_
+alexander92: I would suggest looking at / learning OCaml regardless of which other language you choose to learn as well. It's not a very meaty task, as I said, because it's so small. In many ways it's what I imagine zig could be, but for lower level things.
+
+1567012023
+alexander92
+well, that's my impression at least: that ocaml is simpler and mixes up paradigms/impure code in a simpler way, haskell libs out there .. it seems to me they just use 10 lang extensions(and ocaml also seems used in the industry)
+
+1567012063
+gonz_
+Haskell is more popular in industry. When I make the rounds I usually note that OCaml will reliably have one tenth as many positions up on boards.
+
+1567012068
+andrewrk
+Tetralux, the new compile error note tracing should show you
+
+1567012072
+alexander92
+also, not sure if laziness by default is great
+
+1567012091
+gonz_
+by the sounds of it I think maybe you should learn Haskell :D
+
+1567012104
+Tetralux
+andrewrk: It traces up to hash_map.zig:540, and nothing above that.
+
+1567012119
+Tetralux
+It shows L540 -> L542 -> auto_hash.zig:169.
+
+1567012123
+alexander92
+gonz_, this might be true, but still some big companies use it: jane street, facebook (reason) etc: but in any way i am mostly interested in the lang, not so much in jobs with it rn
+
+1567012126
+Tetralux
+But none of my source code.
+
+1567012143
+Tetralux
+(It's used from a test{} block)
+
+1567012169
+Tetralux
+It's also not entirely clear to me what transform I have to do to make it work again.
+
+1567012184
+gonz_
+alexander92: In any case, I think you can probably fit learning both zig and OCaml in into the same time block you'd spend learning one more complicated language.
+
+1567012279
+andrewrk
+Tetralux, whats your code? I'm surprised about the lack of compile error note trace
+
+1567012297
+andrewrk
+std.AutoHashMap([]const u8, T) ?
+
+1567012313
+Tetralux
+Yup.
+
+1567012321
+Tetralux
+In this case, T = i32.
+
+1567012332
+alexander92
+gonz_: that's true (i guess there is no #zig-offtopic ? :P i am sorry), in any way, i think i'll start with reinventing simple bash commands in zig
+
+1567012340
+andrewrk
+Tetralux, I see it, give me a sec to look into this trace thing
+
+1567012343
+andrewrk
+I reproduced it
+
+1567012351
+Tetralux
+Excellent.
+
+1567012443
+companion_cube
+alexander92: OCaml is neat, but the tooling/ecosystem might seem a bit rough at first. I can answer questions if need be :)
+
+1567012445
+andrewrk
+that's a nice error message. I think it can be further improved by mentioning StringHashMap
+
+1567012450
+companion_cube
+(we use it in our startup)
+
+1567012616
+fengb
+You should use zig!
+
+1567012667
+alexander92
+companion_cube: thanks. i'll keep it in mind: i'd probably mostly write stuff that ocaml has good ecosystem for
+
+1567012688
+companion_cube
+tbh the sweet spot is compilers and other AST manipulating stuff
+
+1567012696
+companion_cube
+(and for that it's brilliant)
+
+1567012766
+Sahnvour
+Tetralux: the error message gives pointer on what to do when this error occurs, ie. use `std.auto_hash.hash` or a custom function
+
+1567012915
+Tetralux
+Sahnvour: It tells me to use std.auto_hash.hash, but I have no idea what that is... I'm guessing that it's the function to pass to HashMap as the hasher function, in which case, knowing the order of args to HashMap would be nice, and knowing that it's a compatible function would be nice.
+
+1567012932
+alexander92
+companion_cube: exactly, thats what i want to use it for
+
+1567012967
+Tetralux
+Something like, "Use std.HashMap([]const u8, i32, std.auto_hash.hash, equality_fn) instead."
+
+1567012980
+Sahnvour
+fair point
+
+1567013001
+Tetralux
+I'm also not gonna wanna do that if it's no obvious to me how to get an equality function for most stuff.
+
+1567013004
+Tetralux
+Like i32, for example.
+
+1567013041
+Tetralux
+The point is, I want to get my stuff working. If I have to dig through docs to figure out how to use the thing,
+
+1567013075
+Tetralux
+I might expect to have to do that for a major version change, but even then - I'd look down on a language that doesn't give you simple guidance like that.
+
+1567013079
+Sahnvour
+well you're certainly aware zig is not release-quality yet
+
+1567013114
+Tetralux
+Bit of a cop-out, but I know what you mean. :xD
+
+1567013129
+Tetralux
+Hence only a "bit."
+
+1567013132
+Sahnvour
+I'll use your suggestion on the error message nonetheless, it's true it can be improved
+
+1567013147
+Tetralux
+Thank you.
+
+1567013204
+alexander92
+Tetralux:
+
+1567013226
+Sahnvour
+note that the API for hashing and hashmaps may not be final, so it's maybe not worth having a really extensive guidance about this kind of error for now, I don't know
+
+1567013228
+alexander92
+you can't just teach it to him with error msg-s (e.g. async or multithreading)
+
+1567013235
+alexander92
+but otherwise i agree, error messages should educate
+
+1567013251
+Tetralux
+Even in those cases, you'd be surprised.
+
+1567013259
+Tetralux
+But yeah - there's only so far you can go.
+
+1567013311
+Sahnvour
+anyways, yeah just use StringHashMap instead and you're good to go
+
+1567013332
+Tetralux
+Sahnvour: Maybe THAT's what the error should say... ;)
+
+1567013349
+Tetralux
+.. since you know that the user is doing AutoHashMap([]const u8, T)
+
+1567013350
+Sahnvour
+I'm considering it right now, that's common enough to justify it
+
+1567013361
+Tetralux
+I certainly would.
+
+1567013429
+Snektron
+Thread-local storage on arm in the musl implementation is some dark magic if i've ever seen some
+
+1567014005
+andrewrk
+Sahnvour, I have an uncommitted diff:
+
+1567014046
+andrewrk
+Snektron, yep. thread local variables are not free
+
+1567014146
+Sahnvour
+andrewrk: mind if I change your snippet a bit and propose a PR ?
+
+1567014454
+Sahnvour
+no actually it's ok I have nothing to add
+
+1567014460
+andrewrk
+go for it
+
+1567014507
+Sahnvour
+except maybe the advice about StringHashMap should be in AutoHashMap directly ?
+
+1567014558
+andrewrk
+whatever you think is best, go for it. I'm trying to solve the error trace not showing up
+
+1567014753
+Sahnvour
+okay
+
+1567014799
+andrewrk
+nice, LLD merged LemonBoy's PR to fix the problem with macos
+
+1567014809
+andrewrk
+this means we can drop the only patch on top of LLD that we have
+
+1567014916
+Snektron
+andrewrk: i'd rather say this is a punishment than 'not free'
+
+1567015198
+Snektron
+also, i was wondering if the prototype for clone is correct, since on the x86 version flags is an usize but on aarch64 (and in musl) its a int
+
+1567015286
+andrewrk
+int and usize have the same ABI - it's just a register
+
+1567015696
+mikdusan
+andrewrk: i have op1, building op2 with `ir_build_struct_field_ptr()` and then ir_build_bin_op; op2 (i think) causes zig_unreachable in codegen `ir_render_instruction()`; any hints?
+
+1567015740
+mikdusan
+also happens if op1 or op2 is instruction from `ir_build_const_usize()`
+
+1567015769
+andrewrk
+mikdusan, can I see a back trace?
+
+1567015855
+mikdusan
+
+
+1567016412
+mikdusan
+i think i'm doing something really dumb. like building an unrenderable insn in wrong context. hmm... maybe i have to put it into a stack var? something like that.
+
+1567016547
+andrewrk
+mikdusan, ohhh, ok some of these instructions are meant only for zig ir, meant never to get to codegen
+
+1567016579
+andrewrk
+mikdusan, have a look at the comments in all_types.hpp:2286, above enum IrInstructionId
+
+1567016656
+mikdusan
+thanks i think i can make progress again
+
+1567016682
+andrewrk
+try using ir_const() instead of ir_build_const_usize
+
+1567016689
+andrewrk
+and then set the type and the x_bigint
+
+1567016742
+andrewrk
+there are a bunch of places that would benefit from ir_const_usize()
+
+1567016773
+andrewrk
+well maybe. I actually don't see any right now
+
+1567016860
+mikdusan
+i initially had a scalar for comptime slice bounds checking. then i tried to build IR for the const value. then my brain started working and told me I
+
+1567016907
+andrewrk
+it's admittedly a bit convoluted. zig's analysis started off as directly emitting code from an AST
+
+1567016928
+andrewrk
+the assumptions of the code have been yanked out from underneath it countless times
+
+1567016949
+andrewrk
+the meaning of various IrInstructions have changed in subtle ways... it's all part of the path to figuring out how things will eventually work
+
+1567016989
+GiovaniAbel
+Hello ziggers!
+
+1567017007
+Tetralux
+Greetings, Human.
+
+1567017014
+fengb
+... that looks terrible
+
+1567017017
+andrewrk
+GiovaniAbel, we're Ziguanas
+
+1567017025
+andrewrk
+true fact
+
+1567017027
+GiovaniAbel
+I must agree
+
+1567017051
+fengb
+Can I be a ziggy?
+
+1567017074
+andrewrk
+can the ziguana's name be ziggy?
+
+1567017101
+Tetralux
+Only if their name isn't Ziguana.
+
+1567017205
+andrewrk
+ok I only have to crush 6 more people's dreams today by postponing issues until 0.6.0 and then I can work on more async/await proof of concept stuff
+
+1567017240
+gonz_
+I  imagine you saying this with glee
+
+1567017289
+Tetralux
+I am... Unsettled.
+
+1567017295
+GiovaniAbel
+I wasn't expecting so much moviment over here, just found about this language... Really loved the concept of it!
+
+1567017353
+andrewrk
+give it a shot! report bugs & feel free to contribute to the std lib
+
+1567017419
+GiovaniAbel
+I've been working with java for 2 years now, I really want to move to something closer to C. But I don't think I have the knowledge to contribute, yet...
+
+1567017436
+Snektron
+I've compared implementations of setting the tls thread pointer of musl and glibc
+
+1567017440
+GiovaniAbel
+I've tried to compile your tetris project, something is wrong when linking with glfw.
+
+1567017480
+andrewrk
+Snektron, the #musl chat room is friendly and helpful, if you wanted to get some more insight there
+
+1567017484
+Snektron
+So for now i'll just leave it at just the syscall, unless i can somehow find documentation of the dark magic
+
+1567017495
+Snektron
+andrewrk: sure, good idea
+
+1567017527
+andrewrk
+GiovaniAbel, what operating system are you on?
+
+1567017536
+GiovaniAbel
+Debian 10
+
+1567017570
+andrewrk
+can I see the output?
+
+1567017921
+GiovaniAbel
+Guess it was something with my path, now I have a different error about epoxy.
+
+1567017921
+GiovaniAbel
+Will try to fix the problems with the dependencies, if I get another erro I'll send here.
+
+1567017924
+GiovaniAbel
+Just a sec
+
+1567018077
+GiovaniAbel
+lld: error: unable to find library -lglfw
+
+1567018077
+GiovaniAbel
+lld: error: unable to find library -lepoxy
+
+1567018104
+GiovaniAbel
+Is there a better way to send big text over here?
+
+1567018128
+Tetralux
+We usually use our pastebin-like of choice.
+
+1567018153
+GiovaniAbel
+Oh right, will find somethig, guess gist will do it.
+
+1567018159
+Tetralux
+That'll do fine.
+
+1567018189
+andrewrk
+GiovaniAbel, it looks like you need to install libglfw-dev and libepoxy-dev debian packages
+
+1567018200
+andrewrk
+we don't have the zig package manager yet, so these are system dependencies
+
+1567018209
+GiovaniAbel
+
+
+1567018232
+GiovaniAbel
+Gonna try that
+
+1567018302
+GiovaniAbel
+It works!
+
+1567018308
+GiovaniAbel
+Thx
+
+1567018384
+andrewrk
+things are going to be very different from java, but I think it's quite fun to be in (more) direct control of the hardware :)
+
+1567018417
+GiovaniAbel
+Yeah, I've been playing with a lot of new technologies theses days.
+
+1567018428
+GiovaniAbel
+I've learned a little about Rust and Go.
+
+1567018488
+GiovaniAbel
+Rust have so many simbols doing magic tricks in my code
+
+1567018490
+GiovaniAbel
+That confuses me a lot
+
+1567018536
+GiovaniAbel
+Go I really love the syntax, but I want to learn game dev, it's an amazing language to do the server side, but the client... not gonna work so good.
+
+1567018567
+GiovaniAbel
+Sorry for my bad english, I'm from Brazil :P
+
+1567018591
+Tetralux
+I don't like Rust's symbols either.
+
+1567018591
+gonz_
+You're doing fine, don't worry about it. :)
+
+1567018621
+companion_cube
+what symbols? :-°
+
+1567018645
+fengb
+<>!#*&@
+
+1567018653
+fengb
+Looks like I got angry with the terminal :P
+
+1567018663
+GiovaniAbel
+Yeah hahahaha
+
+1567018683
+companion_cube
+I mean, only & is really indispensable? and :: for namespacing, which seems pretty reasonable
+
+1567018698
+DutchGh0st
+
+
+1567018719
+DutchGh0st
+However, accessing the wrong field of a `packed` or `extern` enum at compiletime still results in a compile error
+
+1567018760
+DutchGh0st
+*enum = union
+
+1567018767
+DutchGh0st
+sowry for that
+
+1567018776
+andrewrk
+DutchGh0st, this is a bug, would you mind filing an issue?
+
+1567018788
+DutchGh0st
+Okey thats great :)
+
+1567018805
+fengb
+Zig used to have a lot of sigils too
+
+1567019002
+DutchGh0st
+so accessing fields that are NOT currently set should be allowed at compiletime for extern/packed unions, andrewrk?
+
+1567019044
+andrewrk
+DutchGh0st, yes both compile time and runtime. It is defined to do the equivalent of @bitCast
+
+1567019260
+DutchGh0st
+Filled:
+
+1567019269
+andrewrk
+thank you
+
+1567019356
+DutchGh0st
+Im not sure if I can help fix it somehow? Im not familiar with how its compiled and where this safety check lives
+
+1567019359
+Tetralux
+I don't like Rust's symbols either.
+
+1567019365
+Tetralux
+Whoops - wrong window XD
+
+1567019388
+DutchGh0st
+you mean the ::<>{} things Tetralux? ;p
+
+1567019403
+Tetralux
+YES I DO
+
+1567019406
+DutchGh0st
+I love em
+
+1567019459
+Tetralux
+I did that thing again where I tab to my console to run a command, pressed UP+Enter, and of it goes to this window randomly instead xD
+
+1567019469
+Snektron
+andrewrk: seems musl defines an arm v7a and v7r architecture, yet i cant find those in Zig's architectures. Do you know how those relate to the Zig ones?
+
+1567019511
+andrewrk
+Snektron, I'm not sure, but it's the same question as how they relate to clang, or rust, or LLVM
+
+1567019544
+DutchGh0st
+Tetralux, isnt this beautifull?
+
+1567019562
+companion_cube
+we really need a off-topic :D
+
+1567019568
+Tetralux
+I have questions.
+
+1567019577
+companion_cube
+::<> is not something you need everyday, come on ^^
+
+1567019642
+DutchGh0st
+I dont know. `Something::new` vs `Something.init`, the `::` keeps it all nice aligned together
+
+1567019677
+DutchGh0st
+while with the `.` its like...its high, its high, its low (the dot), and the we go high again
+
+1567019690
+andrewrk
+Snektron, oh I think I know what it means. the 'a' or 'r' is describing what target features are available. in this case atomic instructions
+
+1567019698
+andrewrk
+related issue:
+
+1567019859
+Snektron
+Right, so i guess we can't do that right now
+
+1567021160
+marler8997_1
+andrewrk: hey when will you get a chance to look at
+
+1567022526
+FireFox317
+marler8997: This is what andrew said today, maybe you didnt see it: > unless you're in the middle of it, I'll merge your PR #3119 into a local branch and fix the issues
+
+1567022547
+marler8997_1
+I didn't see it
+
+1567022569
+marler8997_1
+yes please feel free to merge it with another branch and fix the issues...I just want the issue fixed :)
+
+1567023676
+FireFox317
+Should bitshifting only work with integers on the right side i.e. const x = 1 << (some_int) or should it be possible to pass in different types on the right side of '<<'?
+
+1567024222
+Tetralux
+What other types would make sense?
+
+1567024354
+FireFox317
+I dunno, but I don't think any other type makes sense. Right now the compiler crashes when you for example use a pointer as the shift amount.
+
+1567024377
+Tetralux
+Oh yeah. Bug alright xD
+
+1567024387
+torque
+shouldn't it actually specifically be an unsigned integer
+
+1567024412
+Tetralux
+Depends on if you want people to have to write an if it could shift either way.
+
+1567024439
+Tetralux
+s/an if/and if, if it could
+
+1567024441
+torque
+actually I never considered how c interprets a negative right hand side shift parameter
+
+1567024450
+Tetralux
+Does that matter?
+
+1567024454
+Tetralux
+Oh nvm
+
+1567024457
+Tetralux
+Ignore me x)
+
+1567024467
+torque
+well, yes, because you have distinct right and left shift operators
+
+1567024481
+FireFox317
+Yeah there is already a issue that tracks this: #2933
+
+1567024486
+Tetralux
+I don't see why that makes a difference.
+
+1567024493
+Tetralux
+It's obvious what negative shift should do, no?
+
+1567024504
+FireFox317
+Jup torque, you are right, its not allowed to shift using a negative number
+
+1567024510
+FireFox317
+so it can be signed, but just not negative
+
+1567024515
+FireFox317
+That check is already in the compiler
+
+1567024525
+torque
+yeah, that makes sense to me
+
+1567024545
+Tetralux
+Yeah, that works.
+
+1567024558
+Tetralux
+Q: What's the best way to debug a stack overflow in Zig?
+
+1567024562
+Tetralux
+Printf debugging?
+
+1567024580
+torque
+I agree that it could be valid to have negative shift semantics but it would probably very unituitive. typically you don't want to shift signed numbers anyway since you'll shift the sign bit off
+
+1567024607
+fengb
+C spec preserves sign
+
+1567024615
+torque
+interesting
+
+1567024618
+fengb
+I believe zig does too
+
+1567024627
+torque
+that makes sense
+
+1567024644
+fengb
+I remember expecting it to shift in a 0 but it didn't
+
+1567024674
+Tetralux
+I'm not sure why it would be unintuitive. I kinda think that not shifting out the sign bit is more so xD
+
+1567024730
+torque
+well, I apparently should read up more on how C handles weird shifting edge cases before I continue flapping my gums
+
+1567024782
+halosghost
+right-shift on a signed integer is implementation-defined behavior for preservation of the sign bit iirc
+
+1567024817
+torque
+even better if true
+
+1567024854
+GiovaniAbel
+Do we have a vim plugin for zig?
+
+1567024885
+FireFox317
+
+
+1567024896
+GiovaniAbel
+Thx
+
+1567025035
+GiovaniAbel
+I shouldn't have a problems using Plugged right?
+
+1567025138
+FireFox317
+Sorry, I don't know what Plugged is
+
+1567025148
+GiovaniAbel
+I mean, vim-plug
+
+1567025158
+GiovaniAbel
+plugged is the name of the dir
+
+1567025173
+halosghost
+torque, fengb: ISO/IEC 9899:2011, §6.5.7 ¶5, “If [the left operand of >>] has a signed type and a negative value, the resulting value is implementation-defined”
+
+1567025189
+andrewrk
+std.math.shl supports negative shift
+
+1567025213
+halosghost
+s/“/“… /
+
+1567025253
+Tetralux
+Is positive shift the fast path?
+
+1567025265
+andrewrk
+Tetralux, a debugger makes debugging a stack overflow pretty trivial
+
+1567025268
+andrewrk
+you can see all the frames
+
+1567025285
+Tetralux
+Beat you to it ;p
+
+1567025297
+Tetralux
+I really shouldn't bother trying to use gdb on windows
+
+1567025300
+Tetralux
+It does nothing.
+
+1567025301
+Sahnvour
+on non-windows, can you build zig in debug but link it to llvm built in release mode ?
+
+1567025323
+andrewrk
+Sahnvour, I was unable to figure out how to do that. if you figure it out please tell me how
+
+1567025325
+Sahnvour
+Tetralux: use winDBG preview or VS
+
+1567025372
+Sahnvour
+it's on my list but the use of msvc's stdlib (iterator debugging thingy) makes it hard, just curious if it's easier on linux or whatever
+
+1567025382
+Tetralux
+I think I do that. I have a release copy of LLVM binaries which I use when I build Zig.
+
+1567025387
+Sahnvour
+so painfully slow to link against debug llvm
+
+1567025397
+Tetralux
+I've not built LLVM once for Zig.
+
+1567025422
+andrewrk
+Sahnvour, oh! sorry I misunderstood your question. Yeah on non-windows every combination works
+
+1567025452
+FireFox317
+andrewrk: I'm adding a compile error and i would like to point to the shift amount. However that also generates a note with referenced here. I can also just point the error at the '<<' symbol, which doesn't generates the 'referenced here'
+
+1567025475
+Sahnvour
+I should probably rebuild my whole stack with clang-cl :)
+
+1567025532
+FireFox317
+
+
+1567025551
+FireFox317
+Which one should I choose?
+
+1567025663
+Tetralux
+I'm not sure what the "referenced here" part actually shows you.
+
+1567025671
+Tetralux
+Looks redundant to me.
+
+1567025729
+FireFox317
+It's missing the arrow (^), but is points to '<<' in the 'referenced here' note
+
+1567025820
+Tetralux
+I'd only print the line that points at 'x', but the next best thing is the second one since the 'referenced here' doesn't point to anything.
+
+1567025862
+FireFox317
+Well the problem is that the 'referenced here' note is automatiicaly added since the lazy value PR thing
+
+1567025898
+Tetralux
+I guess you'd better do the first one then, since the expression on the RHS could be arbitrary...
+
+1567025901
+Tetralux
+Ugh.
+
+1567025907
+FireFox317
+But there's not really a point in discussing i think, i'm just going for the simpler one
+
+1567025909
+FireFox317
+Jup true
+
+1567025941
+Tetralux
+I suggest you mark it with a TODO as to what the better thing is.
+
+1567025941
+andrewrk
+FireFox317, I think the "referenced here" can be addressed separately. I'd make it point at the shift amount
+
+1567026007
+Tetralux
+s/TODO as to what/TODO that says what
+
+1567026075
+FireFox317
+andrewrk: Okay!
+
+1567026093
+GiovaniAbel
+When I include clibs, do I need to pass additional parameters to zig compiler?
+
+1567026139
+andrewrk
+marler8997, yeah, I'll take it from here. Thanks for the patch and the nice regression test case
+
+1567026465
+GiovaniAbel
+What am I missing here?
+
+1567026636
+andrewrk
+GiovaniAbel, are you using the CLI or `zig build`?
+
+1567026695
+andrewrk
+if the CLI, you're hitting
+
+1567026860
+GiovaniAbel
+zig build-exe
+
+1567026908
+andrewrk
+as a workaround you can add -isystem /usr/include
+
+1567026946
+Sahnvour
+is it ok to switch on a float ?
+
+1567026977
+GiovaniAbel
+just append it to the command? nothing changed
+
+1567027018
+andrewrk
+oh, there's your clue: libc headers not available; compilation does not link against libc
+
+1567027024
+andrewrk
+you need --library c as well
+
+1567027071
+GiovaniAbel
+Now it works
+
+1567027088
+GiovaniAbel
+Do we have build files?
+
+1567030226
+Tetralux
+GiovaniAbel: Zig can be used as the build system for the project, which is declarative. See
+
+1567030251
+Tetralux
+You can then build the project with `zig build`
+
+1567030272
+Tetralux
+In that example, you can do `zig build play` to have it run the game after compilation.
+
+1567030431
+ciarand
+hey friends! I want to parse an IDL string (think protobuf schema or AIDL file or even regexp pattern) into a zig struct at comptime, but I can't figure out how to vary a struct's fields in a dynamic way. Is there a fancy builtin or some other usage pattern that I'm missing?
+
+1567030508
+andrewrk
+ciarand, see
+
+1567030627
+ciarand
+Thanks Andrew! A little bit of a bummer, nice to see it's planned though
+
+1567030655
+ciarand
+is there an easy way to add the dependency / generation rules to a build.zig file?
+
+1567030731
+andrewrk
+ciarand, note that it's not planned - just being considered. there is an "accepted" label for proposals that are planned
+
+1567030739
+ciarand
+oh got it
+
+1567030822
+andrewrk
+ciarand, let me see if I can find an example for you. Assuming your code is in zig and you're producing .zig code, you'll use foo = addExecutable() and then foo.run(). and then declare a dependency on the generated file, for the build artifact that will import it
+
+1567030844
+ciarand
+ok cool, that's probably enough for me to go off
+
+1567030856
+ciarand
+thanks again!
+
+1567030870
+andrewrk
+ciarand,
+
+1567030881
+andrewrk
+look at send_image_tool.run()
+
+1567030905
+andrewrk
+note that this whole thing is declarative
+
+1567030908
+ciarand
+nice, that's easy enough
+
+1567030927
+andrewrk
+so your users will be able to do `zig build --help` to see options and what build steps are available
+
+1567030944
+andrewrk
+and eventually other kinds of introspection / combination with other build systems
+
+1567031988
+Snektron
+Great, my "hello world" works on my rpi
+
+1567032016
+Snektron
+with --single-threaded, that is
+
+1567032063
+Snektron
+andrewrk: why is tls initialization needed with a single threaded build?
+
+1567032092
+Tetralux
+threadlocal globals are non-threadlocal in single-threaded
+
+1567032118
+Tetralux
+And creating a thread is illegal with single-threaded.
+
+1567032131
+Tetralux
+And so TLS is disabled.
+
+1567032137
+Tetralux
+I believe that's how that works.
+
+1567032183
+Snektron
+apparently not, since i had to fix a function related to TLS when compiling single threaded
+
+1567032292
+Snektron
+std/special/start.zig does not appear to have a special case to deal with it (in posixCallMainAndExit)
+
+1567032316
+Snektron
+Im not sure how that should be handled anyway, tbh i have no idea how TLS actually works
+
+1567032586
+Tetralux
+TLS basically stores an array, one element for each thread, and when you deref a pointer to it, the pointer is patched with an offset to the appropriate slot in the array.
+
+1567032597
+Tetralux
+I believe that's loosely how it works on *nix anyway.
+
+1567032620
+Tetralux
+You have to ask the kernel about it on startup if you use it.
+
+1567032697
+Snektron
+The kernel does the patching i guess?
+
+1567032774
+Snektron
+i see the difference in godbolt yes, i think the TLS initialization might just be skipped but im not entirely sure about that
+
+1567032796
+Snektron
+might be skipped if the program is single threaded, that is
+
+1567032814
+andrewrk
+Snektron, I believe that errno on some libcs requires TLS and it's the same libc regardless of --single-threaded
+
+1567032828
+andrewrk
+just that one stupid errno holding everything back
+
+1567032901
+andrewrk
+uhh maybe glibc was what I was thinking of
+
+1567032929
+andrewrk
+now I'm struggling to remember, because when we link libc, that startup code is not executed
+
+1567032950
+andrewrk
+maybe it's worth it to disable TLS for --single-threaded and see what breaks, and then if it has to get reverted, it can get a helpful comment this time
+
+1567033075
+andrewrk
+Snektron,
+
+1567033120
+Snektron
+I guess if someone links a c library (that doesn't depend on libc) that uses a thread local it needs tls
+
+1567033216
+andrewrk
+oh, it was my idea
+
+1567033245
+andrewrk
+
+
+1567033284
+andrewrk
+because TLS is an ABI, even if the app is entirely single threaded
+
+1567033297
+Snektron
+errno has to be one of the nastiest technological debts
+
+1567033349
+andrewrk
+if we outlaw --single-threaded in the presence of `extern threadlocal` that will allow us to elide the TLS code on startup
+
+1567033376
+Snektron
+what about the case i mentioned earlier?
+
+1567033425
+Snektron
+though i guess
+
+1567033449
+Snektron
+Such a library will either need to depend on libc for TLS or initialize its own, in both cases it should work
+
+1567033496
+andrewrk
+Snektron, what case are you referring to?
+
+1567033508
+Snektron
+"I guess if someone links a c library (that doesn't depend on libc) that uses a thread local it needs tls"
+

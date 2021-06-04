@@ -1,0 +1,1584 @@
+1574815104
+frmdstryr
+Are there any modules for working with dates?
+
+1574815369
+daurnimator
+frmdstryr: not really. what operation are you after?
+
+1574815374
+adamkowalski
+andrewrk: how do you handle random number seeds in Zig?
+
+1574815391
+daurnimator
+adamkowalski: what do you mean?
+
+1574815403
+daurnimator
+adamkowalski: just see std.rand
+
+1574815456
+adamkowalski
+One of the biggest pain points in our current project is that random seeds are a global mutable variable in Python. You're allowed to set the random seed, but if you run multiple simulations in parallel they blow over each other and lead to non deterministic results. It makes unit testing extremely hard for random processes.
+
+1574815479
+daurnimator
+adamkowalski: you can instantiate your own RNG. just seen std.rand...
+
+1574815512
+adamkowalski
+Also there are many different machine learning libraries and they all use their own internal random number seed rather than using Pythons. So even if you do everything right, calling out to some other library may use a random seed under the hood and you can't touch it
+
+1574815562
+frmdstryr
+
+
+1574815570
+andrewrk
+adamkowalski,
+
+1574815576
+adamkowalski
+The one i've seen do things correctly is Jax. Where seeds are "consumed" when using something like random.normal
+
+1574815581
+frmdstryr
+timestamp to that date format
+
+1574815592
+daurnimator
+var myrng = std.rand.Xoroshiro128.init(myseed); const myrandomnumber = myrng.random.int(u32);
+
+1574815594
+adamkowalski
+that means the seed is not a global, but instead a local variable that you can create, and consume
+
+1574815601
+andrewrk
+some of those errors could be cleaned up, it's not actually possible to get NoSpaceLeft from that function
+
+1574815615
+adamkowalski
+if you want to use your random number seed more than once, you must call split on it, which gives you back two random seeds
+
+1574815617
+daurnimator
+actually std.rand.Random is perfect to become a mixin!
+
+1574815631
+adamkowalski
+now you pass one random seed to the random seed consumer, and can still use the second one down the road
+
+1574815649
+daurnimator
+andrewrk: would you be happy to merge a mixin-ification of Random?
+
+1574815694
+andrewrk
+daurnimator, I need to think really hard about mixins in general
+
+1574815704
+adamkowalski
+So in zig you would create a a rng with std.rand.Xoroshiro128, then everything that wants to generate random numbers will take in a rng?
+
+1574815709
+adamkowalski
+Sort of like an allocator
+
+1574815730
+andrewrk
+adamkowalski, yes
+
+1574815746
+andrewrk
+and std.crypto.randomBytes you would call once to get a seed from the OS
+
+1574815835
+adamkowalski
+okay but libraries should never do that right? they will expect to receive everything from the client program. So you never have to worry about random numbers being generated behind your back that you can't control?
+
+1574815848
+adamkowalski
+Also is Xoroshiro thread safe?
+
+1574815889
+adamkowalski
+well if two threads both say rng.random.int(u3) what happens?
+
+1574815953
+daurnimator
+hmmm... we define socklen_t as a u32. but it's a signed integer on both linux and windows
+
+1574815957
+daurnimator
+andrewrk: ^ intentional?
+
+1574816039
+mikdusan
+at least io_uring is sane and uses u32
+
+1574816114
+andrewrk
+adamkowalski, yes I think best practice would be to accept a seed parameter. as for how much you need to worry about what goes on behind your back, that's something you have to think about when you decide whether to take on dependencies or not
+
+1574816145
+andrewrk
+it is entirely possible for code that you have not vetted to do something silly
+
+1574816164
+andrewrk
+I don't think zig is going to try to solve that problem. that's out of scope
+
+1574816200
+andrewrk
+adamkowalski, generally, everything is thread-safe with respect to its own state, unless stated otherwise
+
+1574816217
+adamkowalski
+Well it maybe not be possible to "solve" but I feel like Zig does a great job with allocators. At least by convention everybody who allocates takes an allocator so I know who will be doing that
+
+1574816225
+andrewrk
+if something additionally claims to be thread-safe, such as a thread-safe queue, what it is saying is that it is additionally thread-safe with respect to the
+
+1574816229
+adamkowalski
+So if we adopt a similar convention for random numbers I'll be really happy
+
+1574816262
+andrewrk
+adamkowalski, i'd be happy to add to the doc comments of std.crypto.randomBytes that it is advised to leave this call up to the application; libraries are encouraged to accept a seed parameter
+
+1574816264
+adamkowalski
+I just don't want people calling random.normal(.{mean=0, standard_deviation=1})
+
+1574816286
+adamkowalski
+they should alwauys have to pass in a resource which is responsible for the providing the random value
+
+1574816312
+adamkowalski
+that also means for testing there need not be any randomness at all. You can make your random resource provide some mock value so you can assert things about your "random" process
+
+1574816365
+andrewrk
+daurnimator, if negative values are always illegal then u32 is more correct. maybe even u31. but if an API wants to handle -1 in a certain way, e.g. mmap, then it would probably be better to use i32
+
+1574816438
+andrewrk
+wait this is socklen_t? how colud that ever be negative?
+
+1574816535
+Snektron
+Of course theres the Ziggurat random
+
+1574816742
+Snektron
+andrewrk: for unix, i assume because either int is "the standard datatype", something returning a socklen_t can also return an error, or maybe because someone thought ints are faster
+
+1574816760
+Snektron
+probably the first
+
+1574816799
+andrewrk
+zig has a better api than this though. the syscall gives us a usize, which we check for errors, then return E!socklen_t
+
+1574816814
+andrewrk
+so we've successfully removed the possibility of negative values from the type
+
+1574816823
+mikdusan
+daurnimator: archlinux I think is unsigned:
+
+1574816930
+daurnimator
+mikdusan: ah interesting. then I see e.g. /usr/include/pcap/socket.h:58:  typedef int socklen_t;
+
+1574816987
+mikdusan
+also: /usr/include/bits/types.h:__STD_TYPE __U32_TYPE __socklen_t;
+
+1574817026
+Snektron
+adamkowalski: that sounds like how the c++ random api works
+
+1574817044
+daurnimator
+okay so lets go back a bit; I accidentally XY problem-ed
+
+1574817068
+daurnimator
+on windows, connect() takes a DWORD i.e. i32 as the address length argument
+
+1574817089
+Snektron
+I think <random> is a pretty solid part of the STL
+
+1574817092
+Snektron
+like <chrono>
+
+1574817098
+daurnimator
+should I 1. change socklen_t to i32 on windows? 2. "fix" the connect() signature?
+
+1574817478
+andrewrk
+daurnimator, yeah fix the signature. negative values are invalid, right?
+
+1574817486
+andrewrk
+so the signature is incorrect
+
+1574817506
+andrewrk
+i32 and u32 have the same ABI
+
+1574818081
+daurnimator
+k
+
+1574819269
+andrewrk
+mikdusan, I'm gonna add IrInstruction::dump() so we can call it from gdb, it'll print the source location and the line from zig ir to stderr
+
+1574820039
+Snektron
+Im curious as to why Zig went for c-style c++ for the stage1 compiler
+
+1574820074
+andrewrk
+"debug your application, not your c++ expertise"
+
+1574820092
+Snektron
+Surely more c++ language features than just basic templates are useful
+
+1574820101
+andrewrk
+in my experience, any attempt to utilize C++ features turns into meta programming real fast
+
+1574820124
+Snektron
+I think a prime example of good features are namespaces and enum classes
+
+1574820159
+andrewrk
+enum classes are probably fine
+
+1574820215
+Snektron
+andrewrk: i dont really get it that often tbh, though i do agree that metaprogramming is messy
+
+1574820244
+companion_cube
+isn't the stage1 compiler kind of throwaway anyway?
+
+1574820260
+andrewrk
+companion_cube, nah, it's immortal:
+
+1574820264
+Snektron
+Although most of my c++ programs are only a few thousand lines at best
+
+1574820302
+companion_cube
+I feel like wasm could simplify that :p
+
+1574820310
+andrewrk
+how?
+
+1574820318
+andrewrk
+Snektron, enum classes look like what I should have been using all along
+
+1574820321
+companion_cube
+compile self hosted to wasm
+
+1574820328
+companion_cube
+boostrap from wasm anywhere
+
+1574820343
+andrewrk
+companion_cube, I think that issue might be worth reading for you, it addresses why this isn't viable
+
+1574820347
+companion_cube
+(ocaml does that but from its own bytecode)
+
+1574820355
+Snektron
+andrewrk: dislike template metaprogramming? Do i have the project for you:
+
+1574820377
+Snektron
+andrewrk: great ;)
+
+1574820398
+companion_cube
+between reading wasm and reading C++, I'm not sure which one is the worst ;)
+
+1574820404
+andrewrk
+mikdusan, wow. why didn't i do this years ago?
+
+1574820681
+Snektron
+companion_cube: c'mon its not that bad
+
+1574820733
+Snektron
+Though i don't have much wasm experience
+
+1574820805
+companion_cube
+😂
+
+1574820814
+companion_cube
+yeah ok, C++ is still better, but that's a bit sad :(
+
+1574820921
+andrewrk
+one project I am interested in, eventually, is to have a bootstrapping repository, that gets you from machine code short enough to type into an editor (probably RISC-V?), to an assembler, to a simplistic C compiler, to a more advanced one, to a zig compiler, to self-hosted zig, to self-hosted zig built with self-hosted zig
+
+1574820947
+andrewrk
+which can then cross compile for all the other targets
+
+1574821011
+companion_cube
+why not replace "assembler+simplistic C compiler" with "simple lisp interpreter"? :)
+
+1574821070
+Snektron
+Even better: use brainfuck
+
+1574821082
+Snektron
+andrewrk: how would that handle different architectures?
+
+1574821120
+protty
+hey, if you have a `const T = extern struct { tail: u16, head: u16 }`will an atomic u16 store to tail potentially invalidate a `cmpxchg(@ptrCast(*u32, t_ptr))`?
+
+1574821124
+companion_cube
+well, lisp is actually usable? :D
+
+1574821136
+daurnimator
+andrewrk:
+
+1574821323
+andrewrk
+protty, what do you mean by invalidate?
+
+1574821402
+fengb
+Wasm is just a stack machine. It’s “simple”
+
+1574821404
+protty
+like a `STORE(ptr, 1)` would make a `CAS(ptr, 0, 1)` fail
+
+1574821417
+companion_cube
+the text representation of wasm isn't too bad, is it?
+
+1574821476
+fengb
+Besides... the default text representation of wasm is s-exprs so it’s basically a lisp 🙃
+
+1574821477
+andrewrk
+protty, you mena like if they were racing in 2 different threads?
+
+1574821506
+protty
+yes
+
+1574821636
+daurnimator
+protty: CLOCK_REALTIME is available on OSX these days I thought.
+
+1574821668
+daurnimator
+protty: but also. why on earth are you using a realtime clock there
+
+1574821692
+daurnimator
+should be monotonic
+
+1574821745
+andrewrk
+yeah, oops I missed that
+
+1574821810
+andrewrk
+goodness, is that how pthread_cond_timedwait is defined to work?
+
+1574821846
+andrewrk
+looks like pthread_condattr_setclock lets you choose
+
+1574821898
+daurnimator
+wow. that's terrifying
+
+1574821900
+protty
+1) modeled it from an example defined here:
+
+1574821929
+andrewrk
+protty, I believe that the cmpxchg can observe the modification to `tail`
+
+1574821961
+daurnimator
+protty: CLOCK_MONOTONIC should be available everywhere. it's "optional" in posix, but AFAIK OSX was the last hold out, and fixed their shit in 2013 or so
+
+1574821986
+daurnimator
+protty: the example there is probably from before OSX was updated; or they needed to support old OSX
+
+1574822025
+protty
+i c
+
+1574822048
+andrewrk
+wow, the example code from
+
+1574822050
+daurnimator
+protty: oh the example is just of timedwait. yeah as andrew found: see `man pthread_condattr_getclock`. I'm frankly amazed they allow non-monotonic
+
+1574822058
+andrewrk
+me too
+
+1574822110
+andrewrk
+protty, sorry, don't mean to gang up on you
+
+1574822124
+andrewrk
+I'm more surprised by the pthread_cond_timedwait API than anything else
+
+1574822136
+daurnimator
+yeah we're ganging up on the man page writers... and pthread designers :P
+
+1574822166
+protty
+am just imagining changing the system clock to go back in time for your pthread_cond_timedwait() to wait even longer
+
+1574822221
+daurnimator
+protty: yeah.. imaging fixing your system clock and having all sorts of programs hang until it got back to the (wrong)time that you fixed it
+
+1574822235
+andrewrk
+or daylight savings time making all your apps freeze
+
+1574822279
+fengb
+But shouldn’t dst apply an offset to system clock, not change it directly?
+
+1574822335
+daurnimator
+fengb: depends if you hwclock is in UTC or local
+
+1574822347
+daurnimator
+many people that dualboot windows will have it in local
+
+1574822375
+protty
+having realize this, it definitely breaks the timeout guarantee in the `std.ResetEvent.wait()` doc comment
+
+1574822796
+ForLoveOfCats
+What is the proper flags/commands to build the std docs with a build of master?
+
+1574823084
+mikdusan
+andrewrk: indeed... debug/trace helpers ftw
+
+1574823362
+andrewrk
+ForLoveOfCats, -femit-docs (and probably also -fno-emit-bin to save time)
+
+1574823379
+andrewrk
+there's a lot about doc generation that is work-in-progress
+
+1574823382
+andrewrk
+just fyi
+
+1574823531
+adamkowalski
+andrewrk: do you have any tips for building something like std.testing.expect but that can tell you the differences between your structs? Each of my structs now has a custom equality checker like you recommended last time, so I just get a bool the evaluations to false when the test fails.
+
+1574823579
+andrewrk
+adamkowalski, my tip would be to do the most straightforward thing you can think of
+
+1574823582
+ForLoveOfCats
+That's what I thought but I'm having difficulty getting it to do anything, it expects an argument but the `--help` message doesn't specify what it wants. I tried passing it an empty dir (if it wants the output dir) and the std source dir but to no avail.
+
+1574823592
+adamkowalski
+Would it be better to use reflection and check each field of the struct and see if they are different, and if they are then std.debug.warn("{} != {}", expected.field, actual.field)
+
+1574823602
+andrewrk
+ForLoveOfCats, oh, it works in combination with build-exe, build-lib, build-obj, or test
+
+1574823610
+daurnimator
+adamkowalski: isn't that what we do not?
+
+1574823613
+adamkowalski
+If the field is a non primitive type then recursively do the check
+
+1574823619
+andrewrk
+ForLoveOfCats, so, do your normal build, but also add -femit-docs
+
+1574823622
+daurnimator
+s/not/now/
+
+1574823648
+adamkowalski
+it is? I wasn't able to get std.testing.expectEqual to compile with my type
+
+1574823676
+adamkowalski
+I didn't think I was doing anything too crazy. The fanciest types I have are hash maps and arrays of arrays of types
+
+1574823684
+daurnimator
+adamkowalski:
+
+1574823759
+adamkowalski
+switch (@typeInfo(@typeOf(actual))) {
+
+1574823762
+adamkowalski
+thats pretty awesome
+
+1574823767
+mikdusan
+ForLoveOfCats: try this for std doc gen: `zig test lib/std/std.zig -femit-docs -fno-emit-bin --output-dir zig-cache` and then open zig-cache/docs/index.html
+
+1574823768
+adamkowalski
+I'm gonna have to steal that somewhere
+
+1574823798
+adamkowalski
+Ah I found the issue
+
+1574823808
+adamkowalski
+for arrays it calls expectEqualSlices
+
+1574823816
+adamkowalski
+which checks if expected[i] != actual[i]
+
+1574823822
+adamkowalski
+but != only works for primitive types
+
+1574823835
+adamkowalski
+so instead that should call expectEqual again right?
+
+1574823844
+ForLoveOfCats
+No matter what I do it claims `Invalid argument: --femit-docs`
+
+1574823865
+ForLoveOfCats
+including what was just suggested (direct copy paste)
+
+1574823865
+mikdusan
+double dashes != single dash
+
+1574823882
+mikdusan
+some args have single some double. sorry but that's how it is for now.
+
+1574823905
+ForLoveOfCats
+its literally the same with just one dash
+
+1574823911
+ForLoveOfCats
+`Invalid argument: -femit-docs`
+
+1574823917
+adamkowalski
+Would you all accept a pull request to change that != to expectEqual? Or is there some reason why that would be a bad idea
+
+1574823926
+ForLoveOfCats
+I tried both and just copy pasted the latter (where I used double dashes)
+
+1574823950
+mikdusan
+ForLoveOfCats: what version of zig? might be old
+
+1574823955
+ForLoveOfCats
+just pulled
+
+1574823959
+ForLoveOfCats
+one moment
+
+1574823965
+ForLoveOfCats
+63300a21ddf4cfe209a39796c6d7ea7773e14fd6
+
+1574823995
+mikdusan
+where is my exact command line with 63300a21ddf4cfe209a39796c6d7ea7773e14fd6:
+
+1574824011
+ForLoveOfCats
+beg pardon?
+
+1574824013
+mikdusan
+`zig test lib/std/std.zig -femit-docs -fno-emit-bin --output-dir zig-cache`
+
+1574824016
+mikdusan
+s/where/here/
+
+1574824039
+ForLoveOfCats
+Everything I've done has been on that commit
+
+1574824096
+mikdusan
+zig --help | grep docs
+
+1574824105
+ForLoveOfCats
+already did that with fzf
+
+1574824115
+ForLoveOfCats
+I'm here because I couldn't figure it out
+
+1574824163
+mikdusan
+ok. well i don't know what to say. at this point I must suspect you have a shell alias or wrong binary is found in path
+
+1574824177
+daurnimator
+adamkowalski: yeah that would be an okay change
+
+1574824215
+daurnimator
+adamkowalski: though you'll need to figure out how to keep the error message useful
+
+1574824229
+ForLoveOfCats
+oh ffs, it was an alias
+
+1574824266
+ForLoveOfCats
+with all my testing I directly ran the binary but cp your line of course ran the 0.5.* build i have installed
+
+1574824277
+mikdusan
+also in future you can do `zig version` which is a nice quick way to see commit it was built against
+
+1574824285
+daurnimator
+adamkowalski: I think there's a meta.eql :)
+
+1574824301
+ForLoveOfCats
+that wasn't the problem, if I were to have run version I would have run it on the right binary
+
+1574824332
+ForLoveOfCats
+the --help message for this is not very clear
+
+1574824346
+ForLoveOfCats
+probably just misinterpreting
+
+1574824370
+ForLoveOfCats
+probably something like the -f* flags are expected to be run on a build/test
+
+1574824413
+adamkowalski
+daurnimator: wouldn't the error message be taken care of by call to expectEqual?
+
+1574824464
+daurnimator
+adamkowalski: but that wouldn't be a useful error message
+
+1574824502
+daurnimator
+adamkowalski: "expected 5 found 12" isn't useful: you want to know e.g. which index/offset it was at.
+
+1574824541
+adamkowalski
+fair enough. i'm open to any proposed ideas
+
+1574824632
+adamkowalski
+I think we need to seperate the checking of equality from printing
+
+1574824650
+daurnimator
+adamkowalski: yes. as I said, see std.meta.eql
+
+1574824669
+adamkowalski
+but even at the root of std.testing.expectEqual
+
+1574824682
+adamkowalski
+wouldn't you have the same issue where only one field from the struct will show up
+
+1574824733
+adamkowalski
+maybe we want to check if the struct is equal to the other, and if not then we want to print both structs and make the differences be green on expected, and red in actual
+
+1574824783
+adamkowalski
+for arrays we can print the whole array (or print the "n" nearest items if the list is too long, and again mark with color the differences
+
+1574824836
+adamkowalski
+speaking of which, how do custom types register a custom handler for std.debug.warn?
+
+1574824867
+adamkowalski
+similar to overloading repr in python or ostream for c++
+
+1574824888
+mikdusan
+adamkowalski: see lib/std/fmt.zig test "formatType max_depth"
+
+1574824972
+mikdusan
+or test "custom"
+
+1574824992
+adamkowalski
+oh just pub fn format
+
+1574826500
+adamkowalski
+Am I crazy or should I be able to use a Xoroshiro128 where a Random is expected?
+
+1574826526
+adamkowalski
+I'm building out a simple normal distribution like so
+
+1574826552
+adamkowalski
+
+
+1574826756
+adamkowalski
+
+
+1574826762
+adamkowalski
+That test passes, but it feels like a hack
+
+1574826810
+daurnimator
+adamkowalski:  `const actual = normal.sample(&r.random);` is the correct way
+
+1574826826
+daurnimator
+adamkowalski: if we swapped Random to a mixin you wouldn't need to do that
+
+1574826847
+adamkowalski
+right, that would match the allocator style
+
+1574826869
+adamkowalski
+is there a reason thats prefered to passing by var? then just checking the interface of the type at compile time
+
+1574826883
+adamkowalski
+you get a virtual call then right
+
+1574826968
+adamkowalski
+Or I guess it's just passing by pointer since it's mutable, not necessarily to signify dynamic dispatch
+
+1574827909
+adamkowalski
+How do you run all tests in my project? In source and all it's subdirectories
+
+1574827916
+adamkowalski
+I tried zig test src/**/*.zig
+
+1574828686
+adamkowalski
+I did this for now haha find src -name '*.zig' -exec zig test '{}' \;
+
+1574828847
+daurnimator
+adamkowalski: you pass one zig file, and it recursively tests @import in the current package
+
+1574831238
+adamkowalski
+So you have to enumerate all the files you wish to test in that file? You can't just say grab all zig files and test them?
+
+1574831253
+adamkowalski
+It seems like you could get in a situation where that gets out of sync
+
+1574831453
+daurnimator
+adamkowalski: but you would be using the code surely
+
+1574831468
+daurnimator
+otherwise you're essentially asking "how do I test dead code"?
+
+1574832588
+adamkowalski
+i'm asking how to test all the files in the project. I think a lot of people don't like that in CMake you have to list all your source files but they don't use the glob because it has issues
+
+1574832618
+adamkowalski
+Most other languages provide a way to just say test this project. Is there something wrong with that? I'm open to learning something new
+
+1574832821
+adamkowalski
+Or it should at least be possible to say zig test src/main.zig
+
+1574832848
+adamkowalski
+Then even if main doesn't have tests itself, it should be the root and thus transitively include everything so that should kick off all tests right?
+
+1574832940
+adamkowalski
+And about your dead code theory, some other languages have conventions that you seperate source and test files. So you have a test file which is not dead code but nobody includes it. It is purely there to hold tests
+
+1574833026
+daurnimator
+adamkowalski:
+
+1574833997
+adamkowalski
+Interesting. So would have have a root source file and a root test file? And the root test file imports all other tests?
+
+1574834155
+adamkowalski
+I feel like it would be awesome to have some of the core zig users write blog posts or document all these idioms somewhere. It's hard to know what is the common way to approach for dealing with these types of issues as somebody coming from the outsider
+
+1574834194
+adamkowalski
+The documentation of the core language, the streams, and the road to 1.0 talk are all great, but it seems like there is a wealth of knowledge that you all have, which is undocumented, or at least I haven't been able to find it
+
+1574836709
+mq32
+mikdusan: i've seen you closed 2938, now i'm interested in your new proposal :D
+
+1574839188
+forgot-password
+The Ziguana earned a place on my Snowboard yesterday... Thanks for the sticker btw, mq32 :D
+
+1574839581
+mq32
+nice!
+
+1574839585
+mq32
+good morning forgot-password!
+
+1574840718
+mq32
+i'm porting over C++ code to zig and it's quite interesting to see how some patters stay exactly the same
+
+1574840728
+mq32
+and some other patterns don't work well at all
+
+1574840763
+forgot-password
+morning
+
+1574845758
+mq32
+comptime is great to enforce contracts on code
+
+1574845765
+mq32
+i have two structs: Properties and Bindings
+
+1574845774
+mq32
+both structs must contain fields with exactly the same name
+
+1574845781
+mq32
+also all fields in Bindings must have the type ?ID
+
+1574845795
+mq32
+=> write a comptime block that asserts all this and makes beautiful error messages
+
+1574846189
+daurnimator
+I'm waiting for someone to write a protobuf thing
+
+1574846328
+bgiannan
+i might, because right now i'm writing serialize/deserialize functions for all my types and its getting tiresome
+
+1574846545
+mq32
+daurnimator: actual protobuf implementation or "zig general purpose serializer"?
+
+1574846577
+daurnimator
+mq32: actual protobuf
+
+1574846594
+daurnimator
+mq32: general purpose zig serialisers are pretty easy. did you see
+
+1574846660
+mq32
+nah, but i can imagine that it's easy. just comptime all the code! :D
+
+1574846794
+bgiannan
+the edge case i have is that with my inheritance implementation, nothing is ever holding pointers to the actual root struct of an "object"
+
+1574846813
+bgiannan
+so at serialization i have to figure out the actual struct of the instance and write that
+
+1574846924
+mq32
+btw, i started porting my UI system i talked about some time ago to zig :)
+
+1574846926
+mq32
+i wonder how elegant my "property binding" system will be at the end
+
+1574846957
+mq32
+`widget.get("left")` would be the zig code whereas the c++ version looks like `widget.left.get(&widget)`
+
+1574847289
+daurnimator
+mq32: not `widget.get(.Left)`?
+
+1574847524
+mq32
+could be an idea, i already require an enum with all possible properties anyways
+
+1574847531
+mq32
+i think i'll gonna do that
+
+1574847544
+mq32
+btw, what is the "right" standard for zig enums? .Caps or .small?
+
+1574848078
+bgiannan
+.Caps
+
+1574848151
+daurnimator
+mq32: though.... what does .get do?
+
+1574848167
+daurnimator
+and why is it not just widget.left
+
+1574859878
+bgiannan
+should
+
+1574860249
+mq32
+daurnimator: because i have properties that are bindable
+
+1574860256
+mq32
+which means i change the source of their value
+
+1574860844
+daurnimator
+bgiannan: I don't know any reasons it wouldn't.... but I don't know
+
+1574860875
+daurnimator
+mq32: ah k. I'd be curious to see the code when you're done
+
+1574861246
+mq32
+yeah, me too :D
+
+1574861266
+mq32
+zig allows a lot of nice stuff with comptime reflection for this use case
+
+1574861298
+mq32
+translate enumeration value to string, compare string with field name, then check if field is currently bound, if not, return field value :D
+
+1574861776
+daurnimator
+mq32: I thought you'd keep a struct of pointers to fields and just always follow the pointers (whether to local object or something else).
+
+1574861994
+mq32
+no, i have two structs
+
+1574861999
+mq32
+one containing the actual value
+
+1574862005
+mq32
+and the other one containing a ?i32
+
+1574862022
+mq32
+if the optional is set, a more or less complex lookup is done
+
+1574863907
+fengb
+daurnimator: I started protobuf. I wanted to wait to see if we get struct tags
+
+1574863925
+fengb
+
+
+1574863942
+fengb
+Inventing my own hacky comptime dsl made me sad
+
+1574864042
+daurnimator
+fengb: why can't you invent your own struct tags?
+
+1574864080
+daurnimator
+e.g. if there is a field `foo` look for a const field `.tags.foo`
+
+1574866702
+mq32
+daurnimator: but if everything works out as i plan, we may have a small (and quite special) UI framework for zig
+
+1574868106
+adamkowalski
+Can anyone help me craft a regex for finding test cases? I'm trying to implement test nearest for vim-test. I've already got test file working, but I still need test nearest and test suite
+
+1574868127
+adamkowalski
+Heres an example with how things work for haskell 'test':      ['\v\s*describe\s"([^"]*)"', '\v^\s*it\s"([^"]*)".*$']
+
+1574868285
+tav
+mq32: could you elaborate on "we may have a small (and quite special) UI framework for zig"? I'm looking for one, so be interested to hear more
+
+1574868315
+mq32
+heh
+
+1574868331
+mq32
+i've implemented a PoC in C++ some time ago, but i'm not happy with the implementation of that
+
+1574868353
+mq32
+look here:
+
+1574868372
+mq32
+this version requires a separate executable and networking to work
+
+1574868407
+mq32
+and i want to remove that restriction to make the API have the same commands, but in a "embedded" environment, so you can just start the UI system from your own thread/process
+
+1574868419
+adamkowalski
+tav: Do you have any particular targets in mind? If you can compile to webassembly you can just leverage the dom?
+
+1574868479
+frmdstryr
+Can I use @hasDecl on a module level?
+
+1574868490
+mq32
+frmdstryr: "modules" are just structs
+
+1574868493
+mq32
+so: yes
+
+1574868502
+frmdstryr
+So how do i reference the current struct?
+
+1574868506
+mq32
+@This()
+
+1574868512
+frmdstryr
+Oh, thanks
+
+1574868522
+tav
+mq32: neat! be great to see something like that in zig
+
+1574868524
+mq32
+tav: it's built on a layouting engine with minimal styling (so it looks crap for the moment) and has a MMVMish approach
+
+1574868537
+mq32
+so it's quite unusual for a UI system, but also cool to work with
+
+1574868554
+tav
+adamkowalski: desktop + mobile + (ideally, also, but not requisite) web
+
+1574868629
+tav
+mq32: being able to bind interpolated strings + basic expressions, in addition to variables would go a long way in making that more ergonomic, but besides that, nice ideas!
+
+1574868854
+fengb
+daurnimator: parallel data structures lead to spaghettification. I know this is supposed to be generated code but I had hoped to keep it legible
+
+1574868934
+daurnimator
+fengb: I read an article like 2 days ago that said how bad struct tags have been for the go ecosystem
+
+1574869001
+daurnimator
+fengb: it was a comment somewhere in reply to
+
+1574869005
+companion_cube
+becuase it's not namespaced?
+
+1574869162
+fengb
+I feel like Java did a decent job with annotations
+
+1574869196
+fengb
+It back references the source and injects pretty simple metadata
+
+1574869221
+companion_cube
+I think rust's annotations are decent, iirc I got failures when typing them wrong
+
+1574869790
+nairou
+The syntax Zig uses, in places like the for and while loops, where you have the condition in parentheses and then the actual value in vertical bars... Where does that syntax come from? I'd never seen it before Zig, and it isn't explained in the documentation, so I'm guessing it's familiar to the devs from somewhere.
+
+1574869846
+companion_cube
+it's a mix of C and ruby/rust I'd say
+
+1574869928
+nairou
+Rust had been my guess, only because it's mentioned frequently and I'm not familiar with it. I know C doesn't provide individual values for loops.
+
+1574869976
+nairou
+The Zig documentation doesn't describe that part of the syntax (the part in vertical bars), so I had a hard time figuring out what was going on at first.
+
+1574869992
+companion_cube
+it's typically to bind a variable
+
+1574870001
+companion_cube
+(like, the variable to the pointer's content in a null check)
+
+1574870001
+nairou
+Right
+
+1574870025
+daurnimator
+Yeah the manual doesn't explain it as a concept; it's one of the things that I got confused about when I found zig
+
+1574870033
+nairou
+Took a while, and looking at usage examples, for me to understand what it was
+
+1574875133
+andrewrk
+mq32,
+
+1574875175
+mq32
+@andrewrk andrewrk added accepted and removed accepted labels on 1 May
+
+1574875181
+mq32
+lol :D
+
+1574875198
+andrewrk
+even my ambivalence is open source :)
+
+1574875218
+mq32
+^^
+
+1574875235
+mq32
+i'm using camelCase for both enum members and struct fields
+
+1574879699
+andrewrk
+fengb, can you elaborate on
+
+1574880872
+mq32
+i am surprised that AutoHashMap actually just uses an .eql function for equality checking :D
+
+1574880891
+mq32
+ah, no
+
+1574880893
+mq32
+it uses meta.eql
+
+1574881174
+fengb
+andrewrk: yeah, when doing a shrink(large, 1) followed by free(large), we lose track of its original size. Actually now that I'm typing it out, we can just free the excess on shrink
+
+1574881190
+fengb
+This type of metadata is much easier to work with 👍
+
+1574881261
+andrewrk
+fengb, zig allocators give the length on free
+
+1574881276
+andrewrk
+or rather clients of zig allocators are required to give the length
+
+1574881334
+andrewrk
+"safe" allocators should probably redundantly store this information to catch mistakes, but WasmPageAllocator is pretty low-level - probably GeneralPurposeDebugAllocator would use it as a backing allocator, and that's where the safety would be provided
+
+1574881475
+andrewrk
+oh I think I see what you were saying
+
+1574881482
+fengb
+Yes I meant that my old shrink() function just threw away the excess memory and never tracked it. But we can have a less bad shrink that actually returns the excess pages
+
+1574881508
+fengb
+Sorry, have some implementation baggage because I stored the metadata differently :P
+
+1574881553
+andrewrk
+btw I think it should be a goal of zig that the allocator interface provides a comptime alignment parameter to allocator implementations
+
+1574890148
+jonathon
+Using
+
+1574890148
+jonathon
+string pointer to a C function.)
+
+1574890280
+andrewrk
+jonathon, in general, when you concatenate strings, you have to think about where the memory will go
+
+1574890314
+andrewrk
+you might look into using std.Buffer
+
+1574890361
+jonathon
+(reading)
+
+1574890376
+companion_cube
+what we need here now is an irc bot 🙃
+
+1574890495
+mq32
+companion_cube: !answer string_concatenation
+
+1574890504
+mq32
+
+
+1574890513
+companion_cube
+I was thinking of !stdlib std.Buffer, but well :p
+
+1574890728
+andrewrk
+IRC bots are allowed in the channel under the condition that they are writtin in 100% zig, no libc
+
+1574890732
+andrewrk
+:)
+
+1574890831
+mq32
+andrewrk, can you explain this error?
+
+1574890833
+mq32
+error: runtime cast to union 'Value' which has non-void fields
+
+1574890881
+companion_cube
+andrewrk: heh, sounds like a challenge :D
+
+1574890894
+companion_cube
+(although it's very hard nowadays, you typically want SSL)
+
+1574890901
+frmdstryr
+Can I make a struct that can only be created using a specific function?
+
+1574890929
+jonathon
+andrewrk: thanks for your continued patience. I've learned so much over the last few days, it's great. :D
+
+1574890946
+frmdstryr
+Eg to make sure a calendar date cannot be created with invalid values
+
+1574890994
+andrewrk
+mq32, you're trying to make a union value out of its tag value. but the tag value is runtime-known, so it might be one of the union fields that has data attached to it. But what would the data be, undefined? that would be an unsafe cast, so it's not allowed with coercion
+
+1574891013
+mq32
+hm
+
+1574891024
+mq32
+value is runtime known, but tag is comptime
+
+1574891060
+andrewrk
+mq32, "runtime cast" in the compile error means zig thinks the tag is runtime known
+
+1574891076
+andrewrk
+maybe try @compileLog(tag_value) and see what it says?
+
+1574891148
+andrewrk
+frmdstryr, actually you can, I think. I wonder if that is possible by adding a dummy field with a default initialization value of @compileError("..."), and then in your init function you set the field to a void value
+
+1574891208
+mq32
+andrewrk:
+
+1574891266
+andrewrk
+mq32, hmm, can you reproduce this with a small test case?
+
+1574891298
+mq32
+i can try
+
+1574891304
+mq32
+i'm doing a lot of hick-hackery
+
+1574891318
+mq32
+wildly converting from and to a tagged union
+
+1574891319
+andrewrk
+mq32, here's why this error exists:
+
+1574891377
+mq32
+yeah i had to enforce a lot of manual comptimes there
+
+1574891386
+andrewrk
+if it's happening when the tag value is comptime known that seems like a bug to me
+
+1574891498
+andrewrk
+jonathon, no problem. I want to point out - it seems tedious to have to care about such things as where memory of string concatenation will go. And indeed it is. It would be nice if the world had unlimited resources. But it doesn't
+
+1574891555
+andrewrk
+other languages will let you solve a problem 95% very quickly, but then you hit a brick wall. zig is is the tortoise in the race; you move slower, but you can close that last 5% gap once you get there
+
+1574891752
+frmdstryr
+andrewrk: That worked, thanks!
+
+1574891753
+mikdusan
+on CI/windows `test/standalone/shared_library` passes. On my windows VM, it fails for me, not finding "mathtest.dll" and I'm at a loss to see how the test.exe would ever find it because it's in a sep zig-cache folder. any hints?
+
+1574891804
+jonathon
+andrewrk: It's all needs a "paradigm shift" in my thinking. I have to consider that I actually need to specify what "thing" to store a "thing" in, rather than just have the programming language hide that and pass the values around (which it can happily do if it's GC-based). I've learned more about low-level programming over the last few days than I'd care to admit!
+
+1574891860
+jonathon
+I'm finding Zig
+
+1574891963
+mikdusan
+here is gist of output for windows shared_library failure:
+
+1574891999
+andrewrk
+mikdusan, I suspect something to do with the PATH environment varibale, and capitalization of it
+
+1574892019
+andrewrk
+
+
+1574892033
+andrewrk
+this code looks sketchy (I wrote it)
+
+1574892090
+andrewrk
+happy to hear that jonathon. the good news is that these concepts are relevant beyond just the zig language, so you're investing in your own skillset
+
+1574892190
+mikdusan
+andrewrk: thanks. a quick test hardcoding to my "PATH" worked around it
+
+1574892203
+mq32
+andrewrk, you're on a merging spree right now? :D
+
+1574892249
+andrewrk
+mq32, yes although I'm also trying to finish #3787, a bug fix branch that got bigger than expected
+
+1574892307
+mq32
+"fix result location bugs" is the
+
+1574892322
+mq32
+while(it) |item| {} thingy?
+
+1574892418
+andrewrk
+can you link to a specific bug report? I'll try it in the branch
+
+1574892469
+mq32
+err, hm
+
+1574892476
+mq32
+good question, it was something about linked lists
+
+1574892546
+andrewrk
+I'm hoping that in the self-hosted compiler, I can think about this from the ground up with a fresh start, and not have these bugs to begin with. Then once the self-hosted compiler is done, backport the way it works back to stage1
+
+1574892564
+andrewrk
+if it's even comparable. idk. we'll see
+
+1574892585
+frmdstryr
+Can zig test show code coverage?
+
+1574892628
+andrewrk
+planned:
+
+1574892767
+frmdstryr
+Nice, thanks
+
+1574892781
+mq32
+daurnimator: i can now show you usage of the binding system
+
+1574892784
+mq32
+
+
+1574892793
+mq32
+implementation will follow as soon as i'm confident that it doesn't suck :D
+
+1574897125
+mq32
+andrewrk: does the zig-cache directory have a size limit?
+
+1574897147
+andrewrk
+the cache system does no garbage collection yet
+
+1574897157
+mq32
+okay
+
+1574897158
+andrewrk
+it is safe to delete the directory to reclaim space
+
+1574897167
+mq32
+i just wondered as my project cache is 0.5 GB right now
+
+1574899124
+pixelherodev
+Anything major happen over the last few days? Been a tad... preoccupied
+

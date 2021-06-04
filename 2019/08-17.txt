@@ -1,0 +1,660 @@
+1566004436
+daurnimator
+shachaf: no :(
+
+1566010197
+fengb
+Is there a quick way to convert numbers to []u8 with fixed endianness?
+
+1566010387
+andrewrk
+fengb, std.mem.readIntSlice
+
+1566010412
+andrewrk
+or rather std.mem.writeIntSlice
+
+1566010428
+fengb
+Awesome, thanks!
+
+1566010959
+diltsman
+On Windows, does Zig compile for 64-bit?
+
+1566010980
+andrewrk
+not sure what you're asking
+
+1566010999
+diltsman
+When I build with VC++ I have to choose 32-bit or 64-bit target.
+
+1566011013
+diltsman
+They build against different sets of Windows libraries.
+
+1566011071
+andrewrk
+if you don't specify a target, zig chooses the native target. you can use the -target parameter to choose a different target, not only including 32-bit windows but including other operating systems and architectures. the windows 32-bit target is a Tier 2 supported target
+
+1566011129
+andrewrk
+
+
+1566011287
+diltsman
+I assume, then, that it will default to a 64-bit build on 64-bit Windows.
+
+1566011476
+andrewrk
+that's right
+
+1566011528
+diltsman
+Any idea why the Zig standard library for Windows uses the W function variants instead of the A function variants?
+
+1566011609
+andrewrk
+the A variants depend on global operating system user-configurable state
+
+1566011635
+diltsman
+Good reason.
+
+1566011636
+andrewrk
+and they have more limitations than the W variants. for example the number of bytes accepted in a file path
+
+1566011878
+fengb
+random.int(f32) should probably throw a type error
+
+1566011942
+andrewrk
+agreed
+
+1566012068
+daurnimator
+diltsman: on windows you should always use W variants. the A functions are buggy userspace wrappers
+
+1566012123
+diltsman
+Good to know.  Now to look how the UTF8 strings are converted to UTF16.  I'm sure that the library code will be useful.
+
+1566012159
+daurnimator
+diltsman: don't forget that windows isn't UTF16, it's UCS-2
+
+1566012216
+diltsman
+This is what made me think UTF16:
+
+1566012241
+daurnimator
+diltsman: all lies
+
+1566012257
+diltsman
+UGH!  Incorrect documentation is worse than no documentation.
+
+1566012293
+fengb
+They're mostly compatible for western character sets :P
+
+1566012301
+daurnimator
+diltsman: see
+
+1566012336
+daurnimator
+diltsman: my second link there links to
+
+1566012388
+fengb
+wtf-8 lol
+
+1566013868
+daurnimator
+andrewrk: you around?
+
+1566016720
+daurnimator
+Anyone around to help me with some atomic problems?
+
+1566016780
+karrick
+I don’t know Zig we’ll but I know atomic stuff
+
+1566016799
+karrick
+Is this what we were going thru pst night?
+
+1566016802
+daurnimator
+karrick: got a preferred way I can share my screen with you?
+
+1566016819
+karrick
+Open to suggestions
+
+1566016837
+karrick
+How do you normally do it?
+
+1566016842
+daurnimator
+karrick: see PM
+
+1566020019
+daurnimator
+karrick: FYI I just pushed the problem code to
+
+1566020029
+daurnimator
+(in case you want to play)
+
+1566020170
+karrick
+Thanks. I’m busy educating myself.
+
+1566020184
+karrick
+Trying to catch up with you... :)
+
+1566051343
+strmpnk
+I've been thinking about the async/await design for a bit since Thursday's update.
+
+1566051345
+strmpnk
+Is there a way to "race" multiple async calls/frames and return the first to return a value or fail?
+
+1566051396
+strmpnk
+It seems like the await mechanism will prevent others from being awaited, which prevents parallelism on the return path.
+
+1566051447
+strmpnk
+The "all awaits complete" semantics certainly makes errdefer semantics easier at least (re: cancellation was also an interesting problem).
+
+1566051540
+strmpnk
+I don't think most code will care but certain kinds of I/O heavy work will want to avoid false sequencing, which means the awaiters will all need to have some kind of awareness of the suspend/resume scheduling code to achieve this.
+
+1566051831
+fengb
+I think std.event.Channel is for this usecase:
+
+1566051924
+strmpnk
+Yeah, that does help, though it's unclear where the dangling await would end up.
+
+1566051999
+strmpnk
+I guess the channel could be consumed and a separate thread or stage in processing could loop to await frames.
+
+1566054571
+FireFox317
+It seems like the tests for MacOS are stuck in std.event.Channel. It causes the MacOS CI to timeout after 6 hours
+
+1566055997
+diltsman
+Why is "[*c]c_void" a problem?  I see that the standard library uses "*c_void".
+
+1566056651
+diltsman
+I assume that it has something to do with the union of behaviors of "*T" and "[*]T".
+
+1566057353
+andrewrk
+FireFox317, should be fixed now. the std lib event loop code is still considered "experimental". After I'm convinced it's going in a stable direction I'll be a lot more careful about breakage
+
+1566057524
+fengb
+diltsman: yeah [*] means it’s unknown whether it’s single or array.
+
+1566057564
+fengb
+You shouldn’t design an API like that. It’s only for translating C, where we cannot know without reading the docs
+
+1566057632
+andrewrk
+standard library usage of *c_void is a smell
+
+1566057728
+fengb
+Oops, [*c] means unknown
+
+1566057948
+andrewrk
+[*] means it points to an unknown number of items
+
+1566057982
+andrewrk
+[*c] means it's unknown, but the API might still require using the pointer as a single item. and since the API is auto-translated, fixing the API to use [*] or * is not possible
+
+1566058042
+andrewrk
+[*] also means not-null. but [*c] pointers can be null, but they allow treating it as non-null with out compiler type safety (runtime safety instead)
+
+1566058081
+andrewrk
+if we didn't have C translation, we wouldn't have [*c] pointer types
+
+1566069627
+diltsman
+Me struggling to make the logical transition from C and C++: Is there some way to have an allocated array that is automagically collected when the array goes out of scope?  Something like C++'s std::unique_ptr.  My thought is that something vaguely like it is going to be possible, but it will have different syntax and semantics.
+
+1566070226
+tav
+does anyone know if there's a vdom implementation in zig?
+
+1566070235
+tav
+if not, I think I'll start working on one
+
+1566070361
+nrdmn
+diltsman: the language zig doesn't have the concept of dynamic allocation and the stack works the same as in C and C++
+
+1566070414
+diltsman
+That was my thought.  So things have to be done through allocator types.  Which means that you can defer the deallocation, but there is no way to transfer the ownership up a level of the stack once you have defered.
+
+1566070458
+nrdmn
+correct
+
+1566071081
+diltsman
+Is there a way to specify a set of flags that can be ored together to create a compound value but cannot be ored without any values outside of those flags?  The best that  I can see is to use constants at the file scope and just be careful to use just the correct ones.
+
+1566071294
+nrdmn
+if you want to use an integer for your flags set and your flags are contiguous, you can use an integer that is exactly the width of your amount of flags
+
+1566071327
+nrdmn
+otherwise you can use a packed struct of bools and switch them on and off individually
+
+1566071384
+nrdmn
+or u1, I'm not sure if bools are actually 1 bit when packed
+
+1566071438
+diltsman
+3 non-adjacent bits in the 32-bit integer.
+
+1566071973
+andrewrk
+tav, I'm fairly certain there is not
+
+1566072007
+andrewrk
+nrdmn, yes bools are 1 bit in packed structs
+
+1566075281
+mikdusan
+diltsman: a basic attempt at a userland unique ref:
+
+1566076481
+nrdmn
+has anyone here successfully built parser combinators in zig?
+
+1566077765
+curtisf
+I've made some parser combinators, but they currently cause the compiler to crash when you use them with recursive structs
+
+1566077849
+curtisf
+There's also a lot more ceremony than I'd like. It might be a bit better after we can create new struct types at compile time
+
+1566077884
+andrewrk
+the issue for that is
+
+1566077903
+andrewrk
+it's more of a design & usage patterns question than one of implementation
+
+1566077914
+nrdmn
+curtisf: I got to that point too
+
+1566077918
+curtisf
+yup! the compiler crash is the more pressing thing to me
+
+1566077934
+andrewrk
+oh I see, do you have an issue open for it?
+
+1566077940
+curtisf
+yep
+
+1566077967
+nrdmn
+the issue is that they're evaluated at compile time
+
+1566077986
+andrewrk
+this one?
+
+1566077998
+curtisf
+Yes
+
+1566078009
+andrewrk
+noted
+
+1566078079
+curtisf
+You can mostly work-around the lack of new structs, because you can generated structs with a `fn get(self: Self, comptime fieldname: []const u8)`, but I didn't do that for my library yet
+
+1566078114
+curtisf
+nrdmm: If you want to compare my implementation (or give feedback, because it is pretty rough), it's here:
+
+1566078188
+curtisf
+oo I didn't see that 1315 for `@unionInit` was closed!
+
+1566078206
+andrewrk
+oh yeah, that's done and working now. it even does result locations correctly
+
+1566078251
+andrewrk
+0.5.0 release notes is going to be a big document :)
+
+1566078285
+andrewrk
+it will realistically take me upwards of a week just to draft those notes
+
+1566078305
+curtisf
+it's a very long list of issues tagged with 0.5.0. Is it really going to be done in september?
+
+1566078355
+andrewrk
+most of the issues will be postponed. but I will at least look at each and every one before then and consider what to do with it
+
+1566078414
+andrewrk
+each milestone has a description like this: "Accept and resolve these issues, reject, or postpone them before releasing 0.5.0."
+
+1566078430
+curtisf
+That's what I figured. I'm very happy with zig so far (other than the number of crashes I've hit) and it looks like it's growing up nicely
+
+1566078467
+andrewrk
+on
+
+1566078531
+andrewrk
+I feel you on the crashes. Towards the end of a release cycle, I focus on stability and bug fixes. So we should start to see those crashes getting fixed over the next month and a half
+
+1566078562
+andrewrk
+right now we're at peak instability - just finished 2 major reworkings of zig's innards - result location semantics & async/await rewrite
+
+1566078575
+andrewrk
+so it can only get better from here
+
+1566078639
+andrewrk
+also there aren't many big breaking changes left to do
+
+1566078667
+andrewrk
+we're getting close to the language's final syntax / semantics
+
+1566079250
+andrewrk
+btw, the winner of the mascot poll is Ziguana:
+
+1566079271
+curtisf
+yes!
+
+1566079332
+curtisf
+the poll was a little unfair, the others didn't get puns
+
+1566079362
+andrewrk
+tbh it was rigged, if ziguana didn't win, I was just going to ignore everybody's preference
+
+1566079369
+andrewrk
+>:-]
+
+1566079447
+nrdmn
+curtisf: I tried to build something much simpler that doesn't require an allocator:
+
+1566079530
+curtisf
+how do you parse recursive structures without an allocator?
+
+1566079564
+andrewrk
+once zig has unsafe recursion prevention, you won't be able to
+
+1566079570
+nrdmn
+to prevent my code from being run at compile time, I tried to use an interface for the structs returned from the parsers, but I became too tired to continue to work
+
+1566079740
+hryx
+andrewrk: I just saw your last stream. Congratulations on the huge merge!
+
+1566079753
+andrewrk
+thanks hryx :)
+
+1566079754
+hryx
+sad I missed the poll, but I obviously would have chosen the reptile anyway
+
+1566079836
+andrewrk
+yeah the name has to be a pun on the language name and it has to be something not already dressed up, so that people can dress it up in cute ways. clearly the other 2 are disqualified
+
+1566079860
+hryx
+heh. Is the artist already chosen?
+
+1566079973
+marler8997
+I'm trying to use zig like a regular C compiler where it recognizes C-command-line arguments and other build tools can use it like a c-compiler.
+
+1566079989
+scientes
+marler8997, zig cc does that....
+
+1566080001
+marler8997
+but it doesn't work like a normal C compiler
+
+1566080008
+marler8997
+I can't just do "zig cc hello.c"
+
+1566080015
+scientes
+oh hmm
+
+1566080016
+marler8997
+so other build tools don't know how to use it
+
+1566080018
+scientes
+i though it just calls clang
+
+1566080023
+andrewrk
+marler8997, that doesn't exist currently. `zig cc` has no system awareness. it's unclear whether that will ever exist
+
+1566080042
+marler8997
+I'm trying to use zig as the c-compiler to build other C projects using their build system
+
+1566080056
+marler8997
+I could create a translation program, but wondering if any work/design exists for this already
+
+1566080061
+andrewrk
+I understand the use case. I think it could be at least considered. can you open an issue?
+
+1566080069
+marler8997
+sure thing
+
+1566080106
+andrewrk
+idea being that it will act exactly like clang, except it will set up the linker & includes to use zig's libc, libunwind, etc
+
+1566080112
+marler8997
+right
+
+1566080124
+andrewrk
+which is what already happens with the higher level CLI
+
+1566080132
+andrewrk
+but it's a different CLI than clang
+
+1566080133
+marler8997
+yeah
+
+1566080166
+marler8997
+If that was supported, we could even use zig to build llvm :)
+
+1566080252
+andrewrk
+related:
+
+1566080268
+andrewrk
+hryx, somebody volunteered to draw one
+
+1566080274
+curtisf
+Is there a trie or balanced tree map in the standard library that I've missed? also, is there a plain old FIFO queue?
+
+1566080283
+marler8997
+to "draw one"?
+
+1566080299
+curtisf
+to draw a ziguana
+
+1566080340
+fengb
+The ziguana needs a space ship
+
+1566080546
+andrewrk
+curtisf, have you seen the file std/std.zig?
+
+1566080611
+andrewrk
+I'm not sure what red black trees are but that might be related (std.rb). I believe TailQueue is a doubly linked list
+
+1566080666
+andrewrk
+been meaning to change the namespacing, but std.atomic.Queue is a doubly linked list that is protected by a mutex to make it thread safe
+
+1566080668
+curtisf
+ah, I missed "TailQueue", although I was hoping for a circular buffer. Didn't realize "rb" stood for "red black", that is it
+
+1566081064
+andrewrk
+thanks marler8997
+
+1566081070
+marler8997
+yeah
+
+1566081157
+fubd
+are bound fns a thing yet?
+
+1566081173
+fubd
+i.e., can i pass one to a function that takes a "fn() void" callback
+
+1566081191
+fubd
+will they ever work that way?
+
+1566085884
+shachaf
+andrewrk: On recursion: The "standard" way to handle stack frames is to just use an arena to allocate frames. I guess Zig calls this variant a FixedBufferAllocator (though I don't think the current implementation has frame support?).
+
+1566085910
+shachaf
+It would sure be nice if platform ABIs just told you how big the stack is rather than expecting you to SEGV if you use too much.
+
+1566085913
+andrewrk
+shachaf, you can use any allocator to put a frame in it
+
+1566085929
+andrewrk
+
+
+1566085955
+andrewrk
+in general we know how big the stack is - we get to decide that
+
+1566085964
+shachaf
+Sure. I mean the standard stack behavior for non-async functions is effectively allocating frames in an arena.
+
+1566085982
+shachaf
+You mean you know in the case of async functions or in general?
+
+1566086019
+andrewrk
+in general
+
+1566086043
+andrewrk
+it's an option you pass to the linker that decides the stack size
+
+1566086064
+andrewrk
+the challenge is knowing at compile time the upper bound that will ever be used
+
+1566086076
+andrewrk
+
+
+1566086127
+shachaf
+Ah, I was going to say something about bounded recursion but it looks like you have it all figured out. :-)
+
+1566086184
+shachaf
+What's the linker option for stack size? My impression was that platforms leave this pretty vague.
+
+1566086399
+andrewrk
+it's target-specific. here's where we set it for stage1 compiler for windows & mingw:
+

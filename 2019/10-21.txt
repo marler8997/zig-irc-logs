@@ -1,0 +1,1168 @@
+1571616203
+pixelherodev
+andrewrk, regarding the benchmark, after looking at the other language examples, this wasn't an attack on Zig.
+
+1571616212
+pixelherodev
+They are just bad benchmarks in general
+
+1571616218
+pixelherodev
+Bad code too
+
+1571616248
+pixelherodev
+Their C code is even
+
+1571616315
+pixelherodev
+I was about to comment that I doubted the other implementations were that bad when I decided to check first. This is honestly just... really, really stupid.
+
+1571616958
+pixelherodev
+I guess I'll have to wait for the benchmarks game instead
+
+1571617923
+tgschultz
+yeah,
+
+1571619354
+andrewrk
+I could point to windows API that is better than POSIX API and POSIX API that is better than Windows API
+
+1571619362
+andrewrk
+neither one is strictly worse
+
+1571621092
+andrewrk
+emekankurumeh[m], thanks to midipix I found some very useful information regarding windows
+
+1571621126
+andrewrk
+we can actually do mov %%gs:0x60, %0 to get a pointer to the "Process Environment Block" (see
+
+1571621182
+andrewrk
+this is guaranteed to succeed, and it contains a lot of information, such as: * stdin, stdout, stderr handles * cwd handle * cwd path name * the command line * the executable's own path
+
+1571621192
+andrewrk
+source:
+
+1571621209
+andrewrk
+bottom line... we can make a bunch of std lib APIs no longer have the possibility of failure!
+
+1571621365
+andrewrk
+the env vars are there too
+
+1571621446
+pixelherodev
+That's brilliant!
+
+1571621518
+pixelherodev
+Intriguing to me in terms of how that's implemented but still
+
+1571624862
+andrewrk
+
+
+1571624864
+andrewrk
+it works
+
+1571624933
+andrewrk
+it's the next best thing after a comptime initialized integer
+
+1571626525
+pixelherodev
+Wow, that's actually really impressive
+
+1571629643
+andrewrk
+wait, NtCreateFile supports case sensitivity
+
+1571629813
+andrewrk
+
+
+1571643134
+telemach
+
+
+1571647610
+odc
+^ cool project! Though he didn't even need to write his own dhcp client. Linux has one builtin with the kernel parameter "ip=dhcp"
+
+1571647818
+mq32
+i have to start a "kernel" project with zig... :D
+
+1571652817
+riba
+i'm a bit confused how to allocate a struct on the heap because all the allocation functions seem to take arrays
+
+1571652877
+riba
+and it seems i have to init an allocator in any case instead of using some global function?
+
+1571653080
+riba
+in any case, i just made the global, static struct var instead of const and i can use a cast
+
+1571653105
+riba
+but now the compiler tells me i should use -fPIC even though i do, is there a wrong way to do it?
+
+1571653118
+riba
+i put it right after build-lib
+
+1571654873
+Snektron
+I think you can allocate a struct on the heap with allocator.create
+
+1571654910
+Snektron
+That returns a single struct
+
+1571654971
+riba
+Snektron: the function is defined on Allocator and not in std.mem, is it still okay to use it?
+
+1571654981
+Snektron
+You do have to init an allocator in any case, but you can use malloc and free by linking with libc and using std.heap.c_allocator
+
+1571655019
+riba
+is std.heap.c_allocator inited?
+
+1571655111
+Snektron
+create is a member function of the std.mem.Allocator struct, but thats an interface
+
+1571655138
+Snektron
+Usually you init one in std.heap (for example DirectAllocator) and then its `allocator` is the actual allocator
+
+1571655145
+riba
+what i meant is, to me it seemed like you are supposed to use the std.mem functions and pass them an allocator
+
+1571655149
+Snektron
+c_allocator is initialized
+
+1571655154
+riba
+and the function will use the allocator as necessary
+
+1571655164
+riba
+so calling stuff on an allocator yourself might be wrong
+
+1571655218
+Snektron
+Its just a member function of the allocator
+
+1571655229
+Snektron
+std.mem.Allocator is an interface in effect
+
+1571655263
+Snektron
+Theres also a global direct allocator, its std.heap.direct_allocator
+
+1571655266
+riba
+i get that, i just wasn't sure if you're "allowed" to use the allocator directly instead of through the std.mem functions
+
+1571655295
+riba
+but i'll try create with the c_allocator, thanks
+
+1571655304
+riba
+maybe that will help with my fpic error after all
+
+1571655370
+Snektron
+The allocator contains the std.mem functions
+
+1571655375
+Snektron
+Say you have a direct allocator
+
+1571655390
+Snektron
+(in the variable `direct`)
+
+1571655408
+Snektron
+You call direct.allocator.create(i32) to allocate an int
+
+1571655491
+Snektron
+You can use reallocFn but thats annoying
+
+1571655509
+Snektron
+So std.mem.Allocator exists to wrap that and provide a more useful interface
+
+1571655558
+Snektron
+So whats confusing is that both DirectAllocator and DirectAllocator.allocator are referred to as an allocator
+
+1571655592
+Snektron
+Even though they dont have the same interface
+
+1571656270
+riba
+i just thought the intended use of the api is e.g. std.mem.alloc(allocator, size) and allocator is just visible so you can implement it yourself
+
+1571656843
+mq32
+riba: i don't think std.mem.alloc exists
+
+1571656863
+mq32
+there is std.mem.Allocator.alloc(allocator, T, size)
+
+1571656863
+mq32
+
+
+1571656884
+riba
+mq32: it doesn't, it was just an example
+
+1571656923
+riba
+but now i guess i get the std.mem functions are "helpers"
+
+1571656986
+mq32
+yeah, most of the stuff in std.mem is helpers or non-allocator functions
+
+1571658364
+bgiannan
+what makes a function 'inlinable'?
+
+1571662362
+muffindrake
+It can't refer to a global object, if I recall correctly
+
+1571662383
+mq32
+muffindrake: that would be a pure function
+
+1571662484
+muffindrake
+The C standard says "An inine definition of a function with external linkage shall not contain a definition of a modifiable object with static or thread storage ration, and shall not contain a reference to an identifier with internal linkage."
+
+1571662499
+muffindrake
+How far that applies to Zig, I'm not sure
+
+1571662578
+muffindrake
+Uh, I should reread my messages with this keyboard :(
+
+1571672777
+muffindrake
+Has anyone written a wrapper for libcurl for zig, or is there a comparable library already?
+
+1571672864
+nrdmn
+unlikely and no
+
+1571672913
+donpdonp
+muffindrake: while not a library, this is a zig file that uses libcurl.
+
+1571673163
+muffindrake
+That's not really a wrapper, and I'm familiar enough with libcurl to write that myself, but thanks anyway.
+
+1571673278
+muffindrake
+alloc(..) catch unreachable;
+
+1571673279
+muffindrake
+Humm.
+
+1571673291
+companion_cube
+also, no dealloc? :D
+
+1571673350
+muffindrake
+Indeed, as it is, the function is just leaking memory
+
+1571673380
+muffindrake
+the libcurl routine for cleanup is called at the end, but other allocations are unfazed
+
+1571673442
+companion_cube
+I guess allocator.create not being followed by defer is a redflag :p
+
+1571673757
+muffindrake
+I'd have said something similar. I did write some C wrapping code in D, and there you would use the equivalent of defer. It's strange that they called it 'scope (exit)', though.
+
+1571673845
+donpdonp
+muffindrake: it was some of my first zig. i do need to clean up those leaks :O
+
+1571673885
+donpdonp
+companion_cube: unless the dealloc happens somewhere else?
+
+1571673945
+muffindrake
+authbuf goes out of scope before any reference to it is passed anywhere it could be deallocated. It's only passed to bufPrint.
+
+1571674404
+companion_cube
+donpdonp: at least a errdefer
+
+1571674428
+muffindrake
+I'm still confused when you want to use defer, and where errdefer
+
+1571674442
+companion_cube
+if you return the value, use errdefer; if it's purely local, defer
+
+1571674550
+muffindrake
+So deallocation of local buffers strictly uses defer then
+
+1571674553
+muffindrake
+I see.
+
+1571674604
+companion_cube
+if the buffer shouldn't survive after the function returns, yep
+
+1571674662
+nrdmn
+muffindrake: "has anyone written..." ->
+
+1571674696
+muffindrake
+That's very new
+
+1571674708
+muffindrake
+Thanks!
+
+1571677163
+marler8997
+for anonymous structs, will there be a way to access the fields by an index?  in the lexical order they were given?
+
+1571677241
+tgschultz
+It's a very doable thing with @typeInfo inspeciont, so at the very least it could be a std.meta function
+
+1571677331
+marler8997
+there's a "field" member in the Struct TypeInfo, but I'm not sure what order it's in
+
+1571677779
+nrdmn
+marler8997: perhaps you can combine @memberName and @field
+
+1571677802
+marler8997
+but how do you access them in lexical order?
+
+1571677818
+nrdmn
+oh in lexical order
+
+1571677885
+nrdmn
+I assumed @memberName gets the member's name in the order they're defined in
+
+1571677990
+marler8997
+I'm not sure if anonymous structs with unnamed fields will have a name
+
+1571678001
+marler8997
+but reading more, it looks like you will be able to use array syntax to access the fields
+
+1571678016
+nrdmn
+anonymous structs with unnamed fields?
+
+1571678024
+marler8997
+
+
+1571678034
+marler8997
+The very last line of that comment
+
+1571678098
+nrdmn
+huh, do tuples work already?
+
+1571678121
+marler8997
+no this is a new feature that's been proposed, I think it's been accepted as well
+
+1571678214
+marler8997
+oh wait, here's the accepted proposal:
+
+1571678224
+marler8997
+it's not called "tuples", but they look very similar
+
+1571678250
+marler8997
+.{a, b, c} is syntax sugar for .{._0 = a, ._1 = b, ._2 = c}
+
+1571678277
+companion_cube
+that kind of looks like a tuple ;)
+
+1571678314
+marler8997
+yeah they are very similar, but we're able to piggy-back off of structs so we don't need to invent new semantics for tuples
+
+1571678738
+tgschultz
+the field members in a structs type info are in the order they are declared in.
+
+1571678785
+marler8997
+tgshultz: thanks, where is that documented?
+
+1571678798
+tgschultz
+I'm not sure it is, actually.
+
+1571678809
+tgschultz
+but but serialize/deserialize relies on it
+
+1571678847
+tgschultz
+actually it is documented: For structs, unions, enums, and error sets, the fields are guaranteed to be in the same order as declared. For declarations, the order is unspecified.
+
+1571678861
+tgschultz
+it's at the bottom of the @typeInfo section
+
+1571678868
+marler8997
+ah perfect
+
+1571685286
+Barabas
+Good evening
+
+1571685289
+Barabas
+Good evening
+
+1571685307
+Barabas
+How do you do something like this?
+
+1571685307
+Barabas
+fn readDocument(stream: *io.BufferedInStream) !void {
+
+1571685336
+Barabas
+It gives an error, because BufferedInStream is actually a function returning a struct.
+
+1571685365
+Barabas
+That makes sense, but... how then do I take something like that as input?
+
+1571685642
+donpdonp
+Barabas: this might help
+
+1571685764
+donpdonp
+well look at that, std lib docs.
+
+1571685765
+Barabas
+Not really
+
+1571685797
+Barabas
+Wow, amazing!
+
+1571685835
+Barabas
+Still doesn't answer my question though.
+
+1571685865
+Barabas
+Is the only way to make a 'templated' function by putting it in a struct which you create by calling a function with some comptime parameter(s)?
+
+1571686056
+tane
+howdy
+
+1571686068
+Barabas
+hello
+
+1571686071
+tane
+
+
+1571686091
+tane
+the docs seem rather broken here and there
+
+1571686109
+Barabas
+Yeah well, it's a new thing ^^
+
+1571686118
+tane
+yeah :)
+
+1571686130
+andrewrk
+tane, generated docs are brand new and still a few open issues
+
+1571686155
+tane
+andrewrk, yeah, thanks for all the work btw :)
+
+1571686178
+via
+win 40
+
+1571686180
+via
+dammit
+
+1571686203
+donpdonp
+this might have been mentioned before but it'd be very handy to see the zig implementation code from the man page
+
+1571686226
+tane
+so I guess the zig tokenizer in the src folder is still the main one, and not the one in the self-hosted dir?
+
+1571686252
+andrewrk
+donpdonp,
+
+1571686264
+donpdonp
+andrewrk: sweeet.
+
+1571686403
+firefox317
+Barabas: The current way of doing that is by having a 'var' as a function parameter i think
+
+1571686422
+Barabas
+Hmm... I see
+
+1571686488
+Barabas
+I made a struct in the meantime, so I guess I'll go with that (at least for now)
+
+1571686574
+firefox317
+But I think it should be possible to have something like `stream: *io.BufferedInStream(anytype)` as a function parameter. There is probably an open issue for this
+
+1571686687
+andrewrk
+firefox317,
+
+1571686831
+firefox317
+Barabas: ^^
+
+1571687057
+Barabas
+Yes, exactly that.
+
+1571687208
+Barabas
+Tricky stuff
+
+1571687273
+tgschultz
+Barabas, doesn't seem to have been mentioned yet, but you can take `stream: var`: `fn readDocument(stream: var) @typeOf(stream).Error!void { ... }`.
+
+1571687416
+Barabas
+firefox317 mentioned that. It's an option, but also not very nice imho as it doesn't tell you anything of what you should put in there.
+
+1571687423
+riba
+i'm struggling to allocate memory the size of a struct and then copying a struct into there
+
+1571687443
+riba
+do i need to cast the pointer to a u8 pointer? can that really be the right thing?
+
+1571687461
+tgschultz
+Barabas no disgreement here. There are several open issues in regards to this.
+
+1571687476
+riba
+alternatively, what is the reason the compiler might tell me to use -fPIC if i already use it
+
+1571687502
+riba
+when trying to use a global var instead of trying to make something on the heap and copying the const struct in there
+
+1571687566
+mikdusan
+riba: see allocator.create for single-allocations:
+
+1571687591
+Barabas
+I get this amazing error
+
+1571687591
+Barabas
+...\lib\zig\std\io.zig:188:52: error: function with inferred error set must return at least one possible error...\lib\zig\std\io.zig:184:45: error: expected type 'fn(*std.io.in_stream.InStream(std.io.Error), []u8) std.io.Error!usize', found 'fn(*std.io.in_stream.InStream(std.io.Error), []u8)
+
+1571687592
+Barabas
+@typeOf(std.io.BufferedInStreamCustom(4096,std.io.Error).readFn).ReturnType.ErrorSet!usize'
+
+1571687621
+riba
+mikdusan: i used create, now i have empty memory the size of T, correct?
+
+1571687644
+mikdusan
+yes
+
+1571687646
+riba
+now i already have a struct i wanna memcpy in there, or i can also make a new one i don't care
+
+1571687652
+riba
+how do i do it
+
+1571687665
+riba
+@memcpy expects [*]u8 and not my struct pointer
+
+1571687669
+mikdusan
+so `p.* = what_i_want_copied;`
+
+1571687679
+companion_cube
+seems like the doc could put `stuff` in a `<pre>`…
+
+1571687724
+riba
+mikdusan: it seems i need to unlearn some of my patterns
+
+1571687727
+riba
+thanks
+
+1571687807
+riba
+okay, that didn't help unfortunately
+
+1571687809
+tgschultz
+Barabas: ugh, yeah sorry, that's and error set inference problem, another big issue with status quo io streams. If you don't care about the errorset, you could use `anyerror!void` as your return type and that should shut it up
+
+1571687823
+riba
+lld: error: relocation R_X86_64_PC32 cannot be used against symbol xoob_info; recompile with -fPIC
+
+1571687835
+riba
+but i do compile it with -fPIC
+
+1571687855
+riba
+am i putting it in the wrong place?
+
+1571687856
+Barabas
+tgschultz, thanks. It actually already goes wrong when I do this
+
+1571687857
+Barabas
+var stream = io.SliceInStream.init("test");    var bufferedStream = io.BufferedInStream(io.SliceInStream.Error).init(&stream.stream);
+
+1571687879
+riba
+i actually get the same thing 6 times for some reason
+
+1571687938
+Barabas
+Oh I see, because SliceInStream doesn't actually have any errors?
+
+1571687968
+tgschultz
+possibly. inferring empty errorset is yet another open issue
+
+1571687975
+Barabas
+cool =D
+
+1571687982
+s-ol
+hello :)
+
+1571688021
+mikdusan
+riba: which platform?
+
+1571688026
+s-ol
+Been playing with zig a bit at the suggestion of daurnimator
+
+1571688035
+tgschultz
+the idea is that the empty errorset should be distinct from no errorset, but it isn't currently handled correctly.
+
+1571688053
+Barabas
+I see.
+
+1571688058
+tgschultz
+yeah
+
+1571688068
+riba
+mikdusan: i didn't specify one so i think it's using mine? x86_64 sounds correct
+
+1571688081
+mikdusan
+which OS are you building things on
+
+1571688091
+riba
+mikdusan: fedora
+
+1571688135
+s-ol
+is there a way to get the type of a struct member, having only the struct type?
+
+1571688147
+tgschultz
+yes
+
+1571688153
+mikdusan
+riba: if you have a reduction or repo i can try to duplication
+
+1571688158
+mikdusan
+*duplicate
+
+1571688177
+s-ol
+guess I could crrate a variable and return @typeOf from a comptime block, but that seems cumbersome
+
+1571688203
+s-ol
+(create an instance in a variable i mean)
+
+1571688276
+tgschultz
+s-ol: `const FieldType = std.meta.fieldInfo("field_name").field_type;` I think
+
+1571688300
+tgschultz
+`const FieldType = std.meta.fieldInfo(Type, "field_name").field_type;`
+
+1571688308
+tgschultz
+missed a parameter
+
+1571688373
+Snektron
+s-ol, you can use @TypeInfo probably
+
+1571688375
+Snektron
+or @field: @field(struct_type, "field_name")
+
+1571688458
+Snektron
+the "recommended" zig style is to name enums in snake case right?
+
+1571688571
+Snektron
+is it maybe an idea to build a warning and optional fix into zig-fmt? because im noticing an inconsistency in the stdlib
+
+1571688579
+riba
+mikdusan: thanks, just a moment
+
+1571688729
+Snektron
+
+
+1571688839
+riba
+mikdusan:
+
+1571688889
+riba
+mikdusan: but i realized you need the headers, you can just use the dir from this other repo:
+
+1571689246
+marler8997
+so the "accept" function in the standard library is assuming that a pointer to sockaddr is the same size as sockaddr
+
+1571689251
+marler8997
+but that's not how the accept function works
+
+1571689278
+marler8997
+the size of sockaddr will depend on the protocol you are using, which is determined at runtime
+
+1571689306
+marler8997
+the only requirement is that it fits at least 16 bits to store the address family value
+
+1571689409
+s-ol
+Snektron: isnt @field for fiel access on an instance?
+
+1571689569
+Snektron
+s-ol, yes, did you want access to a static struct?
+
+1571689570
+Snektron
+static field
+
+1571689921
+s-ol
+Snektron: i wanted to access a nested type from an imported C struct, without actually having a value of that struct type
+
+1571689962
+s-ol
+i think tgschultz got it. should that maybe be itd own @-intrinsic?
+
+1571690186
+s-ol
+its* (sorry, that was all phone-typing until here)
+
+1571690449
+tgschultz
+the trend has been to move @ functions for type inspection into userland code. there are a few notable exceptions: @hasField, @hasDecl, @typeName, possibly a few others.
+
+1571691401
+s-ol
+huh, just looked through the IRC logs for something entirely unrelated and here I go discovering hoppetosse and keith52 talking about Dear ImGui (and cimgui)
+
+1571691448
+s-ol
+that is exactly what I was just meaning to post: as my example thingy I've been porting the glfw-opengl3 example implementation, just got it working today
+
+1571691534
+s-ol
+
+
+1571691965
+mikdusan
+riba: try dropping the `extern` keyword:
+
+1571692635
+riba
+mikdusan: thanks for finding this out. i put it there because i originally wanted to pass it directly to the C code, which now i'm not
+
+1571692673
+riba
+at least it compiles now, let's see if it works as intended
+
+1571692703
+mq32
+marler8997: if sockaddr is the same size as sockaddr_storage, it should be sufficient for all supported AFs
+
+1571692746
+riba
+awesome, it works
+
+1571692753
+riba
+thanks a lot :D
+
+1571692760
+mikdusan
+👍
+
+1571692956
+riba
+now let's see if i can make it do anything usefil except getting loaded too
+
+1571693076
+andrewrk
+argh, my std.fs improvement branch is stalled because I have code that works on windows and wine 32 bit but not wine 64 bit
+
+1571693150
+mq32
+andrewrk finding bugs in wine now? not only llvm and QEMU... :D
+
+1571693386
+Snektron
+does it work on win64
+
+1571693590
+andrewrk
+yes it works on native windows 64 bit
+
+1571694048
+Snektron
+Is there some way to deal with utf8 input streams?
+
+1571694106
+fengb
+What do you mean by deal with?
+
+1571694119
+fengb
+The long answer is, we'll need a library to do UTF correctly, but the short answer is you might not need it
+
+1571694188
+Snektron
+I just want a PeekInStream for utf8 really, c++ wchar32_t-style
+
+1571694198
+Snektron
+but if theres nothing yet, i'll just adapt what i have now and make a custom one
+
+1571694241
+Snektron
+i'm not even sure if wchar-style is the right approach here
+
+1571694418
+Snektron
+i guess i might as well, that probably helps avoiding problems related to dealing with unicode input
+
+1571694560
+fengb
+To do things right, you should be peeking by code point (?)
+
+1571694561
+fengb
+I always get confused at the terminology >_>
+
+1571694589
+fengb
+Seems like I meant grapheme
+
+1571694618
+Snektron
+yes, thats what i do
+
+1571694619
+Snektron
+but i realized i need more lookahead
+
+1571694643
+Snektron
+So it would be nice if i could have used std.io.PeekInStream but with another type
+
+1571694643
+Snektron
+but i guess i need something thats more like an iterator here anyway
+
+1571696413
+andrewrk
+I created
+
+1571696846
+lunamn
+andrewrk: is it intended for tests to not output anything with the std.progress integration?
+
+1571696877
+andrewrk
+lunamn, yes; they will output something if it takes a long time or something is unsuccessful
+
+1571696941
+andrewrk
+the bigger test suite itself needs some improvement /integration with this since it can output nothing for a long time
+
+1571697018
+plumm
+andrewrk: is a bad try included in "something is unsuccessful"
+
+1571697102
+andrewrk
+plumm, yes:
+
+1571697142
+plumm
+before it would print the test before the test's output
+
+1571697157
+plumm
+am I supposed to use the error return trace to see which test it failed on?
+
+1571697431
+andrewrk
+plumm, ah, thanks for mentioning this. this was a mistake. I just pushed 16a91e which fixes it
+
+1571697456
+andrewrk
+new output:
+
+1571697625
+plumm
+andrewrk: thank you!
+
+1571697692
+dimenus
+is there any way to get the compiler to spit out the contents of the 'builtin' namespace?
+
+1571697710
+andrewrk
+dimenus, `zig builtin`
+
+1571697721
+dimenus
+fml, sorry
+
+1571697721
+andrewrk
+it also accepts flags so you can see how this source will change
+
+1571697722
+dimenus
+thanks!
+
+1571697744
+dimenus
+andrewrk: many thanks
+
+1571697750
+andrewrk
+haha it just means you had the same good idea that I did :)
+
+1571697793
+fengb
+It’s also in the docs now!
+
+1571697851
+dimenus
+good good, going to tinker with some rpi4 stuff hopefully later this week
+
+1571697872
+dimenus
+being able to dump a stack or error trace on an embedded platform over a serial port is a pretty huge win
+
+1571697937
+plumm
+andrewrk: it's not a little odd that the test output comes before the test name? is debugging with tests even encouraged?
+
+1571698007
+andrewrk
+dimenus, ah right, fengb means this:
+
+1571698068
+andrewrk
+plumm, what are you observing? this progress thing is very new. if it turns out to be nice, it stays. if it's problematic, it gets modified or removed
+
+1571698115
+dimenus
+also, aren't `namespaces` not really a thing anymore? it's just a struct? :)
+
+1571698176
+andrewrk
+yes this is just a helpful organization thing the generated docs are doing. a struct with no fields is put in the "namespaces" section
+
+1571698216
+andrewrk
+likewise a function which is only called at comptime and always returns a type is put in the Types section even though it's a function
+
+1571698239
+andrewrk
+there's still lots to do but even still the docs are more sophisticated than you might realize :)
+
+1571698335
+plumm
+andrewrk:
+
+1571698344
+plumm
+ok, lol
+
+1571698390
+plumm
+
+
+1571698427
+andrewrk
+wow, how did you get that fancy cat output?
+
+1571698446
+plumm
+
+
+1571698458
+plumm
+it supports syntax highlighting too, might add zig
+
+1571698758
+fengb
+should we be linking std docs?
+
+1571698781
+fengb
+I mean from
+
+1571698930
+andrewrk
+fengb, I took a brief detour, but still planning on spending a few more days on docs and then hooking that up
+
+1571698945
+andrewrk
+I'm going to make a breaking change to the URL syntax
+
+1571699020
+andrewrk
+plumm, I made another adjustment to the test runner, try your example after 859cbef
+
+1571699345
+plumm
+k rebuilding
+
+1571699447
+plumm
+andrewrk: fixed :)
+
+1571699496
+plumm
+jeez you work fast
+
+1571699707
+andrewrk
+some stuff is easy to edit & test
+

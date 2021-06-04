@@ -1,0 +1,644 @@
+1546391625
+daurnimator
+hey andrewrk: I think not having warning might be a mistaske
+
+1546391628
+daurnimator
+*mistake
+
+1546391650
+daurnimator
+it really hamstrings future development: it becomes really hard to mark things as "deprecated"
+
+1546391720
+andrewrk
+how about: deprecation is an error, and you can silence it explicitly if necessary
+
+1546391733
+andrewrk
+s/deprecation/using deprecated things/
+
+1546391743
+daurnimator
+now I can probably come up with a scheme for deprecating functions or even branches; but you also want to be able to deprecate or evolve e.g. builtins.
+
+1546391761
+daurnimator
+or syntax (though I guess zig format handles that)
+
+1546391779
+daurnimator
+though if the zig "header" equivalent is zig files.... then we're going to need to support old syntaxes for almost-ever.
+
+1546391789
+andrewrk
+syntax, semantics, and builtins will be solved with a zig version number. packages will declare which version of zig they are built with
+
+1546391851
+andrewrk
+when possible, newer versions of zig will support emulating older versions, so that packages can depend on each other even if they are built against different versions
+
+1546391939
+daurnimator
+andrewrk: what do you think of adding a 'deprecated' attribute to functions?>
+
+1546391986
+andrewrk
+I think it's definitely worth a formal proposal
+
+1546392015
+andrewrk
+it makes sense to provide this functionality, as a way to improve package maintenance
+
+1546392023
+andrewrk
+the use case is compelling
+
+1546392051
+andrewrk
+but it will be an error to use the deprecated function, which you would then have to override - probably with a builtin that applies an override setting to the current scope
+
+1546392058
+daurnimator
+I actually think it doesn't follow zig ethos that well; but it probably works well for system compatability: you can use the deprecated attribute in e.g. generated C headers too.
+
+1546392106
+andrewrk
+that gives code readers another happy assumption: all the functions you see being called are not deprecated, unless annotated at the callsite
+
+1546392127
+andrewrk
+(and if it's too much of a burden to annotate deprecated functions at the callsite, maybe you shouldn't upgrade to that library version yet)
+
+1546392206
+daurnimator
+andrewrk: I like the idea of deprecated arguments too. e.g. fn foo(bar: ?u8[]) void { if (bar == null) { @deprecated("bar is now non-null") // handle old default here } // normalpath }
+
+1546392227
+daurnimator
+ps, not having a terminate-able comment sucks for one-liners
+
+1546392256
+andrewrk
+cramming lots of expressions into 1 line is not a supported use case of zig
+
+1546392268
+andrewrk
+we will have to live with it being awkward in chat
+
+1546392297
+andrewrk
+your example does a runtime check of the parameter
+
+1546392313
+andrewrk
+but for a deprecation notice we would need to know at compile time whether a deprecated API is being used
+
+1546392332
+andrewrk
+better strategy is to rename the function to foo2 and make the old one deprecated
+
+1546392403
+daurnimator
+hrm. I don't love the idea of a rename; most users may e.g. already be using the non-null form
+
+1546392439
+andrewrk
+I think it would be reasonable to just change it, and bump major versions
+
+1546392469
+andrewrk
+since the only thing that could happen is a new compile error, which would be pretty easy to understand
+
+1546392473
+daurnimator
+could you do: fn foo(bar: var) { if (@typeInfo(bar).pointer.nullable) { @deprecated().....
+
+1546392484
+andrewrk
+you'd have to bump major versions anyway
+
+1546392513
+andrewrk
+yes if we have @deprecated as a builtin, then you could do that, since the if expr is comptime known
+
+1546392537
+andrewrk
+more complicated strategies make sense if the user's valid and working code would start being a runtime panic or bug
+
+1546392549
+andrewrk
+otherwise, just change the signatures and rely on the compile errors
+
+1546392578
+andrewrk
+zig is already designed carefully so that, usually, you could just change signatures, and you will get compile errors, or it will continue to work
+
+1546392594
+daurnimator
+okay. so I think this suggests that a deprecated function attribute
+
+1546392604
+andrewrk
+why and?
+
+1546392624
+andrewrk
+you could put @deprecated in the first line of the function unconditionally
+
+1546392641
+andrewrk
+and that makes it somewhat akin to a @compileError but that you can silence
+
+1546392657
+daurnimator
+andrewrk: true. but I'm thinking for export to C; and also for annotating extern functions.
+
+1546392694
+andrewrk
+good points
+
+1546392842
+daurnimator
+andrewrk: so other warning-y things: @warn("this code path is untested, it
+
+1546392915
+daurnimator
+fn bar() { if (someglobal) { @warn("looks like you haven't called foo() first; this is usually (but not always) a mistake") } }
+
+1546392957
+andrewrk
+that doesn't work, reading the value of a global variable is runtime-known
+
+1546392984
+daurnimator
+ah, true.
+
+1546393030
+andrewrk
+I also think the untested code path thing belongs in the documentation, not as a way to hassle the coder by making them override a warning
+
+1546393078
+andrewrk
+deprecation is essentially a compile error, with a guaranteed to be available temporary workaround
+
+1546393172
+daurnimator
+if it's a compile error, how do you get around it?
+
+1546393208
+daurnimator
+zig build --acknowledge-deprecation=somelib.foo:23:23
+
+1546393231
+andrewrk
+in code, in the scope where you use it
+
+1546393240
+andrewrk
+so you have to do it N times for N call sites
+
+1546393327
+andrewrk
+really, the best solution is to not upgrade package versions until you are ready to solve the deprecations
+
+1546393336
+daurnimator
+I don't think that works if you're using external libraries.
+
+1546393367
+daurnimator
+the whole point of a deprecation is that you can do it in a minor or patch version as an early warning of the next major version.
+
+1546393372
+daurnimator
+it shouldn't "break by default"
+
+1546393428
+andrewrk
+deprecations in zig will bump major versions
+
+1546393439
+daurnimator
+but also, I envisage a world where misc libraries ship with .zig "headers" in addition to their C .h ones. the system will want to deprecate things outside of a zig application development cycle
+
+1546393461
+andrewrk
+that's a good point
+
+1546393510
+andrewrk
+it could be something as simple as a global build flag - whether deprecation errors are enabled or not
+
+1546393530
+andrewrk
+with "on" being the default
+
+1546393546
+daurnimator
+Yes I considered that; but decided that you probably want fine grained per-deprecation control
+
+1546393556
+daurnimator
+otherwise people will just enable it all the time and not see the
+
+1546393592
+daurnimator
+also "on" being the default seems like a -Werror like situation: should be on by default for development, but off by default for releases.
+
+1546393627
+andrewrk
+ah that's an interesting idea
+
+1546393732
+daurnimator
+(otherwise for the end user compiling from source, they get a screen full of deprecation warnings they can't/won't do anything about)
+
+1546394270
+daurnimator
+andrewrk: any further comments here? Otherwise I will segue to another topic
+
+1546394311
+andrewrk
+I agree, that situation is to be avoided
+
+1546394334
+andrewrk
+I think that will be avoided by strict version locking
+
+1546394366
+andrewrk
+if it builds for the developer, it should build for the user, even on later versions of zig
+
+1546394395
+daurnimator
+but what about as system library interfaces change?
+
+1546394478
+andrewrk
+are you talking about an ABI change? that's fundamentally broken
+
+1546394516
+daurnimator
+a deprecation notice is the precursor to an ABI change.
+
+1546394646
+andrewrk
+the developer will either fix the deprecations, or ship a version against the old system library interface package version
+
+1546394698
+daurnimator
+okay; I'll think about that for a bit
+
+1546394700
+andrewrk
+in zig projects, the goal is 0 system dependencies
+
+1546394718
+daurnimator
+so related questions I have: how do I ship a library I write in zig?
+
+1546394764
+daurnimator
+e.g. I want to write a library "libdaurnimator.so" that is a normal system package; it should be usable from zig, C, fortran, etc. applications.
+
+1546394765
+andrewrk
+that's to be determined with the package manager project. for now it's nothing more than a directory with .zig files
+
+1546394782
+andrewrk
+right, ok that's a good use case
+
+1546394812
+andrewrk
+you'll have your zig package, and then probably a file which has the exported API that suse the zig package
+
+1546394833
+daurnimator
+"a file": please expand here
+
+1546394875
+daurnimator
+a zig file (how would I create it?)? a C header (then we lose information)? something else?
+
+1546394889
+andrewrk
+exports.zig which has export fn daurnimator_init, export fn daurnimatior_foo, etc
+
+1546394939
+andrewrk
+the build system knows how to create shared libraries, so you'll communicate to the build system about libdaurnimator
+
+1546394978
+andrewrk
+for it to be a normal system package, is a question for the system package manager. for example in debian the package build script would invoke zig build
+
+1546394982
+daurnimator
+andrewrk: exports.zig is something autogenerated?
+
+1546394996
+andrewrk
+no that's where you put your export functions, for example
+
+1546395021
+andrewrk
+point being they're in a separate file because you don't want to export them in your zig package when you're not making a library
+
+1546395050
+daurnimator
+and exports.zig is the only thing you "ship" into /usr/include?
+
+1546395068
+andrewrk
+exports.zig is a source file. the zig compiler auto-generates .h files
+
+1546395081
+andrewrk
+the auto generated source file would go into /usr/include
+
+1546395108
+daurnimator
+isn't the conversion to .h lossy?
+
+1546395111
+andrewrk
+sorry, auto generated .h file, not auto generated source file
+
+1546395142
+andrewrk
+yes, it is. to get lossless use, use zig, and use the zig package, and ignore exports.zig since that's for creating the shared library
+
+1546395166
+daurnimator
+but then I'd have to distribute the source; and the sources to the libraries I use.....
+
+1546395197
+daurnimator
+also, any project is going to have "internal" structs that should be made opaque for export.
+
+1546395252
+andrewrk
+that's why zig has @OpaqueType()
+
+1546395276
+andrewrk
+zig has no stable ABI. if you want a stable ABI you have to use the C ABI
+
+1546395304
+andrewrk
+so you either distribute a library as source, or you distribute it as a normal library, with a .h file and .so/.dll .a/.lib
+
+1546395377
+daurnimator
+that seems..... bad
+
+1546395390
+andrewrk
+can you elaborate? what use case is problematic and why?
+
+1546395431
+daurnimator
+It's a bit of a jumble of thoughts:
+
+1546395471
+daurnimator
+1. closed source zig libraries should still be able to be exposed "first class" to zig applications/other zig libraries
+
+1546395471
+andrewrk
+when I say zig has no stable ABI, I mean that zig only has the C ABI. it's not like you can accidentally have an ABI mismatch.
+
+1546395495
+andrewrk
+not possible. consider that this is fundamentally impossible with generic functions
+
+1546395505
+andrewrk
+and comptime code execution
+
+1546395523
+daurnimator
+2. I don't want to have to download the
+
+1546395545
+andrewrk
+why not?
+
+1546395573
+daurnimator
+It makes compilation very.... un-self-contained.
+
+1546395579
+andrewrk
+quite the opposite
+
+1546395599
+andrewrk
+the fact that we build compiler-rt and parts of libc from source, for example, is why zig has good cross compilation support
+
+1546395606
+daurnimator
+My build deps become more than just
+
+1546395644
+andrewrk
+having the source of all your dependencies is the ultimate way to be self-contained
+
+1546395674
+daurnimator
+It means that e.g. my release tarballs need to include the source of all my dependencies too
+
+1546395742
+daurnimator
+3. it (probably) means that compile times go up and up as you use more dependencies: if there is a zig library 'A' that takes a long time to compile, I only want to pay it once when I compile libA.so, not when I use it again from libB or appC.
+
+1546395818
+andrewrk
+you could choose to bundle your dependencies, yes, to enable offline builds, but since you already depend on zig, you could distribute only your project's source and rely on zig package manager to fetch the dependencies
+
+1546395837
+andrewrk
+and note this only applies to the use case of shipping a C library as zig source
+
+1546395908
+daurnimator
+You say "shipping a C library"... I'm really thinking of "shipping a zig library as not-source"
+
+1546395969
+daurnimator
+So idea: could we have a zig 'stripper': that looks at a .zig file and removes all non-exported functions/types? (replacing unexported types with opaque types)
+
+1546395975
+andrewrk
+as for compile times - there's plenty that zig can do to make this fast, including things such as caching and trusted pre-built binaries. but you always want the option to build from source
+
+1546396021
+andrewrk
+because zig has no ABI, debug builds in zig are allowed to do all manner of tricks to enable incremental builds to be fast, as well as support pre-built artifacts
+
+1546396062
+andrewrk
+you can ship binaries as non source but you cannot ship a zig package as non-source. it's not a coherent concept
+
+1546396066
+daurnimator
+that doesn't match well with how distro builds and maitenence is done today.
+
+1546396098
+andrewrk
+I don't understand the goal of your stripper tool. what would that accomplish?
+
+1546396152
+andrewrk
+what problems do you foresee with distro builds and maintenance?
+
+1546396210
+daurnimator
+andrewrk: e.g. the 'stripped' zig file would be installed to /usr/include/daurnimator.zig on the target system. it would allow zig applications to use libdaurnimator.so
+
+1546396330
+daurnimator
+this "stripped" zig file may contain comptime functions (similar to how C headers may include macros or inline functions). but it doesn't expose anything (including types) unless they were exported: everything else is replaced with opaque types.
+
+1546396335
+andrewrk
+ah, I see. essentially using a .zig file instead of an .h file, but still with a pre-compiled library
+
+1546396365
+andrewrk
+ok, that's a fine use case, we can have zig generate one of these .zig files alongside or as an alternative to a .h file
+
+1546396502
+andrewrk
+better yet though - we would figure out how to add zig-specific annotations to .h files
+
+1546396525
+andrewrk
+so that .h files could be lossless
+
+1546396548
+andrewrk
+this would help when trying to translate c code as well; one could annotate the C code before translating
+
+1546396552
+daurnimator
+andrewrk: that would be good too; but I don't think it would ever be "lossless"
+
+1546396637
+andrewrk
+it's also less common of a use case than source distribution of packages. open source packages would never use this method
+
+1546396673
+daurnimator
+I think most distros would prefer it
+
+1546396793
+andrewrk
+distros can do whatever they want when they package up software, but zig programmers will prefer dependencies that do not rely on what is installed on the system
+
+1546396899
+daurnimator
+I don't know about that
+
+1546396921
+daurnimator
+I would like to say "use system library X" and not care if it's written in C, zig, or anything else
+
+1546396990
+andrewrk
+you can do that now, and you will always be able to do that, but that adds a dependency on system library X. dependencies have costs, plus zig will not be able to optimize across system library boundaries or run system library functions at comptime.
+
+1546397019
+andrewrk
+you've also opened up your project for users to file issues that stem from misconfigured or missing system library X
+
+1546397084
+daurnimator
+andrewrk: in my "stripped zig" idea, you could have comptime functions in there (as long as they're exported)
+
+1546397677
+andrewrk
+everything is worse when doing things this way. you lose the ability for global release mode such as Small to modify the binary; you lose call graph analysis; you lose generic functions, comptime functions
+
+1546397704
+andrewrk
+open source library distributions are strongly encouraged
+
+1546397738
+andrewrk
+or rather, not necessarily open source, but distribution *as source*. of course a company can have private servers or private code, etc
+
+1546398027
+daurnimator
+andrewrk: people/distros are used to having a system default set of compile flags (usually -O2)
+
+1546398041
+andrewrk
+you also lose coroutines and the ability to have a global event loop
+
+1546398042
+daurnimator
+why do you lose call graph analysis?
+
+1546398057
+daurnimator
+and why do you lose generic functions? (if they're exported; they'll be in the stripped output)
+
+1546400093
+andrewrk
+you can't export generic functions. you're introducing a new concept to the language. the C ABI does not support generic functions
+
+1546400929
+daurnimator
+andrewrk: you can return them from a module....
+
+1546400943
+daurnimator
+perhaps s/extern/pub/
+
+1546400949
+daurnimator
+uh s/export/pub/
+
+1546425942
+forgot-password
+Hi guys, is it possible to mutate struct fields?
+
+1546426137
+Hejsil
+forgot-password, you should be able to do: instance.field = some_value;
+
+1546426144
+Hejsil
+So yes
+
+1546426643
+forgot-password
+Oh wait, maybe it didn't work because function parameters are constant. Could that be it?
+
+1546426799
+forgot-password
+I guess so, it works outside of my function.
+
+1546426846
+forgot-password
+Can I somehow declare my parameter as mutable?
+
+1546427107
+forgot-password
+Alright, I got it. I just made it a pointer to my struct. Thank you :)
+
+1546427163
+Hejsil
+Yes, if you want to have "side effects" then you need a mutable pointer :)
+
+1546427177
+Hejsil
+Or a global variable
+
+1546469628
+knebulae
+printf
+

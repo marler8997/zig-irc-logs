@@ -1,0 +1,1228 @@
+1575245646
+traviss
+i love zig testing support.  on that note, can we run setup/teardown code for tests?
+
+1575245721
+andrewrk
+traviss, yes, just put it in a function and call it from every test
+
+1575245734
+andrewrk
+setup(); defer teardown();
+
+1575245767
+traviss
+oh, thats a good idea. thank you. also, i found a proposal about this:
+
+1575245771
+andrewrk
+it's also proposed to allow overriding the default test runner. that seems like a reasonable proposal
+
+1575247149
+protty
+do variadic arguments use a different syntax on master? Getting an error similar to `expected type "ArgumentType" found (args)`
+
+1575247599
+andrewrk
+variadic arguments haven't been messed with in a while. but we're close to being able to delete them
+
+1575247693
+pixelherodev
+Oh noes - more changes!
+
+1575247694
+pixelherodev
+:P
+
+1575247744
+andrewrk
+they way I see it, there are a fixed number of breakages in zig's future. we can choose where to put them. and putting them all as soon as possible is the least pain
+
+1575249854
+mikdusan
+andrewrk: re: arena for stage1. arena needs needs an allocator capable of accepting alignment param, and while some libc have it, I'm not sure it's that portable,
+
+1575249890
+mikdusan
+do you think it's also worthwhile to implement a PageAllocator and have stage1's arena make use of that? there will be some porting friction but I don't think too much
+
+1575249983
+mikdusan
+(well I'm not entirely sure arena needs an aligning allocator...)
+
+1575250539
+andrewrk
+mikdusan, we don't need alignment higher than malloc provides in stage1
+
+1575251501
+mikdusan
+good to know thanks
+
+1575251668
+andrewrk
+one good use for an arena will be all the pass 2 stuff that we can't free for a long time - but we can free it all right before the call to LLVMEmitMachineCode
+
+1575251681
+andrewrk
+and that will save on peak RAM usage, because LLVM will use memory
+
+1575251720
+andrewrk
+btw, it's looking like I'll be able to merge #3787 within the hour
+
+1575251732
+andrewrk
+this will add all those advanced debugging tools if you want to give them a shot
+
+1575251755
+daurnimator
+mikdusan: we can always provide a fallback for posix_memalign....
+
+1575251783
+andrewrk
+daurnimator, this is about an arena allocator in C in stage1
+
+1575251854
+andrewrk
+we can't use the hybrid strategy for this use case because the plan is to have zig0 build self-hosted, which means we want to cap the peak RAM usage of zig0 to a reasonable number, for bootstrapping purposes
+
+1575251948
+mikdusan
+I was thinking of setting up several global allocators. one general which is basically malloc, then a general arena which is free'd after every zig command-line cycle (there is only 1 right now, but maybe we can use that to run multiple consecutive compiler-error tests and such), and then well-defined lifetime arenas that code picks to use as appropriate. lofty goals I know :)
+
+1575252053
+mikdusan
+I'll put in effort to maintain "everything is zero-filled" unless an explicit fn name with _nonzero is used (like today)
+
+1575252060
+mikdusan
+for interface
+
+1575254632
+andrewrk
+#3787 chops another 257 MiB off of peak RAM for std lib tests binary
+
+1575254677
+marler8997
+got a question for you andrew...
+
+1575254688
+marler8997
+when converting the type_info to the type
+
+1575254705
+marler8997
+we implicitly cast the comptime const value to a TypeInfo
+
+1575254707
+andrewrk
+btw marler8997 #3787 has some code that messes with that, you might take a peek
+
+1575254721
+marler8997
+but I don't think we're able to represent the sentinel type correctly
+
+1575254723
+mikdusan
+👍
+
+1575254732
+marler8997
+so when we cast it, it doesn't resolve the sentinel value correctly
+
+1575254743
+marler8997
+so we're left with a ZigValue that's not necessarily the right type
+
+1575254755
+andrewrk
+this sounds familiar, like something I had to solve in this branch
+
+1575254759
+marler8997
+but we also don't have an IrInstruction in order to cast it to the correct type
+
+1575254769
+marler8997
+should I create a temporary instruction to perform the cast?
+
+1575254772
+andrewrk
+we do have an IrInstruction
+
+1575254780
+andrewrk
+the code for type info incorrectly throws it away too early
+
+1575254788
+marler8997
+right
+
+1575254793
+andrewrk
+trace the call stack back, you'll find it
+
+1575254803
+marler8997
+so I should try to reach into the IrInstruction for type info for the sentinel value
+
+1575254877
+marler8997
+I can't just use ir_implicit_cast to convert the whole IrInstruction of TypeInfo to a ZigValue...I need to handle the sentinel field special, does that sound correct?
+
+1575254899
+andrewrk
+marler8997,
+
+1575255037
+mikdusan
+unrelated: boy has zig has spoiled me. here I jumped into C++ thinking it supported function aliases like it does type aliases. nope! I can do it but the new symbol is then handled by linker
+
+1575255110
+andrewrk
+marler8997, this is the function to use on the base pointer IrInstruction provided to @Type():
+
+1575255116
+andrewrk
+from there you can get the sentinel field as an IrInstruction
+
+1575255161
+marler8997
+I see, you've modified it to evaluate each field individually
+
+1575255217
+marler8997
+I'll wait for this PR to be merged before completing mine
+
+1575255316
+marler8997
+You're PR fixes tests that my PR adds, so I'll have to wait for it
+
+1575255355
+marler8997
+I don't know if you say earlier, but I figured out the linker issue
+
+1575255366
+marler8997
+But it brought up another issue, that fatal error messages in lld don't get printed to stdout
+
+1575255368
+marler8997
+or stderr
+
+1575255802
+marler8997
+to fix issue 3816 we'll need to encode the correct type for the sentinel value (rather than using `var`)
+
+1575256174
+daurnimator
+andrewrk: expecting to merge 3787 today?
+
+1575258858
+mikdusan
+std.heap.HeapAllocator tells me windows has private heaps, and macOS has malloc zones, does linux (glibc or musl) have anything comparable?
+
+1575258944
+daurnimator
+mikdusan: man mallopt
+
+1575259191
+mikdusan
+daurnimator: those are some great options for linux default heap, but I'm looking for something like arbitrary private heaps that can be created/destroyed all at once like zig's ArenaAllocator
+
+1575259263
+mikdusan
+(this is me being lazy for stage1... choice is to implement ArenaAllocator or just wrap an OS-functionally-equivalent one
+
+1575260094
+daurnimator
+mikdusan: I've used
+
+1575260360
+mikdusan
+thanks I'll take a look
+
+1575260628
+andrewrk
+damn, we have a flaky test failure in master branch windows
+
+1575260658
+mikdusan
+#3787 ?
+
+1575260666
+andrewrk
+I think it's master branch
+
+1575260680
+andrewrk
+3787 passed locally for me
+
+1575260714
+mikdusan
+I'll launch a local windows master build/test
+
+1575260759
+andrewrk
+mikdusan, ok let me know, I was about to press the merge button
+
+1575260796
+andrewrk
+especially since it is progress towards a smaller memory footprint, which is significant progress towards eliminating our hypothesis for the
+
+1575260942
+mikdusan
+github master is unclear which test is flakey, any test I should fast-track? #3787 seems to point at behaviour tests
+
+1575260988
+andrewrk
+I locally observed cross compiling x86_64-linux-gnu -lc behavior test failing on windows, but 10x times after that all succeeded
+
+1575261012
+andrewrk
+this is what we get for freeing memory
+
+1575261371
+mikdusan
+passed: zig build test-behavior -Dskip-non-native
+
+1575261376
+mikdusan
+running: zig build test-behavior
+
+1575261465
+andrewrk
+I think it's going to be ok to merge it, I'll open a bug report for the flaky test
+
+1575261480
+mikdusan
+k. once merged i'll repeat my local tests
+
+1575261554
+andrewrk
+oh, valgrind turned up something
+
+1575261569
+mikdusan
+it's stack. it's always stack :)
+
+1575261820
+andrewrk
+
+
+1575262379
+andrewrk
+mikdusan, the test case is
+
+1575262627
+andrewrk
+fixed
+
+1575262979
+andrewrk
+it's time
+
+1575262986
+daurnimator
+woooo
+
+1575263004
+mikdusan
+let_it_begin
+
+1575263083
+andrewrk
+here you go everybody, you'll need these: &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+
+1575263148
+daurnimator
+andrewrk: now PR reviews? :)
+
+1575263175
+andrewrk
+yes
+
+1575263592
+andrewrk
+`time -v ./zig test ../lib/std/std.zig --cache off --release-safe` on master branch, on x86_64-linux-gnu, reports 4.2 GiB peak resident memory
+
+1575263723
+mikdusan
+(fyi) on macOS "gtime" is macports package name for linux `time -v ...` tool
+
+1575268237
+mikdusan
+0.5.0+fecd54082 passes all tests for me: macOS, linux, windows
+
+1575278513
+daurnimator
+just finished advent of code for the day
+
+1575278519
+daurnimator
+I got a really weird traceback at one point
+
+1575278563
+daurnimator
+
+
+1575281620
+mq32
+good morning everybody! :D
+
+1575290672
+mq32
+btw, andrewrk: thanks for allowing as "comma" after the last parameter in function calls. This is quite cool, especially the way it is used in zig fmt to format function calls single-line or multi-line
+
+1575293889
+mq32
+
+
+1575293894
+mq32
+interesting read
+
+1575301204
+fengb
+Night builds aren't running?
+
+1575301352
+andrewrk
+fengb, looks like tar xz stopped working on alpine linux??
+
+1575301441
+andrewrk
+retrying with latest instead of edge
+
+1575301567
+mq32
+andrewrk: looks like there's a "-" missing in the tar call
+
+1575301584
+andrewrk
+nah that's not it
+
+1575301612
+mq32
+huh. the xz is outputting info, right
+
+1575301626
+adamkowalski
+andrewrk: You all should advertise the compile time reflection/introspection way more. You just have one section on it, and yet it's arguably one of the most amazing features of Zig. I've never seen any other language have that besides D
+
+1575301629
+andrewrk
+alright fixed, download page updated
+
+1575301674
+adamkowalski
+And the first class types, those are too powerfull to be so subtle in the docs haha
+
+1575301705
+andrewrk
+adamkowalski, fair enough :)
+
+1575301737
+adamkowalski
+I think it would be good marketing to write up some blog posts showing how people typically approach problems with template meta programming, and then we can highlight that it's essentially a second programming language embedded in the host (C++, D, etc)
+
+1575301769
+adamkowalski
+Then you can say that it would be really nice to just regular functions to manipulate types, and you can have a single set of libraries/functions that can apply to both
+
+1575301778
+mq32
+does someone know how to deploy files with Github Actions safely? I have no experience with CI and i wonder how i could upload a "master branch build" of a project to my website without exposing any credentials in the github repo
+
+1575301828
+andrewrk
+mq32, generally the way this works is you upload "secrets" to the CI server. the secrets are only available to CI scripts for branches, not available for pull requests
+
+1575301868
+adamkowalski
+you can pull them in from environment variables, then in your repo all people see is that you're reading form the env
+
+1575302013
+mq32
+ah!
+
+1575302016
+mq32
+have to look that up
+
+1575302971
+adamkowalski
+andrewrk: I cloned the zig master branch and tried building it locally today, and while it successfully built I got a bunch of warnings
+
+1575302985
+adamkowalski
+It seems like the core issue is: This was likely caused by different translation units being compiled with different visibility settings.
+
+1575302988
+adamkowalski
+[100%] Built target zig
+
+1575303040
+adamkowalski
+I'm running macos catalina, with the version of llvm you wanted from brew. If I actually use llvm clang v 10 then it fails to compile entirely
+
+1575303416
+Snektron
+Does zig have a guaranteed execution order of expressions
+
+1575303417
+Snektron
+?
+
+1575303454
+scientes
+Snektron, it has an order of operations, yes
+
+1575303462
+scientes
+and also "and" and "or" have short-circuiting
+
+1575303477
+scientes
+it is also procedural
+
+1575303494
+scientes
+so yes, different expression happen
+
+1575303510
+scientes
+but there is no guarantees against side-channel attacks
+
+1575303521
+scientes
+caused by out-of-order executing
+
+1575303599
+scientes
+llvm will probably add timing attack barriers at some point
+
+1575303606
+scientes
+when CPUs support them
+
+1575303681
+Snektron
+what i mean is for example this:
+
+1575303690
+Snektron
+`a[incrementer.fetchInc()] = a[incrementer.fetchInc()];`
+
+1575303725
+scientes
+that would do it twice
+
+1575303734
+scientes
+and I don't know in what order, but I believe it is well defined
+
+1575303790
+scientes
+if you want to call fetchInc() once you have to use a tmp variable
+
+1575303808
+scientes
+but then there is of course no point, as you are assigning something to itsself
+
+1575304184
+andrewrk
+Snektron, yes
+
+1575304256
+andrewrk
+generally, outer to inner, left to right
+
+1575304699
+Snektron
+alright, thanks
+
+1575304735
+Snektron
+thats a step up from `a[++b] = a[b++ + ++b] + a[b];` which is so undefined it might as well make your computer explode
+
+1575304957
+Snektron
+I also joined the zig aoc btw
+
+1575305000
+mq32
+cool
+
+1575305007
+mq32
+i started another zig project this morning...
+
+1575305045
+mq32
+but maybe someone wants to help, the idea is to create a zig-style SDL2 wrapper
+
+1575305075
+Snektron
+I wanted to do that for the Vulkan headers
+
+1575305088
+Snektron
+but uni ate my time
+
+1575305100
+mq32
+oh, nice
+
+1575305127
+Snektron
+ill do it in christmas break™
+
+1575305136
+andrewrk
+mq32, is that a distinct project from
+
+1575305146
+mq32
+andrewrk: yes, it is
+
+1575305159
+andrewrk
+nice
+
+1575305160
+mq32
+it's not "build sdl2 with zig", but "wrap SDL2 into a zig-style API"
+
+1575305169
+andrewrk
+makes sense
+
+1575305171
+mq32
+i can push an example to github :D
+
+1575305204
+Snektron
+My idea was to provide a generator (instead of just the translated headers) as a build-time dependency
+
+1575305249
+Snektron
+that way there is less maintainance cost (since most other such vulkan bindings are usually a few months behind the standard)
+
+1575305378
+mq32
+yeah, i had this idea as well, but a lot of stuff translates bad
+
+1575305382
+andrewrk
+I think someone here might have started that project, vulkan zig bindings from the xml
+
+1575305455
+mq32
+here's a demo for my wrapper:
+
+1575305471
+mq32
+anonymous structs are really a nice addition to the language
+
+1575305525
+mq32
+i also just had a great idea on the use of mixins for an OpenGL wrapper
+
+1575305576
+Snektron
+andrewrk, so it seems, but according to the irc logs that was like a year ago
+
+1575305586
+Snektron
+and i didn't find any code
+
+1575305589
+dimenus|work
+i'm working on vulkan with zig, but i don't have an automatic binding generator
+
+1575305592
+dimenus|work
+i'm using translate-c for now
+
+1575305619
+Snektron
+yeah, i think thats doable now, but with a few changes zig and vulkan go pretty well together
+
+1575305632
+Snektron
+for example using default values for structure types
+
+1575305645
+dimenus|work
+i've been manually adding those so far
+
+1575305659
+dimenus|work
+it definitely makes things easier though
+
+1575305667
+Snektron
+i also had some other ideas
+
+1575305685
+Snektron
+one was the obvious vkResult => error translation, i think thats justifyable
+
+1575305791
+Snektron
+one might argue that these aren't all errors, but i believe that any VkResult that is not VK_SUCCESS would probably needs to be handled anyway
+
+1575305834
+Snektron
+to minimize impact of such opinions it might be best to divide it into the raw bindings and the "wrapped" bindings
+
+1575305838
+mq32
+example on mixins:
+
+1575305880
+mq32
+Snektron: this example may also be of use for your wrapper layer
+
+1575305903
+mq32
+provide a root var with the API level on the version/extensions your wrapper should provide
+
+1575305911
+Snektron
+I'm still thinking about how i want to tackle that
+
+1575305942
+Snektron
+Since with Vulkan, its more idiomatic to load function points of extensions you want to use
+
+1575305981
+Snektron
+futhermore, function points of Device functions might differ depending on the Device (if youre using both an Nvidia and AMD GPU for example, if you even get that to work in the first place)
+
+1575306035
+Snektron
+The vulkan static library just provides an abstraction over this and internally keeps the loaded function pointer table for the instance and the device, but that introduces an overhead
+
+1575306067
+Snektron
+Not a large one, but i don't think its a valid solution to just discard that usage
+
+1575306153
+Snektron
+btw, mq32: I always find it hard to build an abstraction over opengl calls. Take for example how you upload data to a buffer (in pre-4.3 opengl): you bind a buffer to a specific register, then you upload data to whatever is bound to that register
+
+1575306195
+mq32
+Snektron: yeah this really sucked pre opengl-4.5
+
+1575306205
+mq32
+but i mostly use the GL_ARB_direct_state_access
+
+1575306210
+mq32
+that is a pure object oriented API
+
+1575306236
+Snektron
+(I wouldn't call it object oriented)
+
+1575306243
+mq32
+why?
+
+1575306262
+mq32
+i have objects i create with glCreateXXX and destroy them with glDeleteXXX
+
+1575306276
+mq32
+and i have member functions like glGetTextureParameterI or glNamedBufferSubData
+
+1575306308
+mq32
+pretty perfect information hiding, near-zero free functions (pretty much some global binds and the draw calls)
+
+1575306312
+Snektron
+but that introduces the problem that not every device has that extension (even in this day and age), so you severely limit your target audience. Not that i care when i'm making an OpenGL application, but i don't think thats viable as general OpenGL library.
+
+1575306341
+Snektron
+mp32: object oriented isn't just member-based access of properties
+
+1575306369
+Snektron
+I think the most important distinction is inheritance
+
+1575306394
+mq32
+hm
+
+1575306408
+mq32
+for me that's a part of class based object orientation
+
+1575306413
+mq32
+also: OpenGL also has inheritance:
+
+1575306426
+mq32
+Texture2D and Texture3D share a lot of functions, but have their own SubData-function
+
+1575306476
+mq32
+on availability of this special extension:
+
+1575306510
+mq32
+
+
+1575306513
+mq32
+at least in that database
+
+1575306685
+Snektron
+Ah interesting
+
+1575306688
+Snektron
+i didn't know about that extension
+
+1575306765
+mq32
+it's great
+
+1575306774
+mq32
+it wraps the OpenGL 4.5 API for direct state access for older versions
+
+1575306787
+mq32
+pretty much the best thing that happened to modern OpenGL PERIOD
+
+1575306902
+andrewrk
+I have no idea what I'm doing with vulkan, but apparently it's the future so that's what I feel I have to learn for my next game project
+
+1575306924
+Snektron
+andrewrk, does anyone have an idea what they are doing with Vulkan
+
+1575307006
+mq32
+andrewrk: i don't think you need to write your game in vulkan
+
+1575307019
+mq32
+vulkan is an API that is really lowlevel and (imho) complex
+
+1575307031
+mq32
+yes, you can get most perf out of your project
+
+1575307036
+Snektron
+I used it for my bachelors thesis. It takes a lot of code to do stuff, but i think the overal API is very logical and well designed
+
+1575307039
+mq32
+but you need a lot more code than OpenGL
+
+1575307091
+mq32
+OpenGL 4.5 is also a pretty good and
+
+1575307093
+Snektron
+The standard for the kind of project i was doing (volumetric ray tracing) is cuda of course, but i really don't like that
+
+1575307100
+Snektron
+that and i don't have a cuda-capable gpu
+
+1575307302
+Snektron
+
+
+1575307558
+andrewrk
+I would love to see a project which is a "2D graphics starter kit" which does a minimal amount of abstractions on top of vulkan API calls
+
+1575307575
+andrewrk
+something that you wouldn't add as a dependency, but you would copy+paste and then edit
+
+1575307643
+mq32
+andrewrk: consider "rendering a triangle with vulkan" about 1000 LOC of C code
+
+1575307647
+Snektron
+If i ever finish those bindings i'll be sure to add a 2D example
+
+1575307655
+mq32
+at least that's what i found as an example
+
+1575307681
+andrewrk
+mq32, yep, 1076 in zig:
+
+1575307688
+mq32
+ah
+
+1575307695
+andrewrk
+probably 1000 if this was updated to take advantage of default struct values
+
+1575307703
+mq32
+yeah that's something that still blocks me from using vulkan
+
+1575307713
+andrewrk
+what, default struct values? we have those now :)
+
+1575307930
+mq32
+lol
+
+1575307934
+mq32
+nope, the 1000 LOC for triangle :D
+
+1575307968
+mq32
+i'm going to write my SDL wrapper first, need it for two or three projects now :D
+
+1575307979
+mq32
+and i'm going home now, was long enough at work today
+
+1575309534
+DutchGh0st
+Hi, what is the most idiomatic way to duplicate/clone an ArrayList(T) ?
+
+1575309615
+DutchGh0st
+currently I init a new one, and then do `new.appendSlice(original.toSliceConst()`)
+
+1575309622
+DutchGh0st
+currently I init a new one, and then do `new.appendSlice(original.toSliceConst())`
+
+1575309842
+andrewrk
+seems fine to me
+
+1575309873
+DutchGh0st
+
+
+1575309879
+DutchGh0st
+Advent of Code! \o/
+
+1575310024
+andrewrk
+DutchGh0st, we have a zig leaderboard:
+
+1575310075
+DutchGh0st
+Im already in it!
+
+1575310082
+andrewrk
+oh I see you :)
+
+1575310178
+DutchGh0st
+today zig hit 16 gigs of ram when I did day 2 using comptime, oopsy
+
+1575310191
+andrewrk
+goodness
+
+1575310222
+andrewrk
+yes, the plan is to use a different resource management strategy for self-hosted. maybe we will end up backporting it to stage1
+
+1575310285
+DutchGh0st
+Now, maybe it was partially my fault for not providing a super fast impl hahaha, but then I decided I should just be a sane human and use ArrayLists and some allocation
+
+1575310381
+DutchGh0st
+I btw like `usingnamespace @import("std");`! its neat and clean
+
+1575310777
+fengb
+do not like :(
+
+1575310789
+DutchGh0st
+whats wrong with it?
+
+1575310848
+Snektron
+redefinition errors
+
+1575310848
+fengb
+Pollutes the current namespace with a lot of stuff
+
+1575310852
+Snektron
+i just used a "large enough" buffer for day 2
+
+1575310904
+Snektron
+
+
+1575310968
+fengb
+... I wrote my own "readUntilDelimiterOrEof"
+
+1575311125
+fengb
+I think I need to familiarize myself with std more :P
+
+1575311134
+DutchGh0st
+I just use @embedFile
+
+1575311152
+andrewrk
+we need InStream.scan which takes a regex like format string and arbitrary number of arguments with pointers to where to put the values
+
+1575311175
+andrewrk
+this would avoid the "how much do I need to buffer" problem
+
+1575311267
+andrewrk
+DutchGh0st, yeah I think that's fair game for Advent of Code. using stdin is only if you want that additional exercise of making it a streaming solution
+
+1575311315
+DutchGh0st
+when I did the comptime thing, I first calculated trough a function how many "," 's where in the input, and then just set the bufferlength to that, so I could setup an uninitialized array with that length during comptime
+
+1575311342
+DutchGh0st
+but it felt like doing double work, as I now iterated twice over the initial input
+
+1575311667
+Snektron
+andrewrk, an idea like this could also be interesting:
+
+1575311667
+Snektron
+`while(try stream.scan(&int_value, " ", &float_value, '\n'))`
+
+1575311723
+Snektron
+whoops, that was meant to have an array literal
+
+1575311824
+andrewrk
+every other elem could be a tagged union describing the next thing
+
+1575311839
+andrewrk
+or.. every elem
+
+1575311861
+fengb
+What would be the best way to alignAlloc for wasm? Allocate a huge segment and find it manually?
+
+1575311952
+andrewrk
+.{ .whitespace, .{ .expect_char = '\x00' }, .{ .int = u32 }, .{ .anyof = ",|" } }
+
+1575311986
+andrewrk
+oops, the int one was supposed to be given a pointer to capture the result
+
+1575312032
+Snektron
+i would rather argue for functions which describe the items to parse
+
+1575312051
+andrewrk
+Snektron, then you have the buffer size calculation problem
+
+1575312075
+Snektron
+how so? these functions could be comptime
+
+1575312082
+andrewrk
+fengb, if the alignment is less than page size, then there's nothing to do. for alignments larger than that, you can either yeah allocate enough pages that the alignment is guaranteed to be in there, or you can return error.OutOfMemory
+
+1575312128
+andrewrk
+since wasm pages are 64K I think returning OutOfMemory for alignments greater than page size would be quite reasonable
+
+1575312134
+fengb
+Okay, I'm trying to figure out the large allocations, thanks
+
+1575312146
+fengb
+Ah sure that's fine too. Not passing the tests but that'll be okay
+
+1575312147
+andrewrk
+might even be reasonable to define PageAllocator to return OutOfMemory when requested alignment is greater than page alignment
+
+1575312152
+fengb
+Large alignment tests*
+
+1575312170
+andrewrk
+it would be reasonable to say, this is what PageAllocator does, if you want more alignment, wrap it
+
+1575312187
+fengb
+Page alignment only. Makes sense 👍️
+
+1575312234
+andrewrk
+also I do think it is worth figuring out how to get our interfaces to be able to have comptime parameters, specifically with regards to alignment
+
+1575312319
+andrewrk
+that would allow PageAllocator to give a compile error if you asked for greater than page alignment
+
+1575312357
+andrewrk
+and reduce our malloc/free wrapper to zero cost
+
+1575312764
+DutchGh0st
+interfaces?
+
+1575312781
+andrewrk
+examples: Allocator, InStream, Random
+
+1575312874
+Snektron
+I think that mixin idea was pretty good, though i do feel like its somehow abusing usingnamespace
+
+1575312915
+fengb
+After fiddling with streams more, I agree it cleans stuff up. But I've never really liked mixins in general
+
+1575312934
+fengb
+Too easily abused
+
+1575312941
+Snektron
+General mixins is just an excude for multiple inheritance
+
+1575312948
+Snektron
+excuse
+
+1575312986
+Snektron
+but its definitely a step up from just using a vtable everywhere
+
+1575313639
+tgschultz
+except iirc the mixins are comptime-only in this case unlike a vtable
+
+1575313676
+Snektron
+i was referring to the existing solution of Random, Stream and Allocator interfaces
+
+1575313720
+andrewrk
+the existing solution allows non-comptime-only
+
+1575313721
+tgschultz
+same diff. The mixin-syle I saw only worked if the implementation was comptime-known.
+
+1575313863
+Snektron
+But the non-comptime version isn't always the most ergonomic
+
+1575313880
+Snektron
+its seems out of place to have that vtable for Random for example
+
+1575314155
+DutchGh0st
+Im sorry to ask, but whats a mixin?
+
+1575314199
+Snektron
+Are you familiar with traits?
+
+1575314249
+Snektron
+theyre kinda familiar
+
+1575314275
+DutchGh0st
+I am
+
+1575314276
+Snektron
+but basically, your implement some methods on your type and ask the mixin to provide the rest, based on those first methods
+
+1575314286
+DutchGh0st
+doo you have an example?
+
+1575314335
+Snektron
+eh lets see
+
+1575314489
+Snektron
+
+
+1575314558
+Snektron
+
+
+1575314683
+DutchGh0st
+woot
+
+1575314710
+DutchGh0st
+so all those first arguments with `var` get assigned the type of the struct in the second link when they are imported?
+
+1575314720
+Snektron
+yeah
+
+1575314726
+DutchGh0st
+o.O
+
+1575314733
+Snektron
+im not sure why Self wouldnt work out, though
+
+1575314745
+DutchGh0st
+because its a different struct
+
+1575314755
+Snektron
+its a parameter of Random
+

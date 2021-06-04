@@ -1,0 +1,1156 @@
+1560124847
+andrewrk
+alright great, that was a roundabout way to do it but array literals with inferred size are now working in the copy elision branch
+
+1560124878
+andrewrk
+just a few more expression types and then I'm on to fixing regressions / getting the test suite passing
+
+1560124899
+andrewrk
+it's only been 1 week... last attempt took 2 months until  I was at the point of trying to get tests passing
+
+1560124941
+scientes
+that's when you know you are doing it right :)
+
+1560124953
+scientes
+the irony of good software it that is seems easy
+
+1560125054
+andrewrk
+yeah. also people who are intelligent, charismatic, and talented communicators, seem like they aren't doing anything
+
+1560125066
+andrewrk
+they explain something to you and it feels like you knew it the whole time
+
+1560125090
+scientes
+that's why I pay for a subscription to LWN
+
+1560125483
+curtisf
+What's the best way to return extra information with an error? e.g., a parse function returning the position that parsing failed at
+
+1560125501
+scientes
+i just use a return pointer, as is common in C
+
+1560125515
+scientes
+but there are problems with that, and I think Zig should have multiple return values
+
+1560125526
+scientes
+you can also return a struct, which is the "correct" way to do it
+
+1560125531
+scientes
+but is kinda cumbersome
+
+1560125543
+curtisf
+Right now I am returning a tagged-union, but that means I can't use "errdefer" for the parse error case
+
+1560125575
+scientes
+then you have to pass a pointer and write to that
+
+1560125590
+curtisf
+OK, that's the next best thing I could think of, but I didn't really like it
+
+1560125604
+scientes
+yeah its not correct, because they can't mark the function "pure" or "const"
+
+1560125612
+scientes
+(even if there is no support for that yet)
+
+1560125694
+scientes
+curtisf, you could also return a struct, and then do manual error handling
+
+1560125723
+scientes
+I'm wondering if zig might allow return values with error
+
+1560125904
+curtisf
+That would be nice
+
+1560125924
+scientes
+if you can think of a good syntax open a bug
+
+1560125928
+scientes
+I can't think of a good syntax
+
+1560125949
+scientes
+except maybe giving return values a name, like in go
+
+1560125988
+scientes
+and if its a pointer, you can't do that
+
+1560125995
+curtisf
+maybe it could be associated with the error itself instead of the function -- that would also possibly simplify inference / passing errors up
+
+1560125998
+scientes
+so its complicated
+
+1560126016
+scientes
+perhaps the first return value gets bound to the error
+
+1560126026
+scientes
+but that is ugly
+
+1560126069
+curtisf
+error { CouldNotAlloc, LexExeption: struct {offset: usize}, ParseException: struct {offset: usize, expected: []const u8} }
+
+1560126131
+scientes
+that is kinda dangerous
+
+1560126157
+scientes
+but it would work
+
+1560126173
+curtisf
+what do you mean by dangerous?
+
+1560126198
+scientes
+well errors are suppose to be rare
+
+1560126205
+scientes
+they are marked as unlikely to the branch predictor
+
+1560127977
+emekankurumeh[m]
+or allowing tagged unions to use errors as the tag value
+
+1560128298
+scientes
+^^
+
+1560132688
+tgschultz
+yeah, and !? where the type is not a pointer should be a single tagged union too.
+
+1560132712
+tgschultz
+so.. I guess also allowing null to be part of any tagged union
+
+1560132780
+curtisf
+well, I wrote up what I was thinking into an issue. I'm not really a Zig/C programmer so maybe everyone will think I'm crazy but it's done :)
+
+1560132822
+tgschultz
+it is useful to have feedback from people who are not used to thinking inside zig's conventions.
+
+1560138605
+hryx
+There is an unfortunate... union?.... in the clang::APValue class making it difficult to redefine in plain C:
+
+1560138686
+hryx
+If anyone has tips on how to define a struct which is the same size as this APValue class (preferably without including a bunch of clang/LLVM headers), lemme know
+
+1560138872
+hryx
+I suppose each of the constituent types could be redefined as plain structs, then make a regular union out of them. Lots of overhead but might be less horrible than what I was just doing
+
+1560138989
+scientes
+hryx, yeah llvm doesn't have unions, so i haven't figured outhow they work either
+
+1560139039
+scientes
+hryx, yeah i think the overlapping structs with bitcast between is the correct solution
+
+1560139046
+scientes
+but def. check what clang outputs
+
+1560139216
+andrewrk
+hryx, you can check the sizeof() and then just use something aligned enough followed by an array of chars that makes the size correct
+
+1560139243
+andrewrk
+the only important thing for the pseudostruct is getting the size & alignment correct
+
+1560139257
+scientes
+yeah but not all arches use natural alignment
+
+1560139274
+andrewrk
+I really don't think that's going to be an issue
+
+1560139281
+andrewrk
+99% chance it's just aligned to a long
+
+1560139291
+scientes
+well it won't be a general solution, but sure
+
+1560139309
+andrewrk
+it doesn't have to be a general solution. just trying to get a C API on top of a C++ API
+
+1560139341
+scientes
+oh yeah for that it is fine
+
+1560139347
+scientes
+I thought he was doing translate-c
+
+1560139361
+hryx
+andrewrk: I think I see -- so include APValue.h in zig_clang.h, then define this thing to be sizeof (clang::APValue) ?
+
+1560139373
+hryx
+note that so far no llvm/clang headers have needed to be included
+
+1560139393
+andrewrk
+hryx, no I mean determine the size experimentally then just hard code it with that static_assert for safety
+
+1560139411
+hryx
+ah. The size won't be different per-platform?
+
+1560139450
+hryx
+that's a cleaner solution fo sho
+
+1560139460
+andrewrk
+if that's the case then the per-platform logic has to go into the .h file and clang.zig. the static_assert will generate a compile error if it turns out to be different per-platform
+
+1560139477
+scientes
+there isn'y really a super-clean solution, because no-one wants to support c++....
+
+1560139490
+hryx
+ok great. luckly we have CI to test different platforms
+
+1560139505
+andrewrk
+yeah as long as ABI issues are easy to debug, I think we're good
+
+1560139511
+andrewrk
+just don't want a mystery bug
+
+1560139515
+scientes
+I think the cleanest solution would be to add what we need to c-llvm and c-clang
+
+1560139545
+andrewrk
+I think a lot of zig_llvm.h/cpp has been added to llvm C API now and can probably be removed. as far as I'm aware clang C API is still worthless
+
+1560139547
+scientes
+but get it working first
+
+1560139556
+daurnimator
+Interesting to see the [_] syntax got merged
+
+1560139558
+scientes
+zig_llvm.h is very good
+
+1560139604
+andrewrk
+daurnimator, yep, needed it for copy elision branch
+
+1560139605
+daurnimator
+andrewrk: I'm happy to see the TODO list for copy ellision part 1 is getting very small :)
+
+1560140122
+scientes
+I don't think I funny understand how comptime arrays are stored.
+
+1560140125
+scientes
+fully
+
+1560140435
+scientes
+like is this a vector of pointers?     TypeStructField *fields;
+
+1560140628
+andrewrk
+scientes, that's for the type of a struct
+
+1560140645
+andrewrk
+it sounds like you're talking about ConstExprValue x_array
+
+1560140712
+scientes
+well i'm doing both
+
+1560140748
+scientes
+ahh yes         ConstArrayValue x_array;
+
+1560140917
+scientes
+how do i get the spacing in that array?
+
+1560140953
+scientes
+oh of course I just use DataLayout
+
+1560141059
+andrewrk
+I'm not sure what you're asking
+
+1560141090
+scientes
+well how do i dereference the array items
+
+1560141095
+scientes
+i have to know their size
+
+1560141114
+scientes
+in LLVM you do DataLayout::getABISize() or something like that
+
+1560141234
+andrewrk
+in zig ir.cpp? const_ptr_pointee
+
+1560141253
+andrewrk
+you should look at an example that does this because there are some gotchas
+
+1560141291
+andrewrk
+e.g. the pointer type can disagree with the element type, and you have to call a function to resolve it ( this is how comptime pointer casting works)
+
+1560141703
+daurnimator
+andrewrk: #2525 should be good to merge now
+
+1560141740
+andrewrk
+thanks
+
+1560141827
+daurnimator
+indentation in just merged 6c160b8856921e5e1d0a437794b3b7ee7e1a4d0b is weird
+
+1560141937
+andrewrk
+fixed
+
+1560141960
+daurnimator
+thanks :)
+
+1560141981
+daurnimator
+andrewrk: thoughts on #2424 ?
+
+1560142117
+daurnimator
+uh.... so I think that merged fix for empty while loop bodies is wrong?
+
+1560142156
+daurnimator
+oh wait no. I just had a stray semicolon
+
+1560142229
+andrewrk
+the data structure looks good but I still don't like the std lib reorg. I don't think anything is gained with the linked_list namespace, and I don't like LinkedList renamed to TailQueue
+
+1560142272
+daurnimator
+andrewrk: how else should we have multiple different types of linked lists?
+
+1560142275
+andrewrk
+I'd be fine with std.LinkedList, std.SinglyLinkedList, std.ArrayList
+
+1560142326
+daurnimator
+andrewrk: ==> std.LinkedList is a tailqueue though: there are many differnet ways to implement a doubly linked list; with different tradeoffs.
+
+1560142368
+andrewrk
+pardon my ignorance but what are some of those ways other than struct { head: ?*Node, tail: ?*Node}  and Node = struct {prev: ?*Node, next: ?*Node }
+
+1560142428
+andrewrk
+I just searched duck duck go for "tailqueue" and the first page of results has nothing
+
+1560142430
+daurnimator
+andrewrk: 1. whether you keep the tail in the head at all. 2. whether you make it circular so that the tail's 'next' points back to the head. 3. XOR linked list.
+
+1560142453
+daurnimator
+andrewrk: huh? I search on DDG and it's the first result... and 3rd, 4th, 5th
+
+1560142479
+andrewrk
+oh I see this:
+
+1560142480
+daurnimator
+the first result being
+
+1560142489
+andrewrk
+TAILQ, CIRCLEQ
+
+1560142495
+daurnimator
+andrewrk: TAILQ is the traditional C macro to make a tail queue.
+
+1560142498
+andrewrk
+got it
+
+1560142528
+andrewrk
+let me ask you this, are you on board with having these abstractions all with nice names and directly under the std namespace?
+
+1560142559
+andrewrk
+I'm fine with TailQueue given that there is this clear prior work and established name
+
+1560142567
+daurnimator
+I'd be okay with that. Though it would make more sense to me to have all the different linkedlist implementations under a 'linked_list' namespace
+
+1560142613
+daurnimator
+std.linked_list.{TailQueue,SinglyLinkedList,CircularQueue,XORLinkedList}
+
+1560142643
+andrewrk
+std.linked_list.SinglyLinkedList and std.linked_list.XORLinkedList are redundant
+
+1560142664
+daurnimator
+?
+
+1560142683
+daurnimator
+oh you mean "linked list" in the name
+
+1560142684
+andrewrk
+"linked list" is both in the namespace of those and the type name of those. that's redundant which means the namespacing is not quite right
+
+1560142708
+daurnimator
+would `std.linked_list.XOR` make sense though? to me that suggests that it's some XOR operation over linked list types...
+
+1560142741
+andrewrk
+this would be an improvement over that, for example: std.linked_list.Singly std.linked_list.XOR std.queue.Tail std.queue.Circular
+
+1560142763
+andrewrk
+but I'd rather just follow the pattern of having core data types be directly under std. I don't see why not, it's not like that namespace is going to have ambiguities
+
+1560142822
+daurnimator
+okay. will change the PR to have that.
+
+1560142826
+andrewrk
+what is this xor data structure btw? I'm going to look that up
+
+1560142840
+daurnimator
+should I leave in the old std.LinkedList alias? or just rename all users?
+
+1560142843
+andrewrk
+found
+
+1560142852
+andrewrk
+go ahead and make the breaking change
+
+1560142867
+daurnimator
+andrewrk: yep that's as good a link as any
+
+1560142927
+andrewrk
+wow
+
+1560142960
+daurnimator
+there's lots of other linked list varieties worth having as well; particularly lock-free varieties
+
+1560142983
+andrewrk
+I went down that rabbit hole. I came to the conclusion it's not worth it
+
+1560143007
+daurnimator
+hlist as in the linux kernel is probably the most useful
+
+1560143021
+andrewrk
+there is no simple lock free linked list, and when you make it complex enough to be lock free you end up giving up enough perf with atomic ops that a mutex would have been better
+
+1560143064
+daurnimator
+that's not true at all; the kernel's linked list being plain evidence of that
+
+1560143074
+andrewrk
+I'll have a look at the hlist implementation
+
+1560143253
+daurnimator
+(the rcu hlist that is)
+
+1560143409
+andrewrk
+good night
+
+1560143435
+daurnimator
+
+
+1560143437
+daurnimator
+night
+
+1560143812
+marler8997
+might not want to look at that kernel code too much...GPL issues
+
+1560144088
+scientes
+daurnimator, in order to make it lockless you have to add epochs
+
+1560144098
+scientes
+
+
+1560144112
+scientes
+but yeah I should submit the linked-list I made, which is still stupid simple
+
+1560144127
+scientes
+something like xarray to do better cache line optimizations is good idea however
+
+1560144159
+daurnimator
+scientes: huh/what?
+
+1560144178
+scientes
+daurnimator, truly lockless code has a problem that you can never free anything
+
+1560144184
+daurnimator
+??
+
+1560144226
+daurnimator
+scientes: if we had a userspace RCU-like implementation then we can pretty quickly implement all the known structures on top
+
+1560144238
+daurnimator
+scientes: and I'm not sure how xarray is related here.
+
+1560144247
+daurnimator
+other than being an RCU-safe structure...
+
+1560144248
+scientes
+this is a subject like O() notation, or regular expressions, where the CS is very clear, but when people talk about it they are often talking about something entirely different
+
+1560144299
+scientes
+RCU is not lockless
+
+1560144312
+scientes
+its better, but it is not lockless
+
+1560144408
+scientes
+xarray is just a cache-aware way of allocating memory
+
+1560144455
+daurnimator
+an xarray is an entirely different data structure to a linked list. I'm not sure why you're bringing it up
+
+1560144517
+scientes
+a random read can cost up to 25 cache lines
+
+1560144523
+scientes
+if you are KVM
+
+1560144527
+scientes
+*are in KVM
+
+1560144536
+scientes
+*25 cache lines and 25 memory accesses
+
+1560144562
+daurnimator
+I still have no idea what point you're trying to make
+
+1560144653
+daurnimator
+an xarray is a sparse array implementation that is a good replacement/foundation for most users of growable arrays, hashtables, red-black trees, and prefix trees.
+
+1560170763
+SamTebbs33
+Commit b735764 changed array literal syntax from []T to [_]T and so I changed my uage to [_]T but [_]const T isn't accepted
+
+1560170767
+SamTebbs33
+Is that intended?
+
+1560172282
+daurnimator
+SamTebbs33: yes. [_]const should always have been a compile error
+
+1560172310
+daurnimator
+SamTebbs33: that 'const' didn't apply to anything.
+
+1560173378
+tgschultz
+interesting side effect of b735764: you used to be able to do this: `const List = []const u8;  const my_list = List{0,1,2,3,4};`
+
+1560173464
+SamTebbs33
+daurnimator: Cheers
+
+1560174593
+andrewrk
+tgschultz, I noticed that
+
+1560177225
+SamTebbs33
+tgschultz: Forgive me for my ignorance but what is strange about that example? :p
+
+1560177260
+tgschultz
+List is a slice of const u8, and I'm declaring an array literal with it.
+
+1560177977
+marijnfs
+what optimizations does -Drelease-fast=true do? I have a case that segfaults under release-fast but is fine in normal mode
+
+1560178176
+SamTebbs33
+tgschultz: So an array literal of const u8's is illegal?
+
+1560178505
+SamTebbs33
+marijnfs: There is some documentation at
+
+1560178611
+tgschultz
+`[_]const u8` is meaningless in zig. `[]const u8` means the const applies to the slice, you can't write through it, but that makes no sense for an array. const x = [_]u8 makes sense, it's a constant array. But that's not the weird thing about what I wrote. What's weird is that I really shouldn't have been able to write that.
+
+1560178765
+SamTebbs33
+tgschultz: Ah that makes sense, the constant-ness should be decided by var/const as in your snippet there.
+
+1560178962
+tgschultz
+in the new syntax it is obvious why: `[]const u8{1,2,3,4}` would be saying `a slice literal of 1,2,3,4`, which is invalid.  I'd need to say `([_]u8{1,2,3,4})[0..]`. However the ambiguity in the old syntax meant thateven though ` List` is a slice of const u8, I could declare an inferred size array literal with it => `[]const u8{1,2,3,4}` works in the old syntax. This godbolt, which still uses the old, should make it clear:
+
+1560178963
+tgschultz
+
+
+1560179006
+tgschultz
+List is a slice type, but I've declared an array with it.
+
+1560179421
+scientes
+indeed
+
+1560179734
+marijnfs
+when I do a quickSort on a large array of values it is quite a lot faster than sort.sort, should we add something like that to the sort.zig?
+
+1560179749
+marijnfs
+seems the comments mention quickSort was tried, but slower in certain tested cases
+
+1560179759
+scientes
+marijnfs, its probably because it is already sorted, python has a sort optimized for that
+
+1560179767
+scientes
+that can also handle partially sorted data
+
+1560179785
+scientes
+I had a simple patch for this that I never bothed submiting, but it wasn't complete
+
+1560179862
+marijnfs
+scientes: no i'm sorting an array with random values, also tried it with more structures values
+
+1560179882
+scientes
+well produce some benchmarks and then open a bug
+
+1560179890
+scientes
+and post your benchmark source code
+
+1560179937
+scientes
+quickSort is not stable, so it isn't suitable for all cases
+
+1560180125
+SamTebbs33
+tgschultz: This actually explains a lot of confusion I've had with arrays since I've been using []const T a lot ever since I saw it in the docs/build.zig
+
+1560180240
+marijnfs
+scientes: yes if the pivot is badly chosen it can be n*n worst case, but i believe with the median pivot it's ok? have to read up on it
+
+1560180272
+scientes
+quickSort is nlogn AFAIR
+
+1560180288
+scientes
+but so is what we have
+
+1560180306
+scientes
+are you sure you are using --release-fast?
+
+1560180520
+marijnfs
+scientes: yes,
+
+1560180537
+marijnfs
+i tried random, and ordered (both increasing and decreasing)
+
+1560180706
+fengb
+Worst case qsort is always O(n^2) unless you do advanced heuristics
+
+1560180722
+fengb
+There's always a possibility of data injection to kill the algorithm
+
+1560180729
+companion_cube
+or 3-way quicksort
+
+1560180767
+fengb
+marijnfs: If I toss your array, [0, ... ... 1, ... ... 2], it'll start degenerating
+
+1560180856
+fengb
+I think it's worthwhile to include but not necessarily as the default because it's reliant on the data not being an attack
+
+1560180990
+tgschultz
+SamTebbs33 glad I could help clarify
+
+1560180992
+marijnfs
+fengb: you mean putting the smallest values in the exact indices?
+
+1560181021
+scientes
+we should also implement stupid sort haha
+
+1560181028
+marijnfs
+fengb: i guess random quick sort is safe but costly
+
+1560181035
+fengb
+Yeah if I can control where the pivots are, I can give you a really bad case that can kill the algorithm
+
+1560181059
+fengb
+It's faster on average, but worst case is a potential mess
+
+1560181076
+fengb
+I don't think any language uses it as the default sort for that reason
+
+1560181128
+fengb
+I think Python and Java use a hybrid quick/heap
+
+1560181157
+scientes
+python has a sort optimized for already sorted data
+
+1560181167
+scientes
+*partially sorted
+
+1560181173
+fengb
+Nope... Python uses Timsort and Java just switched
+
+1560181185
+scientes
+timsort is optimzied for partially sorted data
+
+1560181208
+scientes
+which would make sense to add
+
+1560181231
+scientes
+yeah I should submit my patch, with a bug to add timsort
+
+1560181245
+scientes
+its good to have contributor friendly bugs
+
+1560181260
+fengb
+
+
+1560181285
+scientes
+timsort:  The algorithm finds subsequences of the data that are already ordered, and uses that knowledge to sort the remainder more efficiently.
+
+1560181403
+marijnfs
+is sorting parially sorted data really the most common?
+
+1560181425
+scientes
+marijnfs, are you interested in working on this?
+
+1560181522
+marijnfs
+scientes: meh i guess there is no general answer, i could implement timsort if its not too involved
+
+1560181526
+fengb
+I'd imagine Java and Python did their homework pretty well >_>
+
+1560181538
+marijnfs
+but in general I guess it's nice if zig has a nice swiss knife of sorting algos
+
+1560181562
+scientes
+well its more that it doesn't require knowledge of zig internals
+
+1560181567
+scientes
+so its a good way to learn the language
+
+1560181586
+scientes
+it IS involved, and it needs to be tested
+
+1560181818
+scientes
+hmm, how do i cast to comptime_int in stage1?
+
+1560181847
+scientes
+I just want the value.....
+
+1560181871
+scientes
+oh nvm
+
+1560181970
+marijnfs
+scientes: true its a good excersise
+
+1560181983
+marijnfs
+but i might want to make somehting else in zig, trying to make a little deep learning library
+
+1560182729
+scientes
+marijnfs,
+
+1560183099
+scientes
+LLVMTypeRef union_llvm_type;
+
+1560183106
+scientes
+what is this? llvm doesn't have unions
+
+1560185358
+marijnfs
+scientes: i'm getting a sense of timsort, till try to implement it soon
+
+1560185839
+scientes
+trying to hack on Zig I'm starting to appreciate LLVM's OO approach
+
+1560185852
+scientes
+its much easier to just have a list of methods
+
+1560185870
+scientes
+cause i keep getting side-tracking trying to figure out how to do basic things
+
+1560185884
+scientes
+(the self-hosted compiler will be better)
+
+1560188242
+andrewrk
+marijnfs, std.sort.sort is ported from
+
+1560188355
+andrewrk
+comparing the perf against quicksort is kind of invalid since quicksort uses O(log n) stack space. to avoid overflowing the stack you would need to introduce dynamic memory allocation to that. the sort that I linked supports that - using a dynamically allocated half-size cache
+
+1560188401
+andrewrk
+also scientes this algo is supposed to be faster if the list is partially sorted
+
+1560188456
+scientes
+oh ok
+
+1560188478
+scientes
+> , and is even faster when the input is partially ordered or as the arrays get larger.
+
+1560188481
+andrewrk
+I'm in favor of a swiss army knife of sorting algorithms. but quicksort is right out
+
+1560188488
+andrewrk
+no quicksort
+
+1560188509
+andrewrk
+respect the stack
+
+1560188531
+scientes
+what we have is nice
+
+1560188544
+scientes
+you can also use the red-black tree to sort
+
+1560188560
+scientes
+which sorts as you insert elements
+
+1560188585
+andrewrk
+we can look at a quicksort implementation using zig's solution to recursion (which is not available yet)
+
+1560188892
+scientes
+well yeah i always though quicksort was in-place
+
+1560188903
+scientes
+so i was confused when you said O(logn) stack space
+
+1560188948
+scientes
+oh, those are two differnt things
+
+1560189005
+scientes
+why not
+
+1560189127
+andrewrk
+that looks good - I don't think that was mentioned when I did the sort port
+
+1560189151
+andrewrk
+PR welcome if it comes with benchmarks
+
+1560189239
+scientes
+I'll open a bug, that is a good bug for new contributors
+
+1560189271
+andrewrk
+agreed
+
+1560189799
+andrewrk
+thanks for the writeup scientes
+
+1560189832
+andrewrk
+it's nice when they provide a C reference impl. super easy to port
+
+1560189860
+scientes
+yeah, its annoying when academic papers don't have a reference impl.
+
+1560192152
+scientes
+Is there a way to get a IrAnalyze from an instruction?
+
+1560192179
+scientes
+uggh
+
+1560192192
+scientes
+i need to examine types to split an instruction
+
+1560196671
+scientes
+how to i walk the Ast tree to get the AssignExpr ?
+
+1560196769
+scientes
+there is no up pointer from AstNode
+
+1560196774
+scientes
+like LLVM's uses()
+
+1560197566
+scientes
+OK, so the specific thing I need is to be able to get the AssignExpr from the SuffixExpr (and know if there is an AssignExpr)
+
+1560197591
+scientes
+vectors cannot be supported without this (among other things)
+
+1560197719
+scientes
+ok sorry, I can figure this out myself :)
+
+1560199268
+tgschultz
+andrewrk: is there something wrong with #2597 or is it just way on the back burner?
+
+1560199303
+tgschultz
+the CI failure was just MacOS CI being broken.
+
+1560200843
+andrewrk
+tgschultz, I hesitated because I wasn't sure if it was correct. I double checked just now and your changes are good, I'm going to merge them right now. but some of the std.mem functions are incorrect for non-power-of-2 integer sizes and I wanted to audit that at the same time
+
+1560200879
+andrewrk
+for example readIntNative, right now, pointer casts and then does a memory load. this is valid for power of 2 bit sizes but for e.g. u24 it actually will have to do something else
+
+1560200911
+andrewrk
+I looked at the assembly that llvm generates and it's actually fine, but according to the devs it's relying on implementation defined behavior
+
+1560200929
+andrewrk
+and so it would be allowed for llvm to change behavior and load past the end of that array
+
+1560201178
+scientes
+andrewrk, yeah i was just changing that...
+
+1560201189
+scientes
+to use insertvalue/extractvalue insertelement/extractelement
+
+1560201672
+I_Right_I
+andrewrk: I had a question about the live chat on Friday I didn't want to hold you up while I typed it out. But I pasted an example snippet that sums up my question.
+
+1560201677
+I_Right_I
+
+
+1560201726
+I_Right_I
+whenever you get a chance
+
+1560201801
+marijnfs
+andrewrk: yeah i was worrying about the stack as well, using an allocator is not gonna be fast enough?
+
+1560203501
+andrewrk
+marijnfs, using an allocator will be fine - but I bet it will eliminate the perf difference between the existing std lib sort function when using the dynamically allocated cache and quicksort
+
+1560203538
+andrewrk
+in fact the dynamically allocated cache of wikisort would likely be better because it's a single allocation one time whereas the quicksort recursion allocation will probably have to do multiple checks, multiple allocations and frees
+
+1560203552
+andrewrk
+this is all pretty hand wavey though, let's just find out once that feature is available
+
+1560203642
+andrewrk
+I_Right_I,
+
+1560203662
+andrewrk
+your first example is not correct
+
+1560203681
+andrewrk
+I mean the comment is wrong. but if you change `var c` to `const c` then x will have type u8
+
+1560203746
+andrewrk
+I_Right_I,
+
+1560205725
+I_Right_I
+andrewrk: Yeah I did comment incorrect sorry, In the video you used var c = false (runtime know), if 'var c = true' would x have evaluated to type u8?
+

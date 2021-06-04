@@ -1,0 +1,1444 @@
+1556583415
+daurnimator
+andrewrk: re: your comment before about way-cooler; it reminds me of another comment you said once: "zig shouldn't need "bindings" for C libraries" -> do you still think that?
+
+1556583463
+andrewrk
+yes
+
+1556583517
+daurnimator
+andrewrk: then how do you e.g. introduce "zig-friendly" APIs to a C library? e.g. so you can pass slices instead of `myfunc(myslice.ptr, myslice.len)` every time?
+
+1556583553
+andrewrk
+don't do it. just pass myslice.ptr, myslice.len every time
+
+1556583626
+andrewrk
+use the C types; call the C functions; allow that part of your codebase to be more C flavored
+
+1556583660
+shritesh_
+I've been wanting to know this: what am I really passing when a function takes in a slice? Is it similar to passing .ptr and .len under the hood?
+
+1556583680
+daurnimator
+what about when a C library takes a more advanced interface? e.g. C libraries that have a: `mylib_set_alloc(realloc_like_function)` that I need to pass a zig allocator for?
+
+1556583686
+andrewrk
+shritesh_, currently it's exactly the same as passing a struct { ptr: *T, len: usize }
+
+1556583732
+andrewrk
+daurnimator, can you spell out the problem for me here?
+
+1556583746
+daurnimator
+andrewrk: shritesh_: I've been wondering if we can make that compatible with the target system's `iovec` somehow.... alternatively I have this proposal
+
+1556583942
+daurnimator
+andrewrk: e.g. I was looking into making the lua C library easy to use from zig: using @cImport on the lua headers, the function definitions you get are all.... annoying to use from zig -> they can be made much nicer by wrapping functions to take a slice; or wrapping them to take an *Allocator... but it goes further: the lua C API defines `luaCFunction = fn ([*c]lua_State) c_int` : and you need to write
+
+1556583944
+daurnimator
+functions with that signature. but it's much nicer if you have a non-C pointer; as it really can't be NULL.
+
+1556584169
+daurnimator
+furthermore: C namespacing is a little awkward from zig: `C.lua_pushinteger(L, 42)` instead of what could be: `L.pushinteger(42)`
+
+1556584199
+daurnimator
+-> it means that C libraries are never as nice to use as native zig libraries
+
+1556584445
+andrewrk
+daurnimator, I have considered doing something with recognizing C prefixes as namespaces, but haven't come up with anything to propose yet
+
+1556584541
+daurnimator
+andrewrk: I think there is a proposal around that allows "adding" methods to a struct to create a new struct?
+
+1556584574
+andrewrk
+I was thinking along the lines of "chopping off" a common prefix and separating into namespaces
+
+1556584599
+daurnimator
+andrewrk: so I could do: const C = @cImport(...); pub lua = struct { use C.lua_State; pub const pushinteger = C.lua_pushinteger, ..... }
+
+1556584666
+andrewrk
+e.g. in the @cImport expression you could do something like @declareCNamespace(lua, "lua_");
+
+1556584669
+daurnimator
+but then also add in a few "zig-friendly" apis: pub fn pushslice(self: *Self, slice: []const u8) c_void { return self.pushlstring(slice.ptr, slice.len); }
+
+1556584691
+andrewrk
+then it would be something like const c = @cImport(...); c.lua.pushinteger(foo);
+
+1556584700
+andrewrk
+and of course you could do cont lua = c.lua;
+
+1556584745
+daurnimator
+andrewrk: that would be helpful; but still not "zig-native" level. e.g. still no methods on structs/struct pointers.
+
+1556584984
+andrewrk
+I'm not convinced that adding methods to third party types is needed. What benefits does it provide?
+
+1556585100
+daurnimator
+If I was writing the library in zig; that's how I would have exposed it.... to be unable to do that with 3rd party APIs, makes them inferior.
+
+1556585192
+andrewrk
+inferior to libraries written in zig?
+
+1556585236
+daurnimator
+yes
+
+1556585818
+andrewrk
+doesn't that make a lot of sense? I mean C libraries should be inferior to zig libraries in exactly all the ways that zig is a better language than C
+
+1556585855
+daurnimator
+not really
+
+1556585867
+daurnimator
+it's only inferior
+
+1556585911
+daurnimator
+and the fact that it
+
+1556585980
+andrewrk
+C doesn't have methods either
+
+1556585984
+hryx
+can = should?
+
+1556586038
+andrewrk
+I think that someone who is familiar with using a given C library should be able to look at Zig code and it should look familiar in the same way
+
+1556586108
+andrewrk
+I'll augment that earlier proposal I hinted at though - I could conceive of a way to associate a prefix with a type.
+
+1556586220
+daurnimator
+andrewrk: that might work....
+
+1556586272
+daurnimator
+andrewrk: related to struct extension? struct { use C.myprefix; pub fn moremethods() void {} }
+
+1556586463
+andrewrk
+daurnimator, I'll type up my proposal tomorrow
+
+1556586469
+daurnimator
+k
+
+1556586492
+daurnimator
+I need to type up my reply on "consistent methods across containers"
+
+1556586497
+daurnimator
+swap you ;)
+
+1556586504
+andrewrk
+I need to switching things up today and write some code before I get grumpy :)
+
+1556586513
+daurnimator
+(which is to say: trade you replys tomorrow)
+
+1556586728
+andrewrk
+daurnimator, oh yeah, one thing to note would be to explain why it's meaningful to have the names be the same even when the fn prototypes don't match. e.g. LinkedList remove takes a pointer; ArrayList takes an index
+
+1556586797
+daurnimator
+mmm. interesting; I didn't think of that. I think my answer is something along the lines of "the parameter is what the iterator gives". but will look tonight
+
+1556592465
+shritesh
+andrewrk: A major pain point wasm/wasi will soon experience is not having a memory allocator that actually frees.
+
+1556592479
+shritesh
+(in Zig) :D
+
+1556592563
+shritesh
+I've been looking into Rust's wee_alloc and I know you're working on the GeneralPurposeAllocator
+
+1556592664
+daurnimator
+shritesh: should be same in theory as an sbrk-based allocator
+
+1556592707
+daurnimator
+shritesh:  --> can't you just write an sbrk based allocator for all platforms?
+
+1556592717
+shritesh
+I can't
+
+1556592766
+daurnimator
+IIRC, sbrk is actually faster than mmap. but inevitably has worse fragmentation problems.
+
+1556592778
+daurnimator
+shritesh: why not?
+
+1556592783
+shritesh
+WASM has only memory.grow
+
+1556592796
+shritesh
+It hands you pages of memory and never takes it back
+
+1556592828
+daurnimator
+okay.... so?
+
+1556593002
+shritesh
+I do not want to be the one making the tradeoffs about memory fragmentations
+
+1556593188
+daurnimator
+WASM doesn't give you the option
+
+1556593193
+shritesh
+The most I want to do is port wee_alloc (which has made well-defined tradeoffs) to Zig or hope someone else writes an allocator that does so
+
+1556593204
+andrewrk
+the "small objects" part of GeneralPurposeDebugAllocator is probably a fine idea for sbrk based APIs
+
+1556593213
+andrewrk
+it's just the "large objects" part that needs to be reworked
+
+1556593246
+andrewrk
+the small objects thing has no fragmentation but does have predictable fixed overhead
+
+1556593264
+andrewrk
+which depending on how you define fragmentation maybe you would say is the same thing as fragmentation
+
+1556593267
+daurnimator
+IMO the best path is probably via a proper arena allocator that supports freeing and has a 'parent' allocator
+
+1556593300
+daurnimator
+then you can back your 'arena' allocator with sbrk/wasmmemory.grow
+
+1556593323
+andrewrk
+that'll just be this "sbrk api" allocator backed by std.heap.FixedBufferAllocator or std.heap.ArenaAllocator
+
+1556593404
+daurnimator
+andrewrk: IIRC our "ArenaAllocator" doesn't actually support freeing? it's just a "arena-at-once" free?
+
+1556593537
+andrewrk
+right. use that as backing allocator for "sbrk api" allocator and you have yourself an allocator that supports freeing, can grow, and can be all freed at once
+
+1556593592
+daurnimator
+andrewrk: right. I was saying there is a global "direct sbrk" allocator. and then have an ArenaAllocator backed by that. which could be the "global sbrk arena allocator" or something
+
+1556593779
+andrewrk
+I wonder if std.mem.Allocator should be a union(enum) with possible tags sbrk, mmap
+
+1556593793
+daurnimator
+I don't think so. why would you need that?
+
+1556593888
+andrewrk
+yeah that's the wrong layer for that distinction
+
+1556593897
+andrewrk
+it's an implementation detail, not an interface
+
+1556593925
+andrewrk
+it's the end of the day. I'm not smart again until I go to sleep and wake up :)
+
+1556593969
+daurnimator
+and there's lots of implementation details for different allocators... page size allocations? protection mode? on a particular device (e.g. video ram)? backed from a particular file? DAX?
+
+1556593979
+daurnimator
+I don't think you could hope to enumerate them
+
+1556594040
+shritesh
+Alright. I'll bring this up when I hit the issue again. Firefox was complaining that "this tab is using a lot of memory" running the formatter yesterday but I haven't encountered it again.
+
+1556594117
+andrewrk
+the endgame for this is that wanting to use extra memory will be a user permission for web sites
+
+1556594193
+shritesh
+Yeah. But we do need to have an allocator that actually frees too.
+
+1556594202
+daurnimator
+shritesh: have a go at it?
+
+1556594220
+daurnimator
+shritesh: I'd probably read through libarena's pool.c and reimplement the same concept in zig.
+
+1556594236
+hryx
+andrewrk: Question for you. I'm close to opening a PR for recursive parser. It would be easy to just remove shebang support now -- but would you prefer it be in a separate PR?
+
+1556594249
+andrewrk
+hryx, go for it now
+
+1556594256
+hryx
+roger, thanks
+
+1556594257
+shritesh
+daurnimator: I want to work on a WASM interpreter and WASI execution environment instead :)
+
+1556594285
+andrewrk
+shritesh, for sure - that's definitely planned. and don't worry you can focus on what interests you - there will be plenty of people who are interested to do the allocator internals stuff
+
+1556594358
+andrewrk
+I have to resist the urge to start working on a wasi interpreter... I really should prioritize the language changes that nobody else can really do
+
+1556594493
+daurnimator
+andrewrk: yes please :) coroutine stuff can only really come from you
+
+1556594523
+daurnimator
+do we have a CIRCLEQ equivalent in zig?
+
+1556594566
+shritesh
+andrewrk: I have a half-finished PR to implement environment variables, which is the last WASI-specific API right now. The rest are all (almost) POSIX compatible. I think I can get them all done this week. I intend to work on the interpreter starting next week.
+
+1556594585
+andrewrk
+shritesh, exciting!
+
+1556594647
+andrewrk
+daurnimator, the thing where you map the same memory consecutively to create a ring buffer with only 1 memcpy required for writes/reads?
+
+1556594668
+daurnimator
+andrewrk: no. it's a linkedlist with no end. see 'man circleq_entry'
+
+1556594669
+shritesh
+I'll finish the WASM docs and try to get us listed in wasi.dev too
+
+1556594693
+andrewrk
+shritesh, nice, that'll be some good outreach
+
+1556594822
+shritesh
+That's the goal. bketelsen showed me something exciting he's making happen on the browser side of things too
+
+1556594900
+daurnimator
+I wonder if std.LinkedList needs to be a union of: list, tailqueue, circularqueue
+
+1556594908
+daurnimator
+andrewrk: ^
+
+1556594965
+andrewrk
+that's for sure something I'm going to have to consider in the morning and not the evening
+
+1556594988
+daurnimator
+k
+
+1556595187
+andrewrk
+emekankurumeh[m], thanks for taking over the sublime-language repo! super helpful
+
+1556595754
+emekankurumeh[m]
+no problem
+
+1556598326
+daurnimator
+left an issue about it so we don't forget.
+
+1556598340
+andrewrk
+thanks
+
+1556598936
+daurnimator
+If you mark it as accepted I'm happy to write a PR.
+
+1556599095
+hryx
+andrewrk: got a segfault running the render tests. Here's a gdb backtrace:
+
+1556599106
+daurnimator
+emekankurumeh[m]: oh you have the sublime repo now? Could you fix commentting?
+
+1556599113
+hryx
+lemme know if you'd like me to file an issue
+
+1556599126
+daurnimator
+emekankurumeh[m]: pressing Ctrl+/ in sublime should comment/uncomment the current line. zig is the only language where it doesn't work
+
+1556599139
+andrewrk
+hryx, this is for master branch?
+
+1556599148
+hryx
+no, on my stage2-recursive-parser
+
+1556599152
+daurnimator
+emekankurumeh[m]: nevermind....
+
+1556599167
+hryx
+it is about time I rebase though
+
+1556599192
+hryx
+andrewrk: if you want to reproduce it I need to push my last change
+
+1556599195
+hryx
+one sec
+
+1556599230
+andrewrk
+hryx, you're looking for help troubleshooting?
+
+1556599276
+hryx
+andrewrk: It's not blocking me per se, just wanted to let you know in case it's a new bug
+
+1556599297
+hryx
+no need to help troubleshoot at this moment
+
+1556599376
+hryx
+(just pushed the change to my branch BTW)
+
+1556599449
+hryx
+Er, forgot to metnion, if you want to reproduce it, you'll need to comment out the shebang test, and then run zig test on parser_test.zig
+
+1556599456
+hryx
+anyway no rush
+
+1556599466
+andrewrk
+I'm confused - it's not a problem with master branch?
+
+1556599490
+hryx
+I haven't seen that while running zig test parser_test.zig on master
+
+1556599538
+hryx
+I should clarify -- I haven't run it on the most recent master, but it does not segfault with the original stage2 parser
+
+1556599568
+andrewrk
+ohhh, I see. It's in render, not parse
+
+1556599575
+hryx
+Yep~
+
+1556599601
+hryx
+it crashes on a `switch (base.id)`, very spoopy
+
+1556599621
+andrewrk
+double check that the id of AST nodes agree with the allocated types
+
+1556599631
+andrewrk
+that's an area of unsafety
+
+1556599636
+hryx
+oh shoot, good idea. Ok I'll check and let you know
+
+1556599709
+andrewrk
+I've been thinking lately about how to make Debug and ReleaseSafe modes of Zig actually safe - at least as much as possible. A tradeoff of increasing runtime size for these modes in exchange for safety
+
+1556599722
+andrewrk
+I think this could make Zig compete more strongly with Rust
+
+1556599736
+andrewrk
+if we can achieve both simplicity and safety
+
+1556599770
+andrewrk
+rather than an `unsafe` keyword, zig has the "assume the code in this scope has no bugs" builtin function
+
+1556599803
+andrewrk
+I think this is a Big Idea
+
+1556599810
+hryx
+that topic sounds ripe for brainstorming
+
+1556599834
+andrewrk
+dump your ideas
+
+1556599871
+hryx
+certainly /_(°o°)_\
+
+1556599905
+andrewrk
+your paste makes me realize this issue is related to #130, which is an interesting connection
+
+1556599920
+hryx
+oh actually, andrewrk, this parser rewrite has brought up one big safety/debug issue for me
+
+1556599928
+hryx
+one sec, I'll show you why
+
+1556599949
+hryx
+
+
+1556599978
+hryx
+That bug (fixed by tyler569) was causing much strife for me. I've gotten way too used to Go's memory safety, heh
+
+1556600028
+andrewrk
+that's the main issue that I've been thinking about how to solve. use-after-free for stack variables. I think I'm on to something
+
+1556600123
+hryx
+music to my ears :D
+
+1556600137
+andrewrk
+it's quite elegant if you think about it: require the programmer to adhere to the premise that stack variables are no longer accessible after the function returns. but it's a lie. the compiler actually does escape analysis in safe modes and allocates escaping stack variables on the heap
+
+1556600169
+andrewrk
+when the function returns, mark the escaped variables as dead, but keep the memory mapped, with metadata so that loads/stores can be checked
+
+1556600186
+daurnimator
+andrewrk: doesn't analysing @intToPtr essentially require solving the halting problem?
+
+1556600227
+daurnimator
+e.g. what if I was using @intToPtr() to create a XOR linked list?
+
+1556600251
+andrewrk
+it's kinda like a garbage collector (as in go) but it doesn't have to do any of that computationally expensive stuff. all it has to do is crash if you use something after it's dead
+
+1556600288
+hryx
+holy moly, GC in debug mode and not in release mode?
+
+1556600296
+hryx
+now you are cooking with portals
+
+1556600306
+andrewrk
+daurnimator, if loads/stores are going to be potentially checked, there will be false positive safety checks. meaning technically unnecessary but harmless
+
+1556600318
+daurnimator
+andrewrk: and false negatives too...
+
+1556600323
+andrewrk
+how?
+
+1556600351
+daurnimator
+andrewrk: wait.... checked against what?
+
+1556600359
+daurnimator
+a table of all known addresses?
+
+1556600372
+tyler569
+how would that interact with embedded stuff? (re: beefing up the runtime for more safety)
+
+1556600379
+andrewrk
+tyler569, it simply wouldn't be available
+
+1556600413
+andrewrk
+or maybe embedded stuff could opt in, if it could fulfill the necessary API (similar to how the panic function can be supplied)
+
+1556600423
+tyler569
+mmm
+
+1556600434
+hryx
+interesting, makes me curious of the relationship of Debug to embedded platforms overall
+
+1556600444
+tyler569
+long as you're not disabling debug more in my os ^.^
+
+1556600447
+tyler569
+mode*
+
+1556600450
+hryx
+haha
+
+1556600469
+andrewrk
+it would be the first runtime safety check feature that depends on os-specific features
+
+1556600476
+daurnimator
+andrewrk: like userfaultfd?
+
+1556600483
+andrewrk
+I'll have to look up what that is
+
+1556600531
+andrewrk
+tyler569, right of course debug mode would be available - I mean that this safety feature wouldn't be enabled, similar to how error return trances are disabled for the WASI target
+
+1556600559
+andrewrk
+*traces. my musical tastes are showing
+
+1556600573
+tyler569
+haha yeah, sounds like the perfect way to handle it
+
+1556600607
+hryx
+I took you for more of a technical metalcore type
+
+1556600623
+hryx
+jk
+
+1556600634
+daurnimator
+eh, I could see it
+
+1556600721
+hryx
+daurnimator: my god, it's....... full of The Simpsons
+
+1556601182
+andrewrk
+I'm friends with the security/crypto guy on the Go team, and he made a good point. People
+
+1556601228
+daurnimator
+andrewrk: rename it from ReleaseFast to ReleaseUnsafe?
+
+1556601240
+andrewrk
+he suggested ReleaseUnsafe, and while I agree that does solve the problem, it's not quite a description of what the mode is optimizing for
+
+1556601244
+andrewrk
+nice daurnimator  :)
+
+1556601295
+daurnimator
+I'm actually not sure what the difference between Debug and ReleaseSafe is....
+
+1556601296
+hryx
+is that Filippo by any chance? :>
+
+1556601305
+andrewrk
+hryx, yep
+
+1556601326
+andrewrk
+I have a huge amount of respect for him
+
+1556601342
+hryx
+a very smart and charismatic person to be sure!
+
+1556601348
+andrewrk
+daurnimator,
+
+1556601360
+emekankurumeh[m]
+if a pointer is being returned, what about just checking if the pointer points to somewhere in the stack frame>
+
+1556601365
+emekankurumeh[m]
+*?
+
+1556601379
+hryx
+andrewrk: gut check, on the topic of build modes, what did you think about renaming Debug to Development?
+
+1556601395
+daurnimator
+andrewrk: can those 5 points in the build mode table be decomposed?
+
+1556601406
+andrewrk
+emekankurumeh[m], good question - the problem is that the range of the stack keeps changing. Plus, even if a function returns, maybe another function is called, with the same size stack frame! you can't tell the difference
+
+1556601411
+hryx
+just thinking about how names imply "how you are supposed to use it"
+
+1556601420
+daurnimator
+e.g. -Os vs -O2 vs -O3. -g, --unsafe?
+
+1556601439
+emekankurumeh[m]
+so the aba problem then?
+
+1556601486
+daurnimator
+andrewrk: FWIW I think the most important "safety" thing we need is the "nocopy"/"fixed" annotation. seems to be the most common mistake in zig.
+
+1556601488
+andrewrk
+hryx, ah, yes I'm still thinking about that. one thing to consider is, say, if your main build mode is ReleaseFast, and then you want to troubleshoot a problem in one particular area so you use @optimizeFor(.Development). It would be weird to ship that to production, even though that's exactly what you want to do
+
+1556601494
+emekankurumeh[m]
+or somewhat similar to it
+
+1556601512
+shachaf
+You can maybe look for values past the current stack frame after return, conservative-GC-style.
+
+1556601528
+andrewrk
+daurnimator, definitely agree. I'm planning on getting through this round of PR feedback, and then getting started on that
+
+1556601607
+hryx
+ahh right, I gotta go back and read the @optimizeFor proposal to get a better understanding
+
+1556601609
+andrewrk
+shachaf, that would work if we had a complete list of live references. but a user could, for example, @ptrToInt, display a message box to the user and have them memorize the address, sleep for 1 second, and then prompt the user to put the address back in the message box, and then try to dereference it
+
+1556601629
+andrewrk
+that was convoluted to be funny. point being we don't have a complete list of live references
+
+1556601644
+shachaf
+Well, dereferencing user-provided inputs is the problem there.
+
+1556601658
+daurnimator
+shachaf: not really
+
+1556601659
+andrewrk
+but I think we can still accomplish safety for that scenario
+
+1556601674
+shachaf
+But it's true that a conservative GC style of thing can't be perfect anyway if you use tricks like that.
+
+1556601688
+daurnimator
+shachaf: pointers can come across the network (see: CRIU). and you never know if you're talking to a machine or a human over a network connection.
+
+1556601699
+andrewrk
+emekankurumeh[m], that's an interesting way to put it, but yeah I think that's right
+
+1556601733
+shachaf
+But you're not going to have a static check that a memory address you get over the network is a valid pointer.
+
+1556601774
+andrewrk
+that's right, not static. the situation under discussion are the "safe" build modes which are allowed to have runtime safety checks
+
+1556601828
+shachaf
+I should read more of the text before commenting.
+
+1556601841
+andrewrk
+the thing zig brings to the table here is that all code is written under the assumption - and is checked to be correct - that it works with strict premises. for example stack variables end their lives when the function returns. so while safe modes might not be fast, the safety they provide, when disabled,
+
+1556601960
+andrewrk
+that's the idea anyway. I think it's definitely worth pursuing. if it works well, it eats both rust and go's lunch
+
+1556601986
+andrewrk
+om nom nom nom
+
+1556601991
+hryx
+:pacman:
+
+1556602223
+andrewrk
+unrelated: as soon as I start getting pull requests to src-self-hosted/translate_c.zig instead of src/translate_c.cpp, I'm going to stop working on
+
+1556602355
+hryx
+andrewrk: do you foresee assigning an owner to big chonker issues like #1964? or just whoever will contribute this and that, as the commits come
+
+1556602464
+andrewrk
+I think that 1964 in particular is situated quite well for piecemeal work
+
+1556602499
+andrewrk
+I've done that on purpose - currently `zig translate-c` and @cImport will use the C++ implementation, and `zig translate-c-2` will use the .zig implementation
+
+1556602515
+andrewrk
+at some point I'll delete the C++ implementation and throw a party
+
+1556602537
+hryx
+haha
+
+1556602555
+hryx
+the "contributor friendly" tag was smart, helps with discoverability, IMO
+
+1556602559
+andrewrk
+s/will use/uses/g
+
+1556602573
+andrewrk
+good. I also added
+
+1556602590
+hryx
+update on my segfault: `std.debug.warn("BASE {*}\n", base);` on that crashy switch statement
+
+1556602594
+hryx
+prints `BASE Node@1`
+
+1556602659
+andrewrk
+
+
+1556602693
+andrewrk
+ok so address 1. that seems pretty likely that code somewhere else overwrote it
+
+1556602715
+andrewrk
+whereever the pointer was stored
+
+1556602775
+hryx
+ah yeah. plz hold while I get my sherlock holmes hat and pipe
+
+1556602859
+hryx
+(actually, I must run an errand. AFK for 15 mins)
+
+1556603032
+andrewrk
+hryx, ooh I have a good idea
+
+1556603043
+andrewrk
+when you get back. (gdb) watch *0x1
+
+1556603087
+andrewrk
+hmm no that will break at the same point you're already getting the segfault.
+
+1556603092
+tyler569
+you mean watch base, right?
+
+1556603095
+tyler569
+yeah that
+
+1556603443
+andrewrk
+I've seen a demo of using "undo" in gdb but I've never gotten it to work personally
+
+1556603789
+hryx
+I've just added @breakpoint() before the bad dereference, and then run gdb, but it has skipped the breakpoint. What'm I missing?
+
+1556604645
+andrewrk
+are you sure the @breakpoint() is in the correct place? it might mean the bad dereference is elsewhere\
+
+1556604680
+daurnimator
+andrewrk: seen 'rr'?
+
+1556604752
+hryx
+Hmm, I think it's in the right place. Actually tyler and I saw something while coworking on zig a couple weeks ago. @breakpoint might be having issues. I will attempt to create a minimal reproduction!
+
+1556604917
+hryx
+unless I misunderstood how to use @breakpoint. definitely possible
+
+1556605690
+hryx
+Huh, @breakpoint works perfectly well on master. I would love to figure out what changed, but it might be better if I simply rebase upon master and move on
+
+1556624447
+tgschultz
+andrewrk: if I understand correctly, this saftey idea your talking about breaks one of zig's fundamental concepts and does a hidden heap allocation?
+
+1556624719
+scientes
+tgschultz, llvm is working towards these type of features
+
+1556624735
+scientes
+non-integer pointers, and mill cpu will have hardware support for garbage collection
+
+1556624795
+tgschultz
+wtf is a non-integer pointer?
+
+1556624835
+scientes
+
+
+1556624843
+scientes
+*non-integral
+
+1556624856
+scientes
+> Non-integral pointer types represent pointers that have an unspecified bitwise representation; that is, the integral representation may be target dependent or unstable (not backed by a fixed integer).
+
+1556624922
+scientes
+on mill cpu if you use 60-bit pointers you can still treat them as integers, but you loose the garbage collection features
+
+1556625049
+tgschultz
+shouldn't we care more about hardware that actually exists? Ugh. I'm just really annoyed by this obsession with saftey to the point of basically having a garbage collector in every debug build.
+
+1556625058
+hryx
+@tgschultz maybe it's ok to break this rule in devopmenntn
+
+1556625074
+hryx
+*development mode?
+
+1556625090
+scientes
+i like that the language is still allowing you to do what you want, generally
+
+1556625103
+tgschultz
+technically every turing complete language does
+
+1556625148
+scientes
+like i had to use pointers instead of a value in C++ recently because of C++'s object model wouldn't allow me to use undef values
+
+1556625154
+scientes
+it was really annoying
+
+1556625207
+scientes
+tgschultz, performantly as well
+
+1556625237
+scientes
+zig, like c, if you know what the hardware will do, you can generally tell the language to do that, AND it will be portable
+
+1556625276
+tgschultz
+except in your debug build where now it will be doing hidden allocations (which can OOM!)
+
+1556625287
+tgschultz
+I prefer things I can reason about
+
+1556625293
+scientes
+tgschultz, it will probably be too slow as well
+
+1556625335
+scientes
+tgschultz, actually it doesn't have to, if it is implemented as a bit-map
+
+1556625351
+scientes
+then you just use 1/64th or 1/32th of the memory in addition
+
+1556625417
+scientes
+anyways, first time i'm hearing about this feature
+
+1556625480
+scientes
+tgschultz, yeah hidden allocations break other safety stuff, like debuggin rt applications
+
+1556625557
+scientes
+and you can never be perfectly safe----I find when language ppl talk about "safe" they are kinda arrogant
+
+1556625570
+scientes
+go's split stacks is a huge performance bottleneck
+
+1556626018
+scientes
+andrewrk, how does this differ from address sanitizer?
+
+1556640380
+andrewrk
+tgschultz, that's correct about the hidden heap allocation
+
+1556640405
+andrewrk
+it would still have to reserve stack space for the variable, in case the hidden heap allocation failed
+
+1556640438
+andrewrk
+and note that it doesn't require nearly as much baggage as a garbage collector. for example there is no "stop the world" thing and no "mark and sweep" thing
+
+1556640467
+andrewrk
+it's just putting the memory somewhere else so that safety checks can be possible
+
+1556640684
+andrewrk
+scientes, you tell me. I don't know how the address sanitizer works
+
+1556640742
+scientes
+seems pretty similar
+
+1556640816
+scientes
+>
+
+1556640817
+scientes
+Static linking of executables is not supported.
+
+1556641434
+tgschultz
+andrewrk, is it possible to hijack the call trace of an @compileError? I have a recursively built type (comptime pseudo-struct) so the trace is the same line about a dozen times.
+
+1556641474
+andrewrk
+tgschultz, e.g. the limit of 10 isn't showing you where the problem is?
+
+1556641520
+andrewrk
+I'm not sure what you're asking
+
+1556641548
+tgschultz
+right, because recursion. however in this case I do know where the problem is because I created it to test the compileError, I'm just wondering if I can cleanup the output.
+
+1556641594
+andrewrk
+ah
+
+1556641620
+tgschultz
+Actually, I'm probably better off impleneting that myself. But if there's a way, I am still curious.
+
+1556641624
+andrewrk
+hmmm. can you open an issue for this? I think this is worth thinking about but I don't have a good answer right now
+
+1556641640
+andrewrk
+it's related to, when capturing a stack trace at runtime, how it's common to pass around the "first" return address
+
+1556641677
+andrewrk
+
+
+1556641777
+andrewrk
+scientes, there is one thing I can tell you about how it would be different - clang's sanitizers are all incompatible with each other and can't be enabled together
+
+1556642675
+tgschultz
+alright, I'll open an issue. strangely it turns out I can't clean this up the way I thought I could.
+
+1556644948
+andrewrk
+thanks tgschultz
+
+1556645021
+tgschultz
+it occurs that one could use an output filter that checked if the previous message was the same as the one being emitted, kept a count, and then just wrote something like "(repeated N times)"
+
+1556645050
+tgschultz
+condenses the output yet keeps the recusion level information
+
+1556645178
+andrewrk
+I like that idea
+
+1556645209
+andrewrk
+potentially it would detect cycles as well, but that's a lot more complicated
+
+1556647725
+donpdonp
+whats the zig way to turn a regular string into a cstring? i know there is the c"literal" but I want to start with a string, using it in the regular zig ways, and convert it to a cString at the last minute
+
+1556647760
+andrewrk
+donpdonp, how long does it have to live?
+
+1556647768
+andrewrk
+just the stack frame?
+
+1556647792
+donpdonp
+yes
+
+1556647807
+andrewrk
+is the upper bound length known at compile time?
+
+1556647814
+donpdonp
+i thought there was a @addNullBytetoString() thing at one point :)
+
+1556647819
+donpdonp
+andrewrk: yes
+
+1556647850
+donpdonp
+var url="http:/blah"; c.doit(url.c_str) essentially
+
+1556647857
+andrewrk
+you can follow this pattern:
+
+1556647894
+donpdonp
+ok, thx.
+
+1556647922
+donpdonp
+i suppose []u8.c_str is not as simple as I would like given it has to allocate an extra byte and that throws everything off.
+
+1556648319
+andrewrk
+donpdonp, that's one reason string literals are planned to include the null. they'll be more versatile
+
+1556648337
+andrewrk
+along with pointer type that annotates that there is an extra null byte at the end
+
+1556648496
+donpdonp
+nod.
+
+1556648664
+donpdonp
+hmm im still confused as to how pub fn toPosixPath(file_path: []const u8) ![posix.PATH_MAX]u8  helps. im trying (esentially) c.doit(toPosixPath("/path")) and im getting expected type '[*c]const u8', found '[256]u8'
+
+1556648720
+donpdonp
+if I still have to cast the result, wouldnt a function of return str ++ "\x0"; work as well, where the caller would take the return_value.ptr ?
+
+1556648754
+andrewrk
+donpdonp, you'll have to assign the result to a variable, then take the address of the variable
+
+1556649050
+donpdonp
+const cStr = sliceToCstr("someurl", 255); c.doit(&cStr); => expected type '[*c]const u8', found '*const [256]u8'
+
+1556649084
+donpdonp
+ignore that 255 param, the function signature is pub fn sliceToCstr(str: []const u8, max: u32) [256]u8
+
+1556649115
+donpdonp
+this is also weird, looking at array append with var str_null = str ++ "\x0"; and get error: newline not allowed in string literal
+
+1556649243
+andrewrk
+donpdonp, that's a bug, it should allow that cast
+
+1556649250
+andrewrk
+someone ran into that yesterday too
+
+1556649275
+andrewrk
+"error: newline not allowed in string literal" means you forgot the ending "
+
+1556649361
+donpdonp
+i would agree with that but the ending quote is there
+
+1556649400
+donpdonp
+tootdeck/zig/src/ipc.zig:23:31: error: newline not allowed in string literal
+
+1556649403
+donpdonp
+var str_null = str ++ "\x0";
+
+1556649405
+donpdonp
+^
+
+1556649437
+donpdonp
+ah \x wants 2 digits. \x00
+
+1556649441
+andrewrk
+ah. the error should have been "error: '"' is not a hex digit"
+
+1556649450
+donpdonp
+heh. ok.
+
+1556650475
+donpdonp
+here's an oddity. im using var newMem = try allocator.alloc(type, size); with success, but just now im using the same form "var str_null = try allocator.alloc(u8, str.len+1);" => error: expected type '[*]u8', found '@typeOf(std.mem.Allocator.alloc).ReturnType.ErrorSet'
+
+1556650606
+andrewrk
+looks like the code forgot to unwrap the error somewhere
+
+1556650720
+donpdonp
+hmm perhaps im not understanding var x = try funcErrorUnion(); versus var x = try funcErrorUnion() catch unreachable;
+
+1556650764
+andrewrk
+both of those unwrap the error, and x will have the value
+
+1556650774
+andrewrk
+oh
+
+1556650782
+andrewrk
+don't put both try and catch
+
+1556650805
+donpdonp
+whoops, type on my part
+
+1556650811
+donpdonp
+typo on my part, its not actually there
+
+1556650843
+donpdonp
+var x = func() catch unreachable; works as expected. im puzzled by the error for var x = try func(); especially since im using it in other places of the codebase
+
+1556650928
+donpdonp
+i get that x will be initialized as either an error or the result type, but the compiler error seems to be saying the value is always the Allocator ErrorSet.
+
+1556650943
+donpdonp
+error: expected type '[*]u8', found '@typeOf(std.mem.Allocator.alloc).ReturnType.ErrorSet'
+
+1556650946
+donpdonp
+var str_null = try allocator.alloc(u8, str.len+1);
+
+1556651176
+tgschultz
+does the function that is called in return an error union? try is equivelent to `var str_null allocator.allc(u8, str.len+1) catch |err| return err;`
+
+1556651221
+tgschultz
+normally using `try` in a function that doesn't return an error union gives a meaningful error, but maybe that was broken recently?
+
+1556651317
+donpdonp
+tgschultz: ah that was it. at some point I took ! off the return value.
+
+1556651354
+donpdonp
+as far as the enclosing function.
+
+1556651369
+donpdonp
+try allocator.alloc(u8, str.len+1); itself hasnt changed since its a std lib
+
+1556651378
+tgschultz
+right
+
+1556651524
+tgschultz
+andrewrk: shouldnt `[N]u8` implicitly cast to `[*c]const u8`even without storing it in a variable and taking a pointer? since [N]u8 casts to []const u8, IIRC.
+
+1556651590
+donpdonp
+tgschultz: andrewrk | donpdonp, that's a bug, it should allow that cast. someone ran into that yesterday too
+
+1556651592
+andrewrk
+*[N]u8 should. but that other cast you pointed out is planned to be removed with the new string literal type
+
+1556651598
+andrewrk
+new string literal type will be a pointer, not an array
+
+1556651799
+donpdonp
+wouldnt a ptr loose the length value? an array makes sense to me.
+
+1556651816
+tgschultz
+it's a pointer to an array
+
+1556651838
+tgschultz
+so the length is part of the pointer's type information
+
+1556658558
+mikdusan
+andrewrk: `ci/azure/macos_script` re: using gcc-8 from homebrew. is it still goal to link zig without runtime dep /usr/lib/libc++.dylib ?
+
+1556659028
+mikdusan
+libc++ could be added to "llvm+clang" and while that increases time/complexity to build llvm, i think it's worth it if it means Xcode can be used instead of gcc8
+
+1556665006
+shritesh
+How would I represent / iterate over null-terminated array of pointers?
+
+1556665335
+scientes
+they must be optional pointers
+
+1556665579
+shritesh
+I'm currently representing it as []?[*]u8 and it seems does represent the null pointers as null. I expected `for (pointers) |ptr|` to stop at the null but it doesn't.
+
+1556665615
+shritesh
+*it seems that it does
+
+1556665635
+scientes
+shritesh, "it seems does represent the null pointers as null" that is guaranteed by the language spec
+
+1556665644
+scientes
+for pointers
+
+1556665668
+scientes
+but non-optional ones have llvm's "nonnull" attribute
+
+1556665714
+shritesh
+Ah. So I'd have to do an if inside the for?
+
+1556665730
+scientes
+to check for null, yes
+
+1556665743
+shritesh
+Gotcha. Thanks
+
+1556665757
+scientes
+shritesh, also
+

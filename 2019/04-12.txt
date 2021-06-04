@@ -1,0 +1,1100 @@
+1555030833
+andrewrk
+does anyone know where the triangle vertices are specified in this code?
+
+1555030847
+andrewrk
+I should probably go read the tutorial
+
+1555030863
+andrewrk
+afk, back in an hour or two
+
+1555031779
+shritesh
+andrewrk: I got C hello world to compile to wasm32-wasi using zig CLI, linking to
+
+1555031796
+shritesh
+Rust directly vendors in wasi-sysroot  which seems to be the only (and reference) WASI implementation. We can probably do the same.
+
+1555031817
+shritesh
+I have started making Zig userland aware of WASI and will try to get things up and running.
+
+1555033307
+shritesh
+Nvm all that complexity. WASI, turns out, has a clean API that we can implement zig's stdlib on
+
+1555035179
+andrewrk
+shritesh, excellent. this is analogous to libSystem on macos or the freebsd libc
+
+1555035257
+andrewrk
+now I'm thinking about a userland implementation of a wasi interpreter
+
+1555035272
+shritesh
+That'd be even cooler.
+
+1555035277
+andrewrk
+it would be pretty straightforward with @import("std")
+
+1555035317
+andrewrk
+then `zig test -target wasm32-wasi` would work
+
+1555035350
+andrewrk
+I really don't think it would be that much code
+
+1555035387
+shritesh
+Does that mean we can have a WASI interpreter in std?
+
+1555035491
+shritesh
+If that's the case, wasi could be an easy choice for embedding in games / such in Zig
+
+1555035515
+andrewrk
+I think that would be pretty reasonable
+
+1555035551
+andrewrk
+it's planned to audit the std lib before 1.0.0 and decide what to keep and what to put in a separate package
+
+1555035564
+andrewrk
+until then, let's go for it
+
+1555035687
+shritesh
+This is exciting.
+
+1555035742
+andrewrk
+what's especially cool is that it can be implemented in userland, but we can still ship it before we have self-hosted zig
+
+1555035749
+andrewrk
+the same way we do zig fmt
+
+1555035799
+andrewrk
+plus with
+
+1555035872
+shritesh
+I want to work on this :D
+
+1555035901
+andrewrk
+:D
+
+1555036054
+shritesh
+...and I think interpreter be compiled as an OS to bare metal in freestanding mode, right?
+
+1555036061
+shritesh
+*can be
+
+1555036342
+andrewrk
+how I was imagining it would work is that it would 1. parse the wasm 2. do the instructions 3. call out to the standard library for the system stuff
+
+1555036354
+andrewrk
+for it to work in freestanding you would want to use the same code for (1) and (2) but not (3)
+
+1555036387
+andrewrk
+so I think if you wanted it in freestanding, we would just expose the parser and maybe the memory/instructions handling as some kind of API
+
+1555036401
+andrewrk
+and then a higher level api that freestanding would opt out of, that would handle the wasi "syscalls"
+
+1555036424
+shritesh
+Makes sense
+
+1555036431
+andrewrk
+same with a game engine, it would want to be in charge of (3)
+
+1555036761
+shritesh
+Let's make this happen. I'll probably be able to implement WASI compiling and a basic stdlib over the weekend.
+
+1555036777
+shritesh
+*get WASI compiling
+
+1555036859
+andrewrk
+I'm excited
+
+1555037013
+shritesh
+Same. This is not the kind of thing I usually get to work on, so that'll make it even more fun.
+
+1555044957
+gamester
+andrewrk: in the shader
+
+1555051108
+ManDeJan
+What is the best way to debug an 'index out of bounds' error? My code works in fast and small builds but crashes in safe mode
+
+1555051653
+andrewrk
+ManDeJan, how about debug mode? you should get a stack trace. or you can use a debugger
+
+1555051736
+ManDeJan
+is using -Drelease-safe not doing debug mode?
+
+1555051793
+ManDeJan
+Well not using any release modes gives a stacktrace, but its just printing a bunch of question marks
+
+1555051818
+ManDeJan
+Like this: ???:?:?: 0x7f55b0481223 in ??? (???)
+
+1555051976
+ManDeJan
+andrewrk, gdb only has this to say: 0x000000000021e3ec in std.debug.StackIterator.next (self=0x7fffffffd238)
+
+1555051976
+ManDeJan
+at /usr/lib/zig/std/debug.zig:254
+
+1555051976
+ManDeJan
+254             const return_address = @intToPtr(*const usize, self.fp + @sizeOf(usize)).*;
+
+1555052064
+ManDeJan
+A segfault
+
+1555052120
+andrewrk
+
+
+1555052215
+andrewrk
+you can look up the stack in gdb, even if it segfaults when printing the stack trace. keep going up the stack until you see where the index out of bounds occurred
+
+1555052552
+ManDeJan
+Ah thank you! :)
+
+1555053778
+ManDeJan
+This is what I'm working on btw:
+
+1555053950
+daurnimator
+struct layout isn't specified is it
+
+1555054008
+andrewrk
+not unless you use packed or extern
+
+1555061494
+greglefox
+Hello everyone. First massive congrats for 0.4, impressive changeslog.
+
+1555061537
+greglefox
+I have some nooby questions regarding the language design, I am not sure this is the right place
+
+1555061839
+greglefox
+Still will try, hope I don'y bother
+
+1555061843
+greglefox
+1) why using '{' '}' for the init of struct, and not parenthesis ? var x=MyStruct(.x=45) instead of var x=MyStruct{.x=45} ?
+
+1555061909
+greglefox
+2) why using .x instead of x to refer the field x in a struct ? var x=MyStruct(x=45)
+
+1555061977
+greglefox
+(I guess: only to clarify the scope of x within the initialization call?)
+
+1555062336
+greglefox
+3) why struct does not guarantee field order if not packed (documentation says: struct field order is determined by the compiler for optimal performance, any example) ? var myVector = Vec3(1.0, -0.3, 4.5) vs myVector = Vec3{.x=1.0, .y=-0.3, .z=4.5}
+
+1555062705
+daurnimator
+interesting.... seems like I need to use `var a = &myarraylist;`  or else I can append to it and not modify the original!
+
+1555062765
+daurnimator
+I was lucky in that some unrelated testing caught it
+
+1555063416
+gunnarahlberg
+hi! I'm trying to understand how to debug a problem.
+
+1555064118
+gunnarahlberg
+argh... I'm not able to reproduce the problem from this laptop, need to reiterate. I'll be back
+
+1555064828
+gamester
+daurnimator: How else would it work? You wouldn't be able to do "auto a = myarraylist" in C++ either, though a copy of the actual array would be made. In C# you could never have a "myarraylist" in the first place, you'd have to 'new' it and get a reference to it (&myarraylist).
+
+1555064881
+daurnimator
+gamester: well in my mind I thought I'd get a copy of the whole arraylist including items; or a pointer. turns out that wasn't the case. was an easy to mistake to make IMO. with nothing to warn me otherwise
+
+1555064934
+gamester
+it's easy to make accidental copies of things in Zig yes, but you should never expect to get deep copies since the language doesn't do that for you :)
+
+1555064965
+gamester
+arraylist is just a struct, something like {ptr, length, capacity}
+
+1555064992
+daurnimator
+gamester: yep.
+
+1555065028
+daurnimator
+gamester: problem is essentially unexpected/unwanted copies.
+
+1555065041
+gamester
+yeah, I agree with that
+
+1555065563
+gamester
+having said that, in a systems programming language not being able to make a copy of a struct without "cloning" it is very limiting, so I like the freedom but it takes some getting used to
+
+1555067328
+greglefox
+No chance...
+
+1555069647
+daurnimator
+Sent in my http header work as #2263
+
+1555070610
+tiehuis
+greglefox: regarding 1 and 2, probably because this is similar to what C does for struct initialization
+
+1555070630
+tiehuis
+and using parentheses for a struct initialiation overloads this with function call syntax
+
+1555070674
+tiehuis
+although while it may be technically viable (since forcing field definitions would probably make it unambiguous) there is the general trend of adhering to common expectation in zig where possible
+
+1555070687
+tiehuis
+would have to ask andrewrk on the specific reasoning though
+
+1555070716
+tiehuis
+oh and for 3, if you want guaranteed field order i think that's possible by doing `const Foo = extern struct { ... }`
+
+1555070754
+tiehuis
+this uses the system C abi which preserves field order
+
+1555076809
+hryx
+I'm having trouble with an inferred error set: `function foo is not fully analyzed yet` -
+
+1555076974
+hryx
+I broadly understand the error in concept, but I'm not sure why I'm only getting it there, and not in many of the other parseXxx functions
+
+1555083418
+ManDeJan
+What is the Zig alternative for making a variable a reference in C++?
+
+1555084273
+gamester
+a pointer
+
+1555086009
+ManDeJan
+Yes, but that means taking the address of a parameter explicitly at the call site, I was wondering if it was possible to do that implicitly as you do in C++ with a reference
+
+1555086573
+gamester
+ManDeJan: oh, well anything you don't intend to modify in a function should be passed in by value, zig takes care of passing it in efficiently
+
+1555086591
+shritesh
+Doc:
+
+1555086599
+ManDeJan
+gamester, I want to modify it
+
+1555086658
+ManDeJan
+But I personally don't like the look of a '&' in front of every parameter at the callsite
+
+1555086691
+shritesh
+Zig requires you to be explicit about that by specifying that the function takes in a non-const pointer if it is to be modified.
+
+1555086786
+ManDeJan
+Understandable
+
+1555087914
+ManDeJan
+How do I take a functionpointer of a generic function?
+
+1555089110
+mikdusan
+ManDeJan: all I can think of is to place it in a struct.
+
+1555090841
+ManDeJan
+mikdusan, thanks for the suggestion!
+
+1555091014
+Sahnvour
+ManDeJan great to see you implemented wyhash in zig, I was thinking of doing it
+
+1555091045
+ManDeJan
+Thank you :)
+
+1555091069
+andrewrk
+hryx, I think there's an open issue for this, but inferred error sets don't work with recursion
+
+1555091092
+andrewrk
+the workaround is to give an explicit error set for the function that has the compile error in it
+
+1555091102
+ManDeJan
+I don't know how to add proper tests but I'm pretty sure it is 100% of the time generating the same hashes as the C++ implemenation
+
+1555091480
+Sahnvour
+well for starters you could add a `test "wyhash" { ... }` block and check that the provided test vectors on the homepage give correct result
+
+1555091677
+ManDeJan
+I did that manually and that works, but I know that is not very scientific :)
+
+1555091697
+ManDeJan
+I'd like the tests to be in a separate directory and include the original wyhash header in zig and compare against that
+
+1555091737
+ManDeJan
+But I was getting errors when trying to include wyhash.h so I gave up trying that
+
+1555091855
+Sahnvour
+fair enough
+
+1555092039
+ManDeJan
+I'd also like to benchmark the speed against the C++ and Rust implementations as well
+
+1555092097
+hryx
+andrewrk: thanks, I'll employ that error set workaround tonight and continue
+
+1555092534
+Sahnvour
+ManDeJan let me know if you have progress on this, I'm interested too
+
+1555092763
+andrewrk
+ManDeJan, one thing to keep in mind with performance comparisons is that zig turns on -march=native when building for the native target. that's not on by default for C/C++, and I'm not sure whether rust does it
+
+1555093229
+ManDeJan
+andrewrk, thanks, I'll keep that in mind :)
+
+1555093316
+andrewrk
+of course if you use zig to build C/C++ code, it will use the "zig defaults" for c code, which includes -march=native for the native target
+
+1555093481
+hryx
+Interesting comment from the person who maintains the smhasher repository:
+
+1555093495
+hryx
+xxh3 "is now the recommended hash for file or db digests"
+
+1555093529
+hryx
+isn't file digests the use case which inspired the initiative for a new hashing implementation?
+
+1555093543
+andrewrk
+ManDeJan, also I'm working on moving translate-c to userland, which I think will make it more attractive for contributors. improving translate-c would make the "getting errors when trying to include wyhash.h" solved and make everything Just Work
+
+1555093615
+hryx
+(@ ManDeJan and Sahnvour re: xxh3 in my previous message -- just curious)
+
+1555093889
+ManDeJan
+andrewrk, nice!
+
+1555094057
+ManDeJan
+hryx, I have not thoroughly looked at xxh3, from what i've seen it looks impressively fast, but also more complicated than wyhash
+
+1555094135
+hryx
+I see, that's an important consideration
+
+1555094207
+ManDeJan
+I think it's impressive how fast wyhash performs taking into consideration how generic its code is compared to the hand tuned intrinsic xxh3 uses
+
+1555094363
+ManDeJan
+It would be cool to see how Zigs vector type compares to platform specific vectorization
+
+1555094384
+andrewrk
+definitely. let me know if one of the checkboxes on #903 is blocking that research
+
+1555094649
+andrewrk
+it also occurred to me that we can use a userland implementation of a hash function instead of src/blake2b.c
+
+1555094686
+andrewrk
+stage1 is going to become a hybrid of C++ and Zig
+
+1555094694
+hryx
+That's pretty neat :>
+
+1555094847
+ManDeJan
+Neat :)
+
+1555095642
+shritesh
+andrewrk, how do I access arch specific builtins like `__builtin_wasm_memory_grow`?
+
+1555095724
+andrewrk
+shritesh, hmm. is there a way to do it in clang?
+
+1555095728
+andrewrk
+if so we can look at the LLVM IR
+
+1555095748
+andrewrk
+or in rust
+
+1555095752
+shritesh
+Yes, that's a clang-specific function available to all C code.
+
+1555095772
+andrewrk
+it looks like a regular old external symbol
+
+1555095781
+shritesh
+Hmm. Lemme try that
+
+1555095800
+andrewrk
+so you could do: extern "wasi" fn __builtin_wasm_memory_size(...);
+
+1555095809
+shritesh
+it should generate `call i32 @llvm.wasm.memory.grow.i32(i32 0, i32 %{{.*}})`
+
+1555095811
+andrewrk
+(not actual elipsis, I just don't know what the fn prototype is)
+
+1555095817
+andrewrk
+ahh
+
+1555095833
+andrewrk
+that's weird, I don't see it in the language reference
+
+1555095908
+andrewrk
+is this documented somewhere?
+
+1555095918
+shritesh
+
+
+1555095953
+andrewrk
+I mean the  @llvm.wasm.memory.grow
+
+1555095990
+andrewrk
+I'm going to ask in #llvm on OFTC
+
+1555096041
+andrewrk
+I think it's probably a regular old external function
+
+1555096565
+shritesh
+
+
+1555096593
+shritesh
+If you click on build there and look at line six in main.wasm, it's converted to a current_memory instruction
+
+1555096822
+andrewrk
+shritesh, what is this studio building with? when I use clang 8 to build test.c with `-nostdlib -S -emit-llvm test.c -target wasm32-freestanding` I get "error: use of unknown builtin '__builtin_wasm_current_memory'"
+
+1555096940
+andrewrk
+shritesh, aha, I think the @llvm.wasm.* functions are simply undocumented. I see them when I grep the LLVM codebase
+
+1555097033
+andrewrk
+
+
+1555097069
+shritesh
+Is there a way to access these from userspace? (also, I have been playing with CUDA and will need these)
+
+1555097169
+andrewrk
+no, we would have to expose them as zig builtin functions
+
+1555097302
+shritesh
+Ah.
+
+1555097314
+andrewrk
+I think that's not so bad, there are only a handful right?
+
+1555097330
+shritesh
+Yeah
+
+1555097506
+shritesh
+Is there a way to do this like inline assembly?
+
+1555097925
+shritesh
+Another use case: CUDA kernels:
+
+1555098310
+andrewrk
+inline assembly would work if LLVM implemented wasm assembly syntax in the target
+
+1555098316
+andrewrk
+I'm not sure whether or not that is the case
+
+1555098413
+andrewrk
+hmmm. I think it's best to go about this the proper way, without introducing an explicit dependency of the Zig programming language on LLVM. So far there is no such dependency
+
+1555098444
+andrewrk
+e.g. I don't want to have a builtin that is defined to be a string that lowers to whatever that means to LLVM
+
+1555098511
+andrewrk
+I'm ok with having a lot of zig builtins though, to expose all this stuff. I'm open to making it easier to add zig builtins to the compiler (it's currently a chunk of boilerplate to do so)
+
+1555099188
+shritesh
+Cool. Will be something that needs to be imported?
+
+1555099308
+andrewrk
+from zig userland perspective it will look like one of these:
+
+1555099366
+shritesh
+That'd be a lot of functions. Can it be namespaced? Like @wasm.currentMemory() or something?
+
+1555099439
+strmpnk
+How is that better than @wasmCurrentMemory?
+
+1555099609
+shritesh
+namespaces are nice :)
+
+1555099870
+andrewrk
+mmm that looks better at first glance, but it introduces complexity to the language
+
+1555099932
+andrewrk
+consider if you never learned zig and you had to guess what it did, @wasmCurrentMemory() vs @wasm.currentMemory()
+
+1555099941
+andrewrk
+the former leaves less to the imagination
+
+1555099988
+strmpnk
+A prefix with a dot looks nice visually but mechanically, I think it’s misleading without the rest of struct features.
+
+1555100002
+shritesh
+agreed
+
+1555100014
+shritesh
+I'd expect much of these to be hidden behind stdlib anyway
+
+1555100021
+andrewrk
+right
+
+1555100101
+strmpnk
+I’ve never tried it but are builtins allowed to be aliased or just invoked?
+
+1555100134
+andrewrk
+the former. a "builtin function call" is the syntax
+
+1555100358
+strmpnk
+In that case, perhaps namespacing makes more sense. And the @ syntax would be property access of a prelude module.
+
+1555100434
+bheads_____
+could userland code generate zig ir for things like this?
+
+1555100490
+andrewrk
+I don't understand your question bheads_____
+
+1555100512
+bheads_____
+well I guess I dont know how the builtins work in zig IR to llvm ir
+
+1555100630
+ManDeJan
+I made some functional programming things work at compile time :D
+
+1555100685
+hg
+it's super cool that godbolt supports zig
+
+1555100711
+hg
+ManDeJan: looks awesome
+
+1555100771
+ManDeJan
+hg, thankyou, I'm also very happy with godbolt supporting zig, and godbolt in general
+
+1555100779
+hg
+indeed
+
+1555100793
+hg
+ManDeJan: have you seen the project to do something similar but on a local machine?
+
+1555100800
+hg
+I can dig it up if not
+
+1555100834
+hg
+
+
+1555100840
+hg
+^ for whomever may be interested
+
+1555100876
+hg
+particularly cool because it supports a bunch of dynamic languages as well (e.g., python and php)
+
+1555100900
+hg
+I have no idea if zig works with it; but hypothetically, you can add custom compilers
+
+1555100904
+hg
+so I suspect it could be added
+
+1555100924
+ManDeJan
+hg, Looks very fancy
+
+1555100943
+hg
+yet another reason I should probably take another look at emacs
+
+1555100958
+hg
+I just struggle to bring myself too (I've been in the vi* camp for so long now…)
+
+1555100970
+bheads_____
+huh... compiling zig just locked up debian.... and I had to reboot
+
+1555101038
+strmpnk
+bheads_____: memory limited maybe?
+
+1555101049
+bheads_____
+maybe, I do code in java all day....
+
+1555101198
+hg
+yep, it supports zig
+
+1555101198
+bheads_____
+anyways what I was very poorly trying to express was what if the was a way in user land to express IR directly, like you can asm
+
+1555101273
+bheads_____
+so things like wasm could have user land extensions
+
+1555101319
+strmpnk
+I suppose IR embedding could be done but wouldn't that increase coupling with both LLVM and a particular version of LLVM (their IR isn't super stable AFAICT)?
+
+1555101340
+hg
+strmpnk: definitely not stable
+
+1555101350
+bheads_____
+sure, but asm blocks have the same problem
+
+1555101368
+hg
+well
+
+1555101377
+strmpnk
+CPU architectures seem far more stable though and wouldn't lock down the backend.
+
+1555101380
+hg
+less so since asm for a target is less changing
+
+1555101410
+hg
+🤷
+
+1555101420
+bheads_____
+is LLVM change in minor release or just major?
+
+1555101421
+strmpnk
+I'm not necessarily against it but it seems intrinsics are a better middle ground.
+
+1555101456
+bheads_____
+I was thinking of a way to get to intrinsics without having them to exists in the compiler already
+
+1555101479
+bheads_____
+could be a good way to pipeline what is useful into the compiler
+
+1555101521
+strmpnk
+True. Some front-ends try to "detect" patterns and replace them with intrinsics.
+
+1555101530
+strmpnk
+Like memcpy.
+
+1555101574
+bheads_____
+it also seems odd to add a ton of wasm target builtins to the compiler
+
+1555101581
+bheads_____
+or cuda
+
+1555101882
+bheads_____
+and if llbm ir not stable enought then the it could be the zig ir (zig has its own ir... or did I just dream that)
+
+1555101919
+bheads_____
+llvm^
+
+1555102024
+strmpnk
+Yeah. I kind of want to try my hand at a naive dynasm backend but I honestly don't have time and could probably do something useful like building more libraries.
+
+1555102199
+andrewrk
+I'm pretty confident about not coupling the zig language to LLVM. The only thing blocking a custom backend is effort
+
+1555102287
+bheads_____
+sure, but I doubt wasm or cuda would be targets for a long time
+
+1555102370
+bheads_____
+just a thought =)
+
+1555102397
+shritesh
+Why'd you think so?
+
+1555102448
+bheads_____
+building a backend to support just x86 x86_64 sse and familly is a big project on its own
+
+1555102454
+bheads_____
+plus arm and ppc
+
+1555102512
+bheads_____
+that builtin list is going to keep growing ...
+
+1555102559
+andrewrk
+it might make more sense to introduce the concept of wasm assembly / cuda assembly, if it doesn't already. assembly is how the zig language lets you do target-specific stuff
+
+1555102593
+andrewrk
+the list of assembly instructions per target is long. the list of zig builtin functions has none so far that are target-specific
+
+1555102630
+bheads_____
+and this would be a target built in @wasmCurrentMemory()
+
+1555102659
+bheads_____
+so I guess if wasm had asm then my suggest is moot
+
+1555102693
+andrewrk
+right. maybe it should be `asm ("(current_memory)" : (-> usize)`
+
+1555102712
+shritesh
+I have a diff of +33 to add @wasmCurrentMemory() usize
+
+1555102721
+shritesh
+C++ is painful
+
+1555102780
+shritesh
+I think I should look into the asm route.
+
+1555102941
+andrewrk
+it's quite possible that LLVM has assembly support for wasm
+
+1555102963
+shritesh
+I'll see what clang -S outputs
+
+1555103182
+strmpnk
+Inline .wat expressions would be interesting for wasm. I'm not sure how easy it would be with LLVM's implementation though. You'd probably have to create function wrapper for each sequence.
+
+1555103190
+andrewrk
+<dschuff> in theory inline asm should work but it's not well-tested at all
+
+1555103202
+andrewrk
+discussion over in #llvm on OFTC
+
+1555103208
+shritesh
+I don't think LLVM knows about WAT at all
+
+1555103251
+strmpnk
+Right, it'd be a module for the wasm linking process.
+
+1555103438
+andrewrk
+shritesh, one thing we can explore, is detecting certain patterns of inline assembly and translating them to llvm intrinsics
+
+1555103460
+andrewrk
+so that would avoid adding extra builtins to zig, but would still benefit from using the LLVM intrinsics in the backend
+
+1555103513
+andrewrk
+I think that's a pretty good compromise
+
+1555103598
+andrewrk
+so in pass2 of Zig IR for inline assembly, we look for "(current_memory)" with result type `usize`, and emit a special zig ir instruction which is the wasm32_current_memory intrinsic, which turns into the LLVM intrinsic
+
+1555103617
+andrewrk
+I think that should work for grow_memory too
+
+1555103659
+andrewrk
+and all the cuda stuff
+
+1555103662
+shritesh
+That does require a list of mappings known to the compiler, right?
+
+1555103669
+andrewrk
+yes
+
+1555103675
+shritesh
+That'd work
+
+1555103706
+andrewrk
+that should be less boilerplate than adding everything as a separate zig builtin function
+
+1555103734
+shritesh
+For sure
+
+1555103803
+andrewrk
+does the pass1, pass2 of zig IR make sense? I can explain that
+
+1555103847
+andrewrk
+the ir_gen_* functions which deal with IrBuilder are "pass 1". these don't have type information available but they flatten out the AST into Zig IR.
+
+1555103896
+andrewrk
+the ir_analyze_* functions which deal with IrAnalyze are "pass 2". these have full type information, and are responsible to do comptime evaluation and populate the ConstExprValue, or emit a runtime Zig IR instruction
+
+1555103907
+shritesh
+Hmmm
+
+1555103936
+andrewrk
+finally in codegen.cpp, the ir_render_* functions look at those Zig IR instructions and emit LLVM IR instructions
+
+1555104027
+andrewrk
+you would detect the patterns in ir_analyze_* ("pass 2") and emit a new kind of instruction that in codegen.cpp turns into an llvm intrinsic. Up to you whether you make 1 new IrInstruction for this, or one corresponding to each LLVM intrinsic
+
+1555104048
+shritesh
+Gotcha. I'll look into it
+
+1555104057
+andrewrk
+I could also solve this problem for you to unblock you, but I wouldn't get to it before this weekend
+
+1555104102
+shritesh
+It's okay. I will try to figure it out.
+
+1555104215
+Sahnvour
+hryx lately many hash functions started to take advantage of new instruction sets (AES especially) on x86 to have better throughput
+
+1555104235
+Sahnvour
+but this is best taken advantage of for "large" payloads
+
+1555104246
+Sahnvour
+because these instructions work on 256 or 512 bits at a time
+
+1555104296
+hryx
+I see. In this case, this is mainly for the benefit of ticket #2244 right?
+
+1555104300
+Sahnvour
+hashing files for identification is a good use case, in particular when you control the hardware you run on, to be sure they are accessible
+
+1555104347
+Sahnvour
+I think #224 will resolve to one or two things:
+
+1555104404
+Sahnvour
+either wyhash is shown to also be very very fast for small payloads (ie. u32 or u64 as hashmap keys for example) and it can be the default hash function, regardless of the data size
+
+1555104419
+Sahnvour
+or there are better options and the hash to use would depend on the size of the data
+
+1555105481
+hryx
+hey andrewrk, quick question about this recursive parser rewrite. I find myself adding a lot of new errors like "Expected parameter list, found {}", which you can see here:
+
+1555105492
+hryx
+but I noticed that for existing stage1 and stage2 the pattern seems to be to tell the user what
+
+1555105506
+hryx
+Should I be following that pattern still? Does "expected token X" make more sense to the user than what I've added?
+
+1555105555
+andrewrk
+hryx, I think you can do what feels simpler and then as a future design iteration we can reevaluate what kind of error messages work better / integrate better with IDEs
+
+1555105559
+andrewrk
+does that sound reasonable?
+
+1555105575
+hryx
+sure does, thanks
+
+1555105599
+hryx
+the "expected node" approach is more intuitive to me right now, can reevaluate later
+
+1555105605
+andrewrk
+sounds good to me
+
+1555105614
+hryx
+gonna get a big chomp done on the branch this weekend
+
+1555105623
+andrewrk
+excellent
+

@@ -1,0 +1,272 @@
+1551402216
+andrewrk
+results at the end of the stream:
+
+1551403649
+mikdusan
+re: gpda stream; maybe note mprotect'd allocator state is dubious in a multithreaded process?
+
+1551404123
+andrewrk
+tgschultz, I think the closest thing to that zig supports (after llvm8 branch merge) is wasm
+
+1551404206
+andrewrk
+mikdusan, good point, yes the next thing on the roadmap is to decide if it's going to be thread safe or not
+
+1551407205
+MajorLag
+andrewrk, zig supporting it today wouldn't be a requirement.
+
+1551407217
+MajorLag
+that debug allocator is going to be sweet
+
+1551453941
+andrewrk
+damn, the is_packed=true test of std.io.Serializer/Deserializer is tripping an assertion in a debug build of llvm 8.0.0rc3
+
+1551455110
+andrewrk
+reported upstream. I hope they just fix it and call it a day
+
+1551455845
+tgschultz
+how does that work? Wouldn't that have been compiled out by then? By which I mean the packed/not packed versions of the function would have been separated out?
+
+1551455893
+andrewrk
+llvm does have the concept of a packed struct - it means no alignment padding
+
+1551455930
+andrewrk
+if you're curious:
+
+1551456119
+tgschultz
+Oh ok, if I read this correctly, it doesn't have to do with the test per-se, but with type bitwidth information in general.
+
+1551456268
+andrewrk
+it has to do with an optimization that LLVM is doing in release-safe mode, it had an invalid assumption
+
+1551456307
+andrewrk
+it's either zig emitting an invalid LLVM IR file, and the llvm bug is that the verifier didn't catch the problem, or it's a legitimate bug in one of llvm's optimization passes that made an incorrect assumption about integer widths
+
+1551456421
+andrewrk
+damn, it's an issue in llvm 7 too. so we just have been tripping this assertion for some time now and didn't know it because we usually use release builds of llvm
+
+1551456487
+andrewrk
+I'm going to open an issue and disable the failing tests and comment a link to the issue
+
+1551460660
+daurnimator
+andrewrk: I caught up on your stream. One thing I kept noticing was that you had workarounds due to `align` being unavailable for the usize and isize used with e.g. mprotect
+
+1551460775
+daurnimator
+andrewrk: possible ideas: 1. add a 'pointer to unknown' type that allows pointer attributes. other pointers can implicitly cast to the unknown pointer type with matching align/etc. 2. allow `align` to be used on non-pointer types
+
+1551460795
+andrewrk
+I'm not sure what you're referring to
+
+1551460807
+daurnimator
+andrewrk: e.g. the mprotect address argument.
+
+1551460809
+andrewrk
+pointer to opaque is pointer to unknown
+
+1551460869
+andrewrk
+oh that's a good point, the addr argument can be *align(page_size) @OpaqueType()
+
+1551460882
+andrewrk
+the length still has to be checked the same way though
+
+1551460891
+daurnimator
+yep. but the address doesn't :)
+
+1551460893
+andrewrk
+
+
+1551460912
+andrewrk
+no language changes needed, just an API change
+
+1551460947
+daurnimator
+okay. I didn't think you could use an opaque type there, as a user wouldn't be able to pass an arbitrary pointer?
+
+1551460997
+andrewrk
+ah right you would need a reference to the type for the first arg of @ptrCast or @intToPtr
+
+1551461022
+andrewrk
+`[*]align(page_size) u8` is probably fine
+
+1551461162
+andrewrk
+the second argument could be an aligned end pointer rather than a length
+
+1551461195
+andrewrk
+it shouldn't make a difference in optimized builds; a function that small is probably getting inlined, and then the addition/subtraction would cancel out
+
+1551461255
+andrewrk
+nope that's a bad idea. consider the last page of memory
+
+1551464026
+daurnimator
+andrewrk: `2` above would also work for length. e.g. if you could have `fn foo(bar: align(page_size) usize)` which would essentially add an assert that the last X bits are 0?
+
+1551464132
+daurnimator
+if that was more general it could also lead to interesting memory optimizations: `struct {a:align(4096) u64, b:u12}` // this struct can fit in 8 bytes!
+
+1551465375
+andrewrk
+I haven't ruled out yet an enum type that supports ranges
+
+1551465421
+andrewrk
+example:  enum(u8) { SpecialCaseA = 0, SpecialCaseB = 255, Normal = 1...254 }
+
+1551471897
+Akuli
+if there isn't an idiomatic way to do this in zig yet, maybe consider that too:
+
+1551471959
+Akuli
+i could have done: enum KlonCardPlace { STOCK, DISCARD, FOUNDATION0, ..., FOUNDATION3, TABLEAU0, ..., TABLEAU6 }; but how do i access the enum value for the n'th tableau or foundation easily then
+
+1551471961
+andrewrk
+Akuli, yep this is the use case for the thing above
+
+1551471995
+andrewrk
+the _NUM macros would be @enumToInt
+
+1551472016
+andrewrk
+KLON_FOUNDATION and KLON_TABLEAU would be @intToEnum
+
+1551472040
+Akuli
+how would i put foundation enums, tableau enums, STOCK and DISCARD all in the same enum though?
+
+1551472047
+andrewrk
+and then val == KlonCardPlace.FOUNDATION would do a range check
+
+1551472063
+Akuli
+hmm
+
+1551472070
+andrewrk
+with the syntax above
+
+1551472074
+Akuli
+i'm not sure if that's a bit too magical for ==, but anyway :D
+
+1551472076
+andrewrk
+example:  enum(u8) { SpecialCaseA = 0, SpecialCaseB = 255, Normal = 1...254 }
+
+1551472088
+andrewrk
+we have a precedent for it with switch cases on ranges
+
+1551475239
+emekankurumeh[m]
+but would we get general purpose ranges then?
+
+1551475395
+tgschultz
+andrewrk, what would be the result of @intToEnum(Normal) in your example?
+
+1551475407
+tgschultz
+sorry, @enumToInt
+
+1551475501
+andrewrk
+tgschultz, @enumToInt is a no-op at runtime. enums are backed by an integer
+
+1551475552
+andrewrk
+you would need union initialization syntax to initialize the value:  value = Enum { .Normal = 10 }
+
+1551475559
+andrewrk
+@enumToInt(value) == 10
+
+1551475627
+andrewrk
+union initialization syntax would have to get smarter for this to work with tagged unions with this kind of enum
+
+1551475656
+andrewrk
+not smarter but there would need to be syntax for the case where the tag value had to be specified and a union payload as well
+
+1551475681
+tgschultz
+that... seems weird to me. I would have guessed @enumToIn(MyEnum.Normal) would map to 1 as the lowest possible value.
+
+1551475705
+andrewrk
+the idea is that you have an integer, and you're "mapping out" what all the different ranges are
+
+1551475709
+tgschultz
+but I guess that would potentially cause comparison problems.
+
+1551475718
+andrewrk
+this would be, for example, how you model that thing where MAX_UINT is a special value
+
+1551475824
+tgschultz
+seems like this overlaps a bit with specifying the tag encoding of a union.
+
+1551475952
+andrewrk
+I think it still works
+
+1551475974
+andrewrk
+but now an entire range of values maps to a particular union payload
+
+1551475995
+andrewrk
+if I propose this I'll be sure to proof of concept some really good use cases
+
+1551476026
+andrewrk
+main idea is to remove the excuse that C programmers (including myself) have for using special values of integers
+
+1551476054
+andrewrk
+or rather, make the type system aware of it, so that the perf/memory benefits still happen, but the compiler is aware
+
+1551476142
+tgschultz
+there's a lot of use cases to cover if that's the goal. bitflags for instance, things like MAKEINTRESOURCE that encode a pointer, etc.
+
+1551483909
+andrewrk
+alright postponed some issues, back on track
+

@@ -1,0 +1,2836 @@
+1574553664
+daurnimator
+andrewrk: to take advantage of Os level batch and async operations, we need to have a work queue type structure.
+
+1574553689
+daurnimator
+I was working on it back along with the uring work.
+
+1574553952
+andrewrk
+daurnimator, sounds like a different way to do the implementation, but the API could be the same
+
+1574554006
+daurnimator
+andrewrk: yeah sort of; but the API can be more advanced; e.g. linux now lets you submit dependant operations: "read from X then write the result to Y"
+
+1574554028
+andrewrk
+that's neat
+
+1574554043
+daurnimator
+so yes we can have a simpler read() API on top of it, but it would be on top of the more advanced lower layer
+
+1574554112
+daurnimator
+linux 5.4 brings timeouts into the equation too, so you can ask the kernel: accept() from this socket in parellel with read() from these 5 file descriptors; when the accept returns read(); but timeout the read after 2 seconds
+
+1574554223
+daurnimator
+At some point that API looks like: a = q.queueAccept(); b = q.queueRead(); .submit(2); .waitAnyResult([_]T{a,b})
+
+1574554252
+daurnimator
+at least on linux, only the .submit() actually requires a syscall
+
+1574554257
+andrewrk
+that's great
+
+1574554280
+daurnimator
+on windows I can make 80% of it work, the last 20% needs threads. On other OSes we will need threads....
+
+1574555072
+daurnimator
+trying to manage the read/write buffer ownership for  .queueRead and .queueWrite operations was half of the motivation for the fifo work
+
+1574557291
+chr[m]
+test
+
+1574557296
+chr[m]
+cool matrix bridge is working
+
+1574557357
+chr[m]
+hey so i read through the zig documentation but i'm left with some questions. are there any other resources for learning about zig out there?
+
+1574557702
+andrewrk
+chr[m], afraid not - the language is still changing, so the main docs are the best bet at this point
+
+1574557722
+chr[m]
+alright, thanks
+
+1574557792
+chr[m]
+just trying to get my feet wet. the docs have a lot to say about `for` and `while` but i don't see an example of your basic for loop over a range of integers. is there any kind of range syntax or do i just build it out of variables and continue expressions?
+
+1574557944
+pixelherodev
+There is no for loop over integers in zig
+
+1574558224
+andrewrk
+chr[m], generally, when a more general syntax suffices, zig does not provide syntax sugar, unless it encourages better practices
+
+1574558257
+chr[m]
+okay, cool
+
+1574558305
+chr[m]
+might be worth having such an example in the docs, i imagine i'm not the only person to have asked this question. it's a good reference point for people coming from another language.
+
+1574558322
+andrewrk
+agreed
+
+1574558470
+daurnimator
+chr[m]: that said, we're still thinking about generators
+
+1574558496
+chr[m]
+i've found generators generally pretty useful in other languages, so i'm happy to hear that
+
+1574558918
+chr[m]
+oh, the other question i had: `fn foo(a: var) var`
+
+1574558931
+chr[m]
+i'm seeing stuff like this in the standard library docs but the language docs don't explain what this means
+
+1574559012
+chr[m]
+it seems to be some kind of type-deduced template magic
+
+1574559077
+andrewrk
+chr[m], this is a deficiency in the generated docs. sometimes you'll have to look at the source for now
+
+1574559092
+chr[m]
+hmm
+
+1574559095
+chr[m]
+but what about e.g. `pub fn tagName(v: var) []const u8`
+
+1574559102
+chr[m]
+the type of v is `var`?
+
+1574559112
+andrewrk
+that is
+
+1574559129
+chr[m]
+ahhh i must have missed that section somehow
+
+1574559148
+chr[m]
+nifty
+
+1574559190
+daurnimator
+chr[m]: note that return types can't be `var`.
+
+1574559219
+chr[m]
+okay, that makes sense
+
+1574559231
+chr[m]
+i see what andrewrk is saying about the generated docs
+
+1574559234
+andrewrk
+there's a proposal for that but not accepted
+
+1574559301
+daurnimator
+silly idea: does the new `var` in structs allow for this: pub fn foo() @typeOf(struct { x: var }.x) { .... }
+
+1574559363
+andrewrk
+intended behavior is a compile error
+
+1574559458
+chr[m]
+fmt docs don't list a formatting option for non-scientific-notation floats and `f` doesn't seem to work. accurate?
+
+1574559513
+daurnimator
+chr[m]: try d
+
+1574559537
+chr[m]
+ahh
+
+1574559542
+chr[m]
+i interpreted that as referring to integers only
+
+1574559542
+daurnimator
+(FYI to find that out I opened up std/fmt.zig and search for "float")
+
+1574559544
+chr[m]
+cool
+
+1574563810
+protty
+daurnimator: the waitAnyResult() sounds similar to the `select()` operation for channels. Could maybe treat any asynchronous function as a oneshot channel? Would make timeouts pretty easy (e.g. `select(async op(), async sleep(timeout))`). Using this, how would you go about cancellation logic?
+
+1574563858
+daurnimator
+protty: are you talking in Go?
+
+1574563874
+protty
+mostly in reference to rust futures
+
+1574563878
+daurnimator
+protty: with that, how would you submit dependant operations?
+
+1574563925
+protty
+theres another primitive for that `join()` which waits for all given operations to complete instead of just the first one like `select()`
+
+1574563997
+daurnimator
+huh?
+
+1574564017
+daurnimator
+protty: e.g. if I want to submit to the kernel: "read from fd 1;
+
+1574564089
+protty
+ah, that could be just a normal function which awaits the result. Could maybe do some chaining like `then()` as seen in rust futures or js promises
+
+1574564123
+daurnimator
+protty: no; this happens
+
+1574564139
+daurnimator
+you need a way to describe to the kernel what you want to be dependant on what: and then let the kernel do it
+
+1574564213
+protty
+yes, the building of these operations can be done with the combinators like `then()` and finally submitted to the kernel: similar to what rust iterators do
+
+1574564264
+daurnimator
+then how would you e.g. cancel an operation?
+
+1574564281
+andrewrk
+hi protty
+
+1574564300
+protty
+hey andrewrk
+
+1574564380
+daurnimator
+`const a = q.queueRead(.{fd = 2, buffer = mybuffer}); const b = q.queueWrite(.{fd = 3, buffer = mybuffer, after = a}); q.submit(2); q.waitForAny(b);`
+
+1574564397
+protty
+cancellation is the part that im scratching my head at. In rust, its done by dropping (deleting) the computation which does whatever cancel signaling that needs to be done. Zig doesnt have destructors so the same semantics cant apply. The first idea that comes to mind would have to be done manually which isnt too ergonomic
+
+1574564419
+andrewrk
+protty, did you see the `cancel` keyword that we almost got?
+
+1574564420
+daurnimator
+for cancellation in the above scheme I was thinking: `q.cancel(a);`
+
+1574564477
+protty
+daurnimator: yea, looks like we have the same idea on that part
+
+1574564557
+protty
+andrewrk: I remember it being a thing for a split moment but dont remember the functionality. Is it still the same as whats in the 0.4 langref?
+
+1574564592
+andrewrk
+there's no cancel right now, it all would have to be done manually
+
+1574564602
+andrewrk
+looks like I talked about writing up an issue here:
+
+1574564630
+andrewrk
+the problem I wasn't able to solve was implementing cancel for non-async functions
+
+1574564644
+andrewrk
+
+
+1574564710
+andrewrk
+I haven't fully given up on it. I think cancel support in the language would work really well with async function semantics
+
+1574564751
+andrewrk
+so, if an async function did not explicitly add support for checking the cancel bit, cancel would be identical to await, except it would also run the possible cleanup handling function
+
+1574564770
+andrewrk
+e.g. cancel would be a suspend point, just like await
+
+1574564805
+andrewrk
+but then an async function would be able to atomically read the cancel flag bit to see if a cancel request had happened. so if an async function, for example, had some long running loop, it could look for that flag in the loop
+
+1574564812
+daurnimator
+"how to clean up return value" annotations would be a good improvement in general I thinkj
+
+1574564816
+protty
+daurnimator: for manual cancel, one idea could be that `waitForAny/select` take a group of types which implement `.cancel()` and `.get()` then provide a type which wraps any async function to provide those functions
+
+1574564850
+daurnimator
+protty: I don't understand
+
+1574564891
+daurnimator
+protty: just because I'm waiting for one doesn't mean I want to cancel the operations on the others...
+
+1574564918
+protty
+for that case, wouldnt a join() be more appropriate than a select()?
+
+1574564924
+daurnimator
+e.g. I might have 3 things I need to do, and I'm waiting for external data so I can progress on
+
+1574565013
+protty
+if the 3 things can be done in parallel after the external data is resolved, could be modeled with something like `then(external_data, join(3_things))`
+
+1574565043
+daurnimator
+protty: I meant 3 different pieces of external data
+
+1574565151
+protty
+and you want to wait for all of them to complete? or one to complete without cancelling the others?
+
+1574565172
+daurnimator
+one to complete without cancelling the others
+
+1574565214
+daurnimator
+^ that's what I intended .waitForAny to do
+
+1574565301
+daurnimator
+if I wanted to cancel then I'd do something like: `const x = q.waitForAny([_]T{a, b, c}); if (x != a) q.queueCancel(a); if (x != b) q.queueCancel(b); if (x != c) q.queueCancel(c); q.submit(3);`
+
+1574565319
+daurnimator
+uh, .submit(2) at the end there
+
+1574565340
+protty
+believe thats the default behavior of select() then. cancellation when one is resolved is optional but was incorrectly assuming that was the scenario you were talking about
+
+1574565397
+protty
+*cancellation of the others when one is resolved
+
+1574565491
+daurnimator
+btw I was thinking: `fn cancel(q: *@This(), op: Operation) !void { const x = try q.queueCancel(op); try q.submit(1); _ = q.waitForAny([_]Operation{x}); }`
+
+1574565518
+daurnimator
+and similar for e.g. q.read() and q.write() operations that all just wrap their .queue variants
+
+1574567504
+daurnimator
+zig-cache/o/9N2qH3ELa1NeBb2iSyGvyHsl72OCQ93CWdL5Hh5Y9-XN_aK36LHfr2quv5zf2dtm/cimport.zig:39:5: error: declaration shadows primitive type 'u8'
+
+1574567605
+pixelherodev
+Think I got the OS layer working!
+
+1574567657
+pixelherodev
+On a different note, it's nice that I no longer need `catch unreachable` after std.io.getStdOut()
+
+1574567734
+pixelherodev
+... ugh, it's rebuilding musl again (probably because of the Zig upgrade).
+
+1574567811
+pixelherodev
+Okay, so it needs a bit more work. Seems to be halting at some point - not panicking - not 100% sure what's going on...
+
+1574567924
+pixelherodev
+Huh. This is distinctly odd. It's freezing in the ACPICA layer now for some reason, which is
+
+1574567990
+Cucumbas
+when exporting functions that are in a struct, the generated C header makes no mention of the struct. I mean, I wouldn't want it to generate a namespace in the C file cause I don't think that's compatible with C89 but maybe there could be a way to include the parent struct name? like as a prefix to every funciton in the generated C header?
+
+1574567992
+pixelherodev
+I suspected that it was panicking and I broke stack traces, but I double checked and panicking works fine...
+
+1574568000
+andrewrk
+pixelherodev, you upgraded zig yeah? perhaps a regression
+
+1574568008
+pixelherodev
+Maybe, but this is in a layer written in C.
+
+1574568013
+pixelherodev
+So... yeah...
+
+1574568013
+andrewrk
+ah
+
+1574568024
+pixelherodev
+Unless it's in the Zig layer
+
+1574568032
+pixelherodev
+ACPICA requires a bunch of functions to be implemented by the OS itself
+
+1574568036
+pixelherodev
+e.g. memory allocation
+
+1574568043
+andrewrk
+Cucumbas, generating .h files is at proof-of-concept stage. probably your best bet for now is to write your own .h files
+
+1574568045
+pixelherodev
+So it might be one of those functions is encountering a regression
+
+1574568117
+pixelherodev
+Might not be a coincidence that the last line printed over serial is "Allocated 0x0050 @ 0x0000844b for ACPICA"
+
+1574568174
+pixelherodev
+Except that function literally returns immediately after printing... whelp. I'll let you know if/when I fix this
+
+1574568397
+daurnimator
+andrewrk: got any idea for a workaround for cImport generating types with names of reserved/builtin types?
+
+1574568473
+pixelherodev
+Can you change the header?
+
+1574568474
+andrewrk
+daurnimator, that's a good question
+
+1574568479
+daurnimator
+pixelherodev: no
+
+1574568490
+pixelherodev
+Write a C shim?
+
+1574568494
+daurnimator
+pixelherodev: nope
+
+1574568512
+pixelherodev
+Why not?
+
+1574568523
+pixelherodev
+Too complex?
+
+1574568527
+daurnimator
+pixelherodev: its the linux kernel headers picked up from /usr/lib/modules
+
+1574568533
+daurnimator
+they change on each kernel upgrade
+
+1574568539
+daurnimator
+so not as if I can bundle them
+
+1574568555
+pixelherodev
+Ah
+
+1574568556
+daurnimator
+this essentially blocks writing a linux kernel module in zig
+
+1574568559
+pixelherodev
+Yeah, that's problematic
+
+1574568590
+andrewrk
+daurnimator, are they macros? global variables? function names? fields?
+
+1574568621
+daurnimator
+andrewrk: the kernel headers do e.g. `typedef char u8`
+
+1574568622
+Cucumbas
+andrewrk: Ok cool. You know what, I need to read the release notes, thanks.
+
+1574568636
+pixelherodev
+daurnimator, are all of the types compatible?
+
+1574568652
+pixelherodev
+Maybe just redefine them, giving them a different name
+
+1574568659
+pixelherodev
+If it's just types, @cDefine them to change them in the header
+
+1574568674
+pixelherodev
+The produced definitions should be ABI compatible
+
+1574568688
+daurnimator
+pixelherodev: I think so:
+
+1574568725
+andrewrk
+daurnimator, I think this case could be solved by improving translate-c to detect that these are redundant definitions
+
+1574568738
+andrewrk
+there is still the general problem to solve, but this would at least unblock this use case
+
+1574568775
+daurnimator
+andrewrk: can we get around them with @field? => in translate_c.cpp we could detect if the token we're about to emit is reserved and surround it with @field?
+
+1574568777
+andrewrk
+oh, they're not redundant though. c_ushort != u16, for example
+
+1574568808
+andrewrk
+the problem isn't referring to it though; the error is about shadowing it. so @field would not work around it
+
+1574568831
+daurnimator
+andrewrk: what do you mean they're !=?
+
+1574568844
+daurnimator
+andrewrk: the headers do all the #ifdef-ery to make sure they're correct.
+
+1574568861
+andrewrk
+literally in zig: `comptime assert(c_ushort != u16);`
+
+1574568861
+daurnimator
+andrewrk: ah right
+
+1574568875
+daurnimator
+andrewrk: huh. why is that?
+
+1574568882
+pixelherodev
+Because it's not always true?
+
+1574568894
+andrewrk
+because the C integer types have different bit widths based on targets
+
+1574568895
+pixelherodev
+The types themselves are distinct, even if they're usually (always) semantically identical
+
+1574568898
+daurnimator
+pixelherodev: isn't andrew saying that its never true?
+
+1574568910
+pixelherodev
+Right, the types are never equal
+
+1574568918
+andrewrk
+it matters for the C ABI
+
+1574568951
+daurnimator
+andrewrk: I thought c_ushort would just be an alias for the relevant u16/u32/etc.
+
+1574568989
+andrewrk
+that's something that is worth considering. these definitions could move to std lib if that strategy is workable
+
+1574569025
+daurnimator
+oh interesting, under std.c or something?
+
+1574569028
+andrewrk
+yeah
+
+1574569045
+daurnimator
+though at the moment std.c is for libc :P
+
+1574569048
+daurnimator
+I guess std.target
+
+1574569063
+andrewrk
+std.c could be both. c has a global namespace
+
+1574569099
+daurnimator
+I think separating "C the language" vs "C ABI" vs "libc" is important
+
+1574569190
+andrewrk
+well we'd need the types in there anyway
+
+1574569197
+andrewrk
+most libc functions return c_int
+
+1574569213
+andrewrk
+which would be renamed to std.c.int
+
+1574569236
+pixelherodev
+....annnnnd stack tracing is panicking now too :(
+
+1574569273
+daurnimator
+so fun workaround for now: @cDefine("u8", "zig_antishadow_u8");
+
+1574569340
+andrewrk
+pixelherodev, here's something to try: zig version ae0a219d1f5495acc4d82421fa24d84186c2a40d
+
+1574569352
+andrewrk
+that is after @as, but before anon container literals
+
+1574569400
+pixelherodev
+acls?
+
+1574569408
+andrewrk
+?
+
+1574569409
+daurnimator
+andrewrk: oh that reminds me. `zig BUILD_INFO` undocumented... and seems to have a hard-coded path to my build location (which is a no-no from a packaging standpoint)
+
+1574569426
+pixelherodev
+What are anon container literals?
+
+1574569443
+daurnimator
+pixelherodev: .{ .foo = bar, }
+
+1574569455
+andrewrk
+pixelherodev,
+
+1574569466
+pixelherodev
+thanks
+
+1574569495
+andrewrk
+daurnimator, if you're making a package, you can remove that feature. it's only used to pass information to the self-hosted compiler
+
+1574569514
+andrewrk
+sorry; it's only used to pass information to build.zig, for configuring the build of the self-hosted compiler
+
+1574569515
+pixelherodev
+andrewrk... will do, but I don't think that's related
+
+1574569525
+pixelherodev
+Stack tracing's been very very fragile this whole time
+
+1574569525
+daurnimator
+andrewrk: remove it how?
+
+1574569530
+pixelherodev
+Probably a stdlib upgrade issue
+
+1574569540
+andrewrk
+pixelherodev, ahh I see.
+
+1574569557
+andrewrk
+daurnimator, it's unused, if you don't build self-hosted
+
+1574569576
+daurnimator
+andrewrk: but still: remove it how? is there some cmake option ?
+
+1574569582
+pixelherodev
+Yeah, it's really annoyingly fragile, and the fact that I in all honesty
+
+1574569591
+andrewrk
+basically it's used to pass information from cmake to build.zig
+
+1574569608
+andrewrk
+daurnimator,  I meant patch it out, if it's causing a problem
+
+1574569636
+pixelherodev
+On a brighter note, got it panicking instead of hanging now :P Forced function call tracing, and apparently there's an unreachable block in there :(
+
+1574569653
+daurnimator
+andrewrk: at least in the arch linux world, patching out is only considered when the upstream is considered hostile
+
+1574569678
+andrewrk
+the long term plan is that we ship self-hosted. which has no need for this BUILD_INFO thing
+
+1574569679
+daurnimator
+but we don't need to worry about that until next release
+
+1574569715
+andrewrk
+we could also have cmake write a file with this info instead of making it a command in stage1
+
+1574569840
+emekankurumeh[m]
+i just found a site that has a massive database of windows defines
+
+1574569847
+emekankurumeh[m]
+
+
+1574570452
+pixelherodev
+Okay, so step 1: debug panic; step 2: debug kernel; step 3: ???
+
+1574570463
+fengb
+Profit
+
+1574570465
+pixelherodev
+But as a whole, upstream stdlib works now
+
+1574570475
+pixelherodev
+The stdlib isn't the problem right now :P
+
+1574570663
+chr[m]
+hmm. so i've come across a GitHub issue proposing a feature that i want to advocate for, but the issue is closed. i don't see a way to comment on the closed issue, but i don't want to open a new issue just to present my case, since i'd be more or less proposing the same thing as the original issue. what should i do?
+
+1574576179
+pixelherodev
+Huh, now it's working
+
+1574576188
+pixelherodev
+If i do hbreak *without first trying a normal breakpoint*, it works
+
+1574576192
+pixelherodev
+Thanks a ton!
+
+1574576203
+pixelherodev
+Yeah, addresses are all correct now, huge thanks!
+
+1574576209
+nomadgamma
+:D
+
+1574576302
+pixelherodev
+Gah - the offset changes whenever I make a slight tweak, so I need to recalculate the offset
+
+1574576361
+daurnimator
+yay, hello #2231 my old friend
+
+1574576385
+pixelherodev
+I've come to talk with you again?
+
+1574576408
+pixelherodev
+Ah - I highly support that proposal
+
+1574576419
+pixelherodev
+Would come in extremely handy for an existing plugin system I've designed in C
+
+1574576765
+pixelherodev
+Great. Now even hbreak isn't working again :(
+
+1574576837
+andrewrk
+daurnimator, if you change that to "ability to set shared object filename" then I'll accept it immediately. problem is that there are many cases where there are more than 1 build artifact, so there is not a single output file name
+
+1574576885
+daurnimator
+andrewrk: done
+
+1574576936
+daurnimator
+andrewrk: though I'm not sure how that rename solves the issue: how do you know if you should create the symlinks lib{}.so.x.y and lib{}.so?
+
+1574577028
+nomadgamma
+pixelherodev, lol fuck
+
+1574577041
+pixelherodev
+nomadgamma, figured it out, but it's weird
+
+1574577048
+pixelherodev
+...okay, so for `hbreak` to work, Need to do `file bin/os indomitable`
+
+1574577051
+pixelherodev
+Then hbreaks work
+
+1574577063
+nomadgamma
+ahhh, ok that makes sense
+
+1574577074
+pixelherodev
+Fuck. Uh... this is
+
+1574577080
+pixelherodev
+I was right.
+
+1574577087
+pixelherodev
+There's no panic-within-panic,
+
+1574577089
+andrewrk
+daurnimator, it sounds like this proposal wants to have an option that overrides that behavior. so you choose the dynamic library filename to output, and zig does nothing fancy like prepending lib or making softlinks
+
+1574577124
+pixelherodev
+andrewrk,
+
+1574577153
+pixelherodev
+even when it's at the point where it's printing PTRUE,
+
+1574577159
+nomadgamma
+wtf
+
+1574577175
+pixelherodev
+andrewrk, you said the IR looks right?
+
+1574577188
+nomadgamma
+I checked IR too and it looks correct, can you jump into `layout asm` and see what's going on
+
+1574577191
+andrewrk
+yeah I double checked it
+
+1574577199
+andrewrk
+the asm should shed some light
+
+1574577228
+pixelherodev
+Let me rerun this, one sec
+
+1574577251
+pixelherodev
+... wow. GDB just crashed with a memory corruption error
+
+1574577297
+nomadgamma
+beating dark-souls will be easy after this
+
+1574577309
+pixelherodev
+lol
+
+1574577310
+andrewrk
+pixelherodev, just as a sanity check, this code does the correct thing, fyi:
+
+1574577334
+andrewrk
+what arch is this again?
+
+1574577363
+pixelherodev
+i386
+
+1574577371
+nomadgamma
+in bochs?
+
+1574577374
+pixelherodev
+QEMU
+
+1574577376
+nomadgamma
+ah
+
+1574577389
+pixelherodev
+I suppose I
+
+1574577399
+daurnimator
+andrewrk: okay.
+
+1574577404
+nomadgamma
+it's just what i'm used to
+
+1574577407
+pixelherodev
+This is using KVM, so short of a hardware fault (which given Intel lately... isn't entirely out of the question), it's probably fine
+
+1574577411
+nomadgamma
+qemu works the same
+
+1574577472
+nomadgamma
+inb4 it's some stupid really obvious dumb reason,
+
+1574577494
+nomadgamma
+like $TERM was set wrong
+
+1574577529
+pixelherodev
+Okay, asm time: "mov 0x6010,%dl ; test %dl, %dl"
+
+1574577537
+pixelherodev
+Then it `jne`s to the true
+
+1574577552
+andrewrk
+
+
+1574577554
+nomadgamma
+0x6010 seems really low, is it the same as what's pushed onto stack for print?
+
+1574577592
+pixelherodev
+Th - wait, that's an *address*... that's... WTF?
+
+1574577621
+nomadgamma
+wait... it's a constant
+
+1574577621
+nomadgamma
+...
+
+1574577622
+pixelherodev
+Yeah, that - that seems to be the address it's given
+
+1574577631
+nomadgamma
+it's moving a constant into %dl
+
+1574577638
+pixelherodev
+Wait... wat
+
+1574577644
+pixelherodev
+No it's not
+
+1574577648
+pixelherodev
+That's an address
+
+1574577652
+pixelherodev
+Wrong assembler syntax ;)
+
+1574577655
+nomadgamma
+ah
+
+1574577658
+pixelherodev
+If it was a constant it would have a $ prefix
+
+1574577666
+pixelherodev
+Still, it's being given an absurd address
+
+1574577677
+pixelherodev
+Yeah, GDB confirms
+
+1574577682
+pixelherodev
+`print &panicked` shows that address
+
+1574577702
+pixelherodev
+... whelp, bug found; no clue how to fix thi... wai
+
+1574577704
+pixelherodev
+wait wait wait
+
+1574577714
+nomadgamma
+so your code is loaded at low address, so 0x6... is not unreasonable
+
+1574577717
+pixelherodev
+
+
+1574577721
+nomadgamma
+ah
+
+1574577739
+andrewrk
+you would still expect the value to be a consistent value
+
+1574577750
+pixelherodev
+Not with that address I wouldn't.
+
+1574577758
+pixelherodev
+That's probably not even RAM.
+
+1574577768
+pixelherodev
+Might be MMIO, or belong to BIOS, etc
+
+1574577775
+pixelherodev
+This is one of the most embarrassing hours I've had recently :P
+
+1574577777
+andrewrk
+oh, so it could have different values on different reads
+
+1574577792
+pixelherodev
+The worst part?
+
+1574577795
+pixelherodev
+
+
+1574577808
+pixelherodev
+This fixes it jumping to the wrong branch, but the panic function is still borked :P
+
+1574577820
+pixelherodev
+Wait never mind, my linker script
+
+1574577827
+pixelherodev
+That's  - I'm even more confused now
+
+1574577860
+andrewrk
+what does gdb say the byte of memory is?
+
+1574577866
+pixelherodev
+0
+
+1574577870
+pixelherodev
+Wait...
+
+1574577872
+pixelherodev
+That's...
+
+1574577875
+pixelherodev
+...
+
+1574577876
+nomadgamma
+ok so @panicked is at 0x6010, and %dl is the value
+
+1574577886
+pixelherodev
+Yeah, this is insane.
+
+1574577887
+nomadgamma
+then it tests %dl
+
+1574577892
+nomadgamma
+and jumps
+
+1574577900
+pixelherodev
+Let me do this one last time
+
+1574577946
+pixelherodev
+... if I can just figure out how to step by one asm instruction...
+
+1574577949
+andrewrk
+stepi
+
+1574577961
+andrewrk
+disasm
+
+1574577974
+pixelherodev
+I have the asm shown, forgot stepi, thanks
+
+1574578098
+pixelherodev
+Well what do you know. It contains 0xAA
+
+1574578121
+pixelherodev
+Still no clue why it has that address, but everything else makes sense
+
+1574578163
+nomadgamma
+do you have an asm dump of the +-15 lines around that point?
+
+1574578167
+pixelherodev
+Yeah
+
+1574578175
+pixelherodev
+But again, it doesn't help
+
+1574578181
+pixelherodev
+The only mistake is the adderss
+
+1574578189
+pixelherodev
+Just to confirm, globals by default go into .data?
+
+1574578212
+pixelherodev
+Wait nope, it's in .bss
+
+1574578214
+pixelherodev
+Good old readelf
+
+1574578220
+pixelherodev
+s/readelf/objdump
+
+1574578238
+nomadgamma
+so .bss should be constant and loaded at a specific address
+
+1574578261
+pixelherodev
+Yeah, and apparently moving .bss before the debug info resulted in it getting a reasonable address...
+
+1574578285
+pixelherodev
+Except now it's still failing, even with a reasonable address!
+
+1574578300
+pixelherodev
+0x00123010
+
+1574578303
+pixelherodev
+Whelp
+
+1574578304
+nomadgamma
+yea but the global variable shouldn't be in .bss because it's constant
+
+1574578310
+pixelherodev
+No it's not
+
+1574578313
+pixelherodev
+It can be set false
+
+1574578318
+nomadgamma
+I mean .bss is constant
+
+1574578331
+pixelherodev
+Is it? I thought it was... one sec
+
+1574578334
+nomadgamma
+oh nvm i am wrong
+
+1574578361
+pixelherodev
+That's
+
+1574578364
+pixelherodev
+It shouldn't be in bss though
+
+1574578366
+pixelherodev
+" statically-allocated variables that are not explicitly initialized to any value"
+
+1574578366
+nomadgamma
+yea so panicked is global modifiable variable in .bss
+
+1574578369
+pixelherodev
+It should be in .data
+
+1574578374
+pixelherodev
+Because it's initialized
+
+1574578377
+nomadgamma
+hmm
+
+1574578398
+pixelherodev
+If I manually set it to linksection(".data")...
+
+1574578405
+pixelherodev
+Then it works!
+
+1574578418
+pixelherodev
+So, real problem found, this
+
+1574578436
+pixelherodev
+I think something changed causing it to incorrectly view the variable as uninitialized and thus place it in the wrong section
+
+1574578445
+nomadgamma
+but does it work now?
+
+1574578453
+pixelherodev
+With that workaround? Yes, sort of.
+
+1574578454
+pixelherodev
+
+
+1574578459
+pixelherodev
+Everything else doesn't.
+
+1574578461
+pixelherodev
+:P
+
+1574578476
+andrewrk
+@panicked = internal unnamed_addr global i1 false, align 1
+
+1574578479
+andrewrk
+it's initialized
+
+1574578486
+pixelherodev
+So an LLVM error then?
+
+1574578506
+andrewrk
+what version did you upgrade from? I don't think you switched any llvm versions
+
+1574578525
+pixelherodev
+I might have
+
+1574578537
+pixelherodev
+Currently on 9
+
+1574578547
+andrewrk
+we've been on 9 since 0.5.0
+
+1574578558
+pixelherodev
+That's... hmm... maybe a minor release breakage then?
+
+1574578565
+pixelherodev
+I rebuilt LLVM recently to add more targets I think
+
+1574578568
+andrewrk
+you upgraded from pre-0.5.0 zig?
+
+1574578571
+pixelherodev
+No
+
+1574578590
+andrewrk
+there hasn't even been a bug fix release to 9 yet
+
+1574578603
+pixelherodev
+... what the bleep
+
+1574578701
+andrewrk
+pixelherodev, what incorrect section is it ending up in?
+
+1574578705
+pixelherodev
+bss
+
+1574578709
+nomadgamma
+also pixelherodev you are amazing, the speed that and huuuge leaps in judgement that you made which somehow intuitively got you to the next step are astonishing,
+
+1574578709
+andrewrk
+that's correct
+
+1574578722
+pixelherodev
+But it... wait what?
+
+1574578724
+andrewrk
+bss is for stuff that is initialized to 0
+
+1574578734
+andrewrk
+it's an optimization because it doesn't actually take up any space in the elf file
+
+1574578747
+andrewrk
+the elf file is just like, "alright and from here to here is all zeroes"
+
+1574578754
+pixelherodev
+Ah okay then
+
+1574578755
+pixelherodev
+Hmm
+
+1574578765
+andrewrk
+so you are supposed to memset all the bss to zero at init
+
+1574578769
+pixelherodev
+So maybe it's QEMU not initializing BSS?
+
+1574578783
+andrewrk
+
+
+1574578786
+pixelherodev
+But that makes no sense either... unless... wait, when does Zig mark BSS data as 0xAA (uninitialized)?
+
+1574578786
+nomadgamma
+you're loading an ELF though, QEMU does shit..
+
+1574578792
+andrewrk
+it's the kernel's job to clear bss
+
+1574578796
+nomadgamma
+^
+
+1574578804
+pixelherodev
+Not the bootloader's?
+
+1574578817
+pixelherodev
+I'm like 99% certain GRUB does it
+
+1574578822
+nomadgamma
+hmm
+
+1574578825
+andrewrk
+that's negotiable, but I don't think QEMU is going to change its mind right now
+
+1574578858
+pixelherodev
+It's literally impossible for me to have the kernel do it
+
+1574578862
+pixelherodev
+It doesn't know what bss is
+
+1574578863
+nomadgamma
+so kernel clears its own .bss because it doesn't know the state of ram and can't trust anything
+
+1574578865
+pixelherodev
+It's not loaded as an elf
+
+1574578871
+pixelherodev
+Except that it does
+
+1574578875
+pixelherodev
+Hold on, let me double check the spec
+
+1574578877
+nomadgamma
+you know start of .bss and end?
+
+1574578885
+andrewrk
+pixelherodev, I think you can do it like the link to clashos above
+
+1574578890
+pixelherodev
+Called it
+
+1574578890
+andrewrk
+see also the linker script
+
+1574578897
+pixelherodev
+Bootloader is
+
+1574578919
+pixelherodev
+... if you specify the address
+
+1574578922
+pixelherodev
+That would do it.
+
+1574578957
+nomadgamma
+so don't trust anything to initialize to 0?
+
+1574578976
+pixelherodev
+No wait never mind
+
+1574578985
+pixelherodev
+That's only if you want to override the section specified in ELF
+
+1574579012
+pixelherodev
+Which means according to the spec, if QEMU isn't initializing it QEMU's in the wrong, but I don't think that's the case
+
+1574579021
+pixelherodev
+"When does Zig mark data as 0xAA (uninitialized)?"
+
+1574579047
+pixelherodev
+I'm willing to bet if I switch to release mode it'll be correct ;P
+
+1574579069
+andrewrk
+but the `panicked` global variable is not ever undefined
+
+1574579081
+andrewrk
+it's false and then true. undefined or 0xaa doesn't enter into it
+
+1574579098
+pixelherodev
+There's no other reason it would be 0xAA
+
+1574579109
+andrewrk
+I thought you said the memory was 0
+
+1574579111
+pixelherodev
+It's too big of a coincidence that it would
+
+1574579120
+pixelherodev
+No, if I leave it in BSS it contains 0xAA
+
+1574579127
+pixelherodev
+That's why it was jumping, because it
+
+1574579134
+pixelherodev
+... wait...
+
+1574579140
+pixelherodev
+Why is that showing up as
+
+1574579153
+andrewrk
+it's undefined behavior if you branch on a boolean that is not 0 or 1
+
+1574579153
+nomadgamma
+^
+
+1574579174
+pixelherodev
+Right, but GDB reported it as false also
+
+1574579185
+pixelherodev
+Since it's mainly targeting C, I'd assume nonzero = true
+
+1574579191
+andrewrk
+why do you think it contains 0xaa?
+
+1574579191
+nomadgamma
+if you do `p (char)x`?
+
+1574579214
+pixelherodev
+Because GDB says so
+
+1574579221
+pixelherodev
+nomadgamma, I cast it to bool :P
+
+1574579245
+andrewrk
+I thought you said gdb says it says 0
+
+1574579248
+pixelherodev
+... and apparently in release modes a different variable is being optimized out so I can't test it :(
+
+1574579252
+pixelherodev
+andrewrk, if cast to bool it says false
+
+1574579265
+pixelherodev
+But after it loaded the value into %dl, %dl contained 0xAA
+
+1574579267
+nomadgamma
+iirc all the test instructions should be not-equal-to-zero, so zero is false and anything else is true
+
+1574579278
+andrewrk
+ok, if the memory is 0xaa, that likely means somehow that memory got set to undefined
+
+1574579281
+pixelherodev
+It `jne` to the true branch though
+
+1574579288
+pixelherodev
+and `jne` == `jnz`
+
+1574579316
+pixelherodev
+Right, so my question is, when does Zig mark stuff as 0xAA?
+
+1574579337
+pixelherodev
+Is it in the executable, or is it at startup? Wait, no, dumb question, has to be in the binary; otherwise it wouldn't happen
+
+1574579356
+nomadgamma
+and qemu doesn't initialise to 0xAA
+
+1574579363
+andrewrk
+pixelherodev, zig marks stuff as 0xaa when you set something to undefined
+
+1574579380
+pixelherodev
+But that's... okay I honestly have no clue when that's happening then.
+
+1574579386
+andrewrk
+`x = undefined;` or `@memset(foo, undefined, n);`
+
+1574579402
+pixelherodev
+Okay, then it shouldn't be 0xAA
+
+1574579405
+andrewrk
+is your stack memory running into your bss memory?
+
+1574579416
+andrewrk
+some kind of memory overlap situation?
+
+1574579434
+andrewrk
+@stack = internal unnamed_addr global [16384 x i8] undef, section ".bss", align 16
+
+1574579438
+pixelherodev
+I highly doubt it... especially given that this is a direct call from kmain to panic
+
+1574579440
+andrewrk
+does your stack subtract downards?
+
+1574579462
+pixelherodev
+I mean, that's how stacks work, so yeah?
+
+1574579463
+andrewrk
+panicked is right above it, it looks like a stack overflow might mangle the `panicked` global
+
+1574579492
+pixelherodev
+Sure, but... again, that shouldn't be possible
+
+1574579495
+andrewrk
+if you put `panicked` in data rather than bss and it fixes it, that might be you avoiding clobbering panicked with stack overflow
+
+1574579520
+andrewrk
+why shouldn't it be possible? zig hasn't solved stack overflow yet
+
+1574579530
+pixelherodev
+Because that's 16KB of stack.
+
+1574579532
+andrewrk
+you've only allocated 16K stack memory
+
+1574579537
+pixelherodev
+One function call does not use even a percent of that
+
+1574579560
+pixelherodev
+And since only stuff allocated
+
+1574579607
+pixelherodev
+Even 1KB is probably more than adequate at the moment
+
+1574579608
+andrewrk
+test this hypothesis by adding a couple more globals before and after `stack`, initialized to zero. check their memory values at your panic weird behavior
+
+1574579618
+pixelherodev
+Just for argument's sakes, I'll increase stack size to 32MB
+
+1574579624
+andrewrk
+oh yeah or that
+
+1574579633
+andrewrk
+maybe also use gdb to inspect the stack pointer?
+
+1574579660
+pixelherodev
+...drats.
+
+1574579672
+pixelherodev
+I think you're right about the cause
+
+1574579695
+pixelherodev
+... yeah, at 32KB it's fine,
+
+1574579704
+pixelherodev
+Whelp
+
+1574579711
+andrewrk
+this is one of the things it's planned for zig to help with, but it's not done yet, obviously :)
+
+1574579717
+pixelherodev
+Yeah :)
+
+1574579736
+andrewrk
+you should probably set up some kind of guard page
+
+1574579762
+pixelherodev
+Yeah, but... well, I didn't bother implementing paging before the jam
+
+1574579772
+hspak
+I'm trying to read a file line-by-line. What am I doing wrong here? "const line = try io.readLineFrom(try fs.File.openRead("./input").inStream().stream, &buf);" fails with "error: expected type '*std.io.in_stream.InStream(std.os.ReadError)', found '*const std.io.in_stream.InStream(std.os.ReadError)'
+
+1574579789
+andrewrk
+pixelherodev, we have a stack prober, which I think will be on for you even in freestanding. so if you have a guard page it should be hit
+
+1574579827
+pixelherodev
+Ah, and that was the bug that was preventing everything from working
+
+1574579840
+pixelherodev
+I think it's the standard library stuff that's eating up stack, which is why migrating it caused the breakage
+
+1574579848
+andrewrk
+hspak, I think that function is intended to be used as terminal input, e.g. implementing a repl (although it doesn't yet have any bells & whistles)
+
+1574579867
+andrewrk
+hspak, for your use case I think you want the functions in std.io.InStream
+
+1574579891
+andrewrk
+such as readUntilDelimiterBuffer, readUntilDelimiterAlloc, readUntilDelimiterOrEof
+
+1574579900
+pixelherodev
+andrewrk, thanks a ton! While panic is till broken (yay.), everything else is good to go for the jam!
+
+1574579914
+pixelherodev
+So as long as nothing goes wrong, I'm good :)
+
+1574579930
+hspak
+andrewrk: Ah I see, thanks for the pointer!
+
+1574579932
+pixelherodev
+Anyway, that means I've got a good standard library patch to submit toni - I mean, tomorrow (it's 2AM here :P)
+
+1574579959
+andrewrk
+and I've got all tests passing in the sentinel-terminated-pointers branch
+
+1574579972
+pixelherodev
+Nice!
+
+1574579984
+pixelherodev
+Just need to clean this up and then begin a PR
+
+1574580011
+andrewrk
+my plan is to spend a couple weeks on PRs/bugs and not working on major changes after this merge
+
+1574580024
+pixelherodev
+Sounds nice :)
+
+1574580046
+pixelherodev
+Wait, if bss is default, why does the stack require linksection(".bss")?
+
+1574580052
+pixelherodev
+I copied that from your kernel I think :P
+
+1574580066
+andrewrk
+I don't think so
+
+1574580099
+pixelherodev
+No yep
+
+1574580109
+nomadgamma
+wait can you TL;DR that for me? was afk, you overflowed the stack into .bss?
+
+1574580112
+pixelherodev
+
+
+1574580116
+pixelherodev
+nomadgamma, yeah :P
+
+1574580118
+nomadgamma
+ahhh
+
+1574580136
+pixelherodev
+Rather, the updated stdlib required more stack, which overflowed into .bss
+
+1574580140
+pixelherodev
+AFAICT anyways
+
+1574580141
+nomadgamma
+ah ok
+
+1574580150
+andrewrk
+pixelherodev, I think that worked around an llvm issue that was solved in 7.0.0
+
+1574580172
+pixelherodev
+Ah
+
+1574580202
+nomadgamma
+surely, as an aside, you use GDT and LDT to set the stack growing down to something which is impossible to overflow
+
+1574580232
+pixelherodev
+As andrew mentioned, I can use paging to have it basically segfault, but that's not a right now thing
+
+1574580241
+pixelherodev
+Now, I clean this up and commit locally
+
+1574580246
+nomadgamma
+maybe give it its own set of pages way up there
+
+1574580246
+pixelherodev
+Then get back to work on the game itself :)
+
+1574580254
+pixelherodev
+I don't have paging yet ;)
+
+1574580257
+nomadgamma
+oh
+
+1574580271
+pixelherodev
+Doesn't matter where the page *is*, as long as right underneath it is marked read-only
+
+1574580277
+nomadgamma
+yup
+
+1574580279
+pixelherodev
+So maybe literally right over .rodata would be good
+
+1574580290
+pixelherodev
+That means not having to set aside an empty page
+
+1574580331
+andrewrk
+yeah and then zig's stack probing which is on by default should make sure it pokes the rodata page even if you have a large array in a function stack frame
+
+1574580347
+andrewrk
+(in debug mode)
+
+1574580368
+andrewrk
+there's a loooot of safety that release-safe doesn't have :)
+
+1574580377
+andrewrk
+oops, I mean release-fast
+
+1574580396
+pixelherodev
+Stack probing?
+
+1574580443
+andrewrk
+when you have a function that has enough stack memory used that it's larger than 1 page, zig calls some hand-optimized assembly which "pokes" each page in order, until all pages used by the function's stack frame have been poked
+
+1574580466
+andrewrk
+therefore 1 guard page is all you need, and it will be guaranteed to be hit even if you have a lot of stack variables
+
+1574580533
+pixelherodev
+Ah, so no risk of jumping over read-only memory and arriving at something writable
+
+1574580537
+pixelherodev
+That's awesome
+
+1574580751
+nomadgamma
+so... re-map the stack into some high-address using LDT?
+
+1574580772
+andrewrk
+of course, even better would be knowing the stack upper bound at compile time and allocating the correct amount of stack space
+
+1574580780
+nomadgamma
+hmm
+
+1574580782
+andrewrk
+...which is also planned
+
+1574580786
+pixelherodev
+That's not implemented yet though
+
+1574580787
+pixelherodev
+Yeah :)
+
+1574580806
+nomadgamma
+but LDT mapping isn't something you can do with portability
+
+1574580853
+nomadgamma
+i guess it only makes sense when you're doing bare-metal stuff
+
+1574580950
+andrewrk
+pixelherodev, out of curiosity, do you have any function pointer calls, or interrupts that use stack space?
+
+1574580967
+pixelherodev
+Uh... doubt it?
+
+1574580971
+pixelherodev
+Oh wait
+
+1574580974
+pixelherodev
+Actually, probably
+
+1574580978
+pixelherodev
+function pointers, yes
+
+1574580983
+pixelherodev
+That's how interrupts are implemented
+
+1574580989
+pixelherodev
+Other code registers a handler
+
+1574581002
+pixelherodev
+Then when the associated IRQ fires, the handler is called with relevant info
+
+1574581008
+andrewrk
+so to use this feature you'd have to annotate all your function pointer calls with the upper bound of how much stack space they might use. safety checks will panic if you ended up calling a function that needed more
+
+1574581050
+pixelherodev
+Or maybe have a way to require the function pointer to have a maximum upper bound less than X?
+
+1574581055
+andrewrk
+so at least you'd have your work checked, in debug builds. you'd get a panic message such as, "expected at most xyz bytes of stack, but function required xyz + 10"
+
+1574581057
+pixelherodev
+(for any arbitrary value of X)
+
+1574581091
+nomadgamma
+oooh, so you say 1024 is the limit... and there's a compiler feedback at a type level that 1020 + 8 = invalid passed along as a meta-parameter
+
+1574581377
+andrewrk
+I think these annotations will be worth it though. Consider how much pain you had to go through debugging that
+
+1574581416
+andrewrk
+people on hosted OS's will be less receptive to it. but zig code is supposed to work everywhere
+
+1574581472
+pixelherodev
+Still useful there though
+
+1574581474
+emekankurumeh[m]
+perhaps we could have zig infer that, and when it can't require an explicit bound?
+
+1574581478
+pixelherodev
+Just not to the same extend
+
+1574581481
+pixelherodev
+s/extend/extent
+
+1574581490
+nomadgamma
+I've never had to work out stack frame size outside of bare-metal... and even then if I have to specify it there's something really f'kd up that I've missed
+
+1574581517
+pixelherodev
+It can be used to reduce the stack size
+
+1574581526
+pixelherodev
+Relatively useless there though
+
+1574581536
+pixelherodev
+Nobody really cares if there's a minor waste
+
+1574581573
+nomadgamma
+what matters more is reducing the number of loads and stores from memory, e.g. C's __restrict is half-way there
+
+1574581607
+emekankurumeh[m]
+i really wish that `usingnamespace` applied to fields right now
+
+1574581628
+emekankurumeh[m]
+i'm porting COM definitions and having the time of my life
+
+1574581653
+nomadgamma
+you're porting COM+ definitions and it's fun?...
+
+1574581655
+pixelherodev
+Gah - input on kernel is partly borked :( Inconsistent behavior between the two builds = :(
+
+1574581710
+emekankurumeh[m]
+did i forget the /s?
+
+1574581749
+nomadgamma
+the /s is implicit
+
+1574581752
+pixelherodev
+Oh wait... I still have it emitting IR, so the build is wrong!
+
+1574581758
+pixelherodev
+Heh, whoops
+
+1574581881
+nomadgamma
+emekankurumeh[m],
+
+1574581945
+pixelherodev
+The one good thing to come of this disaster is I know how to GDB it now :D
+
+1574581984
+nomadgamma
+that's good, being able to GDB stuff is 90% of the problem, the only other problem is the remaining 10% takes 90% of the time
+
+1574582292
+pixelherodev
+Argh, it seems to be another stdlib change :(
+
+1574582298
+pixelherodev
+std.fs.File.openWrite is hanging forever apparently.
+
+1574582373
+pixelherodev
+Or... not...
+
+1574582875
+pixelherodev
+Weirdly enough, the offset in GDB is correct now
+
+1574582877
+pixelherodev
+No need to manually adjust it :)
+
+1574583308
+nomadgamma
+
+
+1574583459
+pixelherodev
+... yeah, but the timer's broken apparently :P
+
+1574583470
+pixelherodev
+Or at least, the frequency is wrong
+
+1574583477
+pixelherodev
+Probably messed up a calculation when migrating that one
+
+1574584634
+pixelherodev
+@as(u8, '1') should give 49, correct?
+
+1574584738
+pixelherodev
+Never mind, more weirdness
+
+1574584840
+daurnimator
+andrewrk: can I do `if (x == undefined)` at comptime?
+
+1574585057
+andrewrk
+I'm considering the ability to check for undefined (at both runtime and comptime), but the semantics would be this: `@isUndefined(value: var) bool` - has false negatives, but no false positives
+
+1574585077
+andrewrk
+the only valid use of it would be in the implementation of a safety feature
+
+1574585082
+daurnimator
+boooo. translate-c doesn't support duplicated definitions `struct foo {int a;}; struct foo {int a;};` =>  error: redefinition of 'foo'
+
+1574585148
+daurnimator
+andrewrk: yeah I was thinking about having an argument to a genetic: `initialise_with: var` => and I wanted to check if they passed `undefined`, and if so, optimize it into a @memset(, undefined,)
+
+1574585154
+daurnimator
+*generic
+
+1574585378
+pixelherodev
+Alrighty, everything works mostly. Held together by virtual duct tape, but that's good enough for now
+
+1574585385
+pixelherodev
+Patch incoming shortly
+
+1574585597
+andrewrk
+daurnimator, you can't use the assignment operator?
+
+1574585685
+daurnimator
+andrewrk: huh?
+
+1574586751
+pixelherodev
+
+
+1574586755
+andrewrk
+daurnimator, for your initialize_with thing
+
+1574586815
+daurnimator
+andrewrk: what do you mean?
+
+1574586911
+andrewrk
+foo = initialize_with_var;
+
+1574586926
+andrewrk
+foo = initialize_with;
+
+1574587010
+daurnimator
+andrewrk: e.g. `pub fn MyGenetic(comptime T: type, comptime initialise_with: var) type { return struct { ....... pub fn remove(self: *@This(), a: usize) { const slice = self.getUnused(); if (initialise_with == undefined) @memset(slice.ptr, undefined, slice.len) else std.mem.set(slice, initialise_with); } }; }`
+
+1574587034
+daurnimator
+andrewrk: the problem being that std.mem.set emits horrible code when its arg is undefined
+
+1574587112
+andrewrk
+doesn't it emit the same code whether or not its arg is undefined?
+
+1574587176
+daurnimator
+andrewrk: not if
+
+1574587204
+andrewrk
+I don't think you need to do this, just write the code the simple way
+
+1574587242
+daurnimator
+A valgrind client request per-byte of throughput is going to be good for performance
+
+1574587264
+andrewrk
+`std.mem.set(slice, foo)` is not doing any valgrind client requests
+
+1574587273
+andrewrk
+have a look at the std.mem.set definition generated
+
+1574587312
+andrewrk
+the client requests are only needed when we set something to 0xaa, to "undo" the fact that this setting would mark memory as defined
+
+1574587317
+daurnimator
+won't `std.mem.set(u8, slice, undefined)` do slice.len valgrind client requests?
+
+1574587355
+andrewrk
+no, it doesn't need to
+
+1574587449
+andrewrk
+hmm when did godbolt stop working for zig?
+
+1574587526
+daurnimator
+andrewrk: a month or so ago. we've mentioned it a lot in here...
+
+1574587556
+daurnimator
+someone said it was around the 0.5.0 release IIRC
+
+1574587617
+andrewrk
+hm, that's a shame. we have a test case to cover the godbolt CLI
+
+1574587699
+andrewrk
+daurnimator, well, anyway:
+
+1574587725
+andrewrk
+that's a quite reasonable debug impl of std.mem.set, and no valgrind client requests there
+
+1574587750
+andrewrk
+if you try passing other values you'll see it doesn't need to generate any other versions... the value parameter is not comptime
+
+1574587838
+daurnimator
+andrewrk: oh... so that's good in that it doesn't do valgrind client requests.... but bad in that it doesn't give us safety
+
+1574587844
+daurnimator
+where a @memset() would.
+
+1574588662
+andrewrk
+daurnimator, it does
+
+1574588675
+andrewrk
+try it and see
+
+1574588945
+daurnimator
+
+
+1574589029
+andrewrk
+daurnimator,
+
+1574589064
+andrewrk
+I did notice that `undefined` being casted to the parameter directly did not have the desired effect. that's worth an open issue
+
+1574589095
+andrewrk
+oh, that's already an issue. globals don't get set with 0xaa or have client requests
+
+1574589140
+andrewrk
+solution would be a custom linker script that puts undef globals in a custom section, which startup code before main would set to undefined
+
+1574589319
+andrewrk
+but zig is not always in control of the linker script
+
+1574589338
+andrewrk
+and there's a tradeoff - if you have a large undef array, it might be better to put it in bss (and be zero initialized) to keep binary size down
+
+1574589345
+andrewrk
+good night
+
+1574592437
+daurnimator
+zig: /usr/include/clang/AST/Type.h:659: const clang::ExtQualsTypeCommonBase* clang::QualType::getCommonPtr() const: Assertion `!isNull() && "Cannot retrieve a NULL type pointer"' failed.
+
+1574592457
+daurnimator
+not sure how I triggered that..
+
+1574594225
+Sahnvour
+is there a way in zig code to know wether it's being built as an executable or library ? can't find this in builtin
+
+1574598332
+daurnimator
+Sahnvour: I don't think so. and why are you asking?
+
+1574598343
+daurnimator
+Sahnvour: also did you know that you can have an executable that is
+
+1574598540
+daurnimator
+(ELF PIE is actually a library that the loader executes)
+
+1574599026
+bgiannan
+works thx
+
+1574600536
+Sahnvour
+daurnimator: I didn't know
+
+1574600592
+Sahnvour
+on darwin we unconditionally export a variable that, iiuc, should only be when building a executable (MH_EXECUTABLE)
+
+1574600613
+Sahnvour
+_mh_execute_header
+
+1574616476
+pixelherodev
+"fn ohgodwhydidiactuallyimplementthis() void {" I'm clearly in a great mood :P
+
+1574616509
+mq32
+pixelherodev: what?
+
+1574616814
+pixelherodev
+I named a function ohgodwhydidiactuallyimplementthis.
+
+1574616837
+mq32
+neat
+
+1574616840
+mq32
+what does it do?
+
+1574616901
+pixelherodev
+It's an entire separate submission in the game :P
+
+1574616907
+pixelherodev
+s/submission/sub-mission
+
+1574616920
+mq32
+:D
+
+1574616934
+pixelherodev
+I was writing and then I jokingly was like "heh, this is a perfect plot hook NO WAIT STOP dangit this is MORE WORK"
+
+1574616968
+mikdusan
+Sahnvour: I wonder if we need something like `builtin.link_executable = true` to condition the export of _mh_execute_header
+
+1574617009
+mikdusan
+or an enum `builtin.link_mode`
+
+1574618501
+Sahnvour
+mikdusan: that's also my thought, although I'm not entirely sure this is the correct thing to do for _mh_execute_header, if someone knows better
+
+1574619296
+mikdusan
+if it helps, with clang, creating .o (and therefore .a), or .dylib does
+
+1574620691
+andrewrk
+mikdusan, does this mean _mh_execute_header should be part of compiler_rt, rather than exported in std.c ?
+
+1574620775
+mikdusan
+i can only answer with another question: is zig's compiler_rt something only ever used for executables or can it be manually linked for other link modes
+
+1574620805
+andrewrk
+it's a dependency that must be fulfilled eventually
+
+1574620820
+andrewrk
+you can use --bundle-compiler-rt to make zig include it with an object or library
+
+1574620890
+andrewrk
+one way to describe it would be "external symbols that all zig code assumes will be available to be linked against"
+
+1574621066
+Sahnvour
+scouting the web it really looks like it's only needed in executables (of type MH_EXECUTE, object files and libraries have another MH_ type)
+
+1574621110
+mikdusan
+hmm I'd have to consider if creating an { exe, dylib } with clang and using --bundle-compiler-rt
+
+1574621133
+andrewrk
+what's the problem here btw? even a zig static library wants to use that symbol, so that when it gets linked into an executable, it can look up itself in memory for debug info purposes
+
+1574621175
+Sahnvour
+andrewrk: it gets caught by my local changes on
+
+1574621378
+andrewrk
+it seems harmless to me for it to be in the generated header
+
+1574621512
+Sahnvour
+in that case I can just expect it in the tests and it's good to go
+
+1574621560
+andrewrk
+I think that's perfectly fine
+
+1574621567
+mq32
+andrewrk, i think i'll retreat my pull request regarding packed structs. I'm just botching the compiler anyway ^^
+
+1574621587
+mq32
+i don't understand enough of LLVM code generation yet to actually fix this
+
+1574621593
+andrewrk
+mq32, ok. I hadn't looked at it yet, sorry
+
+1574621607
+mq32
+no problem
+
+1574621608
+andrewrk
+don't worry though, fixing up packed structs are in my priority list
+
+1574621614
+mq32
+thanks ♥
+
+1574621618
+andrewrk
+did you have any useful test cases in that PR though? those are useful to keep around
+
+1574621623
+mq32
+yeah!
+
+1574621630
+mq32
+maybe you can grasp the problem completly
+
+1574621641
+andrewrk
+maybe keep the PR open then, with a comment saying you're ready to close it but leaving the test cases for me :)
+
+1574621665
+mq32
+yeah, i'll do some comments
+
+1574621671
+mq32
+i think the problem is ABI alignment
+
+1574621679
+andrewrk
+yes that seems likely
+
+1574621693
+andrewrk
+this is very related to
+
+1574621736
+mq32
+zig uses ABI alignment for types and that only hits us when using types with 3 byte size
+
+1574621742
+mq32
+(using u24 e.g)
+
+1574621768
+andrewrk
+abi alignment of u24 is the same as u32
+
+1574621781
+mq32
+yeah and the code for packed structs uses this alignment to pad
+
+1574621789
+mq32
+so any u24 in packed structs is actually 4 bytes large
+
+1574621808
+andrewrk
+oh, yeah that's not consistent with how status quo is  supposed to work
+
+1574621821
+andrewrk
+this will for sure get fixed with #3133 though
+
+1574621836
+mq32
+
+
+1574621841
+mq32
+here's an example by daurnimator
+
+1574621844
+andrewrk
+thanks
+
+1574621852
+mq32
+if you split up the u24 into u16 and u8 in any order, it works
+
+1574621894
+mikdusan
+andrewrk: fyi i've confirmed creating an exe with: clang + main.c + libbar.a(from zig code) + manual link to libcompiler_rt.a all works right now; ie: superfluous _mh_execute_header in libbar.a doesn't seem to be issue, this likely means if desired moving _mh_execute_header to compiler_rt.a shouldn't break linking
+
+1574621947
+andrewrk
+mikdusan, looking at it more, I think how it's currently done is necessary (and actually kinda clever) for how debug info works
+
+1574621963
+mikdusan
+👍
+
+1574621983
+andrewrk
+there's a comment above the export in std.c explaining it
+
+1574633110
+Snektron
+If the self-hosted compiler is in a working condition, will the stage1 compiler be phased out (like with rust) or will it be maintained?
+
+1574633214
+andrewrk
+Snektron, maintained.
+
+1574633229
+andrewrk
+limiting the bootstrapping process to 3 steps is one of the features
+
+1574633291
+andrewrk
+however more advanced functionality could be phased out. for example, it wouldn't need release builds anymore
+
+1574633318
+andrewrk
+or the ability to build libc
+
+1574633595
+Snektron
+good
+
+1574633698
+andrewrk
+it also would stop being a hybrid of c++ and zig
+
+1574633715
+andrewrk
+that would become pointless. this hybrid thing is a stepping stone
+
+1574633736
+Snektron
+Which parts of the current compiler are hybrid?
+
+1574634067
+daurnimator
+andrewrk: :( my fifo PR already had that fix you just merged in it
+
+1574634069
+andrewrk
+everything in src/userland.cpp gets replaced by src-self-hosted/stage1.zig
+
+1574634103
+andrewrk
+daurnimator, your fifo PR is a higher tier of difficulty of merging
+
+1574634119
+andrewrk
+it shouldn't cause a conflict for you
+
+1574634167
+daurnimator
+andrewrk: I really don't think its a hard merge... hell we can take out the std.io changes, they were what I thought was trivial
+
+1574634192
+daurnimator
+I was under the impression that you were just not merging anything into std.fifo until you understood how it worked
+
+1574634232
+andrewrk
+I'll still consider the std.io changes, but yeah if you made it only fifo files then that would be an easy merge
+
+1574634412
+daurnimator
+andrewrk: done.
+
+1574634477
+daurnimator
+(and rebased on top of that other merge while I did it)
+
+1574635015
+daurnimator
+#3763 contains the pieces I removed.
+
+1574635075
+daurnimator
+Its mostly a de-duplication. + implementing a TODO
+
+1574636526
+daurnimator
+Snektron: however note that pieces are intended to be taking out of the stage1 compiler (as e.g. zig fmt already has): we only want the bare minimum of cpp code required to build the self-hosted compiler. Next on the chopping block is `zig translate-c`
+
+1574636666
+andrewrk
++1
+
+1574636674
+andrewrk
+can't wait to delete 4,000 lines of C++
+
+1574636700
+andrewrk
+I think we might want to make a nicer API for building the zig AST though. it's a bit of a pain to append tokens to a buffer
+
+1574636721
+andrewrk
+I think that makes it less appealing for contributors
+
+1574636769
+andrewrk
+on the other hand, it is powerful. it's great having the "warnings" as comments for example
+
+1574637023
+pixelherodev
+For self-hoosted or stage1?
+
+1574637029
+pixelherodev
+s/hoosted/hosted
+
+1574637090
+protty
+how does`suspend` work in the compiler? Does it do liveness analysis and save all the variables that it can observe that are needed?
+
+1574637179
+andrewrk
+protty, any function that can possibly suspend is generated with all of its local variables spilled into a struct, which is secretly passed as the first parameter
+
+1574637211
+andrewrk
+currently the implementation is conservative; more than necessary is going into this struct
+
+1574637240
+pixelherodev
+Isn't that going to be a noticeable performance hit for purely synchronous code though, since it's passing a bunch of stuff around that it really doesn't need to?
+
+1574637267
+andrewrk
+purely synchronous code doesn't have the possibility to suspend
+
+1574637272
+andrewrk
+so it won't be generated this way
+
+1574637303
+pixelherodev
+Ohhh, you mean functions that are ever called `async`?
+
+1574637321
+pixelherodev
+` any function that can possibly suspend` I think I misinterpreted that :P
+
+1574637340
+andrewrk
+even calling a function with `async` does not cause it to be generated this way. only if a function has a suspend point (or if you force it with `async fn` which is rarely necessary)
+
+1574637355
+pixelherodev
+Gotcha, that's neat
+
+1574637439
+demizer
+hi everyone. Learning zig and got an error I am not sure about. I "error: expected type 'std.fs.file.File', found 'std.os.windows.GetStdHandleError!std.fs.file.File'
+
+1574637490
+demizer
+i am copying the zasm argument handling code
+
+1574637513
+demizer
+i suspect it might be do to trying to run on version 0.5.0
+
+1574637534
+andrewrk
+demizer, the zasm code is based on zig master branch
+
+1574637552
+andrewrk
+between 0.5.0 and master, std.io.getStdOut no longer has the possibility to fail
+
+1574637558
+pixelherodev
+Yay!
+
+1574637582
+pixelherodev
+So for 0.5, it can throw an error which you need to catch
+
+1574637592
+pixelherodev
+Personally, I just used `catch unreachable` back when it was needed
+
+1574637597
+demizer
+ah ok, the docs in general are not clear about function return types, and the std lib docs are for master and not 0.5.0
+
+1574637622
+demizer
+i guess I should just use master
+
+1574637626
+daurnimator
+demizer: the `xyz!` prefix means its an error union
+
+1574637642
+demizer
+right, learned that last night after careful reading
+
+1574637662
+demizer
+thanks for the help gents!
+
+1574637668
+pixelherodev
+No problem!
+
+1574638268
+Pistahh
+what zig pattern to use for some simple mapreduce like thingie? I want a main "thread" receiving some data, passing it to other "threads" which do some long-running calculations on them, passing the data back to the main thread. Once all is done the main thread precesses the results. By "thread" I mean whatever can run stuff on multiple cores, so not necessarily just OS threads
+
+1574638315
+Pistahh
+I looked into async/await/suspend/resume but I can't see how they could parallelise the calculations
+
+1574638344
+andrewrk
+Pistahh, maybe you could be inspired by these 2 examples:
+
+1574638882
+Pistahh
+andrewrk: thx
+
+1574639909
+andrewrk
+I'm optimistic about merging sentinel-terminated pointers tonight
+
+1574639915
+pixelherodev
+nice!
+

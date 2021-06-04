@@ -1,0 +1,1384 @@
+1560212606
+cloudhop
+Is there a "hello world" example that uses a build.zig file? I can compile hello world using 'zig build-exe blah.zig', but I cannot for the life of me get it to output an EXE when i use build.zig - i can find the EXE inside /zig-cache/, but it never copies it to the current directory (or the source directory, or anywhere I can find)
+
+1560212702
+mikdusan
+cloudhop: have you tried adding an "install" artifact?
+
+1560212717
+cloudhop
+Yes, for reference my build.zig is here:
+
+1560212737
+squeek502
+cloudhop, try zig build install --prefix .
+
+1560212743
+squeek502
+should install it to ./bin
+
+1560212786
+cloudhop
+there is no bin folder anywhere in my folder structure, not in /src/, not in that directory, not even in the parent directory
+
+1560212800
+squeek502
+after zig build install --prefix .
+
+1560212801
+squeek502
+?
+
+1560212838
+cloudhop
+oh sorry, I missed that, yes that works
+
+1560212849
+cloudhop
+Why is the prefix necessary? Is there a way to encode that into the build.zig?
+
+1560212854
+mikdusan
+yes `b.setInstallPrefix(".");`
+
+1560212919
+cloudhop
+shouldn't this be mentioned somewhere in the documentation?
+
+1560212927
+daurnimator
+cloudhop: what documentation?
+
+1560212944
+daurnimator
+(the build system currently has no docs)
+
+1560212946
+cloudhop
+I am using
+
+1560212954
+cloudhop
+which has the only build system example i could find
+
+1560212966
+cloudhop
+if the build system has no docs, well, that kind of explains why it was so hard to figure out how to use it
+
+1560213079
+andrewrk
+I'm planning on making `install` the default step of zig build, with a default install prefix of something like build-<mode>
+
+1560213118
+mikdusan
+cloudhop: also this would tell you where install was defaulting to: `zig build install --verbose` (probably /usr/local/bin)
+
+1560213182
+andrewrk
+cloudhop, zig build has been slowly evolving toward what it will eventually be, it's in a bit of a transitionary state
+
+1560213207
+daurnimator
+misc idea I had last night: what if aligned pointers were packed? -> `*align(4096) packed foo` -> only needs to take up `usize-12` bits
+
+1560213213
+cloudhop
+I was only invoking it with `zig build`, not `zig build install`, since I just wanted it to build it to the current directory, not install it.
+
+1560213221
+andrewrk
+daurnimator, that's an interesting idea
+
+1560213225
+mikdusan
+riddle me this batman: how come cmake is so noisy about `install` and why can't we tell it to only be noisy about work actually done
+
+1560213258
+andrewrk
+cloudhop, currently `zig build` runs the default step, which you have full control over
+
+1560213271
+andrewrk
+so you could tell it to install to the current directory or anything else
+
+1560213272
+daurnimator
+andrewrk: I guess I should make an issue for it?
+
+1560213283
+cloudhop
+Ok, so the only real issue is the prefix directory then
+
+1560213305
+andrewrk
+daurnimator, sure if you can come up with a reasonable use case
+
+1560213329
+daurnimator
+andrewrk: I was thinking about how the linux kernel (and windows!) use the lower bits for various flags.
+
+1560213344
+scientes
+daurnimator, can you explain that idea another way?
+
+1560213352
+andrewrk
+the proposal should probably mention the option of just doing that behavior if it's in a packed struct
+
+1560213358
+scientes
+daurnimator, oh i use the low bit in rb.zig
+
+1560213380
+andrewrk
+oh but if `packed` were a pointer attribute, zig would know to mask before doing loads/stores
+
+1560213398
+andrewrk
+that's useful. theoretically could even be communicated to debug info
+
+1560213400
+scientes
+oh yeah, I have been thinking about this for years
+
+1560213409
+scientes
+but usually you get a very negative reaction
+
+1560213437
+scientes
+however this isn't "extern packed" which has to be compatible
+
+1560213440
+daurnimator
+packed struct { ptr: *packed foo, needs_lock: bool }
+
+1560213451
+andrewrk
+I'm amenable to ideas that make existing use cases less error prone
+
+1560213461
+daurnimator
+(assuming the type 'foo' already has e.g. a 8-byte alignment)
+
+1560213471
+scientes
+yeah I think it should be done
+
+1560213479
+scientes
+and it shouldn't require you to order them just right
+
+1560213498
+daurnimator
+it should take on normal packed struct semantics
+
+1560213519
+scientes
+if you want to control how they are packed you have to use sub-structs
+
+1560213548
+scientes
+daurnimator, yes but this isn't "extern packed" it is not c compatible
+
+1560213581
+andrewrk
+yeah if a "packed pointer" was in a packed struct, then it would take up a number of bits equal to the number of overaligned bits relative to the element type
+
+1560213583
+daurnimator
+scientes: from zig packed struct docs: > Fields remain in the order declared.
+
+1560213597
+scientes
+daurnimator, that is "extern packed"
+
+1560213599
+andrewrk
+wait, no, it's unrelated to the element type. it's just the alignment of the pointer
+
+1560213609
+daurnimator
+scientes: no it's just packed.
+
+1560213612
+scientes
+oh i see we are getting confused
+
+1560213631
+scientes
+daurnimator, i know, i'm just saying it should be called "extern packed" because it is a c compatible interface
+
+1560213643
+andrewrk
+packed structs are allowed in extern stuff
+
+1560213714
+scientes
+I think we should add "extern packed", and then in a only "packed" struct pointers would be bit-stuffed in the low bits automatically
+
+1560213720
+scientes
+no need for a pointer attribute
+
+1560213759
+andrewrk
+pointer attribute would make loads/stores work correctly
+
+1560213783
+scientes
+yeah but the struct attribute would add that, only when the allocator used it
+
+1560213797
+scientes
+because you don't need to mask if nothing is stored there
+
+1560213812
+scientes
+and the allocator can actually guess which pointers are used the least
+
+1560213825
+scientes
+it is a more flexible interface
+
+1560213825
+andrewrk
+the way that pointers to packed struct fields work is that the pointer type actually encodes everything needed to do loads/stores
+
+1560213834
+andrewrk
+there's a syntax for bit offsets in pointer attributes
+
+1560213851
+scientes
+yeah i'm saying that this belongs as a struct attribute only that implicitely sets a hidden pointer attribute
+
+1560213857
+scientes
+thats a more flexible interface
+
+1560213863
+daurnimator
+created #2652 to track
+
+1560213864
+scientes
+and provides the same behavior
+
+1560213882
+andrewrk
+this concept of hidden type attributes doesn't exist yet, but I have thought of a few other use cases for it. not sure if any of them are good ideas yet
+
+1560213911
+scientes
+we already have it for argument attributes
+
+1560213917
+scientes
+its just an implementation detail
+
+1560213921
+andrewrk
+how so?
+
+1560213928
+scientes
+sret, byval
+
+1560213952
+andrewrk
+neither of those are available to zig during analysis
+
+1560213956
+andrewrk
+that's not what I'm talking about
+
+1560213956
+scientes
+@setRuntimeSafety()
+
+1560214009
+daurnimator
+andrewrk: hrm. do we even need the pointer attribute? couldn't it just be the default?
+
+1560214025
+scientes
+daurnimator, that is what i am saying
+
+1560214049
+scientes
+daurnimator, except performance-wise you really should only apply it to packed structs, except these are differn't from c-compatible packed structs
+
+1560214093
+scientes
+but that is still problematic
+
+1560214109
+daurnimator
+similar to how e.g. a i7 might be stored in a 8bit register or passed as a 32bit parameter. and takes up 8 bits in a non-packed struct -> `*align(4096) foo` might be passed in a 64bit register, and takes up usize bits in a struct.
+
+1560214160
+scientes
+there is no need to make it a explicit pointer attribute, but there needs to some way to get the heuristic right
+
+1560214164
+scientes
+because it does impact performance
+
+1560215622
+emekankurumeh[m]
+are c packed structs laid out in memory the way they are declared?
+
+1560216149
+scientes
+yes
+
+1560216154
+scientes
+with no space between
+
+1560216165
+scientes
+(except the low bits of pointers haha)
+
+1560216184
+scientes
+not sure how it handles types < 8 bits
+
+1560216217
+scientes
+but it is the same on all architectures
+
+1560216348
+emekankurumeh[m]
+wouldn't it make more sense to move those around so they pack better?
+
+1560216388
+scientes
+emekankurumeh[m], packed in C is for serializing
+
+1560218485
+emekankurumeh[m]
+no in c, for the compiler to be allowed to rearrange fields
+
+1560218907
+tgschultz
+So my new BMP library works at comptime now because it doesn't require an allocator. However, it is orders of magnitude slower than loading at runtime, so it's still better to preprocess and @embedFile. Still, much better code than a year ago, in my estimation.
+
+1560220405
+daurnimator
+thinking about serialisation formats with schemas like protobuf and ASN.1.... I think they're a place where @reify is really required
+
+1560220458
+daurnimator
+tgschultz: also I was thinking about your lack-of-@reify-workaround.... I think it could be made to work at runtime without too much work; do you agree?
+
+1560220971
+scientes
+tgschultz, what is "BMP"?
+
+1560221122
+scientes
+daurnimator, lets do something easier before ASN.1, and the protobuf guy (who I met, and know he lived) created CapNCrunch
+
+1560221159
+scientes
+CapNProto
+
+1560221195
+daurnimator
+scientes: capnproto can be very complex; and is not widely used; i don't think it's a great starting point.
+
+1560221229
+daurnimator
+scientes: if you're looking for something easy to prototype with, doing something with just json-schema may work for you.
+
+1560221251
+scientes
+i have enough projects right now
+
+1560221264
+daurnimator
+scientes: but protobufs (because gRPC) and ASN.1 (because X509 and TLS and also LDAP) are going to be the huge winners.
+
+1560221305
+scientes
+we could do wireguard before that however
+
+1560221327
+scientes
+but yeah TLS eventually, but it is difficult
+
+1560221350
+daurnimator
+dbus is also one that will eventually be useful. though it needs an XML library which I wouldn't even suggest tackling
+
+1560221372
+scientes
+or actually trying to write a generic IPC for the Linux kernel?
+
+1560221382
+scientes
+that they will accept
+
+1560221386
+daurnimator
+... no.
+
+1560221404
+daurnimator
+WebIDL is one that might catch a few new contributors
+
+1560221443
+scientes
+I am interested in doing new things
+
+1560221447
+scientes
+I have plenty of those projects
+
+1560221467
+scientes
+you can always just call C
+
+1560221490
+daurnimator
+scientes: ... did you even understand my original comment?
+
+1560221511
+scientes
+the @reify one?
+
+1560221561
+daurnimator
+yes; and how it's relevant to implementing schema-based standards?
+
+1560221566
+scientes
+I am excited to see what people do with it, but I am not there yet
+
+1560221572
+scientes
+I kinda have to see it to understand it
+
+1560221623
+scientes
+so no, i did not understand your comment
+
+1560221649
+daurnimator
+the important thing about doing it in zig is that you can (at comptime) do `const mytype = protobuf.parse(@embedFile("myfile.proto")); const a_foo = mytype.foo{.x = 42};`
+
+1560221668
+curtisf
+Oh, I didn't know about `@embedFile`, I was wondering how you'd bring in a proto file
+
+1560221674
+scientes
+that is beautiful
+
+1560221679
+curtisf
+I wonder if it would be better than just using a compiler though
+
+1560221705
+daurnimator
+and my point was that constructing `mytype` there really requires `@reify`.
+
+1560221706
+scientes
+when I used @embedFile I found it quite slow, but it is still useful
+
+1560221750
+scientes
+daurnimator, I just haven't used that use case, but I think it is a good idea
+
+1560221755
+scientes
+def. better than STL
+
+1560221813
+scientes
+oh yeah I see what you are saying about CapNProto
+
+1560221817
+daurnimator
+curtisf: also welcome :) I had a question/comment to something you asked the other day but you had left the room by the time I replied
+
+1560221857
+curtisf
+what's that?
+
+1560221886
+daurnimator
+I can't remember now :P
+
+1560221986
+daurnimator
+curtisf: oh. it was about the parser/generator written in zig
+
+1560222009
+daurnimator
+curtisf: one of the projects I keep meaning to get to is writing a PEG engine that works at comptime
+
+1560222044
+daurnimator
+curtisf: would be perfect for the sort of thing we were just talking about (e.g. parsing .proto files). as well as lots of other places.
+
+1560222063
+curtisf
+That's more or less what I was working on (although I guess it's more "recursive descent" since I don't currently need the lookahead features of peg)
+
+1560222100
+curtisf
+I finished writing a code generator for C in it and hated it, so I wanted to try redoing it in Zig, and it's much, much nicer. But also I don't know Zig yet so lots of things are tricky for me
+
+1560222142
+scientes
+curtisf, i'd love to see it
+
+1560222154
+daurnimator
+curtisf: my plan was to do it very similar to LPEG (mostly because that's what I know well... and has been effective in other projects of mine)
+
+1560222160
+scientes
+I find code-generators difficult because you have to think about too many things at once
+
+1560222224
+curtisf
+Here's my work in Zig so far, it needs a lot of cleaning up still (and the implementation isn't done yet):
+
+1560222259
+daurnimator
+curtisf: see std.ArrayList to replace your List
+
+1560222281
+curtisf
+oops, that was just me testing out comptime, I am using ArrayList, lol
+
+1560222294
+scientes
+daurnimator, both of these security problems wouldn't have hapened in zig
+
+1560222356
+daurnimator
+curtisf: your code looks pretty good :)
+
+1560222542
+scientes
+daurnimator, i was just tring to expand the AST
+
+1560222546
+scientes
+it was annying
+
+1560222551
+scientes
+cause there is no up pointer
+
+1560222567
+scientes
+i feel i made a layering violation too
+
+1560222575
+curtisf
+?
+
+1560222587
+scientes
+in an assignment I need the lvalue to know what the rvalue is
+
+1560222599
+scientes
+a = b; <=== a didn't know what b was, but needs to
+
+1560223886
+curtisf
+What does this error mean:
+
+1560223901
+curtisf
+parser.zig:123:166: error: expected type 'parser.ParseErrors!parser.Combinators(u8).ParseSuccessful(parser.Combinators(u8).SequenceNode([]const parser.Pair{(struct parser.Pair constant),(struct parser.Pair constant),(struct parser.Pair constant)}))', found 'void'
+
+1560223908
+curtisf
+It's pointing to the open `{` of a function
+
+1560224149
+curtisf
+ah, it meant I was missing a `return;`
+
+1560224904
+daurnimator
+curtisf: my dream is to be able to do this
+
+1560224941
+scientes
+daurnimator, we might need comptime regexps to do everything
+
+1560224962
+daurnimator
+scientes: a PEG can be used instead of a regex.
+
+1560224963
+scientes
+zig will probably be the first language to do that---comptime compilation and execution
+
+1560224974
+scientes
+yeah but regexps are so clean
+
+1560224976
+curtisf
+D can do that, can't it?
+
+1560224980
+scientes
+and theoretically they can be compiled
+
+1560224982
+daurnimator
+hell; you can implement regexps on top of PEGs if you want
+
+1560224997
+curtisf
+implementing regex out of PEG is hard
+
+1560224997
+daurnimator
+infact it's easy
+
+1560225029
+curtisf
+You can easily support very similar operators, but alternation is ordered in PEG and not ordered in regular expressions
+
+1560225057
+scientes
+regexps can also only parse regular languages (of course)
+
+1560225076
+daurnimator
+curtisf: it's a weekend project :P
+
+1560225113
+curtisf
+oh, can you use lookahead operations to do it?
+
+1560225119
+daurnimator
+(which is the main grammar for the implementation of
+
+1560225251
+scientes
+can i create IrInstruction in ir_analyze?
+
+1560225271
+scientes
+I guess I can just call into another ir_analyze funciton
+
+1560225394
+andrewrk
+I have made it to the part of copy-elision branch where I'm fixing regressions in the behavioral tests
+
+1560225556
+curtisf
+daurnimator: Those aren't really regular expressions though, are they? e.g., /((aaa)|(aaaaa))+/ will match `aaaaa` as a regexp but not as a peg
+
+1560225564
+scientes
+can I create IrInstructions during iranalyze pass?
+
+1560225575
+scientes
+and if so do i use old_irb, or new_irb?
+
+1560225680
+daurnimator
+curtisf: it doesn't support the | operator.... and IIRC, neither does the regular expression standard (they're part of PCRE, which is an extension to plain regexps)
+
+1560225705
+scientes
+daurnimator, make sure you support greed/non-greedy, and do not implement back-tracking
+
+1560225737
+curtisf
+well it's called `+` in peg, right? `|` is one of the three fundamental regex operations
+
+1560225766
+daurnimator
+curtisf: it is not.
+
+1560225769
+andrewrk
+scientes, yes during IrAnalyze pass you look at old_irb instructions and produce new_irb instructions
+
+1560225794
+andrewrk
+if you look at any of the ir_analyze_instruction_foo functions that is what they are doing
+
+1560225810
+daurnimator
+curtisf: PEG syntax/nonclementure is all over the place: every paper/implementation uses different symbols. I'm not sure who's "+" you're talking about :P
+
+1560225853
+curtisf
+wait, what? Posix regex doesn't include `|`? That's central to what regular expressions are, though
+
+1560225864
+daurnimator
+curtisf: only extended posix regexes do
+
+1560225877
+curtisf
+When I say "regular expression" I mean the computer science concept
+
+1560225889
+curtisf
+which is PCRE sans backrefs and lookaheads
+
+1560225900
+daurnimator
+(ever wondered why you need to use 'egrep' vs 'grep'?)
+
+1560225901
+andrewrk
+scientes, zig has exactly 2 zig ir passes - the first one generates IrInstructions from AST nodes, the second one generates IrInstructions from the old IrInstructions
+
+1560225933
+andrewrk
+nearly everything is in the second pass
+
+1560225946
+andrewrk
+the first one is pretty much only to flatten loops and such into basic blocks
+
+1560226476
+curtisf
+is there any chance Zig would add gotos?
+
+1560226491
+curtisf
+(in a hygienic way, of course)
+
+1560226532
+andrewrk
+curtisf, gotos were removed:
+
+1560226548
+curtisf
+Cool, that answers that :)
+
+1560226551
+andrewrk
+they were hygienic but they became redundant
+
+1560226719
+scientes
+can i generate IrInstructions in the second pass?
+
+1560226733
+scientes
+just build it then call analye on it
+
+1560226894
+scientes
+its just that i need to resolve the type to decide what to do
+
+1560226953
+scientes
+and you can't resolve types in the first pass
+
+1560226968
+curtisf
+Is it useful for me to file an issue for an error message I find confusing?
+
+1560226984
+curtisf
+(the missing return error I mentioned above)
+
+1560226991
+scientes
+curtisf, yes, especially if you look into what it could be or even produce a patch
+
+1560227028
+curtisf
+I think this would be a straightforward thing to patch to learn how Zig is put together, but not sure how quickly I can set up zig development
+
+1560227042
+scientes
+curtisf, what os are you on?
+
+1560227047
+curtisf
+Windows 10
+
+1560227055
+scientes
+oh, i have no idea
+
+1560227069
+scientes
+although I know zig can be build with msvc
+
+1560227077
+andrewrk
+curtisf, should be pretty straightforward. everything is documented in the readme and/or the wiki
+
+1560227111
+curtisf
+Yea... I tried building Zig from source using mingw and using WSL, but I gave up. Something was broken with my setup
+
+1560227123
+andrewrk
+that's not the documented way to build zig from source on windows
+
+1560227131
+scientes
+zig supports windows
+
+1560227137
+scientes
+not just posix compatibility layers
+
+1560227221
+curtisf
+I know, I've just never learned how to use VS. I guess now might be the time
+
+1560227264
+scientes
+yeah I avoided it too...I tried just using clang and meson to do things
+
+1560228737
+terinjokes
+is there any work on providing HTML docs for std?
+
+1560228819
+scientes
+there are currently no docs, because that is waiting on a doc generator to be written terinjokes
+
+1560228996
+daurnimator
+
+
+1560229031
+andrewrk
+daurnimator, it's a dead end, I explored the concept
+
+1560229037
+daurnimator
+andrewrk: oh? :(
+
+1560229084
+andrewrk
+I need to type up the multi-builds issue so I can start pointing to it
+
+1560229095
+andrewrk
+I ranted about it on irc a couple days ago
+
+1560229178
+daurnimator
+any keywords to search for in the logs?
+
+1560229298
+daurnimator
+the "multi-target builds" rant
+
+1560229300
+daurnimator
+?
+
+1560229301
+andrewrk
+it starts here
+
+1560229445
+daurnimator
+so issue is that you would need to compile everything? and that what is compiled is different per architecture? makes sense.
+
+1560229456
+andrewrk
+yeah and build options
+
+1560229463
+andrewrk
+and generic types and functions
+
+1560229492
+daurnimator
+k. should I close 2573? or is it just super-deprioritized now?
+
+1560229494
+andrewrk
+in summary, comptime is integral to zig and you need full "comptime code coverage" to get proper docs
+
+1560229502
+hryx
+I think there are some pretty big design decisions to be made that are affected by that fact
+
+1560229505
+hryx
+yeah ^
+
+1560229521
+andrewrk
+I'll comment on it and close it. I'll at least put some explanation there and point to the issue I haven't yet typed up
+
+1560229522
+hryx
+(regarding the docgen I mean)
+
+1560229547
+andrewrk
+we also need "comptime code coverage" to get proper IDE refactoring features
+
+1560229562
+daurnimator
+andrewrk: I can still see it being useful long term for e.g. REPL usage. or when debugging. But now you've explained I see it's not useful for short term doc generation
+
+1560229597
+andrewrk
+this is a fundamental problem of conditional compilation, which is a necessary component of portable compile-to-machine-code languages. so this is a fundamental challenge; not something zig has caused to happen with its choices
+
+1560229620
+andrewrk
+and so therefore if we pull off the multi-builds solution it will actually be a pretty meaningful contribution to computer science
+
+1560229672
+daurnimator
+It actually brings to the surface an interesting question.... what if e.g. a function behaves entirely differently based on some build option? Shouldn't the docs be different depending on the build option?
+
+1560229691
+andrewrk
+right. one of the main jobs of documentation generation is to expose nondeterminism
+
+1560229709
+terinjokes
+i see this with godocs
+
+1560229710
+andrewrk
+I see browsing generated docs as being extremely useful, even if you have 0 doc comments
+
+1560229775
+andrewrk
+what I mean is that the docgen will have to reconcile the set of builds together and detect when the different builds produce different behavior
+
+1560229781
+daurnimator
+if (build_option) { /// This function frobbles } else { /// This function encabulates } ...... hrm.
+
+1560229803
+cloudhop
+I wonder if some of this could be dealt with by creating a "megafunction" that touches all possible code paths
+
+1560229814
+andrewrk
+if the api of the function is the same, it won't matter. but things such as types of args that depend on build options, error sets, etc are interesting to the docgen
+
+1560229876
+daurnimator
+cloudhop: that's what I originally proposed. but problem pointed out was that it still doesn't cover e.g. structs that different based on target architecture
+
+1560229883
+andrewrk
+I think it's going to be reasonable to code this feature if stage2 is designed with it from the ground up
+
+1560229916
+daurnimator
+cloudhop: which then brought up can we do a union of compiling for every arch/OS/etc? "multi-target build"
+
+1560229934
+cloudhop
+I mean, I suppose I meant the actual comptime function generating different structs as being included as a different branch
+
+1560229949
+cloudhop
+e.g. can you deal with this if and only if you know all possible build options?
+
+1560229951
+daurnimator
+cloudhop: which then brought up "but what about build options?" (see option #226)
+
+1560229973
+daurnimator
+s/see option/see issue/
+
+1560230070
+cloudhop
+Is there a reason these compile time options can't be laid out in a build.zig file? Or is this considered unacceptable
+
+1560230251
+andrewrk
+yeah build.zig is a good place for build options
+
+1560230311
+andrewrk
+I think it's a bit clunky declaring arbitrary options at the moment, at some point here the package manager implementation is going to have a way for packages to declare the options they support and there will be a system for choosing such options when depending on a package
+
+1560230333
+andrewrk
+anyway one thing at a time, I'm still working on copy elision branch
+
+1560230351
+daurnimator
+^ yep. I've been trying to hold off on asking andrewrk too many questions :P
+
+1560230356
+scientes
+same haha
+
+1560230380
+terinjokes
+i'd just read the std source for now :)
+
+1560230433
+andrewrk
+I got a lot done today on it. if I have another productive day tomorrow I should have a sizable chunk of the test suite passing
+
+1560230541
+scientes
+me too actually
+
+1560230751
+andrewrk
+good night
+
+1560243399
+daurnimator
+Another thing I've been meaning to do: port gimli to zig.
+
+1560243413
+daurnimator
+gimli is a crypto primitive: can be used as a PRNG, cipher, and more.
+
+1560243433
+daurnimator
+If anyone wants to beat me to it.... :)
+
+1560252605
+tgschultz
+daurnimator, I'm fairly confident the only way to make PseudoStruct work at runtime is to use a hashtable and some kind of union of everything, which feels quite COM Dispatch.
+
+1560252647
+tgschultz
+scientes: BMP, the image format. Rewriting my PNG lib is next on the list.
+
+1560252687
+daurnimator
+tgschultz: it won't be performant, but I guess it's an `inline for` that needs to be swapped for a `for` to make it runtime?
+
+1560252748
+tgschultz
+I don't think it is that straight-forward, since you can't do type things at runtime.
+
+1560252791
+tgschultz
+I'm really not sure something as heavy handed as @reify is necessary for things like protobuff. PseudoStructs would work, but if we wanted better integration with normal struct semantics there's the old @addField() idea and that would probably be sufficient.
+
+1560252817
+daurnimator
+tgschultz: yeah... though if you have a constraint list of primitive types (i8, u8, i16, i32, u64, i64), and have byte-offsets.... you should be good?
+
+1560252875
+tgschultz
+right, a union-of-everything. Like I said, it feels very COM.
+
+1560257942
+BitPuffin
+is there any like calendar day of the month type thing for zig
+
+1560258085
+daurnimator
+BitPuffin: from what?
+
+1560258101
+BitPuffin
+what do you mean
+
+1560258104
+BitPuffin
+like from epoch I guess?
+
+1560258126
+daurnimator
+given X (where X is.... ??) you want day of the month?
+
+1560258200
+BitPuffin
+so given the system time
+
+1560258214
+BitPuffin
+I want to get what day of the month it is
+
+1560258237
+daurnimator
+BitPuffin: system time is in .... POSIX time (which is almost UTC). day of the month in.... which time zone?
+
+1560258281
+BitPuffin
+whatever is configured on the system
+
+1560258300
+daurnimator
+that is not a simple question :)
+
+1560258309
+BitPuffin
+so if my clock says 3pm on desktop I wanna get 3pm in my program :P
+
+1560258323
+BitPuffin
+yeah it requires a lot of os specific stuff
+
+1560258325
+daurnimator
+BitPuffin: suffice to say we don't have that in zig.
+
+1560258331
+daurnimator
+you'll have to call out to C.
+
+1560258344
+daurnimator
+or alternatively.... probably spend 2 weeks implementing it in zig for us :)
+
+1560258362
+BitPuffin
+do you have a recommendation for C? :p
+
+1560258458
+daurnimator
+localtime_r ?
+
+1560258550
+BitPuffin
+is it portable to windoz?
+
+1560258648
+daurnimator
+BitPuffin: windows has the similar , _localtime64_s
+
+1560258873
+tgschultz
+unfortunately human timekeeping systems are ludicrously complicated to implement
+
+1560258894
+daurnimator
+FWIW I have some history in implementing them with
+
+1560274206
+marijnfs
+why can't i directly deref a [*]T ? It seems nices to me than using the index operator
+
+1560274330
+donpdonp
+do you mean ptr.*
+
+1560274392
+marijnfs
+donpdonp: yes
+
+1560274406
+marijnfs
+say you have a slice and take its pointer slice.ptr
+
+1560274407
+andrewrk
+marijnfs, you can, use [0]
+
+1560274413
+marijnfs
+that thing can only use [0]
+
+1560274415
+marijnfs
+andrewrk: indeed
+
+1560274423
+marijnfs
+seems like .* is nicer to me
+
+1560274428
+marijnfs
+it's a syntax thing i guess
+
+1560274440
+andrewrk
+it's about preventing mistakes
+
+1560274478
+andrewrk
+if you know which one you have, you use .* or [0] and everything is easy. if you don't know which one you have, it would be dangerous to use the wrong one since it's a pretty strong hint that a mistake is being made
+
+1560274568
+andrewrk
+marijnfs, also, sorry didn't see that you mentioned the index operator in the question originally
+
+1560274759
+marijnfs
+andrewrk: yeah thats a good point
+
+1560274786
+marijnfs
+llvm figures out it doesnt have to add 0 i'm sure
+
+1560274997
+marijnfs
+is there a binary search?
+
+1560276389
+scientes
+oh yeah i ran into that and it was no big deal
+
+1560276446
+scientes
+marijnfs, i did a binary search that works on arbitrary length serialized strings
+
+1560276454
+scientes
+but that is a specialized thing
+
+1560277491
+emekankurumeh[m]
+BitPuffin: have you seen
+
+1560280627
+Sahnvour
+is there a way to have zig test show the commands it runs ?
+
+1560281179
+scientes
+zig test is just one binary
+
+1560281190
+scientes
+zig build is more complicated
+
+1560282091
+Sahnvour
+yes, but to it run inside a debugger I'd rather not have to look up in zig-cache/ myself
+
+1560282889
+scientes
+ahh yes, it if fails it tells you the path
+
+1560282904
+scientes
+basically it seems you are asking for a build-test
+
+1560283165
+Sahnvour
+oh right it prints it ... nevermind, I'm tired
+
+1560283377
+marijnfs
+btw if else needs braces?
+
+1560283394
+scientes
+it doesn't if it is on the same line
+
+1560283400
+scientes
+otherwise yes it does
+
+1560283822
+scientes
+what about ir_render? is that a 3rd pass?
+
+1560283828
+scientes
+build, analyze, render?
+
+1560284300
+marijnfs
+can you subtract [*]T ptrs from each other?
+
+1560284374
+scientes
+you have to cast with @ptrToInt() first
+
+1560284395
+scientes
+that was a conscience decision
+
+1560284824
+marijnfs
+scientes: what kind of mistakes could you make othersie?
+
+1560284830
+marijnfs
+it's not less efficient?
+
+1560284839
+scientes
+its not clear if it pointer arithmatic
+
+1560284854
+scientes
+if you cast it is clear it isn't
+
+1560284904
+marijnfs
+but you can to Ptr + usize, [*] explicitly ahers to pointer arithmetic
+
+1560284906
+marijnfs
+or so it is claimed
+
+1560284929
+scientes
+yes, that is why math on two pointers has to go through @ptrToInt
+
+1560284951
+scientes
+because otherwise it is confusing
+
+1560285158
+marijnfs
+not sure if i agree, if you subtract two pointers you would get a usize, so you would pick it up later if you expected a [*]T
+
+1560285209
+scientes
+in C++ you get a ptrdiff_t, except that is signed....
+
+1560285217
+scientes
+which causes whole bunch of problems
+
+1560285232
+scientes
+we side-step that by just allowing you to do what you want
+
+1560288210
+marijnfs
+scientes: actually, how do you keep pointer arithmetic? if i do [*]f64 + 10, it moves 10 * 4 bytes
+
+1560288222
+marijnfs
+but I can't to the reverse now
+
+1560291316
+Guest54235
+ls
+
+1560291501
+scientes
+andrewrk, does your local version of copy elision build libuserland.a?
+
+1560291508
+scientes
+and if so, can you push it
+
+1560291767
+scientes
+oh nvm
+
+1560293315
+andrewrk
+There is an issue open for pointer subtraction
+

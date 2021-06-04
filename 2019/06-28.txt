@@ -1,0 +1,1028 @@
+1561685242
+fengb
+Is there a pattern for doing serializable bitflags?
+
+1561687345
+daurnimator
+fengb: isn't that just 'packed struct { a:u1, b:u2 ....... }
+
+1561687677
+fengb
+Yeah but I wanted to document the shifts
+
+1561687701
+fengb
+Probably not a big deal. I'll run with this and see how far I get
+
+1561687701
+hryx
+andrewrk: QQ, in translate-c-2, what approach do you recommend for generating an integer literal token? in the C++ version it converts the clang::APSInt to a bigint for the AST node, but the Zig AST node doesn't store the big.Int, just a token
+
+1561687730
+hryx
+essentially, should I convert the clang big int to zig and render that, or should I just copy the string from the original C source?
+
+1561687742
+hryx
+hope the question makes sense
+
+1561687776
+hryx
+(tiehuis: this is why I asked about the big int stuff the other day)
+
+1561688426
+andrewrk
+hryx: good question. No need to use big ints anymore, the clang apsint can get rendered to text
+
+1561688518
+andrewrk
+I think they already have functions for that
+
+1561688535
+hryx
+cool. from clang docs it looks like doing so with native Clang functions requires using C++ allocators, and I assumed that should be avoided in stage2 translate-c
+
+1561688558
+hryx
+I might have been mistaken
+
+1561688563
+andrewrk
+There's another option
+
+1561688595
+andrewrk
+If zig supports all the same integer literal syntax, the source span can be copied directly
+
+1561688618
+hryx
+that's what I was thinking might be good to start with for now
+
+1561688636
+hryx
+I'll do that and leave a comment to re-evaluate when translate-c gets more love
+
+1561688638
+andrewrk
+It would be more robust to have clang parse and serialize though. For example octals are different
+
+1561688650
+hryx
+ah I see
+
+1561688668
+andrewrk
+It's still ok though, one thing at a time
+
+1561688669
+daurnimator
+yeah i was about to say... i hope we don't have same octal syntax
+
+1561688681
+andrewrk
+Let's try to get your branch in a mergable state
+
+1561688692
+andrewrk
+And then keep chipping away at the problem
+
+1561688726
+hryx
+oh wtf, a c++ octal is just a number prefixed with "0"? lame
+
+1561688733
+hryx
+sounds good andrewrk
+
+1561688776
+hryx
+(sorry, was just commenting about the octal syntax coz I didn't know about that differencen before)
+
+1561688786
+andrewrk
+Going through bigint is fine if that's the easiest way to serialize
+
+1561688794
+daurnimator
+hryx: back in the day octal was useful
+
+1561688826
+hryx
+Also apologies for the super slow progress lately, last couple weeks have been super insane again
+
+1561688827
+daurnimator
+e.g. look at ascii through an octal lens. it'll make more sense
+
+1561688848
+daurnimator
+same with x86 machine code... makes a shit load more sense in octal
+
+1561688855
+hryx
+I see, that makes sense. I was more confused that hex uses "0x", so I'd expect octal to be "0o" or something
+
+1561688863
+andrewrk
+No worries hryx it's appreciated that you're contributing at all
+
+1561689012
+andrewrk
+Octal is 0o in zig but not C
+
+1561689067
+andrewrk
+Oh you know why it needs to go through apsint and not source hryx
+
+1561689071
+andrewrk
+Macros
+
+1561689121
+andrewrk
+There can never be any direct source copying because of the preprocessor
+
+1561689186
+daurnimator
+hryx:
+
+1561689205
+hryx
+ohhh snap, good point
+
+1561689218
+fengb
+lol "For some reason absolutely everybody misses all of this, even the Intel people who wrote the reference on the 8086 (and even the 8080)."
+
+1561689273
+hryx
+ha, interesting!
+
+1561690140
+fengb
+"Assertion failed. This is a bug in the Zig compiler."
+
+1561690160
+fengb
+Is misaligned struct padding a known bug?
+
+1561697328
+andrewrk
+fengb: yeah there's a big fat hack in struct field alignment. I have a plan to fix it
+
+1561697339
+andrewrk
+Look for the "lazy values" issue
+
+1561697446
+andrewrk
+I'm gonna focus on stability (bug fixes) for the next couple weeks
+
+1561697477
+andrewrk
+But like, the hard bugs that need under the hood changes
+
+1561697935
+hryx
+andrewrk: I just got the translate-c PR to a point where I feel ok "cauterizing" it and not making any more changes. I'll open it for review -- it's not perfect but probably ok considering translate-c-2 is super WIP
+
+1561697951
+hryx
+don't hold back though, I'm definitely open to clean up any loose ends before merging
+
+1561697966
+hryx
+also, it's a lot of commits again. no conflicts, but want it squashed?
+
+1561698943
+fengb
+andrewrk: when using packed structs, I accidentally left a nested struct 7 bits wide, and encountered the "Assertion failed. This is a bug in the Zig compiler." Is that the same problem?
+
+1561699473
+andrewrk
+hryx: no, a merge commit is good
+
+1561699480
+andrewrk
+And thanks! I'll have a look tomorrow
+
+1561699505
+hryx
+dope dope!
+
+1561699516
+andrewrk
+fengb: I'm not sure. If you can't find an existing issue after a quick search feel free to file that one
+
+1561699563
+fengb
+Sounds good thanks
+
+1561699704
+andrewrk
+hryx: apologies if we already talked about this but I can't remember, so did the test case at the top of the translate c tests regress?
+
+1561699732
+andrewrk
+Oh is that the one for the issue you opened?
+
+1561699757
+hryx
+exactly -- the add_2 tests now don't work because of that new issue
+
+1561699769
+hryx
+rather, they now fail because we're observing import mode in stage2
+
+1561699784
+hryx
+and that issue is to remove the import mode, at which point we can uncomment those tests
+
+1561699806
+andrewrk
+I see, ok, but we can at least add different tests for stage1 and stage2
+
+1561699829
+andrewrk
+Even if 2 is divergent from 1 it can still have coverage
+
+1561699847
+hryx
+ah yeah, I was gonna ask about that. In that case I'll add a few tests for the new stage2 stuff
+
+1561699862
+hryx
+cool, will have those done tonight so ye can review tomorrow
+
+1561699865
+andrewrk
+Perfect
+
+1561699897
+andrewrk
+I mean if we get to the point where all the 2 stuff is covered and it's good, we can just delete translate_c.cpp and the tests
+
+1561699999
+hryx
+true. that will be a nice diff >:)
+
+1561700239
+andrewrk
+Yeah and the really important thing is that all efforts (even now with your efforts) are for the real, final compiler
+
+1561700242
+andrewrk
+Not just stage1
+
+1561700278
+andrewrk
+That's the main motivation for this change
+
+1561700297
+andrewrk
+We can fully invest in the stage2 translate-c
+
+1561700389
+hryx
+yesss. Well I hope this change can help others get started on that investment a little
+
+1561704112
+curtisf
+finally tracked down the miscompilation to a short-ish 25 line snippet :D but it's now very late. I wanted to say thank you all to working on Zig! I'm looking forward to watching it gain traction!
+
+1561704492
+marler8997_
+is there a way to pass a "const type" to a function?  i.e. "const usize"?
+
+1561705767
+marler8997_
+why doesn't the Array TypeInfo have an "is_const" field?
+
+1561707297
+Hejsil
+marler8997_ Only memory locations can be 'const'. This means declarations and pointers.
+
+1561707326
+marler8997_
+ok thanks for confiming
+
+1561708019
+marler8997_
+whoa....running ./bin/zig test ../std/meta.zig seems to be completely locking up my linux box
+
+1561708037
+marler8997_
+I just rebooted, ran it again and now it's completely hung again
+
+1561708508
+thm
+maybe try limiting the amount of memory it can take?
+
+1561712223
+thm
+is there a way to parallelize builds? build-exe seems to use only one thread/process
+
+1561721699
+tgschultz
+marler8997_ it may be an infinite import loop. I've encountered something similar before. The solution at the time was to cd into std and run the test from there.
+
+1561724633
+thm
+are there html docs for the std library?
+
+1561725496
+thm
+okay, this is a faq ;)
+
+1561732370
+fengb
+No docs for std yet, but the code is pretty readable
+
+1561733919
+samtebbs
+Perhaps we should add a notice to the README saying that docs for std are coming as a lot of people have probably spent time looking for them.
+
+1561733997
+Tetralux
+Seems good to me.
+
+1561734720
+fengb
+RTF~M~ C? :P
+
+1561734876
+darithorn
+is it normal for zig to require all of its llvm dependencies when all i want is to build docs?
+
+1561734948
+darithorn
+docgen.zig doesn't look like it uses anything special and I already have a prebuilt zig compiler binary
+
+1561734982
+darithorn
+(i know the docs aren't much there but i was curious what state they were in)
+
+1561735225
+scientes
+I'm starting to think we should have implicit up-casting of vectors
+
+1561735235
+scientes
+and shouldinstead introduce @sext() and @zext()
+
+1561735250
+scientes
+not because it is unsafe on vectors, but because it creates an inconsistancy with arrays
+
+1561735404
+fengb
+Are there plans to implicitly downcast bit operations? "const foo: u2 = bar & 0b11;"
+
+1561735414
+scientes
+fengb, no
+
+1561735420
+companion_cube
+why do people write `_ = try foo();` instead of `try foo();`?
+
+1561735426
+scientes
+maybe to limit warnings, but never actually cast
+
+1561735431
+fengb
+Zig throws an error if you don't use the return value
+
+1561735445
+companion_cube
+even if it's void?
+
+1561735446
+fengb
+It's also self documenting that the function has a return value
+
+1561735449
+scientes
+so there might be a compiler "internal range" to supress errors, but the type would never change
+
+1561735452
+companion_cube
+ah ok.
+
+1561735457
+fengb
+Oh void? That doesn't make sense
+
+1561735463
+companion_cube
+no, I'm just wondering
+
+1561735477
+companion_cube
+it makes sense if it fails when the value is silently discarded.
+
+1561735487
+fengb
+scientes: not auto downcast but rather smart enough to be context aware
+
+1561735489
+companion_cube
+(I'm taking a look at docgen)
+
+1561735489
+scientes
+_ = should be an error if it returns void
+
+1561735501
+scientes
+fengb, yes, but probably only in stage2
+
+1561735511
+scientes
+lots of work on errors just isn't worth it now
+
+1561735519
+fengb
+Ah okay
+
+1561735732
+fengb
+Is there a documented roadmap of features per version?
+
+1561735748
+samtebbs
+fengb: Well there are milestones
+
+1561736098
+Tetralux
+
+
+1561736116
+Tetralux
+Just opened a pull for the stdlib docs mention.
+
+1561736137
+Tetralux
+@samtebbs.
+
+1561736207
+tgschultz
+scientes it's perfectly possible to assign void to a variable though, so erroring on that would be an inconsistency.
+
+1561736227
+scientes
+really?
+
+1561736233
+scientes
+how does that differ from undef?
+
+1561736235
+scientes
+*undefined
+
+1561736276
+scientes
+oh I see
+
+1561736314
+tgschultz
+Don't get me wrong, since _ is already special it's not necessarily a bad inconsistency to have
+
+1561736344
+scientes
+C has it
+
+1561739089
+lunamn
+wouldn't it be interesting to have doc comments available via @typeInfo, at least for functions?
+
+1561739712
+darithorn
+@lunamn i agree
+
+1561741038
+emekankurumeh[m]
+there is an open issue for that
+
+1561741071
+hryx
+Let's start linking people to this
+
+1561741074
+Tetralux
+Oh that's something - what's Zig stance on multiline comments, and why are they not a thing?
+
+1561741092
+emekankurumeh[m]
+
+
+1561741124
+andrewrk
+thanks for starting this hryx
+
+1561741139
+hryx
+my pleasure
+
+1561741142
+hryx
+Tetralux:
+
+1561741188
+andrewrk
+marler8997_, hmm, it might be time to reel in memory usage of stage1
+
+1561741400
+Tetralux
+I just find myself I could type a bunch without thinking "aaaand gotta tell it that I'm still typing"
+
+1561741419
+Tetralux
+Aside from that I haven't really missed them yet.
+
+1561742332
+tgschultz
+Alright, I'll bite, why would it be useful to have doc comments in the TypeInfo?
+
+1561742841
+darithorn
+i can't speak for lunamn but i'm just rooting for the ability to generate documentation easily. To me, TypeInfo seems like a good place to put that access
+
+1561742874
+lunamn
+yeah, that's the idea
+
+1561742954
+darithorn
+though, since Zig already enforces a certain code style, it'd make sense to have documentation generation built into the compiler, which would enforce a certain doc style
+
+1561742975
+tgschultz
+I don't see why that's necessary, and it opens up comments being relavant to comptime code. As in, the behavior of code could change depending on the comments.
+
+1561742992
+darithorn
+that's true but i think no matter what you do there's potential for abuse
+
+1561743010
+darithorn
+if the docs were exported as a json file, the programmer could almost just as easily use that to change runtime behavior
+
+1561743022
+tgschultz
+sure, but since this functionality is only really useful for exactly one thing, it doesn't seem like a good tradeoff at all
+
+1561743149
+darithorn
+yeah, i can agree that there's very little reason to put in the extra effort to expose that information to the user at compile time
+
+1561743232
+darithorn
+is there any work being done in putting doc gen into the compiler?
+
+1561743484
+hryx
+darithorn: see issue #21 - I plan to do work on it after current task
+
+1561743608
+darithorn
+okay, that's great. with my school i hardly have any time to work on the generation part but i'd absolutely love to work on going through and documenting everything once it's ready
+
+1561743668
+darithorn
+or once the documentation style is finalized
+
+1561745271
+Flaminator
+This example isn't currently working anymore
+
+1561745799
+fengb
+Having docs in a
+
+1561746315
+fengb
+It's not missing, just got renamed
+
+1561746331
+fengb
+
+
+1561746395
+donpdonp
+oh wow, the name threw me off. thx.
+
+1561746418
+companion_cube
+the docs can be useful for tools like a language server
+
+1561746450
+donpdonp
+fixing up a couple [] to [_] and std.os.File to std.fs.File and things are looking good. /me claps
+
+1561746997
+emekankurumeh[m]
+Flaminator: that's because of this issue
+
+1561747049
+Flaminator
+Ah didn't see someone else already reported it.
+
+1561747085
+emekankurumeh[m]
+access to doc comments might allow for something like pragmas in nim or rust attributes.
+
+1561747149
+emekankurumeh[m]
+though i'm not sure if that's something that's in line with zig's goals
+
+1561749154
+tgschultz
+I'm going to hazard a guess and say no, it isn't.
+
+1561749174
+tgschultz
+At least not through comments.
+
+1561749542
+emekankurumeh[m]
+found the issue for that
+
+1561750630
+companion_cube
+attributes should have a clear syntax that is part of the AST
+
+1561750654
+companion_cube
+(although, in OCaml, documentation is now an attribute `[@@ocaml.doc "text here"]` attached to the corresponding AST node
+
+1561750655
+companion_cube
+)
+
+1561751422
+fengb
+I'm returning &constant inside a function. Is that semantically the same as a static variable in C?
+
+1561752424
+scientes
+aren't types suppose to be resolved before the second analyze pass?
+
+1561752663
+scientes
+oh i see, i need ->child
+
+1561757957
+emekankurumeh[m]
+it seems zig is segafaulting when trying to output an error trace on windows
+
+1561758017
+Tetralux
+In what build mode?
+
+1561758040
+emekankurumeh[m]
+debug i think
+
+1561758060
+emekankurumeh[m]
+i'm not sure what mode zig builds build.zig files in
+
+1561758093
+Tetralux
+Debug unless you specify -D<mode> IIRC.
+
+1561758135
+Tetralux
+I would presume you can also ask for non-debug in build.zig too, but yes.
+
+1561758168
+Tetralux
+Is it the exe you're building that faults, or zig.exe?
+
+1561758260
+emekankurumeh[m]
+when i run zig build the build.exe generated segafaults
+
+1561758309
+Tetralux
+Is it
+
+1561758501
+emekankurumeh[m]
+no that prints the error trace fine. for me whenever zig executables try to print error traces they segfault
+
+1561758567
+hryx
+if anyone is in the mood to solve a tiny mystery (no pressure), here's funny bug blocking merge of #2569:
+
+1561758585
+hryx
+I probably did something dumb in my implementation of transStringLiteral:
+
+1561759066
+Sahnvour
+emekankurumeh[m]: can you share a full output of this ?
+
+1561759139
+emekankurumeh[m]
+sure, just let me warn you there isn't mutch
+
+1561759324
+emekankurumeh[m]
+here's a reduced case:
+
+1561759415
+Sahnvour
+so it looks like it can't find the .pdb path in your executable image
+
+1561759723
+emekankurumeh[m]
+then shouldn't it hit this then?:
+
+1561759746
+Sahnvour
+debugging this is tedious, but what you can do for a start is: in coff.zig, fn loadSections, output the name of each section it loads in the while loop
+
+1561759769
+Sahnvour
+(and reinstall zig with after doing the change so that it builds with it)
+
+1561759805
+Sahnvour
+it should but you have an illegal read before it can reach this part :)
+
+1561759956
+Sahnvour
+also you can try to open your build.exe with PEView (
+
+1561760394
+cameris
+hryx: `fn escapeChar` returns a slice to an array that is declared inside that function, hence on the stack. I'm not sure, but is that supposed to work?
+
+1561760509
+emekankurumeh[m]
+that smells like a bug
+
+1561760654
+hryx
+dang
+
+1561760662
+hryx
+thanks cameris, I'll look into that
+
+1561760699
+hryx
+in fact I can already tell you're totally right. Doesn't matter how much I work with slices, my brain still says "array"
+
+1561760705
+hryx
+:>
+
+1561760715
+mikdusan3
+that looks like a bug. but i don't think that's causing your specific issue
+
+1561760923
+mikdusan3
+hryx: here's a quick workaround the stack bug.
+
+1561761137
+emekankurumeh[m]
+Sahnvour: i think the header is being loaded incorrectly because zig thinks that there are 0 instead of 7 sections
+
+1561761140
+cameris
+mikdusan3: the len is not the problem I think, thats part of the slice. But the call of escapeChar in `fn writeEscapeString`.
+
+1561761181
+cameris
+well maybe, not really sure. At least it seems odd to me.
+
+1561761296
+mikdusan3
+yes i only did a workaround for one call point of escapeChar
+
+1561761371
+Sahnvour
+emekankurumeh[m]: interesting, can PEView load it correctly ?
+
+1561761375
+cameris
+hryx: in #2749 your doing the same in the first example with `fn f(c: u8) []const u8`
+
+1561761414
+emekankurumeh[m]
+nvm i was misunderstanding the logic
+
+1561761486
+emekankurumeh[m]
+nvm again i was correct
+
+1561761500
+hryx
+thank you mikdusan3 and cameris! I'll fix that when I get home
+
+1561761620
+emekankurumeh[m]
+Sahnvour: in coff.loadSections the length of Coff.sections is checked before it is ever initialized to something meaningful
+
+1561761990
+Sahnvour
+emekankurumeh[m]: yeah that looks like something wrong, I don't remember why it's written like this
+
+1561762115
+emekankurumeh[m]
+i'll make a patch for that
+
+1561762352
+Sahnvour
+sections is supposed to be initialized with undefined, so filled with 0xAA right ? Then I don't understand how it can work, because sections.len would always be different from 0
+
+1561763095
+emekankurumeh[m]
+Sahnvour: done,
+
+1561763266
+mikdusan3
+hryx: here's a fix for cstr/zstr stuff. turns out "cstr" was a misnomer. function returns non-null-terminated bytes. and all you have to do is make it a slice instead of calling Context fn str()
+
+1561763280
+mikdusan3
+noisy part of diff is just var renames for clarity:
+
+1561763368
+Sahnvour
+emekankurumeh[m]: does that fix your sigsev ?
+
+1561763372
+mikdusan3
+duh. why don't i just add it to PR :)
+
+1561763387
+emekankurumeh[m]
+yes
+
+1561763424
+emekankurumeh[m]
+though with some error traces i get integer overflows
+
+1561763588
+hryx
+thanks mikdusan3, hott stuff
+
+1561763611
+Sahnvour
+I think there's still a bug: `Coff` has no init func, so there's no way to know if `sections` is initialized or not
+
+1561763645
+Sahnvour
+it should either get an init(), or `openSelfDebugInfoWindows` should initialize `sections` itself
+
+1561763703
+mikdusan3
+C null-terminated strings are a billion dollar mistake. maybe more.
+
+1561763748
+wrl
+slices are clearly the better abstraction
+
+1561763827
+hryx
+also I think the issue of returning a stack-allocated slice remains. in which case I can just make the destination slice a parameter instead of return value
+
+1561763837
+hryx
+whoa wait, will copy elision make that unnecessary?
+
+1561763847
+hryx
+:brain_explode:
+
+1561763870
+mikdusan3
+hryx: it's not an issue of returning a *slice*. that's done and copy elision takes care of the *slice*.
+
+1561763879
+mikdusan3
+the issue is the memory slice points to is technically gone.
+
+1561763935
+mikdusan3
+ie: creating an array... and slice it. the storage for 1,2,3,4 is tmp. --> `return [_]u8{1,2,3,4,5}[0..];`
+
+1561763948
+hryx
+sorry, that is indeed what I meant to say -- I appreciate the more correct language :>
+
+1561764619
+emekankurumeh[m]
+Sahnvour: the overflow is here
+
+1561764701
+Sahnvour
+oh...
+
+1561764707
+Sahnvour
+emekankurumeh[m]: what environment are you in ?
+
+1561764778
+emekankurumeh[m]
+windows 7 64bit x86_64-windows-gnu
+
+1561764986
+Sahnvour
+what does the -gnu part implies ? because I'm able to run your snippet and it displays the error trace correctly, on W10
+
+1561765004
+emekankurumeh[m]
+the abi
+
+1561765025
+emekankurumeh[m]
+i don't think it should matter because i'm not linking to libc
+
+1561765093
+emekankurumeh[m]
+i think zig is going a level too deep when showing error traces. it shows the error trace fine but after that the error trace is finished i get the overflow error.
+
+1561765278
+Sahnvour
+possibly it's trying to display the windows function calling the program
+
+1561765312
+Sahnvour
+but I remember seeing these in stack traces, so that shouldn't cause overflow
+
+1561765325
+emekankurumeh[m]
+full output
+
+1561765409
+Sahnvour
+that's probably it
+
+1561765483
+Sahnvour
+looking at your previous gist, the next frame is kernel32.dll!BaseThreadInitThunk which was located at a lower address in memory
+
+1561765509
+Sahnvour
+in that case, it would make sense the subtraction goes wrong
+
+1561765533
+Sahnvour
+because your base address is something like 0x13FB...
+
+1561766087
+companion_cube
+should generic things like ArrayList take a comptime function to deinit elements that are removed?
+
+1561766209
+cameris
+Im totally confused right now, in
+
+1561766277
+Tetralux
+String literals are in the static segment and therefore not on the stack, therefore global, there's always around.
+
+1561766304
+Tetralux
+Well - not really "global" per se - but you get my point.
+
+1561766326
+Tetralux
+They're around for the lifetime of the program.
+
+1561766336
+hryx
+yes, for string
+
+1561766352
+hryx
+(the bug I asked about had a different problem, just to be clear)
+
+1561766364
+Tetralux
+.. But not: var a: [64]u8 etc.
+
+1561766368
+Tetralux
+Because that's on the stack.
+
+1561766375
+Tetralux
+And therefore you should not return it.
+
+1561766375
+cameris
+Tetralux, thx. makes sense.
+
+1561766387
+Tetralux
+o7
+

@@ -1,0 +1,2040 @@
+1573516842
+daurnimator
+andrewrk: I assume #3644 a likely merge? (i.e. should I bother taking the time to rebase the InStream mixin stuff?)
+
+1573516885
+mq32
+oh. looks like you have to manually enable comdats
+
+1573516903
+andrewrk
+now this is working too:
+
+1573516941
+andrewrk
+daurnimator, I haven't looked closely yet, sorry. been focused on anon struct literals / anon list literals
+
+1573516986
+daurnimator
+andrewrk: that's okay. I'm just going to be suddenly dev-time-poor as of tonight
+
+1573516988
+mq32
+daurnimator:
+
+1573517014
+andrewrk
+llvm does have a pass for this. I haven't tested how good it is
+
+1573517023
+mq32
+btw, andrewrk: does zig allow to have two different functions have the same pointer?
+
+1573517031
+mq32
+this would allow such iptimizations
+
+1573517037
+rjtobin
+Quick question: I have a tagged union "x" of type SomeTaggedUnion, whose active field is ".Foo". I do the following: "x = SomeTaggedUnion{.Bar = x.Foo};". This crashes at runtime ("access of inactive union field"), but works if I split the assignment via an intermediate variable: "const y = SomeTaggedUnion{.Bar = x.Foo}; x = y;". Is this the way it's supposed to work, or a bug? (Not a big deal, just seeing if I should file a report)
+
+1573517052
+andrewrk
+
+
+1573517088
+mq32
+oh neat
+
+1573517095
+mq32
+it's probably worth trying
+
+1573517148
+andrewrk
+rjtobin, this has to do with result location aliasing the assignment expression. I think there is an issue open for this. it's not decided yet how this will work in final language spec. but it will always work with an intermediate variable
+
+1573517205
+rjtobin
+@andrewrk: cool, makes sense. won't file a report. thanks!
+
+1573517268
+mq32
+because my kernel project is 719248 bytes large atm and i wonder why that is
+
+1573517473
+mq32
+what are all those "__unnamed_800" symbols?
+
+1573517475
+daurnimator
+mq32: how big if stripped?
+
+1573517484
+mq32
+that is stripped
+
+1573517796
+mq32
+unstripped is 1.6M
+
+1573517839
+daurnimator
+mq32: 719K doesn't seem huge huge...
+
+1573517866
+mq32
+it is, for what that code does
+
+1573517867
+andrewrk
+mq32, if you're going to strip it, try compiling with --strip
+
+1573517883
+mq32
+andrewrk: is there an option in std.build?
+
+1573517896
+andrewrk
+because this exposes a comptime bool that is observed by, for example, std/debug.zig, disabling code that wouldn't work without debug info
+
+1573517908
+mq32
+daurnimator: my demo for embedded hw had much more effects and embedded resources and had like ... 400kB size with music and data
+
+1573517919
+andrewrk
+mq32, yeah, foo.strip = true;
+
+1573517967
+andrewrk
+the
+
+1573518007
+mq32
+with --strip: 767168
+
+1573518187
+mq32
+ah, thanks google/bloaty
+
+1573518344
+daurnimator
+mq32: ah I had forgotten that tool existed :)
+
+1573518360
+mq32
+
+
+1573518367
+mq32
+looks like i have too many interesting inits :D
+
+1573518445
+andrewrk
+this is a release build right?
+
+1573518460
+mq32
+release-small, yes
+
+1573518481
+daurnimator
+mq32: or some tables of data in there somewhere....
+
+1573518486
+mq32
+yeah
+
+1573518488
+mq32
+have to search a bit
+
+1573518495
+mq32
+bloaty seems the right tool right now
+
+1573518496
+daurnimator
+mq32:  use -d
+
+1573518549
+mq32
+doesn't help
+
+1573518555
+mq32
+we only have one compile unit
+
+1573518586
+mq32
+ah wait
+
+1573518799
+mq32
+someone please slap me
+
+1573518885
+mq32
+huh
+
+1573518896
+mq32
+okay, trying to fix this yields: Unreachable at /deps/zig/src/analyze.cpp:4898 in handle_is_ptr. This is a bug in the Zig compiler.
+
+1573518922
+mq32
+but: the problem was
+
+1573519008
+daurnimator
+mq32: let me guess..... your allocator? :)
+
+1573519016
+mq32
+yeah
+
+1573519033
+mq32
+i can make that information ... smaller
+
+1573519057
+mq32
+also i wonder how to replay that compiler bug
+
+1573519065
+daurnimator
+rr? :)
+
+1573519066
+andrewrk
+idk if llvm fixed this yet but it wasn't putting `undefined` in the bss section. I think that's an open issue in zig right now
+
+1573519118
+mq32
+oh
+
+1573519157
+mq32
+nah, that should work already
+
+1573519163
+mq32
+otherwise the file would be >= 4 megs
+
+1573519186
+andrewrk
+mq32,
+
+1573519238
+fengb
+Was building zig always this fast? It's ~1.5 mins for me now
+
+1573519361
+andrewrk
+if you haven't updated in a while, things that have changed: -DZIG_SKIP_INSTALL_LIB_FILES=on skips installing lib files and translate_c.cpp no longer #include's any C++ files
+
+1573519432
+mq32
+LOL
+
+1573519451
+andrewrk
+building zig itself takes about 17 seconds for me. it's our LLD fork that takes the longest
+
+1573519485
+fengb
+o_O
+
+1573519526
+mq32
+
+
+1573519531
+mq32
+that optimization did it :D
+
+1573519548
+mq32
+.data is now 7500 times smaller than before
+
+1573519552
+andrewrk
+what optimization?
+
+1573519589
+shachaf
+andrewrk: whoa, replacing varargs with structs with metadata seems great.
+
+1573519592
+fengb
+The optimization that deletes all data 🙃
+
+1573519599
+mq32
+
+
+1573519602
+mq32
+this one
+
+1573519655
+fengb
+Ah that makes sense
+
+1573519663
+shachaf
+Have you considered something similar for non-vararg arguments?
+
+1573519664
+andrewrk
+mq32, ah, this would also have done it:
+
+1573519690
+andrewrk
+zig could have ran that init function at comptime
+
+1573519700
+mq32
+yes
+
+1573519702
+mq32
+i know
+
+1573519709
+mq32
+and this bloats my executable by 7500 times
+
+1573519720
+andrewrk
+oh, you were doing it at comptime before
+
+1573519726
+mq32
+because it's initializing "lines" with a lot of "1"s
+
+1573519731
+andrewrk
+ahh
+
+1573519755
+andrewrk
+so #425 would actually compromise this size optimization
+
+1573519772
+mq32
+yes
+
+1573519777
+andrewrk
+well, not really. because you make it a global variable, it cannot run the init at comptime anymore
+
+1573519784
+andrewrk
+ok ignore me
+
+1573519800
+andrewrk
+shachaf, not sure what you mean. have a code example?
+
+1573519802
+mq32
+i just had to remember a wonderful "let's optimize this c++ program talk" which ended up with: "don't do stupid things and your programs will be faster"
+
+1573519841
+mq32
+btw, great talk, not only for c++ programmers. anyone interested? gonna search it, then
+
+1573519931
+shachaf
+Hmm, I guess if you have to use the struct literal syntax anyway it doesn't really add anything?
+
+1573519954
+shachaf
+Maybe the thing I'm thinking of is too much of a departure from what Zig does.
+
+1573519973
+fengb
+But half of C++ is stupid things 🙃
+
+1573520051
+shachaf
+I'm thinking of something like, every function implicitly takes a struct of its arguments (where the calling convention works out to the regular thing). Then you can call functions as usual, but you can also use struct literals to get things like keyword arguments automatically.
+
+1573520079
+fengb
+Would it make sense to switch expected and actual args for expectEqual? It makes literal inference a lot nicer
+
+1573520137
+fengb
+90% of my old casts are for tests :/
+
+1573520153
+andrewrk
+fengb, yeah the expectEqual function is useless to me in its current state, something needs to change
+
+1573520235
+daurnimator
+andrewrk: re: var args: still need to be able to call C vararg functions: is that catered for?
+
+1573520316
+andrewrk
+#3652 is ready to merge
+
+1573520333
+andrewrk
+c var args is an unrelated feature to zig var args
+
+1573520334
+mq32
+fengb:
+
+1573520339
+mq32
+that's the talk i was talking about
+
+1573520587
+daurnimator
+andrewrk: awesome, nothing in PR jumps out at me, merge away :)
+
+1573521495
+fengb
+Inline anon structs are amazing
+
+1573521541
+andrewrk
+I have a plan for comptime fields to be allowed
+
+1573521609
+andrewrk
+I do need to pay some tech debt though, this implementation limits it to 16 fields / elements, until some internal compiler data structures can get reorganized
+
+1573521869
+andrewrk
+that's not a regression, that's a limit on the new thing
+
+1573523435
+andrewrk
+The result location changes was quite an investment but it paid off big time in that branch
+
+1573524207
+fengb
+src/wasm_exports.zig:5:33: error: expected type 'main.struct:507:31', found 'struct:5:33'
+
+1573524542
+fengb
+I'm having trouble with this:
+
+1573524723
+andrewrk
+fengb, I know what's happening here, I forgot to add a test case for this. An additional change is needed to add a result location cast for fn parameters
+
+1573524779
+andrewrk
+I'm done for today but this will be a straightforward fix
+
+1573524804
+fengb
+Ah okay cool
+
+1573524825
+andrewrk
+There's actually 2 reasons this should work, both so far unimplemented
+
+1573524952
+andrewrk
+Rest assured that is in fact an intended use case
+
+1573540122
+fengb
+
+
+1573540123
+fengb
+Neat
+
+1573540159
+bgiannan
+So i guess things like `var i = usize(0)` got removed with the anonymous struct PR? But things like `var h: u32 = 0; h += if (a) 3 else 2;` now need to be written like so `h += if (a) @intCast(u32, 3) else @intCast(2);`. Is this intended ?
+
+1573540206
+bgiannan
+nevermind, just saw @as
+
+1573540267
+fengb
+andrewrk mentioned he'll be working on peer type resolutions soon
+
+1573540287
+fengb
+
+
+1573540304
+fengb
+That should get rid of most of these casts
+
+1573540351
+bgiannan
+nice
+
+1573540464
+bgiannan
+is `[_]u8{ 1, 2, 3, 4}` syntax gone?
+
+1573540698
+andrewrk
+bgiannan, no that syntax remains
+
+1573540707
+andrewrk
+the only breaking change recently was @as
+
+1573540763
+bgiannan
+so i had something like this: `const octants = [_][]f32 { [_]f32 { -1, 0, 0, 1 }, ... }`
+
+1573540799
+bgiannan
+and now i have to do `const octants = [_][4]f32{ [_]f32 { ...}, ... }`
+
+1573541236
+andrewrk
+bgiannan, no you just need const on your []f32\
+
+1573541267
+bgiannan
+`[_][]const f32` ?
+
+1573541301
+bgiannan
+why did zig only complained about it now (just updated to 5502160bd)?
+
+1573542848
+andrewrk
+bgiannan, the @as branch came with this bug fix
+
+1573542877
+bgiannan
+ah i see thanks
+
+1573548539
+scientes
+Is there a better way to use stepi in debugging where it writes out what changed, so you don't have to repeatedly track registers?
+
+1573548562
+scientes
+and you can just have a (quite verbose) record of what happened
+
+1573548569
+scientes
+instruction-by-instruction
+
+1573560871
+Snektron
+I think someone posted a useful gdb configuration a while ago with which you can view register state without having to query then
+
+1573560871
+Snektron
+them
+
+1573560881
+Snektron
+Other than that idk
+
+1573570647
+bgiannan
+Is there any plan to have some strings related stuff in std? Things like pattern matching, strings manipulation, etc. ?
+
+1573570668
+mq32
+bgiannan: there is already a lot of useful stuff in std.mem
+
+1573570676
+mq32
+tokenize, separate, indexOf, ...
+
+1573570710
+daurnimator
+bgiannan: yeah I think so. I've always wanted an lpeg-like thing in there.
+
+1573570726
+daurnimator
+bgiannan: just its way down on peoples priority lists
+
+1573570749
+daurnimator
+if anyone really wants to work on it, they should go for it
+
+1573570767
+daurnimator
+bgiannan: btw, did you ever think more about the objective C bindings I suggested you might want to work on?
+
+1573570806
+bgiannan
+mq32, nice, never saw those yet. separate is precisely what i was writing right now
+
+1573570830
+bgiannan
+daurnimator, no i'm focused on zsettlers right now and trying to not be distracted into anything else
+
+1573570844
+mq32
+tokenize is also really handy ):
+
+1573570846
+mq32
+*:)
+
+1573570849
+daurnimator
+bgiannan: fair.
+
+1573570876
+bgiannan
+mq32, i don 't get the difference between the two?
+
+1573570925
+mq32
+tokenize doesn't yield empty results
+
+1573570925
+fengb
+I believe Andrew is happy to merge anything generally useful into std atm, but there will be an audit before 1.0 to pull out a lot of stuff
+
+1573570983
+bgiannan
+fengb, not sure i get the strategy here. This make me thing i should hold back on using any fancy feature of std before 1.0
+
+1573570990
+bgiannan
+think*
+
+1573571028
+daurnimator
+bgiannan: essentially, until we get a working package manager, then anything that even vaguely belongs in std will probably be added to std.
+
+1573571034
+mq32
+separate will split "at" the string (so if you pass "<>", you will only split when an <> occurs)
+
+1573571050
+mq32
+tokenize will separate on
+
+1573571073
+daurnimator
+bgiannan: then once we have a working package manager, then things will be evaluated and moved out to external libraries.
+
+1573571091
+daurnimator
+bgiannan: in the mean time, any of the things added to std will be upgraded as the language itself evolves
+
+1573571115
+fengb
+Also easier to do regression testing if everything is together
+
+1573571122
+daurnimator
+e.g. u32(0) is now @as(u32, 0) ==> all users in the std library got updated in the same PR.
+
+1573573231
+fengb
+
+
+1573573234
+fengb
+How are these examples generated?
+
+1573573354
+Snektron
+Whats it with var in the docs
+
+1573573367
+daurnimator
+fengb: based on how it was called during tests
+
+1573573387
+Snektron
+Why not just copy the entire function prototype into the docs
+
+1573573428
+daurnimator
+Snektron: that is the function prototype...
+
+1573573480
+daurnimator
+actually something is messed up
+
+1573573490
+daurnimator
+should be `pub fn isPowerOfTwo(v: var) bool`
+
+1573573502
+daurnimator
+return type is bool not var...
+
+1573573554
+Snektron
+I was about to say
+
+1573573569
+Snektron
+I've noticed it on function parameters as well
+
+1573573578
+daurnimator
+maybe the return type ends up `var` if the test fails? fengb: where in your tests did you use isPowerOfTwo? and why did you pass null? :P
+
+1573573597
+fengb
+I don't. I can't run tests in wasm for some reason
+
+1573573608
+fengb
+This is just a semantic dump of my exports
+
+1573573622
+daurnimator
+
+
+1573573634
+daurnimator
+conf.page_size must be null
+
+1573573657
+fengb
+Well that's 65536, not null
+
+1573573953
+Pistahh
+regarding @as - why wasn't something simpler chosen, like 123u64 ?
+
+1573573959
+Snektron
+Maybe isPowerOfTwo should assure the parameter is an int
+
+1573573991
+mq32
+Pistahh: because that does only work for literals
+
+1573573993
+mq32
+not comptime ints
+
+1573574017
+mq32
+and not for "type promotion", like casting u3 to i4
+
+1573574131
+Pistahh
+mq32: ok, thx
+
+1573574158
+mq32
+i don't like the @at change, but i can understand the reasoning
+
+1573574173
+mq32
+and i don't have a better idea on how to solve it, so ¯\_(ツ)_/¯
+
+1573574206
+daurnimator
+I went through some code I wrote recently to update for the @as change..... the only thing I had to update was testing.expectEqual calls
+
+1573574217
+daurnimator
+turns out casting is pretty damn rare
+
+1573574234
+mq32
+daurnimator: in "every day code" yes
+
+1573574240
+daurnimator
+I initially felt a similar way about it, but not after that experience
+
+1573574248
+mq32
+i had to replace about 300 casts in 4000 LOC
+
+1573574279
+daurnimator
+In another piece of code I changed `var i = usize(0)` with `var i: usize = 0`.....
+
+1573574294
+mq32
+i always try to declare variables like that
+
+1573574295
+mq32
+but:
+
+1573574297
+daurnimator
+which was the only other major usage of coercion I found
+
+1573574304
+mq32
+a = b & ~0x80;
+
+1573574313
+mq32
+this doesn't work, so you have to cast 0x80
+
+1573574319
+mq32
+a = b & ~@as(u8, 0x80);
+
+1573574350
+mq32
+which brings a lot of noise to the code
+
+1573574407
+daurnimator
+Wouldn't that be better written as `a = b & 0x7F` anyway?
+
+1573574453
+mq32
+i want to clear out the 7th bit and don't want to care on what the rest of type is
+
+1573574466
+mq32
+this may introduce problems later if the type of b may change
+
+1573574468
+Pistahh
+mq32: you shouldn't have 0x80 hardcoded in the first place, it should be a const :P
+
+1573574497
+daurnimator
+mq32: but you said the type is u8....
+
+1573574512
+daurnimator
+mq32: previously you would have had to write: `a = b & u8(0x80)`
+
+1573574519
+mq32
+yeah, i know
+
+1573574519
+daurnimator
+uh, with a ~
+
+1573574527
+mq32
+itÄ's not that i like that either, but it's less noisy
+
+1573574546
+daurnimator
+mq32: so did you really want: `a = b & ~@as(@typeOf(b), 0x80)`?
+
+1573574553
+mq32
+yes
+
+1573574562
+mq32
+should change that...
+
+1573574582
+mq32
+but you agree with me that this is a lot of code noise for "making a literal value fit the type"
+
+1573574598
+mq32
+Pistahh: and my constant is called what? "SEVENTH_BIT"?
+
+1573574627
+Pistahh
+mq32: depends.. what is the reason for that operation? :) I suppose it should be SOMETHING_MASK. :)
+
+1573574644
+mq32
+"make sure the seventh bit isn't set because otherwise the receiving end would break"
+
+1573574645
+daurnimator
+mq32: use `a = b & (1 << (7 -1))` instead?
+
+1573574677
+daurnimator
+trying to use bitwise not on a comptime int is your issue here
+
+1573574700
+mq32
+yeah, but it's just an example for a lot of code i have
+
+1573574702
+Pistahh
+mq32: see, SATISFY_RECEIVING_END_MASK_TO_MAKE_SURE_IT_DOESNT_BREAK. :)
+
+1573574705
+mq32
+there's a lot of masks
+
+1573574719
+mq32
+Pistahh: and now i don't know what the exact effect of this is
+
+1573574729
+mq32
+this may be irrelevant in high-level code
+
+1573574747
+mq32
+but on low level, all bit values are more relevant than what the name actually tells
+
+1573574754
+daurnimator
+I forget if we have binary literals... but if so: `a = b & 0b1000000`
+
+1573574777
+Pistahh
+mq32: ok, you can keep the 0x80 then. :)
+
+1573574795
+daurnimator
+oh right I forgot the 'not' again
+
+1573574810
+daurnimator
+/bed
+
+1573574817
+mq32
+daurnimator: yeah it's not easy
+
+1573574826
+mq32
+i could go for "follow all best practises"
+
+1573574827
+Snektron
+a = b % 120;
+
+1573574834
+mq32
+and then the code wouldn't be readable anymore ^^
+
+1573574841
+Snektron
+What does @as actually do again
+
+1573574884
+mq32
+it's implicit cast
+
+1573574891
+mq32
+well, not so implicit cast
+
+1573574912
+mq32
+Pistahh, i have a lot of funny magic values here:
+
+1573574930
+mq32
+mmio_address = 0x55; mmio_address = 0xAA; mmio_address = 0x55; mmio_address = 0xAA;
+
+1573574935
+mq32
+this is a wonderful example :D
+
+1573575008
+Snektron
+In which case would you use it? Are implicit casts going to be removed or something?
+
+1573575023
+mq32
+it's the replacement for u64(0) e.g.
+
+1573575034
+mq32
+so "@as(u64, 0)" is the new "u64(0)"
+
+1573575035
+Snektron
+Or is specifically for when the target type is ambiguous?
+
+1573575037
+fengb
+It used to be usize(1) but it's now @as(usize, 1)
+
+1573575041
+mq32
+so function call syntax is not amgibious anymore
+
+1573575107
+Snektron
+Oh i see
+
+1573575144
+Snektron
+I'd go for literal suffixes instead but sure
+
+1573575175
+mq32
+Snektron: as said above: literal suffixes are another usecase
+
+1573576258
+fengb
+
+
+1573576402
+THFKA4
+where's the orange-on-black cup? the zig foundation better sell those
+
+1573578786
+samtebbs
+Is anyone else getting an assertion failure in type_has_bits (analyze.cpp:5408) since 5b2794349?
+
+1573578819
+samtebbs
+That was part of andrewrk 's anonymouse struct literal PR
+
+1573579339
+andrewrk
+samtebbs, I fixed it just now, thanks for the report
+
+1573580446
+fengb
+zig.foundation tld is available :P
+
+1573580581
+andrewrk
+if only starting a legal entity were as simple as a domain name
+
+1573580838
+fengb
+Well time to park it for millions
+
+1573581628
+THFKA4
+billions
+
+1573583074
+Sahnvour
+andrewrk: would you agree that we merge the vcpkg PR as a first step, and open an issue for a unified API over multiple package managers? I feel this has a much broader scope
+
+1573583139
+Sahnvour
+and I think I'll ask the vcpkg folks if they have a better idea on how to query it anyway
+
+1573583210
+andrewrk
+Sahnvour, yes that sounds good
+
+1573583221
+andrewrk
+go for it
+
+1573583227
+Sahnvour
+great, thanks
+
+1573583275
+andrewrk
+are you on board with the idea of trying to integrate it into linkSystemLibrary?
+
+1573583418
+Sahnvour
+I think the very name "system library" is a bit alien to windows obviously, but considering that will probably be the main type of C libraries linked in zig projects, it makes sense to use it for better compatibility
+
+1573583442
+Sahnvour
+and cross-platformness
+
+1573583462
+andrewrk
+I'm open to changing the name. The name is meant to imply that it depends on something installed and managed separately
+
+1573583493
+Sahnvour
+I don't mind the name :)
+
+1573583564
+andrewrk
+it could potentially even do something really interactive like pop up a gui to help you find the library on windows. as long as the intent is specified precisely enough, this would make sense in some cases
+
+1573583599
+andrewrk
+e.g. something like `zig build --gui`
+
+1573583619
+andrewrk
+build scripts are declarative, we're only scratching the surface of what features the build runner could provide
+
+1573583689
+Sahnvour
+yes, interesting
+
+1573583782
+Sahnvour
+until now I've only encountered
+
+1573583809
+marijnfs
+whatsup
+
+1573583820
+marijnfs
+will we have a package manager soon?:)
+
+1573583952
+andrewrk
+marijnfs, we're getting close
+
+1573583957
+andrewrk
+interested in joining the effort?
+
+1573584017
+andrewrk
+some of these are labeled contributor friendly:
+
+1573584058
+fengb
+ooo compression
+
+1573584086
+andrewrk
+gotta unpack those tarballs
+
+1573584162
+Sahnvour
+so many interesting things, so little time
+
+1573584635
+andrewrk
+I think the actual language changes for the package manager are going to be almost trivial. The main effort is the .zig code that does fetching and file system management
+
+1573585121
+marijnfs
+andrewrk: i'll have a look!
+
+1573585162
+andrewrk
+also it would be a crime to not use evented I/O for the package manager implementation
+
+1573585172
+andrewrk
+this is the ideal use case
+
+1573585308
+marijnfs
+yeah i mean by now it would be morally incorrect to not use it
+
+1573585333
+marijnfs
+whats the deflation inflation about, like any compression algorithm?
+
+1573585782
+andrewrk
+that's a specific algorithm, the one provided by zlib
+
+1573585792
+andrewrk
+
+
+1573585814
+andrewrk
+better link:
+
+1573586077
+andrewrk
+thanks for the follow up issue Sahnvour
+
+1573586083
+Sahnvour
+andrewrk: created #3671, not sure I touched the whole idea / phrased it correctly so do not hesitate to improve it
+
+1573586136
+andrewrk
+👍
+
+1573586188
+Sahnvour
+weird, I cliked to merge the PR, it showed an error but reloading the page shows it was merged
+
+1573586210
+fengb
+How difficult would it be to add default struct values to typeinfo?
+
+1573586257
+andrewrk
+fengb, the main problem to solve is representing the data types in std.builtin
+
+1573586291
+andrewrk
+the type of a field is type `type`, but what type is the value?
+
+1573586347
+andrewrk
+I'm OK with adding a builtin function to expose this info in the meantime
+
+1573586376
+fengb
+Hmm
+
+1573586459
+marijnfs
+andrewrk: don't you want whatever zstd is using?
+
+1573586489
+marijnfs
+it's much faster
+
+1573586530
+andrewrk
+it's quite possible zstd depends on deflate
+
+1573586544
+andrewrk
+but we also need to support common formats, this isn't a question of choosing the best one
+
+1573586600
+andrewrk
+we need a few common ones to "bootstrap" the package manager. And then "fetch plugins" can be installed via the package manager to fetch in more exotic ways (ipfs, git, svn, cvs, etc)
+
+1573586683
+andrewrk
+("fetch plugins" would be specified project-locally; the goal is to insulate projects from system configurations)
+
+1573586791
+samtebbs
+andrewrk: Thanks for that! :)
+
+1573587357
+Sahnvour
+andrewrk: curious, what's the @typeName of an anonymous struct ? based on source location, something else ?
+
+1573587424
+andrewrk
+struct:line:column
+
+1573587441
+andrewrk
+it's apparently missing the rest of the package path; I need to look into that
+
+1573587490
+andrewrk
+note that if the result location has an actual array, struct, or union, then the syntax will directly instantiate the proper type, with no detour in the type system through an anonymous type
+
+1573587541
+andrewrk
+likewise it's planned to allow this: var x, const y = .{. foo(), bar() };
+
+1573587559
+andrewrk
+this also will directly instantiate x and y with no detour in the type system through anonymous types
+
+1573587623
+Sahnvour
+okay
+
+1573587764
+andrewrk
+this should let us avoid using `undefined` in more places
+
+1573589736
+frmdstryr
+Are there any plans to make "not" a keyword for boolean negation?
+
+1573589886
+andrewrk
+frmdstryr, no. if you're thinking of consistency with `and` and `or`, consider that those are control flow keywords, and `not` is not
+
+1573589985
+frmdstryr
+Yes that's what I was thinking.
+
+1573590053
+andrewrk
+it's also planned to make `~`, `|`, and `&` work on vectors of bools, and therefore probably also scalar bools
+
+1573590068
+andrewrk
+not 100% sure on that yet
+
+1573590109
+andrewrk
+scientes, why would you have a vector of bools anyway?
+
+1573590128
+scientes
+andrewrk, vector of bools is what comparisons return
+
+1573590139
+andrewrk
+hmm. maybe they should return vector of u1 instead
+
+1573590151
+scientes
+that doesn't make much sense though
+
+1573590156
+scientes
+as comparisons otherwise return bool
+
+1573590192
+andrewrk
+I see your point. but you can do branching logic on `a > b` for scalars, but not for vectors
+
+1573590201
+andrewrk
+so something already has to be different for comparisons of vectors
+
+1573590204
+scientes
+you can if you use @reduce()
+
+1573590210
+scientes
+but yes of course vectors are differnt
+
+1573590274
+andrewrk
+`if (@reduce(a > b, .And))` vs `if (@reduce(a > b, .And) != 0)`
+
+1573590276
+scientes
+andrewrk, as I pointed out however a() and b() is differn't from a() & b()
+
+1573590280
+scientes
+even if they return scalar bool
+
+1573590287
+scientes
+that is the important point I am making
+
+1573590292
+scientes
+they are
+
+1573590331
+scientes
+and short-circuits, but & guarantees that both sides are evaluated
+
+1573590335
+andrewrk
+but we don't plan to support `and` and `or` for vectors, right?
+
+1573590347
+scientes
+we can't, because those short-circuit
+
+1573590351
+scientes
+which would be ambiguous
+
+1573590360
+andrewrk
+you would need `@reduce(...) and @reduce(...)`
+
+1573590378
+scientes
+which is different from @reduce(...) & @reduce(...)
+
+1573590385
+scientes
+
+
+1573590458
+scientes
+that's why C++ banning & and | bools is silly
+
+1573590467
+scientes
+because its missing that these are differn't from || and && operators
+
+1573590477
+andrewrk
+in that case it would be better to do @reduce(a & b)
+
+1573590495
+andrewrk
+...I think. or would it?
+
+1573590497
+scientes
+yeah, it would be communicative
+
+1573590502
+scientes
+it is communicative
+
+1573590509
+scientes
+no difference
+
+1573590531
+andrewrk
+I suppose the optimizer could theoretically figure out that is the same
+
+1573590547
+scientes
+there are more complicated cases however, with floating point reductions
+
+1573590569
+andrewrk
+anyway, yes I think my current opinion is to allow &, ~, | on vector bools, as well as scalar bools
+
+1573590589
+scientes
+my big point there is that they are DIFFERENT operations, even on scalars
+
+1573590592
+scientes
+because of short-circuiting
+
+1573590614
+andrewrk
+yes, do you feel that people are not understanding this?
+
+1573590627
+scientes
+gcc's warnings do not understand that
+
+1573590641
+andrewrk
+ah. well in zig that's why they are keywords, because all control flow is done via keywords
+
+1573590642
+scientes
+you have to put the intermediary into a variable you avoid the warning
+
+1573590658
+scientes
+yes ,that is a good decision
+
+1573590670
+scientes
+"and" and "or" are indeed control flow as well
+
+1573590672
+scientes
+as operators
+
+1573592291
+Sahnvour
+without varargs, how can we forward arguments to any function (_not_ using anonymous struct or list) in a generic way ?
+
+1573592371
+mq32
+Sahnvour: Use "var" args :D
+
+1573592382
+mq32
+fn(generic: var)
+
+1573592512
+Sahnvour
+how do you get `fn foo(comptime function: var, generic: var)` to call `fn bar(a: u32, b: u32)` or `fn baz(c: u32, d: bool)` ?
+
+1573592558
+Sahnvour
+or any other function of various arity
+
+1573592565
+Sahnvour
+provided in `function`
+
+1573592632
+andrewrk
+function(generic.@"0", generic.@"1")
+
+1573592661
+andrewrk
+the use case of different arities is not supported. what do you need that for?
+
+1573592684
+protty
+its used in `std.event.Loop.call()` no?
+
+1573592688
+Sahnvour
+that's useful in a lot of cases for wrapper functions
+
+1573592707
+andrewrk
+protty, yes, I was planning on deleting that as well
+
+1573592711
+Pistahh
+printf-like functions?
+
+1573592746
+Sahnvour
+right now, I was trying the async stuff, to make what I'd call "packaged tasks"
+
+1573592772
+protty
+would this manifest in everything else that takes var args like @newStackCall and @asyncCall ?
+
+1573592774
+Sahnvour
+ie. start an async frame that will suspend just before it calls a provided function and its arguments, to execute it later
+
+1573592783
+FireFox317
+Damn, UART is so annoying to work with, because of the asynchronous nature. but finally managed to get the bootloader to actually work on hardware. Yesterday I thought it worked, but it didn't XD
+
+1573592802
+andrewrk
+FireFox317, nice, can I expect a PR today? :)
+
+1573592858
+andrewrk
+protty, I'm not planning to change those builtins with regards to var args
+
+1573592955
+FireFox317
+andrewrk: Uhm, not today I think. When were you having the demo? And what would you expect to be in my PR? :)
+
+1573592993
+andrewrk
+Sahnvour, I'm interested in seeing how this use case works out. as always, realistic use cases are the best arguments in any discussion about changes made to the language
+
+1573593083
+andrewrk
+FireFox317, I'm about to start working on an rpi demo for handmade con this weekend. my travel begins tomorrow evening
+
+1573593084
+Sahnvour
+tidying up my example, it's not working at all but hopefully can demonstrate what I want to achieve
+
+1573593275
+andrewrk
+FireFox317, I was hoping to just get the framebuffer working on real hardware
+
+1573593287
+andrewrk
+I think it might work to just run markfirmware's repo with some modifications
+
+1573593353
+leeward
+Just did an update and `zig build docs` leads to "zig/build.zig:158:13: error: invalid builtin function: 'as'"
+
+1573593411
+FireFox317
+andrewrk, ah yeah, that should be possible. Jup, markfirmware's stuff works on real hardware, I tested that. Then I started on working the usb and got sick of exchanging the sd card, so tried to get the bootloader working, but that was harder than expected :^)
+
+1573593414
+andrewrk
+leeward, are you perhaps hitting
+
+1573593519
+leeward
+andrewrk: I don't think so. I'm not running msvc. This is on Debian GNU/Windows (WSL) and I don't actually have Microsoft's dev tools installed.
+
+1573593538
+leeward
+Unless that's actually about some system library that I'm not seeing.
+
+1573593569
+andrewrk
+leeward, sounds like your `zig` is pointing to an old build
+
+1573593578
+andrewrk
+did you run make?
+
+1573593634
+leeward
+I ran `rm -rf build && mkdir build && cd build && cmake .. && make -j13 install` then back up to the zig directory and ran `zig build docs` to get the error.
+
+1573593651
+bgiannan
+mq32, glad you pointed out to me those std.mem functions. Wrapping text in under 30loc: pub fn wrap(allocator: *Allocator, string: []const u8, width: usize) ![]u8 {
+
+1573593652
+leeward
+crap
+
+1573593654
+bgiannan
+assert(width > 3);
+
+1573593656
+bgiannan
+var justified = try Buffer.initSize(allocator, string.len);
+
+1573593658
+bgiannan
+var leftover: []const u8 = string[0..];
+
+1573593660
+bgiannan
+while (leftover.len > 0) {
+
+1573593662
+bgiannan
+const trimmed = mem.trim(u8, leftover, " ");
+
+1573593664
+bgiannan
+if (trimmed.len > width) {
+
+1573593666
+bgiannan
+if (mem.lastIndexOfScalar(u8, trimmed[0..(width - 1)], ' ')) |last_whitespace_index| {
+
+1573593668
+bgiannan
+try justified.append(trimmed[0..last_whitespace_index]);
+
+1573593670
+bgiannan
+leftover = trimmed[last_whitespace_index..];
+
+1573593672
+bgiannan
+} else {
+
+1573593674
+bgiannan
+// If no whitespace before eol, let the line as-is (should not happen)
+
+1573593674
+andrewrk
+leeward, I don't think you need to rm the build folder, that's just going to make things take longer
+
+1573593676
+bgiannan
+try justified.append(trimmed);
+
+1573593678
+bgiannan
+leftover = trimmed[trimmed.len..];
+
+1573593680
+bgiannan
+}
+
+1573593682
+bgiannan
+} else {
+
+1573593684
+bgiannan
+try justified.append(trimmed);
+
+1573593686
+bgiannan
+leftover = trimmed[trimmed.len..];
+
+1573593688
+bgiannan
+}
+
+1573593690
+bgiannan
+if (leftover.len > 0)
+
+1573593692
+bgiannan
+try justified.append("\n");
+
+1573593694
+bgiannan
+}
+
+1573593696
+bgiannan
+return justified.toOwnedSlice();
+
+1573593696
+FireFox317
+?
+
+1573593697
+leeward
+andrewrk: Yeah, I just did it to be safe...but I forgot to set CMAKE_INSTALL_PREFIX.
+
+1573593698
+bgiannan
+woops
+
+1573593700
+bgiannan
+sorry mean to copy-paste gist link
+
+1573593702
+bgiannan
+
+
+1573593704
+bgiannan
+better
+
+1573593707
+FireFox317
+XD
+
+1573593712
+leeward
+Nice.
+
+1573593820
+andrewrk
+bgiannan, new challenge: do it with O(1) memory
+
+1573593832
+andrewrk
+you'll probably have to change the API to be an iterator
+
+1573593905
+andrewrk
+only if you think that's a fun challenge, obviously if you're trying to get work done that could be a distraction :)
+
+1573593926
+leeward
+andrewrk: It was my failure to specify the CMAKE_INSTALL_PREFIX. Move along, nothing to see here.
+
+1573593965
+andrewrk
+leeward, no worries. personally, I have a softlink in ~/bin/zig to the build folder of my source checkout
+
+1573593997
+Sahnvour
+andrewrk: I hope it's clear, also I just started with the async stuff so it might contain more errors than I thought
+
+1573594045
+leeward
+Mmm, that's an interesting way to do it. I wasn't sure that the only thing to install was the actual zig executable though.
+
+1573594095
+andrewrk
+the zig binary finds its lib files by searching up the tree of the directory the binary resides in
+
+1573594122
+andrewrk
+it looks for ./lib/std/std.zig, then ../lib/std/std.zig, then ../../lib/std/std.zig, etc
+
+1573594173
+leeward
+And that works if it's invoked through a symlink?
+
+1573594208
+andrewrk
+yes
+
+1573594224
+andrewrk
+Sahnvour, it kinda looks like you're reinventing async/await. have you tried doing it with async/await instead?
+
+1573594234
+leeward
+fun
+
+1573594236
+bgiannan
+andrewrk, i'll put the idea on my list ;)
+
+1573594261
+andrewrk
+leeward, combine this with -DZIG_SKIP_INSTALL_LIB_FILES=on, your `make` will get reasonably fast
+
+1573594279
+andrewrk
+Sahnvour, instead of offload(), async. instead of .get(), await
+
+1573594301
+Sahnvour
+andrewrk: I don't want my functions to start right away by an async call
+
+1573594364
+leeward
+andrewrk: It's already under 3 minutes for a full build from nothing. Given how infrequently I rebuild it, that's fine. Good to know though.
+
+1573594430
+andrewrk
+Sahnvour, are you aware of std.event.Loop.startCpuBoundOperation() ?
+
+1573594441
+Sahnvour
+not until now
+
+1573594446
+andrewrk
+
+
+1573594465
+andrewrk
+you might find the writeups valuable here:
+
+1573594497
+Sahnvour
+I'm catching up last month :) thanks
+
+1573594608
+andrewrk
+the Windows I/O Completion Ports integration with std.event.Loop might need some improvements for this example to work on Windows
+
+1573594631
+andrewrk
+or maybe not, I haven't tested it yet
+
+1573594855
+samtebbs
+With the recent changes to casting, is the recommended way to reinterpret a struct as an integer still @bitCast?
+
+1573594871
+Sahnvour
+I think what I want to do basically is a akin to the eventloop
+
+1573594871
+samtebbs
+I'm getting seeminlgy random values from my packed struct each time I run my program
+
+1573594901
+samtebbs
+This has been happening since the same commit that I report was causing an assertion failure earlier
+
+1573594915
+Sahnvour
+but with explicit control, and not only for IO
+
+1573594977
+protty
+is running some setup/tear-down logic for a given user function (instead of the user having to copy & surround their code with that setup/tear-down code) a good use case for var args? In a language like rust for example, passing in arguments to the user function could be done with a closure at the user function definition. In zig, thought it would
+
+1573594978
+protty
+normally be done using var args
+
+1573595176
+andrewrk
+samtebbs, yes, do you have a bug report open for this?
+
+1573595228
+samtebbs
+andrewrk: Not yet, I can get a reeduced tets case and open one
+
+1573595239
+andrewrk
+protty, good question. I don't have a good answer for this yet
+
+1573595242
+Sahnvour
++1 protty
+
+1573595265
+andrewrk
+samtebbs, I do have packed struct improvements on my priority list here
+
+1573595337
+andrewrk
+Sahnvour, you can also provide your own duck-typed event loop in the root source file and implement startCpuBoundOperation(), waitForFdReadable(), yield(), etc
+
+1573595359
+andrewrk
+if you want the rest of the std lib to integrate with your event loop
+
+1573595371
+Sahnvour
+andrewrk: maybe it just boils down to `@expand(.{"foo", false, null})` to go from an anonymous list litteral to a number of parameters for a function call
+
+1573595397
+andrewrk
+Sahnvour, protty: if we have compelling enough use cases for that, then so be it
+
+1573595428
+Sahnvour
+I'll think about it, but on the first look that's a serious drawbacks from removing var args
+
+1573595574
+Sahnvour
+andrewrk: the thing is I don't really care about integration with the stdlib, I want to have a set of worker threads that do asynchronous tasks I want to execute and they most likely do not contain any IO, they're pure computations
+
+1573595606
+Sahnvour
+and maybe they must respect a particular ordering, so the execution must not start immediately, hence why I want to package them in a frame to be resumed later
+
+1573595748
+andrewrk
+I see
+
+1573595847
+protty
+Could stdlib offer up something similar to a ForkJoinPool which is user initialized and configured locally instead of globally (similar to FixedBufferAllocator's usage)?
+
+1573595873
+Sahnvour
+C++ implementations I know of store a function pointer, and either keeps a void* to point to user data to pass to the function on execution, or use type erasure techniques to store parameters in a type-safe way ; I figured in zig we can just start a frame with the arguments, suspend it and then on resume : execute the function
+
+1573595914
+Sahnvour
+I think that's like OS fibers but in pure userland
+
+1573595941
+Sahnvour
+(minus the task switching maybe)
+
+1573596212
+andrewrk
+I definitely think that std lib needs a lot of changes until it is in the final version with respect to evented I/O and async/await in general
+
+1573596244
+andrewrk
+some ideas are clear to me, some are not. it will require some exploring
+
+1573596292
+Sahnvour
+I'll get references for what I meant, it's pretty standard in game engines
+
+1573596999
+leeward
+Sahnvour: That sounds an awful lot like passing a closure.
+
+1573597034
+leeward
+Incidentally, andrewrk, are there distinctions between async/await and closures or continuation passing that I'm not seeing?
+
+1573597282
+leeward
+(or maybe I actually understand them)
+
+1573597707
+fengb
+Is this a weird pattern? `while (j < i) : (j -%= 1) {`
+
+1573597725
+fengb
+Relying on overflow to break the loop
+
+1573597727
+fengb
+underflow*
+
+1573597882
+Snektron
+depending on what you do that can be dangerous
+
+1573597905
+fengb
+var j: usize = i - 1;
+
+1573597970
+leeward
+Why not `while (j >= 0)` with signed j?
+
+1573598001
+fengb
+Because i is slice len
+
+1573598010
+fengb
+Oh, I'm doing a +1 right now, so  Ican change that to a -1
+
+1573598075
+Snektron
+if you want to make it more explicit you could do and j != usize_max, otherwise i would just leave a comment near it
+
+1573598116
+Snektron
+or you could write some inline assembly to query the overflow flag ;)
+
+1573598119
+fengb
+It certainly beats C, where I accidentally overflow and get infinite loops
+
+1573598139
+fengb
+There's @subtractWithOverflow() but that takes an extra variable
+
+1573598170
+leeward
+Is all this just to walk backwards through a slice?
+
+1573598242
+fengb
+Yes lol
+
+1573598272
+leeward
+I feel like there's got to be a better way.
+
+1573598281
+fengb
+It's an inner loop so doing subtraction makes less sense
+
+1573598367
+fengb
+Er, iterating down makes more sense than doing offset math
+
+1573598446
+leeward
+You mean it's better than `for (_, i) |thing| { const idx = thing.len - i; ... }`?
+
+1573598476
+leeward
+I kinda wonder what a compiler would do with that.
+
+1573598499
+fengb
+Oh I can use a for loop for the first
+
+1573598504
+fengb
+>_>
+
+1573598670
+leeward
+I'm guessing it would generate something pretty good. There aren't any extra branches, at least.
+
+1573598677
+samtebbs
+andrewrk: I made an issue for it at
+
+1573598908
+fengb
+Gotta save thos precious cycles
+
+1573599534
+Sahnvour
+leeward: yes that's similar to closures
+
+1573600504
+andrewrk
+thank you samtebbs
+
+1573600609
+andrewrk
+fengb, my pattern for this: var i = slice.len; while (i != 0) { i-= 1; doThing(slice[i]); }
+
+1573600932
+fengb
+I do like comparison to 0. Pretend to be more optimized :P
+
+1573601889
+andrewrk
+Sahnvour, it could be possible to instantiate a @Frame() without calling it
+
+1573601921
+andrewrk
+something like: var frame = @Frame(func){ .arg1 = foo, .arg2 = bar }; resume frame;
+
+1573601981
+andrewrk
+this would not work for function pointers
+
+1573603073
+fengb
+Does a while (true) expression really need an else?
+
+1573603094
+andrewrk
+fengb, it's not supposed to need an else
+
+1573603100
+andrewrk
+I think there's an open issue for this
+
+1573603131
+fengb
+Ah yeah
+

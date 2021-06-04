@@ -1,0 +1,1164 @@
+1563623045
+dec05eba
+Is there any way to break on return of error with gdb in zig? im stepping through code and there is a try statement and the function returns an error and gdb jumps to the place where the error is handled, making it hard to find the place where it gives error. In other words, is it possible to put a breakpoint on the longjump zig uses? (i assume that's how it works?)
+
+1563623142
+dec05eba
+with languages like java you can print the stacktrace from the throw to the place where the error is handled, without knowing where the error was thrown
+
+1563623609
+dec05eba
+ah nvm, it can be done properly with errorReturnTrace and dumpStackTrace
+
+1563623771
+ffddr
+Is there some kind of "struct update" syntax? I am trying to achieve something like `c.sg_buffer_desc{ .size = x, .. init_zeroes(c.sg_buffer_desc) }` instead of. `var desc = init_zeroes(sg_buffer_desc); desc.size = 5;`
+
+1563623772
+ffddr
+I cant make default fields unfortunately, its a C struct :(
+
+1563625302
+ffddr
+Found the relevant issue
+
+1563626916
+daurnimator
+ffddr: initialising a struct to zero is considered an antipattern in zig
+
+1563627167
+ffddr
+but partially/zero initialized structs are used in C libraries a lot. Right now the only way to make such a libraries convinient to use from zig - write a wrapper for each C struct with default values. Thats a lot of work :(
+
+1563627351
+Sahnvour
+ffddr: you can do a generic function that accepts any kind of struct, and zeroes it with @memcpy, would that work for you ?
+
+1563627600
+Tetralux
+Sahnvour, I believe that's unadvisable on anything other than extern or packed structs.
+
+1563627676
+Tetralux
+Though honestly, it makes very little sense to consider zeroing an antipattern, considering that zeroing is the simplest possible state for a struct to be in, easy to make it, and easy to check for.
+
+1563627685
+Sahnvour
+yes, but ad ffddr mentionned, it's really frequent in C apis
+
+1563627708
+Tetralux
+In that, the reason zeroing is so nice is that you can just allocate, zero, and then you're done with initializing.
+
+1563627733
+Tetralux
+Array<T> a; // zero-init. array_add(&a, x);
+
+1563627750
+Tetralux
+No init call required.
+
+1563627758
+Tetralux
+That's a beauty that's quite appealing honestly.
+
+1563627809
+Tetralux
+That aspect of Zig is a little weird to me.
+
+1563627832
+daurnimator
+Tetralux: as I said, in zig that's considered an antipattern: 1. zero is not always a valid state. 2. if you don't know: initialise to undefined, then we can catch accidental reads.
+
+1563627928
+Tetralux
+You may have glossed over my point slightly there xD
+
+1563627959
+Tetralux
+I was specifically arguing for when it
+
+1563627972
+daurnimator
+Tetralux: then you can be explicit about it...
+
+1563627982
+Tetralux
+Which in my example, 'array_add' would just check for and init before adding.
+
+1563627993
+daurnimator
+ask yourself "is there any reason to initialize this to zero compared to.... 42?"
+
+1563628089
+Tetralux
+I cannot, because in Zig, I'd have to make the struct extern in order to be able to memset to zero.
+
+1563628101
+Tetralux
+And memset to zero is woefully explicit.
+
+1563628166
+Tetralux
+The whole point of zero-init is that you can just make one, not do anything to it, and use it immediately knowing that's all you need to init.
+
+1563628178
+ffddr
+Sahnvour: let me show some example:
+
+1563628179
+ffddr
+actually, zig-nowrapper version is not that bad in this particular case, but zig-wrapped looks enough better to make a wrapper. While no-wrapper usage of C libs is such a great feature.
+
+1563628179
+ffddr
+(my expirience with C libs in zig is quite limited - I used libwebsockets and now experimenting with sokol. In both I missed this a lot and wanted some wrapper with zero init)
+
+1563628190
+daurnimator
+Tetralux: I don't understand why you would have array_add there... don't you just want to initialise to x?
+
+1563628237
+daurnimator
+ffddr: why initialise to zero? what happens if you don't?
+
+1563628295
+Tetralux
+The call to array_add was to demonstrate that you don't have to call init on the array for it to be considered initialized.
+
+1563628311
+Tetralux
+You would be passing an empty, unallocated array to add
+
+1563628324
+Tetralux
+And it would notice that when it checked you have enough space and do the alloc.
+
+1563628338
+daurnimator
+Tetralux: I would say that
+
+1563628356
+Tetralux
+You're allocing an array to have enough space for the element you are adding to it...
+
+1563628366
+daurnimator
+Tetralux: where is the allocation there?
+
+1563628374
+Tetralux
+In array_add.
+
+1563628381
+daurnimator
+?
+
+1563628399
+ffddr
+daurnimator:  C lib assuming zeroes, so it would probably crash without zeroes
+
+1563628400
+daurnimator
+1. why would adding to an array need to allocate? 2. I don't seen you passing an allocator in
+
+1563628419
+daurnimator
+ffddr: it
+
+1563628420
+Tetralux
+Because array_add would call malloc or whatever.
+
+1563628425
+Tetralux
+Or
+
+1563628429
+daurnimator
+Tetralux: that would be an antipattern in zig
+
+1563628432
+Tetralux
+The array itself would have an allocator field.
+
+1563628443
+Tetralux
+Or you could pass an allocator in.
+
+1563628447
+daurnimator
+but also... see 1.
+
+1563628452
+tgschultz
+ArrayList sounds like what you want then
+
+1563628460
+daurnimator
+Tetralux: wait do you mean append? not add?
+
+1563628469
+Tetralux
+The Array<T>
+
+1563628474
+Tetralux
+It literally
+
+1563628484
+daurnimator
+Tetralux: Array isn't a zig thing.
+
+1563628493
+ffddr
+daurnimator: it depends on the library, sometime undefined is fine, sometime not (libwebsocket needs zeroes for sure for example).
+
+1563628517
+daurnimator
+ffddr: could you show me an example where it needs zeros? there's only a couple of very specific locations I've seen where you need to init to zero.
+
+1563628534
+daurnimator
+ffddr: generally we solve those in zig by adding "__pad" fields to the struct
+
+1563628550
+daurnimator
+==> because they're not really padding if the library reads them
+
+1563628588
+ffddr
+daurnimator: hm, probably there is some kind of misunterstanding. My point -
+
+1563628589
+daurnimator
+most of the occurances of it are in kernel interfaces that are considered mistakes on the kernel side, but kept for backwards compat purposes
+
+1563628614
+Tetralux
+ffddr: ..This is the entire point of what I'm saying.
+
+1563628616
+daurnimator
+ffddr: I'm saying the code under "zig wrapped structs" should work anyway
+
+1563628634
+ffddr
+sure, but it needs a struct with default values
+
+1563628639
+daurnimator
+ffddr: why?
+
+1563628652
+daurnimator
+ffddr: are there more than those 3 members?
+
+1563628658
+tgschultz
+aren't we getting default values? Didn't andrewrk sign off on that?
+
+1563628665
+daurnimator
+tgschultz: we have default values.
+
+1563628679
+ffddr
+daurnimator: yes, a lot of them!
+
+1563628693
+tgschultz
+oh it is there already? man, I haven't written any zig in a while I guess
+
+1563628696
+daurnimator
+tgschultz: ffddr's question was "how do I add a default value to a translate-c-imported struct"
+
+1563628748
+Tetralux
+daurnimator: I'm not entirely sure what you mean by that. Because it is. But that's okay. I was talking about an ArrayList equivalent struct  in C.
+
+1563628758
+tgschultz
+ah, ok. I guess you just rewrite the struct in zig, make a wrapper function to init it, or save the translation and modify it
+
+1563628782
+Tetralux
+And the fact that you can declare one, init it to zero, and append things to it without having to call init(array) etc.
+
+1563628785
+ffddr
+daurnimator:  default zeroes from translate-c structs will definetly solve the problem!
+
+1563628803
+daurnimator
+tgschultz: yeah that's the status quo: but that's sort of annoying: it would be good if there was a way to mutate translated structs after you @cImport them
+
+1563628814
+daurnimator
+ffddr: I don't think that would be accepted.
+
+1563628835
+Tetralux
+In reality,  you'd give all the field "= 0" so you don't have to set the array "= {}" when you declare it.
+
+1563628836
+tgschultz
+well the idea of mutating a struct in-place sounds pretty anti-zen to me.
+
+1563628855
+daurnimator
+tgschultz: agreed. I'd return a new one
+
+1563628865
+daurnimator
+tgschultz: this sounds like a job for @reify :)
+
+1563628876
+tgschultz
+sure, but then all your translations are done with the old type still, aren't they?
+
+1563628876
+daurnimator
+or @Type as it seems to be called now?
+
+1563628886
+daurnimator
+tgschultz: good point.
+
+1563628930
+tgschultz
+seems like a complicated thing to handle just to alievate a minor annoyance, but my use cases for interacting with C don't really need it so I'm biased.
+
+1563628961
+Tetralux
+This means that Zig's version of the C array is 'const a = ArrayList(T){};', whereas it'd ideally be 'const a: ArrayList(T);'
+
+1563629004
+tgschultz
+Tetralux: ? Zig's array list requires an allocator to work. You have to call init regardless.
+
+1563629013
+daurnimator
+Tetralux: infact Zig's version is: `ArrayList(T).init(myallocator)`
+
+1563629036
+Tetralux
+With respect, you are not listening to what I'm saying.
+
+1563629047
+tgschultz
+I think I'm not understanding what you're saying, yes
+
+1563629049
+Tetralux
+But maybe I'm not being clear enough.
+
+1563629240
+ffddr
+daurnimator: hm, I understand that its quite a serious changes to c-import, but I cant see any examples where default zeroes will actually break things
+
+1563629297
+daurnimator
+ffddr: a common idea is that you
+
+1563629316
+daurnimator
+> Communicate intent precisely.
+
+1563629567
+Tetralux
+
+
+1563629581
+Tetralux
+(Disclaimer: Code is probably broken.)
+
+1563629588
+Tetralux
+(But that's not the point of it.)
+
+1563629599
+Tetralux
+The point is L28/29.
+
+1563629600
+ffddr
+daurnimator: how the following code should looks in idiomatic zig?
+
+1563629681
+daurnimator
+ffddr: at the moment it ends up looking like
+
+1563629691
+tgschultz
+Tetralux: I object to the very concept of a default allocator.
+
+1563629716
+daurnimator
+ffddr: see also
+
+1563629731
+tgschultz
+That's a personal thing, but I think andrewrk would agree it is un-zig-like
+
+1563629752
+Tetralux
+And personally, I can understand that position.
+
+1563629755
+Tetralux
+It makes sense to me.
+
+1563629766
+Tetralux
+But still. This is just an example.
+
+1563629778
+Tetralux
+It's not just an ArrayList this feature would be useful for.
+
+1563629803
+ffddr
+daurnimator: it looks like luaL_Reg have only two fields
+
+1563629865
+ffddr
+i ended up with
+
+1563629895
+Tetralux
+That link is dead :3
+
+1563629996
+daurnimator
+Tetralux: looking at that example.... why would .data or .len need to be initialised at all?
+
+1563630033
+daurnimator
+Tetralux: or .data at least
+
+1563630093
+daurnimator
+your `if (data == null)` check could be `if (self.len == self.allocated)`
+
+1563630244
+daurnimator
+Tetralux: perhaps have a peek at the actual zig std.ArrayList implementation?
+
+1563630288
+via
+09:33 ( ffddr) daurnimator: how the following code should looks in idiomatic zig?
+
+1563630292
+via
+09:33 ( ffddr) daurnimator: how the following code should looks in idiomatic zig?
+
+1563630296
+via
+whoops
+
+1563630311
+via
+wrong double click, sorry
+
+1563630398
+ffddr
+daurnimator: actually in this example there is just 2 more fields to initialize. but in libwebsockets there is a struct with 40+ fields, designed for partial initialization :(
+
+1563630424
+daurnimator
+ffddr: that sounds weird.... do they provide helper macros or something?
+
+1563630451
+ffddr
+they just memset it to 0 and use some of the fields
+
+1563630562
+daurnimator
+ffddr: actual memset to zero? or rely on C's trailing 0 in a struct initialiser to initialise everything to zero?
+
+1563630563
+ffddr
+I think the best example of C library with such a struct is sokol:
+
+1563630564
+ffddr
+it would be super nice to do the same struct initialization in zig!
+
+1563630649
+daurnimator
+ffddr: indeed it looks like they "expect" default values:
+
+1563630662
+ffddr
+daurnimator:
+
+1563630694
+daurnimator
+ffddr: though looking at the struct... they have some "interesting" fields. e.g. `_start_canary`?
+
+1563630712
+scientes
+how do i just run the compiler-errors.zig tests?
+
+1563630799
+daurnimator
+ffddr: which they apparently expect to be 0:
+
+1563630840
+ffddr
+C's designated initializers is zero initialization, so it looks legit
+
+1563630889
+daurnimator
+ffddr: so really, I think your request falls into the category of "there should be a way to modify/annotate c imports" I believe there are a couple of issues around. But I don't recall them mentioning default initialisation, so perhaps add a comment
+
+1563630996
+ffddr
+Maybe you recall the most relevant issue?
+
+1563631043
+daurnimator
+ffddr:
+
+1563631102
+ffddr
+
+
+1563631109
+ffddr
+oh, missed you message :)
+
+1563631175
+daurnimator
+I'm trying to find an issue that mentioned passing a prefix to @cImport e.g. `sg_` and that the returned "library" would only be those symbols
+
+1563631335
+scientes
+hryx,
+
+1563631340
+ffddr
+
+
+1563632736
+dec05eba
+Does anyone have any good idea on how autocomplete for code in zig? the issue is that when you want to autocomplete you have an expression that isn't finished so it's a compilation error and comptime code wont run, so you cant take advantage of the zig parser for that, if you want autocomplete that works properly and even with comptime evaluated types
+
+1563632748
+dec05eba
+on how to make*
+
+1563632814
+dec05eba
+i was thinking of something like cquery/ccls, that uses clang itself to give proper autocomplete for c++
+
+1563632823
+dec05eba
+but for zig, using zig parser
+
+1563633619
+ffddr
+daurnimator: commented :)
+
+1563640077
+FireFox317
+dec05eba: In the latest stream of andrewrk he talks about this issue.
+
+1563640100
+FireFox317
+Which also includes the issue with documentation for comptime stuff
+
+1563640108
+FireFox317
+generating documentation*
+
+1563644582
+ntgg
+are the fields TypeInfo.Enum in order?
+
+1563644642
+ntgg
+if I do fields[@enumToInt(...)] would I get the EnumField for it?
+
+1563644693
+andrewrk
+the fields are guaranteed to match the declaration order in the source
+
+1563644712
+andrewrk
+declarations in type info are not in any order, and it's questionable that they even belong in type info at all
+
+1563645582
+andrewrk
+all tests passing in llvm9 branch
+
+1563646838
+Sahnvour
+emekankurumeh[m]: did you have stack traces working in zig compiler's signal handler you added recently ?
+
+1563646958
+gonz_
+Switching on strings; yes/no in the future?
+
+1563647001
+andrewrk
+gonz_, not currently planned but I'd consider a proposal.
+
+1563647039
+andrewrk
+the null hypothesis is an if-else chain with mem.eql
+
+1563647049
+andrewrk
+which, in my opinion, is quite reasonable to read and write
+
+1563647103
+gonz_
+Yeah, I think I'm mostly just spoiled. I also remember thinking "Why can't I use this on strings?" back in the day the first time I used `switch`
+
+1563647124
+gonz_
+I figured I would ask because I couldn't find an issue about it.
+
+1563647147
+gonz_
+I'm not going to make a proposal for it without more well-formed opinions through projects.
+
+1563647442
+gonz_
+Principally I'm here because I don't really want more features than what's in atm. I don't have "that one feature" that I want to add because I've already used pretty much everything up to Idris at this point and I'm not sure there's much more net positive to gain.
+
+1563648269
+Sahnvour
+I'm curious, what did you use Idris for ? looks very interesting
+
+1563648569
+gonz_
+Just playing around with it, really. I used it now mostly as an example of the higher end of the spectrum. Admittedly, it's also a lateral move from most languages.
+
+1563648705
+gonz_
+I wrote some statically typed state machine stuff in it. There's a v2 coming out that also adds quantified/linear types which is looking very interesting.
+
+1563648803
+ntgg
+I can't seem to return a union(enum) variant that is void from a function that returns an error
+
+1563648806
+ntgg
+
+
+1563648824
+ntgg
+how do I do that?
+
+1563649025
+mikdusan
+ntgg: `0 => return Foo { .A = {} };`
+
+1563649643
+emekankurumeh[m]
+Sahnvour: stack traces were working the last time I checked
+
+1563649955
+Sahnvour
+emekankurumeh[m]: we're talking about stack traces when the
+
+1563649986
+Sahnvour
+asking because I'm trying to make the feature actually work with msvc and it requires substantial improvements to our coff/pdb code
+
+1563650921
+emekankurumeh[m]
+you mean in stage 0?
+
+1563651014
+emekankurumeh[m]
+if so then no, u use gcc to compile and lld to link so i don't have pdb files.
+
+1563651344
+Sahnvour
+stage1, but yes
+
+1563651382
+Sahnvour
+so this legit needs more work
+
+1563651522
+emekankurumeh[m]
+are the pdbs be generated and found for stage 0?
+
+1563651624
+Sahnvour
+if you instruct cmake to target RelWithDebInfo, you have zig.pdb, now I'm fixing the loading part
+
+1563651675
+Sahnvour
+it works if LLVM is used to compile zig, but not cl.exe/link.exe, our support for coff and pdb is too minimal
+
+1563651782
+emekankurumeh[m]
+what about debug mode?
+
+1563651809
+Sahnvour
+debug mode also produces a pdb, but doesn't affect the zig code trying to read it
+
+1563655688
+scientes
+I can't download Build Tools for Visual Studio 2019
+
+1563655690
+scientes
+I just get an error
+
+1563655720
+scientes
+I can't exactly fix the build issues on OSX and Windows if I can't build zig on those platforms
+
+1563656242
+ntgg
+I'm getting different results for something that as far as I can tell shouldn't happen
+
+1563656280
+ntgg
+In
+
+1563656299
+ntgg
+If line 65 isn't there it works fine
+
+1563656336
+ntgg
+(and the tests testing line 65)
+
+1563656349
+scientes
+are we building zig with msvc or clang?
+
+1563656385
+Sahnvour
+for the releases ? msvc
+
+1563656412
+Sahnvour
+on the CI too
+
+1563656420
+Sahnvour
+but you can use LLVM on windows if you wish
+
+1563656442
+scientes
+cause I have no way to figure out why my PR builds on linux but not OSX or Windows
+
+1563656465
+emekankurumeh[m]
+which pr?
+
+1563656475
+scientes
+#2914
+
+1563656511
+scientes
+oh wait i just broke it on linux I will fix that
+
+1563656628
+Sahnvour
+dec05eba: about your earlier question, see
+
+1563656728
+ntgg
+if I move the `const val_struct_nested = ...` below the tests for val_struct the tests pass
+
+1563656740
+dec05eba
+I also saw that the creator of cquery has a pull request but it's 1 year old since it was last updated
+
+1563656906
+scientes
+I'm also sick of this caching bug
+
+1563656926
+scientes
+and the inability to turn caching off to get around it
+
+1563656939
+mikdusan
+which bug is that?
+
+1563656948
+scientes
+i don't think it has been reported
+
+1563656953
+scientes
+I just want to get my work done
+
+1563656966
+scientes
+the cache code has a floating point exception
+
+1563656998
+mikdusan
+does `--cache off` help?
+
+1563657009
+scientes
+yes
+
+1563657079
+scientes
+oh no it doesn't
+
+1563657112
+scientes
+I can't reproduce it in the debugger however
+
+1563657136
+mikdusan
+i saw a sporadic floating point exception trying to run tests from your branch yesterday
+
+1563657140
+mikdusan
+but could not narrow it down
+
+1563657146
+mikdusan
+(macOS)
+
+1563657153
+scientes
+yeah probably same thing
+
+1563657210
+ntgg
+Is it a compiler bug or something I am missing?
+
+1563657229
+scientes
+well not being able to reproduce in the debugger is really troubling
+
+1563657250
+scientes
+nothing in valgrind either
+
+1563657417
+Sahnvour
+do you have a 100% repro (outside of debugger) ?
+
+1563657459
+scientes
+no
+
+1563657544
+scientes
+common bug not 100%
+
+1563657546
+scientes
+*but
+
+1563657589
+mikdusan
+ntgg: looks like stack memory is escaping. not a compiler bug. Value.Object is a
+
+1563657679
+Sahnvour
+scientes: really strange
+
+1563658215
+emekankurumeh[m]
+scientes: have you tried adding a signal handler for sigfpe?
+
+1563658258
+scientes
+yeah I am going to
+
+1563658267
+scientes
+but do you know how to change stacks in gdb?
+
+1563658278
+scientes
+cause it would be useless unless you can examine the main stack
+
+1563658437
+emekankurumeh[m]
+no, my gdb knowledge is extremely rudimentary
+
+1563658461
+emekankurumeh[m]
+what do you mean by the "main stack"?
+
+1563658549
+scientes
+when you catch a signal
+
+1563658557
+scientes
+you end up with a differn't signal-handler stack
+
+1563658571
+scientes
+and when you return from the signal handler the kernel puts the stack pointer back to where it was
+
+1563658608
+ntgg
+mikdusan: thank you, I think that makes sense. I just make it into an ArrayList or something to fix it, right?
+
+1563658789
+mikdusan
+ntgg: yes, ArrayList is a good choice
+
+1563659970
+emekankurumeh[m]
+well how does handle that for the segfault handler because stack traces work fine with those if I'm not mistaken
+
+1563660056
+scientes
+that's becase gdb is catching the signal
+
+1563660068
+scientes
+it never reaches the signal handler of the problem
+
+1563660072
+scientes
+*program
+
+1563660075
+hryx
+scientes: BTW I responded on the github issue. I know that unicode validation was part of your original PR. why not make a PR with just the validation stuff?
+
+1563660090
+scientes
+yes i saw that response
+
+1563660106
+scientes
+Its because the last and most important of my patches is triggering a compiler bug
+
+1563660142
+scientes
+but yeah that is a reasonable response
+
+1563660171
+ntgg
+If i'm storing a thing in a `HashMap(..., <Heap allocated type>)` do I need to loop through and call deinit on all the things inside the hashmap?
+
+1563660202
+scientes
+zig of stage1?
+
+1563660213
+scientes
+in stage1 we don't free memory at all
+
+1563660233
+emekankurumeh[m]
+yes
+
+1563660661
+Sahnvour
+ntgg: yes you do
+
+1563660960
+scientes
+if this is zig you can also just use a arena allocator
+
+1563660966
+scientes
+and then you don't need to deinit all of them
+
+1563661061
+Tetralux
+Indeed, that would be better than deinitting every single one.
+
+1563661066
+Tetralux
+Esp if you have a lot of them.
+
+1563661079
+Tetralux
+And if your program is about to quit anyway, then just don't deinit.
+
+1563661095
+scientes
+you could also use a tree allocator
+
+1563661102
+scientes
+i don't think zig has that
+
+1563661130
+ntgg
+I'm making a library, so I don't want to just use an arena allocator
+
+1563661162
+scientes
+then yes
+
+1563661185
+scientes
+but you could also force the caller to use the same allocator for all members
+
+1563661206
+scientes
+and then you could stack allocators
+
+1563661218
+scientes
+and then you can just free the outer allocator to free it all
+
+1563661260
+scientes
+especially given that all members will likely be the same size
+
+1563661265
+scientes
+i think this is a reasonable approach
+
+1563661299
+scientes
+you also have to get fancy like this if you want to do a lockless hash table
+
+1563661316
+scientes
+freeing memory is very complicated in lockless structures
+
+1563661334
+scientes
+(in fact impossible)
+
+1563661350
+emekankurumeh[m]
+you have several options for youe deallocation schemes
+
+1563661376
+emekankurumeh[m]
+i.e. hazard pointers, epoch based reclamation to name a few
+
+1563661396
+Tetralux
+.. none of which mean anything to me - I might add xD
+
+1563661455
+emekankurumeh[m]
+tbh they are just more or less buzzwords to me as well
+
+1563661640
+emekankurumeh[m]
+i was just researching threadpools and how to to implement them because without deallocation you memory usage would increase unbounded as you pushed more tasks to the pool
+
+1563661693
+Tetralux
+The allocation comes from copying the "task" into the pool?
+
+1563661707
+Tetralux
+And the deallocation is expected to happen when the thing is done?
+
+1563661720
+Tetralux
+.. and you've copied the answer out?
+
+1563662000
+emekankurumeh[m]
+well I never got as far as returning stuff from tasks and I never implemented any of those algorithms
+
+1563662131
+emekankurumeh[m]
+i was also going to use async to implement a future like system but async is getting rewritten so I didn't bother
+
+1563666793
+scientes
+ok so there is a caching bug once I fixed my own bug
+
+1563666794
+scientes
+stage0 called stage2_DepTokenizer_init
+
+1563666911
+scientes
+oh it just means that we need to turn off  the cache for zig0
+
+1563666911
+mikdusan
+is this manifesting as sporadic floating point exception?
+
+1563666917
+scientes
+so i fixed that
+
+1563666932
+scientes
+also using a debug llvm would have caught it
+
+1563666937
+scientes
+maybe....
+
+1563666941
+scientes
+actually i'm confused, but i fixed it
+
+1563666949
+mikdusan
+yeah zig0 can't use zig userland.
+
+1563666958
+scientes
+so zig0 should just turn off caching
+
+1563666965
+scientes
+so it doesn't craash like that
+
+1563667036
+mikdusan
+so i have a lead on that floating point exception on macOS...
+
+1563667039
+scientes
+so the trick in gdb was turning back on aslr
+
+1563667050
+scientes
+because gdb turns off aslr so its more deterministic
+
+1563667056
+scientes
+but that can change behavior
+
+1563667073
+Tetralux
+wAIT
+
+1563667079
+scientes
+set disable-randomization off
+
+1563667084
+Tetralux
+Turning it OFF changes behavior? XD
+
+1563667129
+Tetralux
+Oh - Because the error was only happening on a specific seed that turning it off did not have.
+
+1563667149
+scientes
+that's why it was sporatic
+
+1563667168
+scientes
+anyways,the bug was that I wasn't properly checking the zig types
+
+1563667183
+Tetralux
+Sounds like ASLR is a bad thing then. ;)
+

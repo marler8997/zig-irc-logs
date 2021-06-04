@@ -1,0 +1,536 @@
+1568165251
+andrewrk
+Tetralux, search std lib for @fieldParentPtr
+
+1568167224
+Tetralux
+andrewrk: Ah yeah - I'm guessing that's how you avoid the alignment errors with ptrCast.
+
+1568167281
+Tetralux
+That can get you to the subtype from the supertype right?
+
+1568167325
+andrewrk
+yes, given that the supertype is a struct field of the subtype
+
+1568167342
+andrewrk
+it's planned to have runtime safety as well
+
+1568168391
+Tetralux
+I like the sound of that :)
+
+1568172733
+andrewrk
+I don't have std.dumpCurrentStackTrace working when std.io.mode == .evented but the zig-window example code is actually working
+
+1568172766
+andrewrk
+I think we're extremely close
+
+1568172793
+andrewrk
+I bet we could have a single threaded networking client/server test now, taking advantage of evented I/O
+
+1568173690
+stratact
+So I'm referencing a static struct from a C library, how does one use a static C struct in Zig?
+
+1568173859
+andrewrk
+what's a static struct?
+
+1568173880
+andrewrk
+I'm not being facetious; I've never heard of that
+
+1568174029
+stratact
+There was no offense taken :) I'm not sure either, but reading online, people are saying that a static struct is a struct with all fields being static
+
+1568174139
+andrewrk
+so the struct is empty?
+
+1568174190
+stratact
+Not necessarily. Here is example of what I'm trying to do in Zig but it's written in C:
+
+1568174264
+andrewrk
+stratact, that static is not describing the struct - it's describing the variable mtpfs_oper
+
+1568174275
+andrewrk
+that means mtpfs_oper is not accessible outside this file
+
+1568174288
+andrewrk
+in C everything should be static except for whatever is in your .h file
+
+1568174415
+stratact
+Gotcha, I wasn't sure what it meant
+
+1568174555
+stratact
+...Today I learned how to declare struct variables in C... (or maybe have forgotten it, who knows)
+
+1568174737
+stratact
+So I can just reference it and use it as a normal Zig struct, I'm assuming
+
+1568174757
+andrewrk
+yes
+
+1568174786
+stratact
+👍
+
+1568178903
+stratact
+Hmm, I want to use an ArrayList and it seems like ArenaAllocator is the only allocator I should use if I want something like a C++/Rust Vector, since I don't want a fixed sized allocation and continue to grow as needed.
+
+1568178932
+stratact
+and HeapAllocator is not supported on FreeBSD yet
+
+1568178979
+shachaf
+ArenaAllocator doesn't make much sense with that kind of dynamic array, does it?
+
+1568179031
+shachaf
+I guess you could still do it but it seems like an odd use since you can't free the old memory when you reallocate.
+
+1568179053
+stratact
+Ah I see
+
+1568179340
+stratact
+shachaf: so would the best strategy be to use FixedBufferAllocator and whenever I need a larger buffer, I just make a new one with a larger size?
+
+1568179825
+stratact
+Oh I see how it works now. I'm an idiot.
+
+1568180050
+shachaf
+Maybe? Depends on what you're doing.
+
+1568211378
+frmdstryr
+Are there any examples of using sockets?
+
+1568212094
+fengb
+Not up to date. We're rewriting async layer so that'll stabilize soon™ probably after 0.5.0 release
+
+1568212507
+fengb
+Er, async has recently been redone in the language, but the userland primitives are still being worked on so that's still in flux
+
+1568212979
+frmdstryr
+Ok, thanks! Will wait some more, looking good so far!
+
+1568213054
+dimenus_
+did the default behavior of debug info change recently in zig?
+
+1568213061
+dimenus_
+eg, now I'm getting 'debug info stripped' when a build fails
+
+1568216101
+andrewrk
+dimenus, are you using a release build?
+
+1568216696
+kristoff_it
+> <andrewrk> I bet we could have a single threaded networking client/server test now, taking advantage of evented I/O
+
+1568216750
+kristoff_it
+I'm very interested in working on that. I got my redis client working with simple blocking I/O and I was waiting for async/await to improve :)
+
+1568216879
+kristoff_it
+I've read the commit that adds async support to the stdlib, but I'm wondering what I need to do precisely inside my client implementation to make sure concurrent requests are juggled the right way
+
+1568217101
+andrewrk
+kristoff_it, this is still "experimental" until it's covered by a lot more stress tests, but for starters you can try this in your example programs:
+
+1568217140
+andrewrk
+with no changes to the library code, in this example I linked, if you change `evented` to `blocking` on line 4 the program has the same behavior, but much different strace
+
+1568217142
+rsdimenus
+andrewrk: I'm not sure what happened there, I reset to head and it works fine now
+
+1568217156
+rsdimenus
+no, I'm working on latest master
+
+1568217172
+andrewrk
+kristoff_it, the beginOneEvent/finishOneEvent is a hack workaround, shouldn't be necessary. that's one of the loose ends i'm looking into
+
+1568217192
+andrewrk
+and then finally only std.os.read is hooked up, not std.os.write yet.
+
+1568217219
+rsdimenus
+should we emit dwarf for mingw builds?
+
+1568217226
+kristoff_it
+andrewrk: ok thanks, I'll play around with it
+
+1568217252
+Yardanico
+I feel like V author is a bit strange - he's asking the twitter users opinion even for changes like these -
+
+1568217264
+Yardanico
+btw, we talked about OpenMandriva, and I installed it yesterday :D
+
+1568217277
+andrewrk
+Yardanico, off topic, no random trash talking plz
+
+1568217332
+andrewrk
+kristoff_it, the main difference between evented and blocking is that if you use `async` to call a function, in blocking mode it finishes before the async call completes. in evented mode, async call will return right away and the answer can be collected later with await
+
+1568217555
+andrewrk
+kristoff_it, there's also a segfault happening in the panic handler when trying to dump a stack trace, with evented I/O enabled. I haven't figured that out. so that will make your experimentations a bit annoying. if you run into any trouble I'd suggest waiting another week-ish :)
+
+1568217602
+kristoff_it
+andrewrk: yes, my question is more about making sure that each full request gets written correctly, which I guess means I need to do some task scheduling by myself, otherwise I assume the event loop will just have multiple async functions write pieces of their respective request all over the place
+
+1568217624
+kristoff_it
+andrewrk: as you can see it's a pretty noobish concern :)
+
+1568217708
+andrewrk
+kristoff_it, have a look at std.event.Lock
+
+1568217836
+andrewrk
+this is essentially a mutex, except instead of blocking a kernel thread, it does a suspend. which means that provided there is any other work to do, kernel threads will all still be doing work
+
+1568218454
+Tetralux
+I never knew that you could do `{ .f1 = v1 }` in C.
+
+1568218456
+Tetralux
+Curious.
+
+1568218773
+earnestly
+Tetralux: C99
+
+1568218816
+earnestly
+Also struct foo bar = {0}; to zero initialise
+
+1568218821
+earnestly
+(Not in C++)
+
+1568218898
+Tetralux
+Indeed - C++ made it {} instead.
+
+1568218921
+earnestly
+Well, C++ is a very different kettle of fish
+
+1568218933
+earnestly
+{} may do that, it may not
+
+1568218955
+Tetralux
+You mean only certain compilers have that zero?
+
+1568218984
+earnestly
+It depends on the type and what {} means to it
+
+1568218994
+earnestly
+"default initialisation" iirc
+
+1568218996
+Tetralux
+POD struct
+
+1568219249
+Sahnvour
+
+
+1568219341
+donaldallen
+Doc question: in the master docs, in the section on tagged unions, the construct "ComplexTypeTag(c)" is used in an assert, where c is a variable holding a variant of ComplexTypeTag. Where is this construct documented? It is certainly possible I missed it, but if I didn't and it isn't documented, I'd like to point that out so the docs can be fixed.
+
+1568219342
+donaldallen
+Thnx.
+
+1568219388
+andrewrk
+that is where it is documented
+
+1568219417
+andrewrk
+oh, you're talking about implicit casts
+
+1568219425
+andrewrk
+
+
+1568219605
+donaldallen
+andrewrk: ComplexTypeTag is an enum and it is being used here in what looks syntactically like a function call. I can understand from the context what it does, but I believe this is the first instance of it in the doc, with no explanation.
+
+1568219655
+donaldallen
+I looked at the link you provided and not clear to me that what I'm referring to is a case of that. Is it? If so, how?
+
+1568219683
+andrewrk
+"implicit cast - invoke a type as a function"
+
+1568219742
+Tetralux
+It is kinda weird to me that an
+
+1568219756
+Tetralux
+You'd think T(x) would count as explicit.
+
+1568219775
+donaldallen
+andrewrk: got it. Thnx.
+
+1568219777
+Tetralux
+But yeah - it only compiles if the cast can be done implicitly.
+
+1568220092
+stratact
+After sleeping on it and just waking up, I still can't decide if I want to use an ArrayList or a TailQueue
+
+1568220136
+fengb
+Do you need to remove from the middle?
+
+1568220155
+fengb
+Or appending to the middle
+
+1568220159
+fengb
+If not, ArrayList is probably faster
+
+1568220344
+donaldallen
+andrewrk: I would add that the implicit cast examples occur after the tagged union examples, so a forward reference. I'd suggest some sort of reference in the tagged union section to the implicit cast stuff so that people who go through the doc sequentially won't be baffled, as I was.
+
+1568220418
+stratact
+fengb: TailQueue it is. One more question, how I can I `deinit` it completely without binding all the nodes to individual variables?
+
+1568220451
+stratact
+Just looking from the test examples
+
+1568220721
+waleee-cl
+kristoff_it:  why did you remove your zig blogpost? (of course you can do whatever you want with your blog, just curious since it was well written)
+
+1568220737
+waleee-cl
+nvm, I'm f*cking blind
+
+1568220779
+kristoff_it
+waleee-cl: :) I guess that counts as feedback that the home page doesn't have perfect UX
+
+1568220878
+waleee-cl
+no, the UI/UX is fine, I for some reason had the wrong title remembered ("Comptime .... ") and only glanced at the overview
+
+1568220953
+kristoff_it
+waleee-cl: I see, I thought that my rant on go vs rust that now has the top spot in the home page made you think the old post was not available anymore
+
+1568221012
+companion_cube
+what blog post? :)
+
+1568221058
+jmiven
+companion_cube:
+
+1568221062
+waleee-cl
+kristoff_it:  well, yeah that too, but I actually went to /blog-also, and didn't register it in the list
+
+1568221119
+kristoff_it
+waleee-cl: I'll work on that, for now, I'm happy to have implemented dark mode support
+
+1568221126
+fengb
+But the real answer to Go vs Rust is Zig :P
+
+1568221206
+companion_cube
+or crystal? 🤔
+
+1568221308
+kristoff_it
+fengb: don't spoil the end of the new blog post :D (although in all seriousness, I think each has its own place. Boring answer I know, but what can I do)
+
+1568221346
+kristoff_it
+anyway, writing about async/await in Zig is going to be an interesting challenge
+
+1568221357
+donpdonp
+companion_cube: or nim? :)
+
+1568221366
+companion_cube
+heh, who knows
+
+1568221376
+companion_cube
+I do prefer crystal's syntax, though, by far :s
+
+1568221407
+donpdonp
+going from ruby to crytal was amazing. helped sell me on strong typing.
+
+1568221435
+companion_cube
+anyway I feel like it's actually more of a complement to zig/rust/C
+
+1568221443
+companion_cube
+something a bit higher level for writing code more quickly
+
+1568221527
+stratact
+donpdonp: you mean strong static typing? Ruby is also strongly typed, just dynamic.
+
+1568221540
+fengb
+Oh you mention Zig ;P
+
+1568221627
+waleee-cl
+... isn't ruby unityped like python?
+
+1568221712
+kristoff_it
+fengb: yeah :)
+
+1568221724
+fengb
+Oh I spoiled because I had lag on my phone lol
+
+1568221803
+kristoff_it
+waleee-cl: you're probably referring to dynamic typing. a truly untyped language wouldn't you let use `type()`, which can be used in python, for example
+
+1568221820
+companion_cube
+it's just badly named ;)
+
+1568221826
+companion_cube
+type() should be runtimetag() ;)
+
+1568221855
+waleee-cl
+ah, right. My memory about the difference was a bit fuzzy
+
+1568221894
+fengb
+Truly untyped would be something like assembly :P
+
+1568221898
+fengb
+Add pointers? Index by floats? Sure!
+
+1568221933
+waleee-cl
+but I'm fairly sure that I have seen a elixir/phoenix-framework overview that mentions unityping, and that language do the same thing
+
+1568221995
+companion_cube
+python does let you index by float
+
+1568221999
+companion_cube
+it'll just fail at runtime :D
+
+1568222213
+companion_cube
+funny how in this blog post I want to replace "go" with "crystal" now
+
+1568222252
+kristoff_it
+companion_cube: I think you can define a custom
+
+1568222368
+companion_cube
+😂
+
+1568222373
+companion_cube
+unittyped indeed…
+
+1568234873
+scientes
+I'm trying to read to the alignment resolution code and i just keep going in circles and can't find any actual data/tables
+
+1568238146
+Sahnvour
+andrewrk: how would I have a build.zig copy a file (a package's dll) next to the built executable ? addInstallFile ?
+
+1568238480
+HelloThere54321
+I am trying to use inline assembly to read the GDT using the sgdt instruction. My current attempt is: table = asm volatile ("sgdt %[tab]" : [tab] "=m" (-> GDT_PTR_struct)); Im not sure if zig supports this
+
+1568240821
+kristoff_it
+so.... A very simple example that uses async I/O seems to be working first try :D
+
+1568241388
+mikdusan
+--> scientes: ... going in circles and can't find any actual data/tables
+
+1568241396
+mikdusan
+were you able to find it?
+
+1568241399
+scientes
+actually rebasing on master fixed it
+

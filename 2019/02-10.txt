@@ -1,0 +1,320 @@
+1549813544
+forgot-password
+Is it possible to have a switch on a union modify the contained data?
+
+1549813581
+forgot-password
+The compiler says that it expects a `*A`, but found a `*const A` and I don't know how to get a non-constant pointer out of my active union.
+
+1549813599
+andrewrk
+forgot-password, yes - assuming you mean a tagged union
+
+1549813655
+andrewrk
+
+
+1549813687
+forgot-password
+Yes, I have a tagged union
+
+1549813692
+andrewrk
+this should be more clear in the docs. I'll make a note of it
+
+1549813772
+forgot-password
+Huh, I tried that, but I still get the same message
+
+1549813794
+andrewrk
+you may have a const reference to your union
+
+1549813797
+andrewrk
+can I see the code?
+
+1549813812
+forgot-password
+I should probably also mention that I iterate through an ArrayList of which I obtain a slice via `.toSlice`
+
+1549813889
+forgot-password
+And on every union in that slice I call a function, which has this signature: `pub fn update(self: MyUnion) void`
+
+1549813942
+forgot-password
+Does that function have to take a pointer to `MyUnion` for mutation to work?
+
+1549814002
+andrewrk
+forgot-password, parameters cannot be modified
+
+1549814010
+andrewrk
+so that's the problem here - that's why the reference is const
+
+1549814126
+forgot-password
+So what I'm trying to do is not possible at all? Afaik I cannot turn a `const A` into a `*A`, only in a `*const A`, right?
+
+1549814645
+andrewrk
+correct
+
+1549814685
+andrewrk
+think about it this way - when you see:  `fn update(self: MyUnion) void`  you, the person reading the code, may assume that `self` is never mutated in this function
+
+1549814735
+andrewrk
+zig is designed to give the person reading code as many assumptions as possible
+
+1549814750
+daurnimator
+andrewrk: I do think that's sort of weird
+
+1549814846
+daurnimator
+andrewrk: e.g. fn dothething(x: u32) { while(x>0) : (x -= 1) { doit(); } } // this seems like a natural way to write a 'do X times' loop
+
+1549814886
+andrewrk
+I think you'll be fighting a pretty uphill battle to get mutable parameters
+
+1549814932
+daurnimator
+andrewrk: it's weird to me that `const` is then required on parameters
+
+1549814939
+daurnimator
+*isn't
+
+1549814958
+daurnimator
+why aren't you forced to write: fn dothething(x: const u32) { ..... }
+
+1549814964
+andrewrk
+just as part of the syntax for function prototypes? what would be the point of that?
+
+1549814977
+daurnimator
+or if that's too verbose... why isn't `const` compulsory all the time? (and require `mut`)
+
+1549814989
+andrewrk
+that syntax is not valid in a variable declaration: var x: const u32 = 124; // syntax error
+
+1549814990
+daurnimator
+it is just one of those weird inconsistencies
+
+1549815018
+daurnimator
+andrewrk: right... it's `const x:u32 = fromsomewhere`
+
+1549815044
+daurnimator
+Maybe I'm just getting confused by `const` being overloaded as a keyword
+
+1549815071
+andrewrk
+it's not out of the question that `const` as a variable declaration gets replaced by `let`
+
+1549815118
+companion_cube
+\o/
+
+1549815121
+forgot-password
+I'm such a moron, I just noticed that I can capture the items in the slice by reference as well... Thank you :)
+
+1549815142
+andrewrk
+forgot-password, no need to beat yourself up. glad you got it working
+
+1549815288
+andrewrk
+daurnimator, I don't think "inconsistent" is a fair characterization. where else in the language can you pass a parameter and have it be mutable?
+
+1549815347
+andrewrk
+or, better phrased, what is it inconsistent with?
+
+1549815382
+daurnimator
+andrewrk: sorry, I got confused about `const`
+
+1549815415
+daurnimator
+andrewrk: forgot that `const` was part of a variable declaration; not part of the type..... unless it is part of the type; but that's at a level of indirection
+
+1549815441
+andrewrk
+const is a part of pointer types
+
+1549815516
+daurnimator
+andrewrk: and arrays?
+
+1549815523
+andrewrk
+no
+
+1549815541
+andrewrk
+only pointer types
+
+1549815542
+daurnimator
+oh right
+
+1549815571
+daurnimator
+okay so yes. the confusion is that `const` is a property/keyword of a pointer type, as
+
+1549815583
+daurnimator
+clearly one of them needs to change :)
+
+1549815585
+andrewrk
+got it. that's a good argument for `let`
+
+1549815618
+andrewrk
+the other good argument for `let` is that it's the same number of keystrokes as `var`, encouraging its use
+
+1549815637
+companion_cube
+another step towards rust? :)
+
+1549815643
+companion_cube
+(rust's syntax, that is)
+
+1549815662
+andrewrk
+yes, but I don't think we would do the `mut` keyword
+
+1549815681
+daurnimator
+btw, my "and arrays" comment was because I thought of `[]const u8`, and the `[]` made me think "that's an array". but really it's a pointer type
+
+1549815701
+companion_cube
+I guess `let` and `var` are fine indeed
+
+1549815716
+andrewrk
+right. it's a bit confusing. the issue that makes array literals with inferred size [_] instead of  [] should help
+
+1549815731
+companion_cube
+`mut` allows to write `fn foo(mut x: T)` but you don't seem to like it :)
+
+1549815752
+andrewrk
+I will note that if you look at `zig builtin`, the @typeInfo for a slice puts it in the Pointer category
+
+1549815785
+andrewrk
+companion_cube, zig also does not have "byval" parameters
+
+1549815793
+daurnimator
+andrewrk: so (sort of as companion_cube said): what about `fn foo(var x: u32)` for a mutable arg
+
+1549815829
+andrewrk
+well, I suppose it does for integers. but when you pass a struct as a parameter, zig is allowed to secretly pass a reference, or a copy
+
+1549815854
+andrewrk
+daurnimator, that would require "byval" parameters
+
+1549815878
+daurnimator
+andrewrk: howso?
+
+1549815889
+companion_cube
+so arguments are passed by reference, at least semantically?
+
+1549815902
+daurnimator
+andrewrk: it would still always be a copy (or secret reference). but you could mutate your copy
+
+1549815908
+andrewrk
+mutable parameters, if they were structs or arrays, would require a hidden memcpy at the callsite.
+
+1549815930
+andrewrk
+right now, when you pass parameters to functions, there is no hidden memcpy. if you want a copy, you have to do it yourself
+
+1549815932
+daurnimator
+andrewrk: semantically yes.
+
+1549816047
+porky11
+is it possible to define a generic function without having to specify the type explicitly?
+
+1549816070
+daurnimator
+porky11: use `var` as the type?
+
+1549816124
+daurnimator
+porky11:
+
+1549816523
+porky11
+daurnimator, but that's not available in 0.3.0 yet, right?
+
+1549816542
+porky11
+I got TODO implement inferred return types
+
+1549816592
+daurnimator
+porky11: ah you're asking about the return type in particular?
+
+1549816852
+porky11
+It's not important, if there is another way to define such a function.
+
+1549816915
+porky11
+I just want to write `max(1, 2)` instead of `max(u32, 1, 2)`
+
+1549816933
+porky11
+I probably could get it to work with @typeOf
+
+1549817148
+porky11
+So I want to define some kind of vector math, where different vector types can be multiplied and the result type depends on the argument types, and I don't want to rewrite all types
+
+1549823757
+emekankurumeh[m]
+you could try making the return type `@typeOf` one of the var parameters.
+
+1549823844
+emekankurumeh[m]
+like `fn max(a: var, b:@typeOf(a)) @typeOf(a)`
+
+1549823892
+emekankurumeh[m]
+i haven't tested if that's valid syntax though
+
+1549824118
+schme245
+it does
+
+1549824124
+schme245
+or it is, rather
+

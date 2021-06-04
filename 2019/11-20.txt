@@ -1,0 +1,1720 @@
+1574208853
+daurnimator
+also AFD helper functions
+
+1574211079
+fengb
+I'm a little confused about what to do with errno in std/os
+
+1574211094
+fengb
+Doing some wasi implementation
+
+1574211207
+fengb
+Should I be mostly ignoring the threadlocal value and returning the error codes directly?
+
+1574213821
+daurnimator
+fengb: in std/os.zig you should convert from (all of) errno to the specifically documented error conditions as zig errors
+
+1574213909
+fengb
+Sure, but what do I do with errno? There's getErrno but it doesn't seem to actually check the threadlocal variable
+
+1574213963
+gruebite
+i'm attempting to use C enum in a switch but getting type errors?
+
+1574213986
+gruebite
+
+
+1574213987
+gruebite
+.GDNATIVE_EXT_NATIVESCRIPT => {
+
+1574213993
+gruebite
+paste has the code
+
+1574214012
+gruebite
+there isn't a "@uintToEnum` either
+
+1574214154
+daurnimator
+gruebite:
+
+1574214550
+fengb
+
+
+1574214756
+daurnimator
+fengb: huh? that's C code....
+
+1574214802
+fengb
+I'm translating it
+
+1574214823
+daurnimator
+fengb: okay. no you don't need to set errno from within std/os.zig
+
+1574214851
+daurnimator
+that code is writing a
+
+1574215129
+gruebite
+daurnimator: when i do that i get uint cannot be cast to int
+
+1574215135
+gruebite
+seems the C enum type is uint by default?
+
+1574215167
+daurnimator
+andrewrk: I see your PR removes `const testing = std.testing;` in a module: is this now advised against?
+
+1574215448
+daurnimator
+andrewrk: idea: instead of `[*]null u8`, `[*]sentinel(0) u8`?
+
+1574215892
+fengb
+senti(null) 🙃
+
+1574215919
+fengb
+Ah so threadlocal errno is just a libc convention?
+
+1574216050
+daurnimator
+fengb: yep
+
+1574216251
+fengb
+For some reason I thought it was a syscall thing. Thanks
+
+1574216591
+adamkowalski
+Do we have a way of parsing dates from a string?
+
+1574216736
+adamkowalski
+And if not, what would be the way to approach this?
+
+1574216736
+daurnimator
+adamkowalski: no I don't think so
+
+1574216750
+adamkowalski
+I was thinking about taking in a compile time date format string
+
+1574216757
+adamkowalski
+then building a state machine thats specialized to read that?
+
+1574216781
+daurnimator
+yeah I think that's what you'd have to do right now. zig std doesn't really have any higher level parsing utilities right now
+
+1574216884
+adamkowalski
+Alright, thanks for the tip! I'm thinking maybe a DateTime struct and a TimeDelta struct
+
+1574216897
+adamkowalski
+so if you "subtract" two dates you get a delta in days
+
+1574216915
+daurnimator
+adamkowalski: nope
+
+1574216930
+adamkowalski
+care to elaborate haha
+
+1574216935
+fengb
+Oh boy datetimes
+
+1574216937
+daurnimator
+dates do not work like that
+
+1574216947
+daurnimator
+adamkowalski: you need to get the delta for each value
+
+1574216973
+daurnimator
+e.g. 2020-02-29 subtract 1 year: what do you get?
+
+1574216986
+adamkowalski
+well thats different
+
+1574216993
+adamkowalski
+now your subtracting a DateTime from a TimeDelta
+
+1574216995
+adamkowalski
+so you get a DateTime
+
+1574217004
+adamkowalski
+DateTime - DateTime = TimeDelta
+
+1574217009
+adamkowalski
+DateTime - TimeDelta = DateTime
+
+1574217032
+daurnimator
+adamkowalski: what is the result though?
+
+1574217077
+adamkowalski
+DateTime{.year=2019, .month=2, .day=29, .hour=0, .minute=0, .second=0}
+
+1574217090
+daurnimator
+okay so its a non-existant date? what now?
+
+1574217112
+adamkowalski
+well then DateTime - TimeDelta = !DateTime
+
+1574217143
+fengb
+Also... are we ignoring calendars?
+
+1574217157
+fengb
+Someone in this channel would flip out. I just don't remember who >_>
+
+1574217158
+daurnimator
+2019-10-06T04:00:00 Australia/Melbourne minus 5 hours. what do I get?
+
+1574217171
+adamkowalski
+Thats why i'm bringing it up, let's talk about this and find out what works for people
+
+1574217181
+adamkowalski
+However, I also need something for today to get my project moving forward
+
+1574217191
+daurnimator
+adamkowalski:
+
+1574217207
+daurnimator
+its not perfect; but I think luatz did
+
+1574217223
+adamkowalski
+Hmm thanks i'll study that
+
+1574217237
+adamkowalski
+The existing libraries we use at work are Pandas and Numpy for dealing with datetimes
+
+1574217252
+daurnimator
+note that there is no "TimeDelta" type: you just have an out-of-range DateTime that you "normalise"
+
+1574217254
+adamkowalski
+numpy does the datetime and deltatime appraoch
+
+1574217262
+adamkowalski
+it works pretty well
+
+1574217287
+adamkowalski
+pandas just throws up on itself, and when we are making predictions about failures 100 years into the future it says it can't create a c int that big haha
+
+1574217306
+daurnimator
+`const x = DateTime{.year=2020, .month=2, .day=29, .hour=0, .minute=0, .second=0}; x.year -= 1; x.normalise();`
+
+1574217314
+adamkowalski
+I think a timedelta notion is useful though
+
+1574217335
+adamkowalski
+Because you want to reason about the passage of time seperately from what day it is
+
+1574217351
+daurnimator
+Yes. You have to work the week-day out last.
+
+1574217382
+adamkowalski
+I don't know if giving people the ability to mutate year directly is safe
+
+1574217414
+daurnimator
+what do you mean "is safe"
+
+1574217434
+adamkowalski
+if people start just changing days/months/years whatever
+
+1574217439
+adamkowalski
+you can get into the situation where day is 70
+
+1574217443
+daurnimator
+exactly!
+
+1574217450
+daurnimator
+that's the point
+
+1574217456
+adamkowalski
+but if you are forced to say datetime plus some timedelta
+
+1574217466
+adamkowalski
+then that function is in charge of maintaining invariants
+
+1574217472
+daurnimator
+no its not
+
+1574217479
+adamkowalski
+and the public api exposed to the user is safe
+
+1574217490
+daurnimator
+you get back to a "normalised" (valid) form by calling .normalise()
+
+1574217501
+adamkowalski
+yeah but thats one possible design
+
+1574217506
+daurnimator
+btw, for figuring out day of the week I use the sakamoto method
+
+1574217511
+daurnimator
+
+
+1574217515
+adamkowalski
+I don't want the user to ever have a non normalized datetime
+
+1574217534
+adamkowalski
+I also prefer returning new dates to mutating in place
+
+1574217543
+adamkowalski
+if you keep things functional it makes parallelism simpler
+
+1574217551
+daurnimator
+adamkowalski: you do though. otherwise you can't pass around unnormalised forms
+
+1574217570
+adamkowalski
+whats a use case for that
+
+1574217572
+daurnimator
+e.g. if you want to say "recurring event every 3rd day of the month", then you really want the unnormalised form
+
+1574217591
+adamkowalski
+i'm still not sure I get why
+
+1574217610
+adamkowalski
+you can have something return a array of dates that increment by delta time of 3 days
+
+1574217626
+adamkowalski
+each date time within the array is a valid date though
+
+1574217656
+adamkowalski
+or you can use an iterator if you don't want to store the memory for everything
+
+1574217666
+adamkowalski
+each time you call next it could increment by the time delta
+
+1574217678
+daurnimator
+`var start_date = DateTime{.year=2019, .month=11, .day=20, .hour=0, .minute=0, .second=0}; while (start_date < end_date) { start_date.month += 1; const appointment = start_date.normalise(); render(appointment) }
+
+1574217687
+daurnimator
+adamkowalski: it doesn't work like that though
+
+1574217727
+adamkowalski
+I mean it can work how we choose right?
+
+1574217738
+adamkowalski
+you are proposing one possible design in the design space
+
+1574217741
+adamkowalski
+i'm proposing another
+
+1574217760
+adamkowalski
+it would be more helpful if you could elaborate on why they don't work
+
+1574217765
+adamkowalski
+or provide counter examples
+
+1574217767
+daurnimator
+with dates, a + b = c; c + b = ?; can be
+
+1574217789
+adamkowalski
+in my design you can't add dates
+
+1574217795
+adamkowalski
+you could add a date and a delta time
+
+1574217806
+adamkowalski
+in which case "multiplying" the delta time by 2 and adding
+
+1574217810
+adamkowalski
+is the same as adding twice
+
+1574217823
+daurnimator
+but it's not!
+
+1574217839
+adamkowalski
+adding two days, or adding one day, then another...
+
+1574217856
+daurnimator
+which can get different results
+
+1574217863
+adamkowalski
+how do you figure
+
+1574217885
+daurnimator
+add one day, then add a month. vs add one month, then a dday
+
+1574218139
+adamkowalski
+are you adding the two timedeltas together first? or the datetime + timedelta + timedelta
+
+1574218175
+adamkowalski
+either way I need to choose something thats gonna work for today, and then i'll work out the kinks later
+
+1574218190
+adamkowalski
+but at a high level what would be the proposed API that you would suggest
+
+1574218213
+adamkowalski
+from the consumers point of view, not the implementers
+
+1574218242
+daurnimator
+adamkowalski: same as luatz: see the docs there
+
+1574218293
+adamkowalski
+alright i'll read through that then
+
+1574218300
+torque
+specify all timedeltas in femtoseconds
+
+1574218382
+fengb
+"2/4 test "ZeeAlloc internals"...Error: wasm trap occured: memory out-of-bounds access"
+
+1574218388
+fengb
+So... I think I got a wasi test built
+
+1574218407
+fengb
+I'm sad that ZeeAlloc is buggy though :(
+
+1574218499
+adamkowalski
+torque whats the advantage of that?
+
+1574218527
+adamkowalski
+the way that numpys API looks for example is like this
+
+1574218582
+adamkowalski
+>>> np.datetime64('1990-01-01') + np.timedelta64(1, 'D')
+
+1574218583
+adamkowalski
+numpy.datetime64('1990-01-02')
+
+1574218644
+daurnimator
+adamkowalski: also make sure that the timezone of any datetime is captured
+
+1574218679
+daurnimator
+that was one thing missing in luatz
+
+1574218688
+companion_cube
+or store them in UTC
+
+1574218710
+daurnimator
+companion_cube: if you
+
+1574218756
+daurnimator
+companion_cube: e.g. if I say "set my alarm for 8am every morning", you need to know which timezone I'm in; and you need to make sure you do the correct thing around e.g. daylight savings adjustments
+
+1574218809
+companion_cube
+yeah, I feel like this isn't even a datetime but something more complicated
+
+1574218819
+daurnimator
+companion_cube: no it is datetime support
+
+1574218823
+companion_cube
+cause if you take the plane to another timezone, you mean the new 8am
+
+1574218832
+daurnimator
+companion_cube: you just need to make it an error to try and mix timezones
+
+1574218835
+companion_cube
+it's tied to "current TZ", not the one in which you defined in
+
+1574218840
+companion_cube
++it
+
+1574218842
+daurnimator
+companion_cube: indeed.
+
+1574218955
+adamkowalski
+yeah if we wanted to support all that we would also have to think about leap years, and daylight savings time all all this other stuff
+
+1574218962
+adamkowalski
+this is gonna balloon way out of proportion haha
+
+1574218971
+adamkowalski
+for now i'm gonna start simpler
+
+1574218978
+adamkowalski
+but i'll study the api you mentioned
+
+1574218985
+adamkowalski
+we should enumerate all the issues we can think of
+
+1574219000
+adamkowalski
+maybe write a proposal, and then we can build something that can be ready for the standard library
+
+1574219043
+adamkowalski
+but I did start looking at adding months in numpy and I guess they don't handle that too well yet either
+
+1574219069
+adamkowalski
+are there any other libraries in any other languages you all think we should consider?
+
+1574219091
+adamkowalski
+we've currently just got luatz
+
+1574219656
+fengb
+I believe Joda time / Java 8 time is considered pretty good
+
+1574221024
+andrewrk
+alright I have time to answer some questions now
+
+1574221037
+andrewrk
+fengb, you're doing WASI?
+
+1574221092
+fengb
+Yeah trying to get tests running
+
+1574221096
+fengb
+Seems to work :)
+
+1574221108
+fengb
+Compiling to wasi and running them with wasmer
+
+1574221117
+adamkowalski
+andrewrk: any thoughts on the date time debate?
+
+1574221139
+doublex
+leap seconds are also a thing
+
+1574221172
+adamkowalski
+What do you all think about following the standards?
+
+1574221232
+daurnimator
+What does he think about UTC? what sort of answer do you expect? :P
+
+1574221244
+andrewrk
+fengb, I don't think web assembly has threads... are you sure WASI needs a thread local errno?
+
+1574221247
+adamkowalski
+I mean what should we do about representing date time in zig
+
+1574221268
+adamkowalski
+durations and instants? only instants? something completely different?
+
+1574221283
+adamkowalski
+do we use time zones, or just adopt UTC? how do we handle parsing
+
+1574221284
+adamkowalski
+the works
+
+1574221312
+fengb
+It doesn't yet, but the de facto libc marks things as threadlocal. Doesn't matter since I just wrote the zig translation
+
+1574221315
+daurnimator
+adamkowalski: you have to use time zones. UTC is one timezone of many. But I don't know how this applies to your question
+
+1574221358
+fengb
+I was worrying about compatibility when we aren't really exporting a libc. Got confused because I was still trying to carry over C style errno
+
+1574221429
+adamkowalski
+i guess my question is what is the vision for the zig standard library as far as approaching date times
+
+1574221522
+daurnimator
+whatever we do, lets not make the same mistake as Go :P
+
+1574221640
+adamkowalski
+
+
+1574221651
+adamkowalski
+what do you all think about that for the Date struct
+
+1574221666
+adamkowalski
+it's all fits in a single i64
+
+1574221769
+daurnimator
+adamkowalski: I wouldn't use a packed struct: also usually you'd want nanosecond resolution
+
+1574221802
+daurnimator
+adamkowalski: also add a timezone member. but feel free to make it a single-valued constant "UTC" for now.
+
+1574221810
+fengb
+Also year should be signed for BC
+
+1574221829
+fengb
+Actually does that make sense? BC didn't have Gregorian
+
+1574221840
+daurnimator
+fengb: it does "upon agreement"
+
+1574221851
+adamkowalski
+We only go back in time to the real beginning
+
+1574221854
+adamkowalski
+the unix epoch
+
+1574221858
+daurnimator
+fengb: (to quote ISO_8601)
+
+1574221929
+companion_cube
+rfc3339 is simpler, iirc
+
+1574221945
+daurnimator
+companion_cube: RFC3339 is a printed format
+
+1574221959
+daurnimator
+but yes. the default serialisation for your Date object should be RFC3339
+
+1574221975
+daurnimator
+s/serialisation/strinigifcation/
+
+1574221988
+companion_cube
+not sure of the difference there, since you can parse it back?
+
+1574222010
+adamkowalski
+so are we saying get rid of hour/minute/second and only store nano second?
+
+1574222020
+daurnimator
+adamkowalski: no. hour/minute/nanosecond
+
+1574222048
+doublex
+2^64 nanoseconds is only 585 years
+
+1574222049
+daurnimator
+(you have to have seconds separate because of leap seconds)
+
+1574222315
+adamkowalski
+take two
+
+1574222346
+adamkowalski
+destroy, throw tomatoes, the usual
+
+1574222552
+doublex
+yet another weird thing: years are not integers, i.e. there is no zero. Before AD 1 comes 1 BC
+
+1574222610
+fengb
+So we should use 0 = 1BC, -1 = 2BC, etc 🙃
+
+1574222657
+andrewrk
+the C stands for "Computers" right? 1 year Before Computers
+
+1574222677
+doublex
+natch
+
+1574223916
+fengb
+Is there a way to attach methods to opaque types?
+
+1574223944
+andrewrk
+there is not
+
+1574224227
+adamkowalski
+andrewrk: do you prefer methods to overloading or traits? The one issue is what fengb mentioned, but even more generally you cannot add behavior to types you do not own
+
+1574224245
+adamkowalski
+I had this issue in D language for example. For whatever reason strings were not iterators
+
+1574224253
+adamkowalski
+but iterators required a .next method on the type itself
+
+1574224261
+adamkowalski
+so there was no way to extend strings to become iterators
+
+1574224338
+adamkowalski
+I guess it's possible to create a new type, wrap the old type and then add a method on that new type. But being able to just implement a trait seems rather nice
+
+1574224355
+adamkowalski
+It also means that you can auto generate docs for that trait and easily find every type which implements it
+
+1574224614
+daurnimator
+fengb: yes that's the ISO standard
+
+1574224646
+daurnimator
+fengb:
+
+1574224648
+daurnimator
+sign[20] instead of the more common AD/BC (or CE/BCE) notation; by convention 1 BC is labelled +0000, 2 BC is labeled −0001, and so on.
+
+1574224719
+fengb
+Buh
+
+1574228208
+andrewrk
+adamkowalski, what's the benefit of adding behavior to types you do not own? just add functions that do what you want with the types you want
+
+1574228223
+daurnimator
+andrewrk: being able to use method syntax with them
+
+1574228234
+daurnimator
+e.g. myopaquehandle.dothing(x, y)
+
+1574228241
+andrewrk
+that's not a real obstacle
+
+1574228251
+andrewrk
+dothing(myopaquehandle, x, y)
+
+1574228256
+daurnimator
+It is if you want to e.g. provide it to a generic
+
+1574228272
+daurnimator
+fn myGeneric(foo: var) void { foo.someinterfacemethod(); }
+
+1574228360
+andrewrk
+I don't see a real actual use case here
+
+1574228534
+daurnimator
+andrewrk: I've wanted to do it several times...
+
+1574228555
+daurnimator
+slightly different reason: what if you want to provide a `format` method?
+
+1574228651
+andrewrk
+put it in a struct you do own. format("{}", Mine{.x = x})
+
+1574228749
+daurnimator
+Can you even put an opaque in your own struct?
+
+1574228783
+daurnimator
+You can put a pointer to opaque...
+
+1574233614
+mq32
+andrewrk, regarding your latest tweet/null termination: wouldn't it be more consistent to use `[null*]const u8` similar to `[c*]const u8` ?
+
+1574233634
+mq32
+also it reads just logical: "nullterminated pointer of many to constant u8"
+
+1574233691
+andrewrk
+slices can indicate their pointers are null terminated as well: []null const u8
+
+1574233906
+daurnimator
+mq32:  see
+
+1574233917
+daurnimator
+(and preceding points)
+
+1574233934
+mq32
+ah, sounds reasonable :)
+
+1574233955
+daurnimator
+mq32:  see also
+
+1574234018
+mq32
+daurnimator: that wouldn've been exactly my next comment
+
+1574234025
+andrewrk
+daurnimator, I can confirm the sentinel thing would work with the semantics. everything works based on get_null_value_for_type(ZigType *ty)
+
+1574234094
+daurnimator
+andrewrk: you mean in terms of making the argument to sentinel a comptime variable?
+
+1574234101
+andrewrk
+yes, it would work semantically
+
+1574234111
+daurnimator
+cool. I didn't consider that a blocker but its good to have
+
+1574234130
+andrewrk
+yeah I'm just saying you're onto something that would work cleanly
+
+1574234147
+mq32
+`0xFF`-terminated strings incoming? :D
+
+1574234155
+daurnimator
+It was hard to come up with use cases. I'm sure there are APIs out there that e.g. take a -1 terminated list, but I couldn't think of one off the top of my head
+
+1574234188
+daurnimator
+The one I did think about a bit was `sentinel('\n')` for the return value of e.g. `stream.readLine()`
+
+1574234190
+andrewrk
+there is an ambiguous design decision to solve here. I made string literals in that branch single-item pointers to arrays. however upon further reflection, that wasn't a necessary change to remove C string literals from the language. the question is rather whether zig will allow type coercions of values to const references ever
+
+1574234250
+andrewrk
+on one hand, it would be clean to have a rule, "zig never takes a reference without the & operator". however on the other hand, we have <kristoff_it> I have a function with this signature: `pub fn init(keys: []const []const u8) Self`, when I call it like this `init(.{ "lol", "123", "test" });`
+
+1574234311
+andrewrk
+I think the important concept here is lifetimes. Comptime const values have a static lifetime; that is they are always valid. Maybe the rule is that zig is allowed to take a const reference of a value when that value's lifetime is static
+
+1574234405
+andrewrk
+in which case maybe it would make sense to make string literals `[N]null u8` rather than `*const [N]null u8`. and allow coercion to `[*c]const u8`, `[*]null const u8`, and `[*]const u8`
+
+1574234488
+andrewrk
+in this case, however, even the example `init(&.{ "lol", abc, "test" });` would require that `&` there, if `abc` was a local variable
+
+1574234531
+daurnimator
+andrewrk: if the null-ness of a string literal is never used; could we avoid storing it twice?
+
+1574234561
+andrewrk
+what's an example of storing it twice?
+
+1574234584
+daurnimator
+e.g. `const a = "foo"; const b = "bar"; const c = a ++ b; fn myfunc(x: []const u8) void; myfunc(a); myfunc(b); myfunc(c);`
+
+1574234610
+daurnimator
+we wouldn't need to actually store "foo", "bar" and "foobar" as strings in the binary: just "foobar" and `a` and `b` could be pointers into that
+
+1574234663
+andrewrk
+a and b already de-dupe; tests would break otherwise. the ++ example is planned to de-dupe already, regardless of null termination, but not currently implemented
+
+1574234680
+daurnimator
+huh?
+
+1574234687
+daurnimator
+how would a and b dedupe?
+
+1574234691
+daurnimator
+b and c could...
+
+1574234705
+andrewrk
+sorry, I misread; assumed a and b were being assigned the same value
+
+1574234716
+daurnimator
+but if null-termination of `a` was ever used, then you couldn't dedupe `a` and `c`
+
+1574234728
+andrewrk
+I see your point now
+
+1574234818
+daurnimator
+option 1. concatenation and some other comptime operations would need to "poison" a comptime variable as un-dedupable. option 2. we do a big deduping at the end as part of linking or something which could even cover complex comptime transformations that end up duplicates
+
+1574234907
+daurnimator
+However even for option 2 I think we'd need a flag of "null termination used"
+
+1574234976
+andrewrk
+this problem is fun to think about but I suspect it doesn't matter in practice
+
+1574235004
+andrewrk
+I gotta go to bed, trying to fix my sleep schedule. good night. hope to catch up on PRs this week
+
+1574235034
+daurnimator
+yeah I can only see it mattering for big embedded pieces with slight variations. maybe shaders? or if we embed icons or something? but yeah. might just YAGNI for now
+
+1574235042
+daurnimator
+andrewrk: night :)
+
+1574235390
+mq32
+daurnimator, you're actually hitting a pretty good spot there with deduping
+
+1574235460
+mq32
+we have to fight "small memory" all the time at work and do a lot of work to save all memory possible
+
+1574235475
+daurnimator
+mq32: maybe its something you want to work on for zig then? :)
+
+1574235499
+mq32
+not yet, i couldn't convince my colleagues to try zig :D
+
+1574235507
+mq32
+and i'm the only non-embdedded dev :D
+
+1574235537
+daurnimator
+mq32: then get zig running on a work device during your lunch time
+
+1574235548
+mq32
+that's my plan, actually
+
+1574235551
+mq32
+but i'm blocked on that
+
+1574235556
+daurnimator
+mq32: eventually you'll have a question for your embedded developer peers.... and then "ooh whats that you're using"
+
+1574235563
+mq32
+haha
+
+1574235576
+mq32
+they already know that i evangelize zig use :D
+
+1574235585
+daurnimator
+you gotta be more subtle ;)
+
+1574235605
+daurnimator
+inception strats
+
+1574235696
+mq32
+i'm still waiting for
+
+1574235705
+mq32
+as i require "ARM interrupt" calling convention
+
+1574235895
+mq32
+got to go
+
+1574236112
+daurnimator
+mq32: you can do anything with the naked calling convention and some inline asm :)
+
+1574236127
+daurnimator
+(its awkward; but should be enough to get yourself unblocked)
+
+1574242228
+mq32
+yeah, that's my plan for now
+
+1574242242
+mq32
+but i'm focusing on the ZGS right now :)
+
+1574242262
+mq32
+still searching for that weird "everything explodes" bug
+
+1574242275
+mq32
+have to implement more memory security than "you can write any address you like"
+
+1574242297
+mq32
+because it looks like something weird happens when assembling instructions with 3 operands
+
+1574242302
+mq32
+as in "i get protection faults"
+
+1574249031
+kenaryn
+Hello, please what does it mean the variable's name 'amt'? It can be seen in tcp server livestream (i.e. `const amt = try self.file.read(&buf);`)
+
+1574249045
+forgot-password
+Probably amount?
+
+1574249060
+forgot-password
+I'd guess it is the amount of bytes that were actualy read
+
+1574249075
+forgot-password
+actually*
+
+1574249092
+kenaryn
+I thank you.
+
+1574250872
+kenaryn
+Is it DragonFlyBSD during Andrew's live streams? I do not recognize the desktop environment.
+
+1574250898
+daurnimator
+kenaryn: he uses nixos. not sure what DE
+
+1574251273
+kenaryn
+Thank you. Do you recommend it over Debian stable?
+
+1574251414
+daurnimator
+I don't use it
+
+1574251420
+daurnimator
+And it all depends on what you want
+
+1574251603
+kenaryn
+I don't like much the dependencies's management on Debian, and there too many packages installed. I just saw NixOS use only X11 and Plasma 5, so I would have to abandon Xfce. Not a big deal I suppose.
+
+1574251637
+daurnimator
+"too many packages installed" <== what do you mean by that and why does it matter
+
+1574251888
+kenaryn
+I have currently 1884 packages for about 5% used. I have no control over the system.
+
+1574252047
+daurnimator
+kenaryn: you can't include dependant packages when you say that sort of thing
+
+1574252109
+daurnimator
+kenaryn: I think `apt-mark showmanual` will show you things you have installed explicitly
+
+1574252173
+mq32
+<kenaryn> I just saw NixOS use only X11 and Plasma 5, so I would have to abandon Xfce
+
+1574252178
+mq32
+nixos is highly configurable
+
+1574252191
+mq32
+i have a setup with nixos, lightdm login manager and i3 for window manager, no desktop manager
+
+1574252264
+mq32
+it really depends on what you want to do, nixos may be a pain or a relieve
+
+1574255716
+FireFox317
+gruebite: Do you mind if I add the PR for the compiler bug we had yesterday?
+
+1574260204
+FireFox317
+mikdusan: corner case: `var x: u0 = 0; switch (x) {};` : This shouldn't generate any code right? Because I'm not sure what this actually means to switch on a u0 and not put anything in the block. When you do `switch(x){ 0 => <something>}` that I see, but without anything in the switch statement it shouldn't generate any code right?
+
+1574260469
+FireFox317
+Or if someone else wants to clarify
+
+1574263092
+[rg]
+looking good boys
+
+1574263434
+dimenus
+daurnimator: woudl it be accurate to see that @as cannot coerce a type into a smaller type
+
+1574263439
+dimenus
+*?
+
+1574263767
+mq32
+dimenus: @as can only widen a type, not narrow it
+
+1574263775
+mq32
+for narrowing, an @intCast is required
+
+1574263816
+dimenus
+agreed, i'm referring to this issue
+
+1574263838
+dimenus
+the error that it currently generates is not helpful, i'm just looking to clarify that my understanding of as is correct
+
+1574263875
+mq32
+ah!
+
+1574263884
+mq32
+yeah, a better errorr message would be helpful
+
+1574266652
+FireFox317
+'var x: u0 = 0; switch (x) {}' With my patch this reaches unreachable code, is that correct behavior?
+
+1574269503
+gruebite
+FireFox317: no go ahead
+
+1574269511
+gruebite
+I got distracted last night -.-
+
+1574269521
+gruebite
+Can I get a link to it?
+
+1574271020
+FireFox317
+gruebite: Yes, but I just want to make sure this is the correct behavior before making the PR. andrewrk? 'var x: u0 = 0; switch (x) {}' With the current changes that I currently have, this generates unreachable code and 'var x: u8 = 0; switch (x) {}' correctly outputs a compile error 'switch must handle all possibilities'.
+
+1574271232
+gruebite
+by "generates unreachable code" do you mean it is optimized away into nothing?
+
+1574271236
+gruebite
+it's a no-op?
+
+1574271534
+FireFox317
+in debug mode I get a 'reached unreachable code' runtime error. But I'm just not understanding what switching on a u0 really means
+
+1574271727
+gruebite
+yeah
+
+1574271810
+FireFox317
+mikdusan yesterday mentioned that `var x: u0 = 0; switch (x) {}` is a corner case, but I don't get why. I think you still need to specify one case, namely `var x: u0 = 0; switch (x) {0 => <something>}`
+
+1574271845
+gruebite
+which wouldn't even be a switch, it would just do the thing
+
+1574271855
+gruebite
+`var x: u0 = 0; <something>`
+
+1574271883
+gruebite
+yeah, i'm not so sure what that means either
+
+1574271901
+gruebite
+switching on a zero sized integer
+
+1574271926
+FireFox317
+Yes indeed, there is only one possibility
+
+1574273711
+mikdusan
+FireFox317: i mentioned it was a corner case because it also crashed stage1; I don't really have any rational thoughts on if zig should accept that or require case for always-one-value
+
+1574273870
+mikdusan
+i guess it is different from an empty errorset; an empty error set is truly nothing, where u0 is always 0?
+
+1574274005
+FireFox317
+Yes I think that is correct, the only thing you can store in a u0 is a 0, nothing else.
+
+1574274410
+mikdusan
+it seems to me maybe we actually desire to emit an error for u0 `switch (x) {}`. it seems to work fine for cases: 0 is allowed, else is allowed, anything but 0 emits proper error
+
+1574274411
+gruebite
+so it's a like a single element error set?
+
+1574274460
+mikdusan
+it's like a single-field enum too
+
+1574274824
+mikdusan
+is there an issue open for this?
+
+1574274853
+gruebite
+no, encountered this while writing some bindings
+
+1574274864
+gruebite
+i don't think there is at least
+
+1574275227
+FireFox317
+I just added a PR (
+
+1574275482
+FireFox317
+mikdusan: Yes indeed, currently it is possible to have the 0 case and else for a u0, but that shouldn't be possible
+
+1574275498
+gruebite
+i still feel like multiline strings are not ergonomic
+
+1574275517
+gruebite
+looking at the test case in the pr, unfamiliar with the testing stuff
+
+1574275553
+gruebite
+i think switching on u0 should be an error? it doesn't make sense
+
+1574275561
+gruebite
+it's likea if (unit_type) { .. }
+
+1574275649
+gruebite
+i like lua's multiline strings, since they can have arbitrary escaping power
+
+1574275671
+gruebite
+[=====[ [====[ ]] ]]
+
+1574275722
+gruebite
+could do something like `/--/ multiline comment/string //`
+
+1574275726
+mikdusan
+hmm how does one get an instance of an empty errorset?
+
+1574275751
+FireFox317
+I think for now, the PR that i added is fine. There is not really a use case for u0 anyway
+
+1574275792
+gruebite
+or `/**/ //`
+
+1574275888
+FireFox317
+mikdusan: something like defining a function with an error empty and then catch on the function call and you have an instance of the empty error set?
+
+1574275908
+mikdusan
+i'll try that
+
+1574276042
+gruebite
+also, this is really cool. would zig support something like this?
+
+1574276084
+FireFox317
+gruebite: implicit is no good for zig
+
+1574276089
+gruebite
+seems to cover a lot of the issues that dependency injection is aimed at solving. or cross-domain modules like logging/errors/etc
+
+1574276093
+gruebite
+ahh right
+
+1574276096
+gruebite
+:D
+
+1574276173
+gruebite
+i like that, it's tough passing around logging handles and stuff around everywhere though
+
+1574276664
+mikdusan
+FireFox317: yeah integers/empty-switch seem to be the only crasher. { void, bool, error set, enum } don't crash.
+
+1574277293
+FireFox317
+Okay good, so I don't have to adjust my PR :)
+
+1574277379
+gruebite
+:)
+
+1574278777
+gonz_
+Does anyone here use the IntelliJ zig plugin?
+
+1574278813
+gonz_
+It seems really out of date and I'm basically just wondering if maybe someone has set up their own stuff to make up for it.
+
+1574278925
+gonz_
+I already have reasonable solutions for zig support in editors but it would still be interesting to have IntelliJ as an alternative.
+
+1574280443
+andrewrk
+mikdusan, I'd be interested in merging your branch that unembeds ConstExprValue from IrInstruction, even though it increases mem usage a bit
+
+1574280478
+andrewrk
+I'm certain this needs to happen from a data layout perspective, regardless of what we do for improving memory usage in the future
+
+1574280494
+andrewrk
+gotta climb up that global maximum
+
+1574283284
+andrewrk
+fengb, your PR for wasmtime is good, will merge soon. btw, it is my current belief that implementing a wasi interpreter is in scope of the zig project
+
+1574283462
+fengb
+👍
+
+1574283477
+fengb
+The guy from wasmer wants to interject lol
+
+1574283487
+fengb
+I've kicked around the idea of implementing an interpreter
+
+1574283572
+andrewrk
+95% of the work is done, it's the cross platform abstractions of the zig standard library. and zig already has to be able to output web assembly. a simple interpreter would allow `zig test` to test web-assembly-specific code
+
+1574283667
+fengb
+Ah, hook it directly into the compiler?
+
+1574283691
+andrewrk
+yes, I don't see why not
+
+1574283726
+fengb
+So basically it'd compile wasm down to LLVM IR?
+
+1574283728
+andrewrk
+one of the features zig provides is as a "base dependency" that can eliminate other dependencies, or otherwise bring them in reliably and consistently across platforms
+
+1574283755
+andrewrk
+I think this feature is generally undervalued. but this is what makes things "just work"
+
+1574283810
+andrewrk
+clearly, it's possible to go to far- zig can't and shouldn't do everything. but there's a lot of value in the fact that it insulates you to differences across platforms
+
+1574283819
+andrewrk
+*too far
+
+1574284008
+wilsonk
+gonz_: what support do you have for zig in which editors, btw? I think the IntelliJ plugin is rotting as the maintainer is busy and waiting for the language changes to settle down (can't remember where I read that, but I am pretty sure that is the case).
+
+1574284350
+wilsonk
+I think vim/emacs/intellij/vscode all have some support...with vscode being the best. They all have syntax highlighting and vscode also has some support for code completion with ceymards plugin. I set up flycheck in emacs for actual syntax checking and it works nicely (ie. live update of syntax errors on each key press because 'zig fmt' runs so fast).
+
+1574284468
+wilsonk
+btw gonz_, you can also try the TabNine deep learning code completer in vscode...it is easy to install and it actually works ok. Interesting to try out at least. Works well on Linux, but apparently is a mem/cpu hog on Mac OS and Win.
+
+1574284494
+gonz_
+Yeah, I already use vim-zig & VSCode (also TabNine)
+
+1574284499
+gonz_
+so no news there, really
+
+1574284509
+gonz_
+I was mostly curious about the IntelliJ status
+
+1574284526
+wilsonk
+Ah, ok...didn't realize you already knew about the others
+
+1574284599
+wilsonk
+Have you used hoodie with vscode gonz_?
+
+1574284631
+gonz_
+Not really, no. I should probably clarify; I'm not displeased with the support in VSCode
+
+1574284759
+wilsonk
+ah, ok cool...I just like the one hoodie feature that allows you to click on any test and it will run in the terminal  (at least I think that is only a hoodie feature...been a while since I used vscode)
+
+1574284874
+andrewrk
+that's a neat feature, I wasn't aware of that
+
+1574284943
+wilsonk
+yeah, it is nice...only issue is that hoodie has rotted a little and I had to revert the compiler back a few months to get it to compile
+
+1574285052
+andrewrk
+personally, I am invested in a great IDE experience but I am resigned to the fact that we will not have it until the language is stable
+
+1574285095
+andrewrk
+so that's why I'm allowing the bug count to get uncomfortably high, I think stabilizing the language is step 1 in the most efficient path toward 1.0
+
+1574285143
+wilsonk
+ah, I see...I was a little curious about that actually. Good to hear the rational on that one :)
+
+1574288169
+scientes
+yes, getting the language stable is #1
+
+1574288175
+scientes
+like the anonymous functions change
+
+1574288383
+Snektron
+is there some kind of roadmap to 1.0 or is it just "when its done"?
+
+1574288513
+andrewrk
+Snektron, accepted proposals on github issues
+
+1574288538
+andrewrk
+most of them are not big language changes
+
+1574289409
+mq32
+andrewrk, do you do any kind of "reachable analysis" for references variables?
+
+1574289422
+mq32
+it looks like i can fix a bug by referencing a variable in my main function
+
+1574289449
+andrewrk
+mq32, not yet
+
+1574289456
+andrewrk
+is it a global variable?
+
+1574289461
+mq32
+hmm
+
+1574289463
+mq32
+yes
+
+1574289475
+mq32
+it looks like my code is executing some stack memory or something
+
+1574289478
+andrewrk
+globals are not even semantically analyzed unless referenced
+
+1574289507
+mq32
+yeah, it is referenced
+
+1574289514
+mq32
+but only "passive"
+
+1574289525
+mq32
+so in a function that never gets called, but only it's address is taken
+
+1574289533
+mq32
+and that kind of indirection three times :D
+
+1574289594
+mgxm
+wilsonk: cool, do you mind sharing it? (flycheck)
+
+1574289613
+wilsonk
+mgxm: sure one second
+
+1574289800
+mq32
+okay, this is really strange
+
+1574289805
+mq32
+my bug gets fixed by a "print" statement
+
+1574289821
+wilsonk
+mgxm:
+
+1574289860
+mq32
+more precise
+
+1574289867
+mq32
+_ = userStack;
+
+1574289868
+mq32
+this is my bugfix
+
+1574289870
+mq32
+i put this statement into main, now it works
+
+1574289877
+mq32
+if i remove that, it will stop working
+
+1574289932
+fengb
+Yeah that's the way to force it into existence
+
+1574289940
+fengb
+Otherwise it gets lazily ignored
+
+1574290025
+mq32
+fengb, yeah, i know that
+
+1574290029
+mq32
+that's why i tried that
+
+1574290038
+mq32
+but i reference that variable in other code pieces
+
+1574290039
+wilsonk
+mgxm: you also have to add zigfmt to the 'fly-checkers' quoted list!
+
+1574290123
+wilsonk
+mgxm:  if you want a few other things for emacs (or spacemacs, as that is what I use) then I could paste other goodies...like auto zig formatting on save, compilation window pop-up and removal upon success...also jump to first error upon compilation failure. Things like that
+
+1574290191
+mq32
+it's really weird, i have two ideas what may happen:
+
+1574290194
+mgxm
+wilsonk: thanks
+
+1574290197
+mgxm
+oh, cool
+
+1574290201
+mq32
+1: compiler messes up stuff and code "slides" into that variable
+
+1574290215
+mq32
+2: the variable doesn't get emit, but i can see it in the objectfile
+
+1574290219
+mgxm
+I sent a pr to the zig-mode repo with some improvements, including the fmt
+
+1574290295
+mgxm
+Iḿ reading the cc-mode right now, trying to master the beast :)
+
+1574290406
+wilsonk
+sounds good :)
+
+1574290913
+wilsonk
+mgxm: here is the more comprehensive emacs-list file
+
+1574290969
+wilsonk
+There is also a section for TabNine deep learning code-completion but it is a little hit and miss in emacs...actually more miss than hit but it ismuch better in vscode!
+

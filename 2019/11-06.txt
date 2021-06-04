@@ -1,0 +1,968 @@
+1572999213
+daurnimator
+CI currently failing?
+
+1573000424
+daurnimator
+well; not on master. but lots of recent PRs are for what seems to be not-their-fault reasons
+
+1573000734
+kllr_sbstn
+`zig build test-std` fails for me (on linux) in net.zig
+
+1573000786
+kllr_sbstn
+ah, nevermind, old branch
+
+1573000897
+dimenus
+the times, they are a changin!
+
+1573000947
+pixelherodev
+Well that's what happens when people go around `touch`ing every part of the code base
+
+1573001321
+pixelherodev
+Ooh, FIFOs in the stdlib? I can probably throw out my ring buffer classes and switch to those without issue, right?
+
+1573001459
+kllr_sbstn
+Found a leak in the json parser :D
+
+1573001594
+daurnimator
+pixelherodev: hopefully!
+
+1573001647
+pixelherodev
+Definitely going to try later
+
+1573001658
+pixelherodev
+Thanks for adding those!
+
+1573001689
+pixelherodev
+That reminds me - if nobody implements the support for a custom OS definition in the root source file, I can tackle it in the first week of December
+
+1573001703
+pixelherodev
+Possibly sooner
+
+1573001926
+daurnimator
+pixelherodev: please let me know how you go with the fifo usage. It's ideally meant to map well to traditional socket calls/file reading+writing
+
+1573002108
+daurnimator
+pixelherodev: e.g. there are two main "flows" for writing to it: 1. if you already have data in memory (e.g. a constant), then use fifo.write(). 2. if you need a buffer to write into, 2.1: if you don't care about the size, use fifo.writableSlice(0) then fifo.update(). 2.2: if you need a specific size, use fifo.writeableWithSize() then fifo.update()
+
+1573002228
+pixelherodev
+Thanks - is that in the docs also?
+
+1573002241
+daurnimator
+partially. needs more docs and examples. 2.1 usage example: you're read()-ing from stdin
+
+1573002430
+daurnimator
+2.1 usage example: you're read()-ing from stdin, 1. fifo.ensureUnusedCapacity(1); 2. call fifo.writableSlice(0) to get a buffer. 3. pass that buffer to read(). 4. fifo.update with the result of read(). 5. now attempt to use the contents of buffer (e.g. pass to your parser); otherwise goto 1. to get more data
+
+1573002612
+daurnimator
+2.2 usage example: `const slice = try fifo.writableWithSize(4); mem.writeIntSliceLittle(u32, slice, 1234); fifo.update(4);`
+
+1573002641
+daurnimator
+pixelherodev: ^ all make sense/sound good?
+
+1573002689
+pixelherodev
+Yeah, think so
+
+1573002940
+daurnimator
+btw, if you can think of a better name than `FixedSizeFifo` please mention it
+
+1573002977
+daurnimator
+I want to also make a variety that just takes a buffer to use rather than an allocator
+
+1573014472
+bhansconnect
+Just wondering, anyone have any ideas what the performance implications of heap allocating recursive calls would be? Also, are there any plans to let developers choose between heap and stack allocation?
+
+1573014619
+fengb
+Zig won’t have a default allocator so heap and stack will always be a choice
+
+1573014665
+fengb
+Er, do you mean letting recursion happen on standard callstack like other languages?
+
+1573014710
+bhansconnect
+Standard call stack like other languages
+
+1573014773
+bhansconnect
+Also, if you use an allocator, won't that always be on the heap? And things without allocators would be on the stack?
+
+1573014794
+fengb
+FixedBufferAllocator is stack based
+
+1573014808
+fengb
+Or global mem
+
+1573014843
+bhansconnect
+Ok. That makes sense. Didn't think about it.
+
+1573014886
+bhansconnect
+So technically you could use a fixed buffer allocator for recursive calls and it would be stack based like other languages.
+
+1573015217
+fengb
+I think the goal is to make recursion memory safe. So if the compiler can know the max depth, that would provide enough safety
+
+1573015246
+scientes
+but you can't really know that
+
+1573015262
+fengb
+Although I’m not sure how that could work outside of tail calls
+
+1573015264
+bhansconnect
+Makes sense. I am just wondering if safe recursion will cause performance issues
+
+1573015295
+bhansconnect
+Also, you can use global heap allocation if you don't know how deep recursion will be
+
+1573015313
+bhansconnect
+Then the recursion limit is the memory limit
+
+1573015434
+bhansconnect
+Also, scientes you can simply say that you want to ensure recursion to specific depth and limit memory based on that(would be similar to Max stack size before overflow)
+
+1573015474
+fengb
+When Zig is “done”, stack overflow should be impossible
+
+1573015504
+scientes
+only because you have offloaded it
+
+1573015515
+fengb
+The compiler would know max stack size at compile time and request that
+
+1573015517
+scientes
+you can stick overflow stack structures
+
+1573015774
+bhansconnect
+Cause either compiler knows depth or offloaded to heap, correct? And heap allocator will return out of memory error.
+
+1573016113
+fengb
+Yep:
+
+1573016554
+bhansconnect
+Thanks for the link
+
+1573046107
+SyrupThinker
+I want to extend uefi protocol support in std (std.os.uefi.protocols). The implemented protocols are all just wrapping the C api. Is this preferred to creating a more zig-like api?
+
+1573046213
+SyrupThinker
+For example the File protocol takes a buffer size and a pointer. In the Zig function I'd take a slice instead.
+
+1573046344
+SyrupThinker
+Similar thing for bitflags where only specific combinations are allowed. I would expose a enum allowing only those combinations.
+
+1573053171
+leeward
+Isn't knowing the max stack size at compile time with recursive programs the halting problem?
+
+1573053226
+leeward
+Or are you saying that stack overflow won't be a problem because it will be heap exhaustion?
+
+1573056535
+FireFox317
+andrewrk: How would you suggest to translate the following in Zig? Because current packed structs don't work that nice (#3133).
+
+1573057133
+FireFox317
+Or somebody else :)
+
+1573057138
+mq32
+omg.
+
+1573058142
+fengb
+leeward: unbounded recursion will be handled by manually shifting the callstack into the heap
+
+1573058330
+fengb
+
+
+1573058412
+fengb
+I'm hoping bounded recursion can still be semi-solvable. At the very least, tail calls can be addressed
+
+1573059343
+leeward
+fengb: Doesn't that turn into implicit allocation?
+
+1573059386
+leeward
+Or is this a `shiftStackToHeap(allocator)` kind of thing?
+
+1573059570
+mq32
+leeward: no, you have to code it by hand
+
+1573059787
+tgschultz
+FireFox317 what am I missing? That doesn't look like it should be a problem for current packed structs.
+
+1573059885
+tgschultz
+nevermind, I see it now. some of these structs are align(4)
+
+1573060894
+FireFox317
+tgschultz: Actually now that you are saying that, it works quite okay. I can probably work around that align(4)
+
+1573062452
+mq32
+FireFox317, can't you just make the required variables align(4)?
+
+1573062588
+FireFox317
+Yeah that was actually not the problem XD
+
+1573062660
+FireFox317
+It was just me being stupid
+
+1573062708
+mq32
+oh, the classic :D
+
+1573062712
+mq32
+i had this at work today
+
+1573062722
+mq32
+"yeah, this doesn't work i have to search … hours for a bugfix"
+
+1573062727
+mq32
+2 minutes later
+
+1573062742
+mq32
+"oh. beat me, i just messed up a single setting."
+
+1573063324
+dimenus
+can structs have constant members now that we have default init
+
+1573063331
+dimenus
+*?
+
+1573065156
+kenaryn
+Hi strange people who love computers more than humans. I would like some help, if someone is willing to, to build my very first program who throw me into my face: `error: expected type 'usize', found '[]u8'`
+
+1573065221
+kenaryn
+The source can be found here:
+
+1573065305
+dingenskirchen
+consider using title.len?
+
+1573065306
+kllr_sbstn
+line 48: `title` is of type []u8 (a string)
+
+1573065308
+kenaryn
+I tried replacing the buffer type by 'usize' of course (i.e. line 18), but then a new error appeared: `slice of non-array type 'usize'`
+
+1573065314
+kllr_sbstn
+buffer[0 .. title.len]
+
+1573065400
+kenaryn
+Very nice, it now compiles. Thank you.
+
+1573065442
+kenaryn
+Did you notice inconsistency or idiosyncrasies that may be fixed/improved?
+
+1573065557
+kllr_sbstn
+why do you create your own error types?
+
+1573065592
+kenaryn
+Nevermind, but another question is now raised, the line including write did stoped at the end of line, please how can I add `\n` escape sequence into a slice?
+
+1573065636
+kenaryn
+Ah sorry, did not seen your answer in time. It is in order to gain some performance over the error global set!
+
+1573065683
+kenaryn
+Because the official documentation tells there cannot be some optimizations done (I suppose inlining and the like).
+
+1573065703
+kllr_sbstn
+add another write call `file.write("\n");'
+
+1573065724
+kenaryn
+You are kind. Thanks :)
+
+1573065798
+dingenskirchen
+I believe the "global error set" refers to anyerror, which you are using currently
+
+1573065835
+dingenskirchen
+You should be able to elide both the error definitons (which your code doesn't use) and "anyerror" from main's signature without any loss except in LOC
+
+1573066096
+kenaryn
+Yes, I was refering to `anyerror`. I thought it was good practice to define its own error set to let the compiler have more informations and determine some optimizations.
+
+1573066222
+kenaryn
+On the other end, adding at the end `file.write("\n")` now throw an new error: `expression value is ignored`
+
+1573066240
+kenaryn
+
+
+1573066333
+Kappa322
+That's because you're ignoring the result of it. You need to wrap it in a catch like on line 30-32
+
+1573066460
+kenaryn
+Does it need a new whole wrapping just to add a sequence espace character?
+
+1573066495
+dingenskirchen
+you can also shorten `foo() catch |x| return x;` to `try foo()` in pretty much all cases, as zig will still display an error returned by main and they have fairly descriptive names of their own
+
+1573066499
+kenaryn
+It seems very verbose.
+
+1573066507
+Kappa322
+Yes.
+
+1573066541
+Kappa322
+The more correct way of doing it would be concatenating "\n" to the end of the buffer
+
+1573066559
+Kappa322
+and in that case you only have one write
+
+1573066645
+kenaryn
+Ah great! nice catch (joke inside).
+
+1573066669
+Kappa322
+Generally if you care about performance, the less times you call disk operations like file.write, the better
+
+1573066888
+kenaryn
+Yes, I understand. But `++` array concatenation only works when values are known at compile-time, so I guess I have to give a try with fmt.bufPrint but I will take another memory allocation at run-time.
+
+1573066904
+kenaryn
+Thank you digenskirchen, almost forgot to stay polite :)
+
+1573067059
+kenaryn
+`file.write(buffer[0..title.len] ++ "\n")` throws: error: unable to evaluate constant expression.
+
+1573067074
+dingenskirchen
+No problem at all ^^, you might want to use std.Buffer for a while allocating rather convenient API
+
+1573067099
+Kappa322
+You'd probably want to read at maximum one character less than your buffer
+
+1573067124
+Kappa322
+and then just set the character after the last character in the input to "\n"
+
+1573067163
+dingenskirchen
+also a valid approach and avoids heap allocations completely while at it
+
+1573067647
+mq32
+dingenskirchen, Kappa322, kenaryn: File should have a stream property that will guarantee easy use
+
+1573067669
+mq32
+whereas file.write doesn't guarantee that the content is fully written (at least to my knowledge)
+
+1573067675
+mq32
+i cannot look at the godbolt source though
+
+1573067793
+kenaryn
+I'm willing to add a stream property but what does it mean in English (or in French for that matter :D)?
+
+1573067833
+kenaryn
+I just added try std.io.readLineSlice(buffer[0..buffer.len-1]) and it compile for now but add the last character in the same disk operation seems a bit challenging for me :p
+
+1573067907
+kenaryn
+
+
+1573067918
+mq32
+assuming "file" is a *File:
+
+1573068002
+kenaryn
+It's like mandarin lol. How can I "assume" that?
+
+1573068029
+mq32
+i'm assuming
+
+1573068033
+mq32
+i cannot look at your code
+
+1573068047
+mq32
+var stream = file.iutStream(); try stream.print("My Text: {}\n", buffer);
+
+1573068053
+mq32
+*outStream()
+
+1573068056
+kenaryn
+Do you want a bpaste.net snippet?
+
+1573068071
+mq32
+nah, doesn't help either :D
+
+1573068076
+mq32
+i have 40kBit/s internet
+
+1573068085
+mq32
+even a handshake for https takes a minute
+
+1573068123
+kenaryn
+I started at 5kbit/s in 1999 and I was lucky :)
+
+1573068154
+mq32
+yeah but then
+
+1573068163
+mq32
+now a https handshake is just ... big
+
+1573068171
+kenaryn
+True, even my ego back then... :D
+
+1573068192
+mq32
+lol
+
+1573068245
+mikdusan
+why readLineSlice()? use a std.Buffer then append to it. `std.io.readLine(&buf)` then buf.appendByte('\n') and now you have a nice buf.toSlice()
+
+1573068255
+Kappa322
+
+
+1573068270
+kenaryn
+Did you mean OutStream() instead of iutStream?
+
+1573068288
+Kappa322
+Something like that is what I meant
+
+1573068296
+mq32
+outStream(), yes
+
+1573068300
+mq32
+not OutStream :D
+
+1573068310
+Kappa322
+Although mq32 is probably way more experienced with zig file io than I am
+
+1573068321
+Kappa322
+So listen to him :)
+
+1573068379
+mq32
+Kappa322: thanks, i'm just someone with too much time to read issues on github
+
+1573068448
+kenaryn
+When you assign at line 19, does it append or just reference?
+
+1573068508
+Kappa322
+Neither; it assigns
+
+1573068571
+kenaryn
+Allright, thanks. I will try the mq32 solution if he's the second BigBoss here.
+
+1573068581
+mq32
+haha lol
+
+1573068596
+Kappa322
+buffer is just an array of bytes, so your buffer would look something like ['b', 'o', 'o', 'k', ud, ud, ud, ud] (ud for undefined), pretending it's 8 bytes large
+
+1573068633
+Kappa322
+this would set the 5th byte to '\n' instead, but the space to put it in is already there if that makes sense
+
+1573068690
+Kappa322
+ps: if you didn't know, \n is just one character, not two
+
+1573068732
+Kappa322
+Even though there are two characters when you write it out, the compiler will translate it to one, ascii 10
+
+1573068766
+kenaryn
+Ah thank you, I will document all of this in a memorandum.
+
+1573068817
+mq32
+okay, as my train has now arrived: back to hacking weird freestanding stuff with zig
+
+1573068821
+mq32
+let's break the compiler once more!
+
+1573068842
+kenaryn
+Yes we want Tier1 support already :D
+
+1573068859
+andrewrk
+the poor stage1 compiler. all it ever wanted was to build self-hosted, but we're making it do so much more
+
+1573068938
+mikdusan
+stage1: “I didn't sign up for this”
+
+1573068990
+mq32
+andrewrk, yeah true. but it's good to test the language itself on as many possible use cases as possible before starting stage2
+
+1573069001
+andrewrk
+true, it's good to collect all these test cases
+
+1573069001
+mq32
+you never know what may need to change
+
+1573069129
+Kappa322
+andrewrk, is building c++ with build.zig supposed to work? I see that the zig project itself uses it for c++ but don't know if it actually works?
+
+1573069157
+andrewrk
+it's something that will be supported but I haven't tested it much yet
+
+1573069201
+andrewrk
+where do you see zig using it for c++?
+
+1573069268
+Kappa322
+addCppLib in the build.zig
+
+1573069280
+Kappa322
+Or is it reusing the object files from gcc/clang and just linking them?
+
+1573069373
+mq32
+andrewrk: would it be possible to query doc comments from @typeInfo?
+
+1573069446
+andrewrk
+Kappa322, yeah it's reusing libzig_cpp.a when it links self-hosted :)
+
+1573069458
+andrewrk
+I was pleased when I realized that would work just fine
+
+1573069468
+Kappa322
+Fraud!
+
+1573069478
+Kappa322
+:D
+
+1573069496
+andrewrk
+zig is designed to bootstrap with a small number of steps
+
+1573070005
+andrewrk
+oh I realized why the chat server from the live stream stopped working after a while
+
+1573070046
+mq32
+tell us the secret!
+
+1573070091
+andrewrk
+
+
+1573070110
+andrewrk
+that logic has to catch such an error and remove the client from the hash table
+
+1573070153
+mq32
+ah yes
+
+1573070155
+mq32
+makes sense
+
+1573070200
+andrewrk
+or at least continue with the loop
+
+1573070229
+andrewrk
+I'm glad it was simple logic that was wrong in the code rather than like some design flaw in the standard library
+
+1573070304
+kenaryn
+mikdusan, I do not understand your Jedi knight technique, I would like to print a user input to stdout AND write it to an external file. If you agree to look upon:
+
+1573071140
+mq32
+kenaryn: have you taken a look at the stdlib docs?
+
+1573071159
+mq32
+the "stream" thing i meant earlier looks like this:
+
+1573071160
+mq32
+var stream = file.outStream();
+
+1573071160
+mq32
+try stream.stream.print("{}\n", title);
+
+1573072717
+mikdusan
+kenaryn: unless i missed something in chat, something like this:
+
+1573073341
+kenaryn
+thank you both mq32 and mikdusan, I'm looking into it right now but it's still traditional chinese for me, perhaps adding a simple use case in the standard library documentation would facilitate the understanding and lower the entry barrier and misinterpretation's risk.
+
+1573073634
+kenaryn
+For each namespace, fields and functions I mean, but no rush, it could be appended during the next months.
+
+1573073758
+mq32
+kenaryn: i don't think that's reasonable yet as everything in zig is right now "with the licence to break"
+
+1573073779
+kenaryn
+A simple, comprehensive and increasingly's level difficulty could be a backbone for a yet-to-become book, which in return could bring benefits to the creator and/or a fundation to finance Zig's long-term development.
+
+1573073802
+kenaryn
+Yes, you are right.
+
+1573073838
+mq32
+most blog entries about zig are wrong with some stuff already again
+
+1573073873
+mq32
+even andrews second-latest blog entry from a year ago doesn't work anymore with current zig library and code
+
+1573073875
+mikdusan
+kenaryn: if it helps i added some comments to that gist. anyhow i have to take off for a bit.
+
+1573073917
+mq32
+andrewrk: does an @embedFile() call always gets embedded into the binary or only if i store it into a symbol?
+
+1573073932
+kenaryn
+Astonishing! Thank you already mikdusan
+
+1573074026
+kenaryn
+Allright, I hope andrew will update one day his entry with regard to writing freestanding code. I think it is essential that programmers learn more about hardware and instruction set architecture in general.
+
+1573074061
+andrewrk
+mq32, lazy analysis applies, so if you never reference it, it won't get included
+
+1573074072
+mq32
+okay, neat
+
+1573074089
+mq32
+but if i copy a single byte, it will get included fully, right?
+
+1573074094
+andrewrk
+but zig doesn't have comptime garbage collection yet, so if you for example did an inline loop over it, but don't actually keep a reference to it for runtime, it'll unfortunately still get included
+
+1573074147
+mq32
+okay, thanks :)
+
+1573074159
+andrewrk
+once zig is done, copying a byte would not mean it gets included, but currently that will be the case
+
+1573074178
+andrewrk
+with optimizations on, it should get deleted though, if it's not referenced at runtime
+
+1573074185
+mq32
+yeah it would be unreasonable to implement it like that in a final compiler, but for now that's fine :)
+
+1573074201
+mq32
+then i will write a preprocessor instead of using comptime generation
+
+1573074264
+scientes
+llvm also lacks GEP optimizations
+
+1573074270
+scientes
+like what you are talking about mq32
+
+1573074273
+kenaryn
+Including a garbage collector risk breaking the community into two sides, the Dlang never took off for this reason (and another, but it's off-topic).
+
+1573074287
+mq32
+GEP?
+
+1573074293
+scientes
+GetElementPointer
+
+1573074303
+andrewrk
+kenaryn, I don't think you have the correct understanding of the topic, comptime garbage collection is not the same thing as runtime garbage collection
+
+1573074308
+scientes
+or just any optimizations on global constants
+
+1573074325
+scientes
+there are a few weird transformation you can do, if a global is only used in one place
+
+1573074334
+andrewrk
+comptime garbage collection is a detail that almost nobody has to care about
+
+1573074336
+scientes
+and also just DemandedBits optimizations
+
+1573074358
+scientes
+will you can also reorganize the data
+
+1573074361
+kenaryn
+Allright, dully noted. Thanks for your honesty.
+
+1573074427
+mq32
+but yeah, @embedFile is one of those features i love as an embedded programmer ):
+
+1573074430
+mq32
+* ):
+
+1573074433
+mq32
+
+
+1573074466
+andrewrk
+comptime garbage collection applies when you write code that runs at compile time, that creates a self-referential data structure in comptime memory. the compiler needs to figure out that it doesn't actually have to put the comptime data into the binary
+
+1573074473
+mq32
+before zig you had to "compile" your binaries into an ELF object file (which is quite uncomfortable) and then link against it and use exported symbols
+
+1573074490
+scientes
+oh yeah these features are great
+
+1573074539
+scientes
+mq32, or like the really ugly stuff in Linux to do the same thing
+
+1573074551
+scientes
+generating a C file with an array of bytes
+
+1573074551
+mq32
+what do they do?
+
+1573074554
+mq32
+oh yeah
+
+1573074559
+mq32
+that is even more horrible
+
+1573074564
+mq32
+it slows down the compiler soooo much
+
+1573074588
+mq32
+"oh yeha, please compile this 1MB source file
+
+1573074607
+scientes
+also requires perl
+
+1573075567
+kenaryn
+I have an existential question, how should I know if my variable belong to the stack or the heap category?
+
+1573075586
+scientes
+kenaryn, zig does not have a concept of a heap
+
+1573075600
+scientes
+so its either stack or register, or you use a library to get it on the heap
+
+1573075637
+mq32
+kenaryn: simple! everything that is
+
+1573075649
+kenaryn
+Do you think it is a flaw in language design, or is it intended to keep the language small and simple?
+
+1573075658
+scientes
+oh yeah, forgot static allocations
+
+1573075666
+scientes
+kenaryn, it is very explicit
+
+1573075667
+mq32
+kenaryn: it's not a flaw but an excellent thing that zig gives you control over that
+
+1573075682
+kenaryn
+Thank you both again :)
+
+1573075708
+mq32
+pixelherodev: do you already have a working "page allocator" for RAM pages?
+
+1573078998
+dimenus
+has anyone done a BumpAllocator yet?
+
+1573079013
+andrewrk
+dimenus, std.heap.FixedBufferAllocator
+
+1573079018
+dimenus
+tahnks
+
+1573079021
+dimenus
+*thanks
+
+1573081032
+kenaryn
+
+
+1573081716
+dimenus
+does it make sense to be able to specify a block size with the ArenaAllocator?
+

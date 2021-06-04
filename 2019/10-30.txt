@@ -1,0 +1,1396 @@
+1572398840
+daurnimator
+Is that proposal for function definitions as expressions going anywhere soon?
+
+1572401890
+andrewrk
+epoll could be a lot better. it has several annoying issues to work around
+
+1572401899
+andrewrk
+for instance:
+
+1572405235
+saskwach
+Is there a canonical way to iterate over a range of indices in Zig?
+
+1572405247
+saskwach
+I just want to count.
+
+1572405280
+andrewrk
+var i: usize = 0; while (i < len) : (i += 1) {}
+
+1572405287
+saskwach
+ouch
+
+1572405299
+andrewrk
+?
+
+1572405319
+saskwach
+Oh, wait, that (i += 1) is in parentheses after the condition.
+
+1572405402
+saskwach
+So `while (termination-condition) : (run-each-loop) { body }`?
+
+1572405430
+saskwach
+er, where <termination-condition> terminates the loop when it's false.
+
+1572405489
+andrewrk
+
+
+1572405499
+saskwach
+Ah, I see: WhileContinueExpr in the grammar.
+
+1572405508
+saskwach
+Yeah, I was looking for it under `for`.
+
+1572405534
+saskwach
+Any plan to have an iterator along the lines of Python's `range` in the standard library?
+
+1572410699
+tgschultz
+saskwach, you can kinda do it with an fn that returns [_]void, but only for 0-N. This might not be 100% correct, but: `pub fn range(n: usize) [n]void { return [1]void{ void{}, } ** n; }` `for(range(10)) |_, i| { ... }`
+
+1572411312
+saskwach
+I was thinking of a simple struct with a `next` method and a counter.
+
+1572411385
+saskwach
+Like the iterator in array_list.
+
+1572411437
+tgschultz
+yeah, you can do that, but it's actually more complicated than just using a normal while loop
+
+1572411876
+marler8997_
+saskwach: I wrote a CounterRange, a small post about it here:
+
+1572412161
+daurnimator
+andrewrk: indeed epoll has weird things. e.g. it works on file
+
+1572412201
+daurnimator
+e.g. if I dup() a file descriptor, I get a second file descriptor pointing at the same file description
+
+1572412231
+daurnimator
+there's a few other things around that work in the same way that you might not expect. e.g. the O_NONBLOCK flag.
+
+1572412364
+andrewrk
+daurnimator, some code you might enjoy looking at:
+
+1572412392
+andrewrk
+also this commit log:
+
+1572412432
+andrewrk
+in summary: std.event.net is dead, no longer needed now that we have better evented I/O integrations wit
+
+1572412446
+daurnimator
+andrewrk: k. looking now
+
+1572412461
+daurnimator
+andrewrk: FYI backlog is deprecated as a listen argument. Lets be modern and not have it
+
+1572412485
+marler8997_
+are you sure it's deprecated on all platforms?
+
+1572412495
+andrewrk
+what do you mean it's deprecated? does the os not provide that configurability anymore?
+
+1572412509
+daurnimator
+andrewrk: most Oses now ignore the argument.
+
+1572412516
+marler8997_
+andrewrk: I believe I've read that some platforms ignore it now
+
+1572412552
+marler8997_
+I'd recomment a default value, and/or a wrapper function
+
+1572412578
+marler8997_
+listen(sock)...listenBacklock(sock, backlog)
+
+1572412602
+daurnimator
++ be lazy and don't implement the latter
+
+1572412625
+andrewrk
+sounds good if most OS's ignore it anyway
+
+1572412635
+daurnimator
+you're always going to need a `serverFromExistingFD(4)`
+
+1572412647
+andrewrk
+but look at the difference in this test pre- and post- async/await rewrite:
+
+1572412671
+daurnimator
+if someone really wants to pass the listen backlog argument, they can use the lower level function and pass the fd ownership
+
+1572412672
+andrewrk
+pre:
+
+1572412676
+andrewrk
+post:
+
+1572412709
+marler8997_
+the point is to make the platform-independent abstraction orthogonal to zig's "flavor" of the api
+
+1572412732
+marler8997_
+if you want to pass in a backlog, you shouldn't need to start having platform "if"s
+
+1572412751
+daurnimator
+marler8997_: why not? when only some platforms support it....
+
+1572412766
+marler8997_
+all platforms conform to the same API
+
+1572412769
+daurnimator
+marler8997_: note that some platforms allow all sorts of listen filtering
+
+1572412782
+marler8997_
+in which case you would need platform ifs
+
+1572412793
+marler8997_
+but if all platforms use the same API, you shouldn't need platform ifs to use that common api
+
+1572412831
+marler8997_
+if (builtin.os == Windows) std.os.windows.listen(sock, backlog) else if (builtin.os == Linux) std.os.linux.sock.listen(sock, backlog) ... etc
+
+1572412834
+andrewrk
+I hope someone here knows windows networking and wants to contribute
+
+1572412841
+daurnimator
+andrewrk: could you make it handle multiple clients at a time with just a few lines?
+
+1572412853
+marler8997_
+I wrote a "shim" layer to the winsock API
+
+1572412873
+marler8997_
+we had to write a library that filtered all networking calls to either the default windows stack, or an external network stack
+
+1572412874
+andrewrk
+daurnimator, yes, easy
+
+1572412875
+daurnimator
+andrewrk: I know it..... I don't particularly want to contribute though. I don't use windows myself....
+
+1572412923
+daurnimator
+though I'm happy to mentor it
+
+1572413010
+daurnimator
+If anyone here
+
+1572413020
+daurnimator
+just line-for-line would be fine
+
+1572413080
+marler8997_
+goodness using overlapps...
+
+1572413144
+andrewrk
+#3557 is going to be annoying
+
+1572413168
+andrewrk
+it involves the fact that std.fmt.format uses a non-comptime function pointer, which calls write() sometimes
+
+1572413213
+andrewrk
+var args + involved comptime code execution + runtime-known function pointer + async function
+
+1572413239
+andrewrk
+that's about as complicated as you can make a zig function
+
+1572413309
+andrewrk
+it's weird that format could suspend, but it makes sense if the output function is calling non-blocking write()
+
+1572413314
+daurnimator
+andrewrk: you could also have a return type that depends on a comptime-side-effect-having call based on argument types :P
+
+1572413369
+andrewrk
+I was thinking it might be nice to turn std.fmt.format into an iterator
+
+1572413400
+marler8997_
+hmmmm, interesting idea
+
+1572413402
+daurnimator
+andrewrk: I've used std.fmt.format as a template for other functions. so your changes here are going to be pretty impactful across the board
+
+1572413404
+andrewrk
+idk something like:  var it = format("a = {}, b = {}\n", a, b); while (it.next()) |buf| write(buf);
+
+1572413442
+andrewrk
+daurnimator, yeah, understood. the root breaking change is std.os.write is going to become an async function when std.io.mode == .evented
+
+1572413474
+marler8997_
+iterator might not work as well, since you'd have to track extra context between each call
+
+1572413491
+daurnimator
+andrewrk: oh I know why. I'm saying its a good thing; and whatever you go with, I'd also update e.g.
+
+1572413507
+marler8997_
+with a format function, you can use the position inside your function to keep track of what's been printed and what's to come
+
+1572413529
+andrewrk
+marler8997_, I think that information could be available as an iterator field
+
+1572413537
+daurnimator
+marler8997_: `it` could encapsulate a @Frame containing the context...
+
+1572413569
+andrewrk
+anyway I'll try it and see. I'm determined to make std.os.write participate in event-based I/O
+
+1572413603
+marler8997_
+daurnimator: would that allow you to arbitrarily resume a function at any point?
+
+1572413614
+andrewrk
+btw daurnimator another use case for noasync popped up today:
+
+1572413672
+andrewrk
+daurnimator, the whole point of this is to do blocking file system operations in a thread, since they never return EAGAIN. so these calls will not suspend. however without "noasync" then posixFsRun becomes async, which is not allowed since that's the Thread.spawn entry function
+
+1572413727
+andrewrk
+so these annotations assert that the function calls will never suspend, even though e.g. os.read is generated as an async function (because of networking)
+
+1572413728
+daurnimator
+andrewrk: why can't a Thread.spawn entry function be async again?
+
+1572413753
+andrewrk
+if it suspended, where would control flow go?
+
+1572413767
+andrewrk
+it's the same thing as trying to suspend in _start
+
+1572413792
+andrewrk
+suspend in machine code is `ret`
+
+1572413875
+andrewrk
+also this question misses the point. these function calls
+
+1572413916
+daurnimator
+right... so we're sort of generating machine code (the suspend `ret`) that never gets hit....
+
+1572413974
+marler8997_
+I really need to see more of this async/await stuff in action to wrap my head around it
+
+1572413989
+andrewrk
+daurnimator, inside std.os.read, the suspend is there:
+
+1572413994
+daurnimator
+btw, the fs.Request type is a lot like the uring SQE type on linux
+
+1572414003
+daurnimator
+I wonder if we can make them the same thing
+
+1572414006
+andrewrk
+`loop.waitUntilFdReadable(fd)` is an async function, so calling it is a suspend point
+
+1572414024
+andrewrk
+elsewhere in the code, this suspend point will be activated, because std.os.read is used for non blocking networking
+
+1572414039
+andrewrk
+but in this case for the file system thread, the code provides a runtime guarantee that this will not happen
+
+1572414113
+daurnimator
+which reminds me of a misc idea I had: trying to make slices have the same in-memory layout as a struct iov. I had the idea of a new root file thing: `pub fn slice(comptime T: type) type { return struct { ptr: [*]T, len: usize }; }
+
+1572414189
+marler8997_
+there's been a few times I've needed and/or wanted to the know the internal structure of a slice in D
+
+1572414226
+marler8997_
+having it defined as a struct means the app will have access to all the info that a struct provides
+
+1572414247
+marler8997_
+it seems structs are the answer to everything, namespace, tuples, slices?  I guess C had it right all along :)
+
+1572414260
+daurnimator
+yep. and e.g. making it `extern` could make it possible to export slice-taking functions as ABI
+
+1572414269
+andrewrk
+marler8997_, re: async/await stuff, I really should do some more documentation and blog posts on the subject. i'm pretty sure I invented something new here that no other language has ever done, and the semantics are sound, but of course nobody knows how it works because it's not something that exists elsewhere.
+
+1572414308
+andrewrk
+i'll do that after more of the std lib is integrated with it
+
+1572414310
+marler8997_
+yeah I've even watched your YouTube vides and I still have a hard time...it's just such a foreign concept, it's hard to relate it to anything that currently exists
+
+1572414331
+daurnimator
+andrewrk: yeah zig's async/await is pretty novel; I still take partial credit cause of the demo I gave you on how we solved "function colours" in Lua :)
+
+1572414333
+marler8997_
+which means the only way that I"ll learn it is by seeing examples and using it
+
+1572414333
+andrewrk
+marler8997_, did you see the linked snippets here?
+
+1572414340
+andrewrk
+daurnimator, indeed that was an inspiring demo :)
+
+1572414377
+andrewrk
+these 2 snippets I feel are nice and simple - the usage of std.net.TcpServer and the implementation
+
+1572414419
+marler8997_
+a nice example, but I don't understand it since I can't see the full stack of the function calls
+
+1572414452
+marler8997_
+is os.accept4 what causes the suspend?
+
+1572414542
+marler8997_
+oh wait, you have strace
+
+1572414562
+marler8997_
+still grokking...
+
+1572414661
+marler8997_
+so, when acccept returns EAGAIN...how does the socket get added to epoll?
+
+1572414775
+marler8997_
+ah, loop.waitUntilFdReadable
+
+1572414915
+marler8997_
+so...what's the purpose of the code being inside the suspend block?  isn't it equivalent to just running it before calling "suspend"?
+
+1572415387
+andrewrk
+marler8997_, because it denotes where the function will get resumed. consider that as soon as you call epoll_ctl it can be resumed
+
+1572415427
+andrewrk
+you can have 1 thread finishing out the suspend block (after the call to epoll_ctl) and 2nd thread has already resumed it
+
+1572415515
+marler8997_
+hmmm, so then wouldn't suspend; foo();  be equivalent to suspend { foo(); } ???
+
+1572415909
+andrewrk
+you're missing the part where it gets resumed
+
+1572415962
+marler8997_
+yeah I don't think I understand what "resume" means....
+
+1572416015
+marler8997_
+once a thread is "resumed", I would guess control flow resumes after the suspend block
+
+1572416041
+marler8997_
+and the code inside the "suspend" block is the "resume code"???
+
+1572418711
+andrewrk
+we're not talking about threads
+
+1572418719
+andrewrk
+this all works single threaded
+
+1572426466
+mq32
+mikdusan: i solved my mysterious triple fault... at least 50% of it
+
+1572444044
+FireFox317
+andrewrk: Do you mind updating the online std documentation with the current master, because the js error fix (#3550) is not on ziglang.org yet
+
+1572449660
+andrewrk
+FireFox317, done
+
+1572450426
+FireFox317
+Thanks!
+
+1572450452
+andrewrk
+I need to finish that merging tool
+
+1572450659
+FireFox317
+No problem man, do the work that's most fun! The std docs were supposed to come in the stage2 anyway, so we are happy with what we have now :)
+
+1572450805
+andrewrk
+that is a trick to staying productive - allowing myself to jump around in what I work on
+
+1572450819
+companion_cube
+structured procrastination
+
+1572450842
+andrewrk
+it's so effective
+
+1572452493
+dimenus
+where is the ci build script for mingw?
+
+1572452577
+andrewrk
+there isn't one
+
+1572452874
+dimenus
+ah, are we not building mingw/msys anymore?
+
+1572452928
+andrewrk
+mingw was never an officially supported target, but emekoi has dilligently kept it working
+
+1572452953
+andrewrk
+
+
+1572453796
+dimenus
+wow, i've totally misunderstood how that all works this whole time
+
+1572453798
+dimenus
+thanks
+
+1572453805
+dimenus
+i always equated mingw64 with MSYS2
+
+1572453824
+dimenus
+didn't realize mingw-w64 was a separate thing (and more of a linux toolchain to support windows dev then host windows)
+
+1572453871
+andrewrk
+MSYS2 is the toolchain, and what people usually mean when they say "mingw"
+
+1572453908
+andrewrk
+MinGW is 32 bits only, and that makes it not very useful to me. but the project is not dead
+
+1572453930
+andrewrk
+mingw-w64 supports i386, x86_64, aarch64, and arm, and it's what MSYS2 is based on
+
+1572453991
+andrewrk
+zig ships with the ability to compile mingw-w64 from source, which gives us a libc for 4 windows targets
+
+1572453991
+dimenus
+mingw-w64 supports those all targets as hosts, correct?
+
+1572454037
+dimenus
+ah, i also didn't really realize that windows on arm was a thing
+
+1572454038
+dimenus
+lol
+
+1572454044
+dimenus
+TIL
+
+1572454070
+andrewrk
+yeah it took me a hot minute to figure this out when I was doing libc stuff
+
+1572454140
+dimenus
+ok, i'll use the regular msvc compiled toolchain then on windows :)
+
+1572454311
+andrewrk
+goodness, the llvm-dev mailing list is blowing up, everybody's pants are on fire trying to move to GitHub as the official repo
+
+1572460216
+plumm
+./3
+
+1572460255
+plumm
+ok so from my understanding, its atm impossible to use std.fmt or any of the format apis at compiletime
+
+1572460435
+andrewrk
+have you tried bufPrint
+
+1572460464
+lunamn
+bufPrint uses varargs, and those aren't on comptime, issue 313
+
+1572460497
+plumm
+yeah, if my usecase is bufPrint(buf[0..], "{}", s) i mind as well use the .format directly
+
+1572460949
+andrewrk
+hm zig is getting a little old for var args to still not work
+
+1572461833
+plumm
+andrewrk: how would i go by calling format on just the argument itself? can I just leave a majority of the options as void since there is no buf/allocator?
+
+1572461839
+plumm
+very confused
+
+1572464949
+andrewrk
+goodness, why is it so complicated to download netbsd source?
+
+1572465096
+muffindrake
+
+
+1572465137
+andrewrk
+how did you get from netbsd.org to this link?
+
+1572465695
+muffindrake
+I didn't. I searched for 'netbsd source' on ddg and that was the third result.
+
+1572465796
+andrewrk
+my comment stands then, since I followed the official path
+
+1572466369
+fengb
+Maybe their site is deprecated and Google is now official 🙃
+
+1572466619
+andrewrk
+(thanks though muffindrake I was able to find what I wanted from that official mirror)
+
+1572470228
+ky1ko
+andrewrk, from netbsd.org, "developers->browse source"
+
+1572470231
+ky1ko
+it's a cvs repository
+
+1572470311
+ky1ko
+tarballs are also available at
+
+1572470355
+ky1ko
+as well as on the same path for any netbsd mirror
+
+1572470366
+andrewrk
+ky0ko, "browse source" isn't going to help me grep
+
+1572470387
+ky1ko
+then download that repository using cvs, just as you would download it with git if it were a git repository
+
+1572470462
+andrewrk
+I saw this page:
+
+1572470471
+andrewrk
+and I stand by my comment about this process being overly complicated
+
+1572470612
+ky1ko
+that is a relic of cvs unfortunately
+
+1572470638
+andrewrk
+it gives netbsd the impression of being a relic of the past as well
+
+1572470653
+ky1ko
+it is nontrivial to move from cvs to git and retain history for a project like netbsd, and they desire that
+
+1572470685
+ky1ko
+it's been actively discussed for a while and hopefully they'll move to it. in the meantime i recommend the release tarballs
+
+1572470698
+andrewrk
+that's what I was looking for, never found one
+
+1572470704
+ky1ko
+
+
+1572475084
+mq32
+heyhoh
+
+1572475097
+mq32
+is there a way to include "anynomous" padding fields in packed structs?
+
+1572475117
+mq32
+i remember some discussion from github about using "_ : u3" for padding
+
+1572475219
+andrewrk
+mq32, give it a unique name and a default value
+
+1572475231
+mq32
+yeah, i'm calling them _0, _1 and so on
+
+1572475232
+andrewrk
+padding1: u3 = undefined,
+
+1572475241
+andrewrk
+or maybe 0, depending on how it's supposed to work
+
+1572475254
+andrewrk
+what problem would taking away the name solve?
+
+1572475338
+mq32
+to give an unnamed padding a name ^^
+
+1572475352
+mq32
+there's a value that is just "defined zero"
+
+1572475399
+andrewrk
+this would introduce more problems than it solves. better that all fields have names
+
+1572475438
+mq32
+maybe you're right
+
+1572475443
+mq32
+but right now i have different problems...
+
+1572475467
+mq32
+it looks like my packed struct is not having the layout i want altough i double-checked it already
+
+1572476011
+pixelherodev
+There's a bug with that still IIRC
+
+1572476353
+mq32
+pixelherodev, nah. turns out i'm just stupid and assume that decimals are hexadecimals :D
+
+1572476367
+mq32
+but i think i found a bug with inline assembler:
+
+1572476375
+mq32
+you cannot pass direct memory locations via "m"
+
+1572476387
+mq32
+but that is probably different in Zig than in C, dunno
+
+1572476395
+mq32
+how do you call lgdt and lidt?
+
+1572476495
+pixelherodev
+mq32, actually, you can pass direct memory locations
+
+1572476503
+pixelherodev
+That's what I'm doing for CPUID to initialize the FPU
+
+1572476522
+mq32
+okay? can you show me how?
+
+1572476542
+andrewrk
+recommended is to use ={reg} when possible which means "when the inline assembly begins, this register will have this value"
+
+1572476553
+mq32
+asm volatile ("lidt %[var]" :: [var] "m" my_val);
+
+1572476566
+andrewrk
+err the = is for outputs. but you get the idea
+
+1572476570
+pixelherodev
+my_val should be in parentheses IIRC
+
+1572476586
+mq32
+pixelherodev, yeah i typed that from memory :D
+
+1572476587
+mq32
+andrewrk: i need a certain memory location emitted instead of of a register variable
+
+1572476597
+mq32
+but it failed with internal compiler error :D
+
+1572476618
+andrewrk
+I see, any register will do but it needs to have a certain value
+
+1572476670
+mq32
+the instruction cannot take register values
+
+1572476670
+mq32
+
+
+1572476679
+pixelherodev
+mq32, I just made it a global and did `lgdt GDTD`
+
+1572476685
+mq32
+pixelherodev: same here
+
+1572476715
+pixelherodev
+Don't forget to set segment registers ;)
+
+1572476723
+mq32
+i still wonder why i get a triple fault
+
+1572476728
+mq32
+segments are already set :)
+
+1572476731
+mq32
+i survived this :D
+
+1572476737
+pixelherodev
+After you do `lgdt` you need to set segments
+
+1572476747
+mq32
+yeah
+
+1572476754
+pixelherodev
+Ah, that's what you meant
+
+1572476766
+pixelherodev
+Thought you were implying you were using the ones set by [insert bootloader here]
+
+1572476783
+mq32
+no, the GDT is already set up with linear segments
+
+1572476794
+pixelherodev
+Where's your triple fault? IDT?
+
+1572476799
+mq32
+yeah
+
+1572476801
+pixelherodev
+Ah
+
+1572476802
+pixelherodev
+Fun!
+
+1572476814
+mq32
+IDT is loaded correctly (qemu tells me in the interrupt log)
+
+1572476818
+mq32
+but it faults
+
+1572476822
+pixelherodev
+You can compare against mine if you want
+
+1572476832
+mq32
+yeah, sure :)
+
+1572476842
+pixelherodev
+
+
+1572476928
+mq32
+looks like you're following the same tutorial as me?
+
+1572476939
+pixelherodev
+Nope
+
+1572476943
+pixelherodev
+Not following any tutorial :)
+
+1572476944
+mq32
+ah no. little differences :D
+
+1572476966
+pixelherodev
+Just using the OSDevers wiki for general info, and the specs for more details when applicable
+
+1572476973
+mq32
+then: you missed something
+
+1572476983
+pixelherodev
+I currently have like six ACPI-related specs, USB specs, etc
+
+1572476985
+pixelherodev
+mq32, ?
+
+1572476986
+mq32
+one: you don't need cli on each interrupt
+
+1572477005
+mq32
+use interrupt gates for interrupt type
+
+1572477012
+mq32
+this will disable eflags.if
+
+1572477021
+mq32
+when entering the interrupt
+
+1572477032
+mq32
+=> automatic CLI
+
+1572477080
+mq32
+also interrupt 8, 10…14 and 17 will push an error code to the stack
+
+1572477148
+pixelherodev
+Wait what?
+
+1572477156
+pixelherodev
+The interrupt gate thing sure
+
+1572477203
+pixelherodev
+But since when did - wait, *17*?
+
+1572477220
+pixelherodev
+Ohhh, interrupts interrupts
+
+1572477222
+pixelherodev
+Not IRQs
+
+1572477228
+mq32
+
+
+1572477238
+mq32
+yeah, take a look here (actual "production" code)
+
+1572477417
+mq32
+okay. i found my problem. i didn't understand the selector right ^^
+
+1572477435
+pixelherodev
+What were you doing?
+
+1572477517
+mq32
+using 0x01 instead of 0x08 for the selector
+
+1572477522
+pixelherodev
+Ah
+
+1572477525
+pixelherodev
+Yeah, that would do it :)
+
+1572477536
+mq32
+didn't understand that it must be the same as the selector register content :D
+
+1572477652
+pixelherodev
+It's the *offset*, not the index, yeah
+
+1572477732
+daurnimator
+ky1ko: moving from CVS to git is relatively trivial: reposurgeon essentially does it out of the box, and well.
+
+1572477754
+mq32
+pixelherodev, AH.
+
+1572477765
+mq32
+someone could've made x86 a nice architecture ... but they didn't
+
+1572477839
+fengb
+Learning Z80 gave me some understanding of x86’s idiosyncrasies
+
+1572477910
+mikdusan
+hey mq32 what was the culprit in your ub before from a few days ago?
+
+1572477940
+mq32
+looks like it was stupidity from my side paired with the SSE stuff
+
+1572477974
+mikdusan
+ok; you've satisfied my curiosity :)
+
+1572477983
+mq32
+haha :D
+
+1572477996
+mq32
+i now also found those xmm registers
+
+1572478003
+mq32
+and they're gone since the last update
+
+1572478029
+mq32
+btw, pixelherodev: you don't need your assembler stubs in interrupts.zig
+
+1572478052
+pixelherodev
+Regarding the error codes being pushed on 8,10,11,12,13,14,17, I'm going to take some time to browse through the huge Intel manuals and get back to you :)
+
+1572478052
+pixelherodev
+Oh?
+
+1572478128
+mq32
+
+
+1572478228
+pixelherodev
+Macros you mean?
+
+1572478238
+pixelherodev
+Ohhh, comptime
+
+1572478238
+pixelherodev
+Neat
+
+1572478253
+mq32
+comptime is love. comptime is live
+
+1572478277
+pixelherodev
+That one yours?
+
+1572478301
+mq32
+yeah
+
+1572478306
+pixelherodev
+Hmm
+
+1572478314
+pixelherodev
+Makes me think I should add a driver for early serial usage also
+
+1572478354
+mq32
+yeah, my "driver" is just for qemu
+
+1572478369
+pixelherodev
+My current driver uses a heap-allocated ring buffer, and only actually writes on interrupts
+
+1572478370
+mq32
+because as soon as i switch to 640x480x4bpp, the text output is gone
+
+1572478388
+pixelherodev
+I use serial for debug info at all times
+
+1572478393
+pixelherodev
+Keeps the actual terminal cleaner
+
+1572478414
+mq32
+yeah, true
+
+1572478417
+mq32
+and you can grep on serial output
+
+1572478422
+pixelherodev
+Still need to find e.g. a serial->USB cord though so I can actually use it on, say, my PC
+
+1572478423
+pixelherodev
+Yeah
+
+1572478439
+mq32
+but you know what? i'm gonna start that on real hardware now
+
+1572478481
+pixelherodev
+Warning: might need to tweak a few things for that to work :P
+
+1572478521
+pixelherodev
+Then again, you don't seem to be using any floats yet
+
+1572478547
+mq32
+nah, probably never will
+
+1572478575
+mq32
+when wsa the last time you've seen an actual 1GB SD Card? :D
+
+1572478587
+pixelherodev
+I use float math for the timer
+
+1572478594
+pixelherodev
+To make it a bit more precise
+
+1572478604
+pixelherodev
+So that crashed my kernel before I set up the FPU :P
+
+1572478606
+oats
+I somehow got a ping notification for the word "floats"
+
+1572478609
+oats
+that's odd
+
+1572478611
+pixelherodev
+... sorry!
+
+1572478618
+oats
+pixelherodev: lol, no worries
+
+1572478622
+oats
+I'm more amused than anything
+
+1572478631
+pixelherodev
+Yeah, that is kind of funny
+
+1572478699
+pixelherodev
+Ah, the nice feeling when you commit all your work and finally have a clean repo again :)
+
+1572478729
+andrewrk
+I'm trying to get there...
+
+1572478757
+pixelherodev
+mq32, alrighty, I can confirm that error code stuff
+
+1572478767
+ky1ko
+daurnimator, there's a large number of other concerns as well, like how well git runs with very large repositories on hosts with <128mb of ram. or rather, how well it doesn't run. an sgi indy with 64mb of ram can be expected to do a cvs checkout of the netbsd sources. but not a git clone. real netbsd users and devs expect to be able to use low-spec hardware.
+
+1572478771
+pixelherodev
+~page 2917 of the Intel manuals at the moment :)
+
+1572478776
+ky1ko
+that, plus nobody's put together a solid transition plan for the infrastructure
+
+1572478825
+daurnimator
+ky1ko: true. but those are not concerns about converting to git; but the flow associated with git. Its probably possible to keep a CVS mirror of git master branch; and have git as the source of truth.
+
+1572478889
+mq32
+<pixelherodev> mq32, alrighty, I can confirm that error code stuff
+
+1572478897
+daurnimator
+ky1ko: but your concerns go back to the original point andrew made: if you need to run on an SGI indy with 64mb of ram, then netbsd may just be a relic of the past...
+
+1572478898
+pixelherodev
+mq32, since there's no license I'll ask here: mind if I steal that interrupts code for myself?
+
+1572478910
+mq32
+from my code? go ahead
+
+1572478918
+mq32
+yeah i would be baffled if it wouldn't be like this
+
+1572478930
+mq32
+tyndur is a quite "complete" OS
+
+1572478943
+pixelherodev
+No yeah I figured, but I felt it'd be worth checking anyways
+
+1572478958
+mq32
+i really hate that we need that licence stuff
+
+1572479023
+daurnimator
+btw, I created a os-dragonfly label and added relevant issues to it.
+
+1572479177
+andrewrk
+thanks daurnimator
+
+1572479489
+daurnimator
+Has anyone asked for a dwarf code for zig?
+
+1572479518
+daurnimator
+(from GCC I think?)
+
+1572479535
+andrewrk
+I remember starting this process but I don't think I got as far as sending a patch.
+
+1572479545
+andrewrk
+
+
+1572479577
+pixelherodev
+mq32, fun story: I'm already using interrupt gates
+
+1572479578
+pixelherodev
+99% sure
+
+1572479587
+pixelherodev
+Which means the `cli` is even
+
+1572479591
+mq32
+lol
+
+1572479615
+mq32
+i got to get some sleep, but now is the time to make some actual progress on the system
+
+1572479618
+andrewrk
+argh what is this nonsense error
+
+1572479630
+daurnimator
+Looks like this is how Go got added:
+
+1572479631
+mq32
+still need to get paging up, but then i'm ready :)
+
+1572479644
+pixelherodev
+What are you making it for?
+
+1572479647
+oats
+whatever happened to that one OS written in zig, I think it was called "zen" or something
+
+1572479658
+daurnimator
+I'll file an issue there
+
+1572479682
+andrewrk
+oats, my buddy andrea got bored of it and is traveling the world or something like that
+
+1572479694
+oats
+heh, fair enough
+
+1572479702
+andrewrk
+daurnimator, oh, I did this part
+
+1572479716
+andrewrk
+
+
+1572479716
+mq32
+pixelherodev: I have gotten some really cool industrial control case which is missing some innards... and i thought it would be cool to create some fake console out of this with bare metal x86
+
+1572479750
+mq32
+so this project will be similar to pico-8 in the basic idea, but will feature some very different stuff
+
+1572479800
+pixelherodev
+Ah, right :)
+
+1572479868
+ky1ko
+daurnimator, that's primarily the example i use because i run that in my home lab, but i want to note i'm personally aware of netbsd developers who really do not have access to modern hardware, and for whom these are actual concerns.
+
+1572479898
+ky1ko
+much modern software doesn't take well to being run with low resources, and when you know you have devs without access to anything better than a core solo laptop with less than a gig of ram, salvaged from an attic somewhere, you are wary of that.
+
+1572479914
+ky1ko
+that is, sort of the use case of netbsd, in my experience
+
+1572479976
+daurnimator
+andrewrk: oh. lucky I checked here before hitting submit
+

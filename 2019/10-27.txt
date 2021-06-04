@@ -1,0 +1,1032 @@
+1572135457
+pixelherodev
+Are Zig's varargs compatible with C's?
+
+1572135499
+pixelherodev
+e.g. if a C function calls a zig function and passes it variable args, and the Zig function specifies `args: ...` as the last argument, will it work, or is that one of those "why would you even try that?" things
+
+1572135552
+andrewrk
+zig supports var args when calling C functions. the other way around is
+
+1572135654
+pixelherodev
+Alright, thanks
+
+1572136222
+saskwach
+andrewrk, I found something interesting:
+
+1572136232
+saskwach
+See the comments at the bottom.
+
+1572136386
+saskwach
+Maybe it's not interesting.
+
+1572136456
+saskwach
+Anyway, is there a reason other than the opportunity cost why the standard library's barely documented?
+
+1572139296
+andrewrk
+no it's just opportunity cost
+
+1572139315
+andrewrk
+well and it's unstable and changing frequently
+
+1572140221
+daurnimator
+andrewrk: EAI_ are not system constants
+
+1572140228
+daurnimator
+they're libc constants
+
+1572140371
+pixelherodev
+Stack traces are a godsend - was able to debug ACPICA thanks to them :D
+
+1572140477
+pixelherodev
+Kind of funny that it has its own less accurate traces and they're completely useless though
+
+1572141318
+andrewrk
+daurnimator, yeah thanks I moved them locally, will push in a bit
+
+1572141365
+daurnimator
+andrewrk: FWIW I would mostly avoid getaddrinfo; its not a good C API.
+
+1572141382
+daurnimator
+I was planning on writing our own dns module in zig.
+
+1572141404
+andrewrk
+yeah did you see that I'm in progress with writing a non-libc-version?
+
+1572141411
+andrewrk
+the libc one was just to see how it worked, look at strace, etc
+
+1572141417
+daurnimator
+(or at least hoping that someone else would; see
+
+1572142275
+andrewrk
+we need bnoordhuis to come in here and re-implement libuv in the zig std lib with async/await
+
+1572142341
+andrewrk
+I wonder how successful it would be to run a fundraiser to try to hire him for a year
+
+1572142628
+lunamn
+i'm unsure what would be the process of getting the structs i made for zigdig into stdlib, so i'm looking from a distance
+
+1572142655
+andrewrk
+lunamn, I didn't realize that zigdig was a candidate for std lib. I'll look more closely now
+
+1572142688
+andrewrk
+I've been porting musl's implementation of getaddrinfo, but adjusting it to zig std lib
+
+1572142716
+lunamn
+it can do what we'd mostly want, which is resolving addresses, I haven't looked into musl's
+
+1572143092
+andrewrk
+do you use poll?
+
+1572143145
+lunamn
+no, all synchronous
+
+1572143339
+andrewrk
+lunamn, here's my little test program, with strace attached:
+
+1572143369
+andrewrk
+this is with -lc -target x86_64-linux-musl. you can see that it sends to multiple servers then uses poll() to block until any of them respond
+
+1572143387
+andrewrk
+this is a good case to try using async/await and event-based I/O
+
+1572143406
+andrewrk
+in blocking mode it should probably still do that poll() strategy
+
+1572143497
+lunamn
+I haven't touched anything regarding async/await yet, so I'm unsure of doing something with it yet
+
+1572143518
+andrewrk
+yeah that's fair
+
+1572143550
+andrewrk
+btw you were the one who initially did the terminal cli progress implementation stuff right?
+
+1572143562
+lunamn
+yes
+
+1572143567
+andrewrk
+I took some liberties when merging, I hope you like it
+
+1572143578
+lunamn
+yeah I noticed, it's allright
+
+1572143609
+andrewrk
+thanks for getting things started on that
+
+1572143738
+lunamn
+np! I'm also unsure about doing poll() as a dns client, it feels like doing more work than we're supposed to, as clients
+
+1572143748
+lunamn
+maybe select a random nameserver, but not send to all three at once
+
+1572143872
+andrewrk
+hmm, I would at least find out why musl does it this way, it's possible they have a good reason
+
+1572143928
+lunamn
+that'd be good
+
+1572144456
+daurnimator
+andrewrk: FWIW I've been playing with more net io abstractions...
+
+1572144467
+daurnimator
+after lunch I'll go grab out my laptop with that work on it
+
+1572144607
+lunamn
+oh I see musl does both v4 and v6 queries and poll()s to find whatever comes first, clever, don't know why to all nameservers though (was confused why there were 6 sendto() calls instead of 3)
+
+1572144629
+daurnimator
+lunamn: see also happy eyeballs
+
+1572144821
+andrewrk
+lunamn, why not to all nameservers? makes sense to me to use whichever one is fastest
+
+1572144878
+daurnimator
+also note that happy eyeballs implies that you shouldn't call dns and then connect yourself
+
+1572144907
+daurnimator
+instead you should at least have a connectToHostName() function that does both v4 and v6 lookups; and then as soon as each one succeeds, attempt a connect()
+
+1572144923
+daurnimator
+only after a connect() succeeds do you abort the other protocol
+
+1572145013
+daurnimator
+additionally: because of TCP fast-open and early data, you can send data in the first packet! this means that you actually need a connectToHostNameAndMaybeSend(host, port, early_data)
+
+1572145061
+daurnimator
+and that's without bringing TLS into the situation
+
+1572145188
+daurnimator
+in practice, I prefer an api where you go: S=newConnection(.TCP); S.addConnectHost("foo.com", someport); S.send("somedata"); S.flush(); // only calling flush actually guarantees making all the syscalls
+
+1572145228
+lunamn
+andrewrk: was confusing udp behavior with tcp behavior where there'd be a bit more of an overhead for every send, which probably means I should sleep
+
+1572145306
+andrewrk
+daurnimator, that API looks reasonable to me
+
+1572145390
+daurnimator
+andrewrk: yeah I've been playing with it
+
+1572145402
+daurnimator
+andrewrk: one question that comes up is error reporting...
+
+1572145414
+daurnimator
+the other is lifetime of strings you pass to send()
+
+1572145451
+daurnimator
+the only practical answer I've come up with (unfortunatly) is that S.send
+
+1572145520
+daurnimator
+one slight improvement would be enabling something like: `const buf = try S.getSendBuffer(somesize); mem.writeIntLittle(buf[0..4], 42);`
+
+1572145639
+daurnimator
+in practice I'm hoping that the copy won't matter much: at least for e.g. user-space TLS connections, you can encrypt immediately....
+
+1572145673
+andrewrk
+copying is really really fast
+
+1572145696
+andrewrk
+more important is avoiding annoying-but-rare possibilities of error.OutOfMemory
+
+1572146168
+daurnimator
+ooooo. absurd idea..... okay so I was thinking about sending large constant strings in the current binary..... could you open() yourself and use S.splice()
+
+1572146213
+daurnimator
+not that large strings embedded in the binary is a common situation
+
+1572146512
+andrewrk
+why do you need to open yourself? that's the same thing as const foo = "bar"; or @embedFile
+
+1572146620
+daurnimator
+andrewrk: because with the splice syscall (and eventual socket method) you don't need to read() the string and then send() it on the socket: it goes directly from file on disk to in-kernel socket buffers
+
+1572147356
+saskwach
+So would it be worth while for someone to flesh out the standard library's docs, or do you think it's still too unstable?
+
+1572147376
+pixelherodev
+Personally, I think it'd be worth it for large parts
+
+1572147380
+daurnimator
+saskwach: go for it! some parts are more stable than others
+
+1572147391
+pixelherodev
+With existing docs there, it'd be simple enough to modify them when they become outdated
+
+1572147402
+pixelherodev
+It's a lot easier for me personally to update docs written by others than to write them myself
+
+1572147447
+saskwach
+Well that's all I needed. I don't actually know what I'm doing, but I can at least write docs for the bits of it I use as I use them.
+
+1572147488
+andrewrk
+daurnimator, ah I see.
+
+1572148048
+daurnimator
+so a couple of ideas in my head: sometimes you need to do one operation after the other; e.g. sendmsg with an attached FD after some other amount of data.
+
+1572148100
+daurnimator
+this implies that we can either have a queue of things/writes to do.... or alternatively, that if you have something queued already, that sendmsg with an FD would fail with `error.needsFlush` or something
+
+1572148255
+daurnimator
+andrewrk: `error.needsFlush` would also be relevant to your "annoying-but-rare possibilities of error.OutOfMemory" comment before
+
+1572151886
+saskwach
+Does `Allocator.alloc()` return an uninitialized array? I'm too much of a newbie to be sure.
+
+1572152001
+pixelherodev
+You can check the source :) Give me a sec to check
+
+1572152041
+saskwach
+Yeah, I'm looking at the source.
+
+1572152189
+pixelherodev
+99% sure it's uninitialized
+
+1572152194
+saskwach
+I'm not sure what `[*]T` means, or what `self.reallocFn(self, ([*]u8)(undefined)[0..0], undefined, byte_count, a)` does.
+
+1572152209
+saskwach
+Okers, I'll assume it is.
+
+1572152215
+pixelherodev
+[*]T = pointer to unknown number of T
+
+1572152223
+pixelherodev
+reallocFn calls the allocator's realloc function
+
+1572152228
+pixelherodev
+Hint: for C, that's literally realloc
+
+1572152231
+saskwach
+I probably wouldn't have asked if not for calloc.
+
+1572152243
+saskwach
+So I guess its initialization state actually depends on the allocator.
+
+1572152245
+pixelherodev
+If realloc() is called with a null pointer, it's identical to malloc
+
+1572152258
+pixelherodev
+Unless it's initialized
+
+1572152399
+daurnimator
+saskwach: as a rule, zig doesn't zero initialise
+
+1572152491
+saskwach
+Alright, there's a PR with a little bit of documentation. If it looks sensible I'll do some more tomorrow.
+
+1572152648
+saskwach
+(3540)
+
+1572166370
+pixelherodev
+Hmm, apparently Zig still allows SSE in freestanding for `build-obj` with C source
+
+1572166384
+pixelherodev
+`movsd%xmm0, AcpiGbl_MutexInfo+8(%eax)`
+
+1572166405
+pixelherodev
+s/freestanding/i386-freestanding/
+
+1572166421
+pixelherodev
+Whelp, another bug to fix! ;(
+
+1572167771
+pixelherodev
+Or just cheat. Added -mno-sse to `zig cc` command lines
+
+1572167779
+pixelherodev
+ACPICA tables fully working now!
+
+1572168252
+pixelherodev
+I cannot believe I just spent approximately
+
+1572168599
+daurnimator
+pixelherodev: I can't imagine much ACPI related is even vaguely simple
+
+1572168617
+pixelherodev
+I know, but I still want to write a full ACPI library in Zig eventually
+
+1572168645
+pixelherodev
+Given that ACPICA is ~42K lines, that day is not this year :(
+
+1572168667
+pixelherodev
+Kudos to them though, there's 47K line of comments to go with that :)
+
+1572169038
+daurnimator
+Anyone had an issue before where `zig test` doesn't output anything except "All tests passed"?
+
+1572169110
+daurnimator
+oh wait that's intended new behaviour
+
+1572169629
+daurnimator
+We don't have a circular buffer in the standard library do we...
+
+1572170661
+pixelherodev
+I have one you can use daurnimator
+
+1572170680
+pixelherodev
+
+
+1572170722
+pixelherodev
+Is it really useful enough to go in the stdlib? I can open a PR to add it
+
+1572170938
+daurnimator
+pixelherodev: you may want to read
+
+1572171184
+pixelherodev
+... dammit. Thanks!
+
+1572180775
+mq32
+hello
+
+1572180870
+daurnimator
+mq32: of course :p
+
+1572180879
+mq32
+yeah, but this one is crazy
+
+1572180883
+mq32
+i have a packed struct
+
+1572180898
+mq32
+and i want to bit-cast it to an u32 (it
+
+1572180899
+mq32
+but
+
+1572180916
+mq32
+it didn't work. now i'm checking out why and i found this:
+
+1572180931
+mq32
+if i remove bits frm the struct, it gets to "size 3", if i add bits, it gets to "size 5"
+
+1572180934
+mq32
+but never to size 4
+
+1572181448
+daurnimator
+sounds like
+
+1572181577
+mq32
+yeah
+
+1572181578
+mq32
+
+
+1572181581
+mq32
+i found this
+
+1572181601
+mq32
+it works when you have a field count divisible by 8
+
+1572181831
+mikdusan
+does linux mmap support any way to "clone" an existing mapping just for purposes of changing PROT_ flags? ie: one map is read-only, the other is read+write
+
+1572181848
+daurnimator
+mikdusan: huh?
+
+1572181903
+mikdusan
+let's say i have map0 which is PROT_READ. i'd like to have map1 which is the same memory, but PROT_READ|PROT_WRITE
+
+1572181996
+daurnimator
+mikdusan: I think you can open /proc/self/mem and map it again...
+
+1572182011
+mikdusan
+oh that is sneaky sneaky
+
+1572182061
+mq32
+daurnimator, thanks for the issue reference. seems like this is exactly my problem
+
+1572182068
+mq32
+luckily the workaround is trivial
+
+1572182467
+mq32
+today is not my day :D
+
+1572182483
+mq32
+"oh, you fixed that bug? here are another three!"
+
+1572182606
+mikdusan
+no good deed... :)
+
+1572182829
+mq32
+seems to
+
+1572182835
+mq32
+@bitCast fails, @ptrCast works
+
+1572185407
+mq32
+hmm
+
+1572185413
+mq32
+can i somehow set the target CPU model?
+
+1572185451
+mq32
+it looks like i386 and u64 will fail on freestanding
+
+1572186227
+nrdmn
+mq32: possibly related:
+
+1572186266
+nrdmn
+what are you doing on freestanding?
+
+1572186278
+mq32
+trying to create some executable on a i386
+
+1572186295
+mq32
+so, let's call this thing "kernel"
+
+1572186307
+mq32
+but it will be just an OS-less application
+
+1572190087
+mq32
+huh
+
+1572190096
+mq32
+zig isn't as lazy as it seems
+
+1572190224
+mq32
+if (!std.mem.eql(u8, fld.name, "flags")) { if (@field(flags, fld.name)) { … } }
+
+1572190262
+mq32
+ah
+
+1572190268
+mq32
+if(comptime !...) solves it
+
+1572196826
+saskwach
+Is it just me, or is the build broken on master?
+
+1572196916
+lunamn
+depends, broken with what?
+
+1572196925
+saskwach
+I'm trying to build on amd64 Linux.
+
+1572196993
+lunamn
+i'm on amd64 as well, no problems building here though
+
+1572197030
+saskwach
+We'll see what happens when this one finishes. I'm running it on a system that's built successfully before.
+
+1572197049
+saskwach
+The one that's failing hasn't.
+
+1572198416
+saskwach
+yep, that worked. My other system's throwing an error with the same version of code when it tries to link zig0.
+
+1572198938
+erandria
+hi all, I'm new to zig and liking the design
+
+1572199006
+erandria
+I ran into a segfault when building another lib, Vexu/routez, and thought of debugging this to maybe help
+
+1572199040
+erandria
+but I'm not sure how really
+
+1572199281
+erandria
+(I could provide a repo to reproduce but I wanted to help rather than "here, fix my problem")
+
+1572200194
+andrewrk
+mikdusan, you can if you use a temp file descriptor to back the mapped memory
+
+1572200235
+andrewrk
+mikdusan, here's an example that creates 2 mappings that point to the same memory:
+
+1572200268
+andrewrk
+and then I believe using /dev/shm/ as the directory for the temp file makes it avoid the file system
+
+1572200269
+lunamn
+andrewrk: status report from yesterday, i got poll() working to a degree
+
+1572200331
+andrewrk
+saskwach, you can check if the CI thinks the build is broken, look at the X and check marks here:
+
+1572200375
+andrewrk
+the aarch64 and windows builds timed out. this could be a CI issue or a real problem
+
+1572200389
+andrewrk
+amd64 linux is fine though
+
+1572200418
+scientes
+for linux you can also use create_memfd
+
+1572200891
+andrewrk
+ahh there we go
+
+1572200988
+saskwach
+Yeah, it seems to build fine on this machine. The error I'm getting is weird; maybe I'll try reinstalling some things and rebuilding it.
+
+1572201565
+erandria
+is this working...?
+
+1572201631
+andrewrk
+hi erandria
+
+1572201640
+andrewrk
+welcome
+
+1572201683
+andrewrk
+here are some resources:
+
+1572201691
+andrewrk
+
+
+1572201705
+andrewrk
+oops meant to link to the Editing Source Code section on that last link
+
+1572201749
+erandria
+thank you
+
+1572201878
+saskwach
+I'm trying to make a very simple library, but getting "unable to find 'foo'" on my `@import("foo");` line. The file is called foo and it's in the same directory as the file trying to import it. What am I missing?
+
+1572201951
+andrewrk
+saskwach, probably the file extension
+
+1572201968
+saskwach
+Should it not be .zig?
+
+1572201980
+andrewrk
+.zig is good. but your example does not have .zig in the @import path
+
+1572202002
+saskwach
+Oh, it's supposed to be "@import("foo.zig")"?
+
+1572202017
+saskwach
+Huh, so it is.
+
+1572202098
+saskwach
+Is that the zig equivalent of `#import "file"`? Including the .zig in the module's name?
+
+1572202166
+andrewrk
+it's very different from C's #import
+
+1572202241
+saskwach
+er, include
+
+1572202261
+andrewrk
+oops yes we both meant #include
+
+1572202283
+andrewrk
+in zig every file is a struct
+
+1572202298
+saskwach
+So why @import("std") but @import("mything.zig")?
+
+1572202299
+andrewrk
+@import obtains a reference to that struct type
+
+1572202322
+andrewrk
+every package has a table of mapped packages with arbitrary names mapped to files
+
+1572202331
+andrewrk
+all packages have "std" mapped to the std lib
+
+1572202371
+saskwach
+So the standard library's special cased in the implementation?
+
+1572202475
+saskwach
+Also, is there a place I can read about this package concept? I saw the bit about @import returning structs in the documentation, but I'm having trouble finding more details. I'm guessing this will get improved when the package system stuff is done.
+
+1572202486
+andrewrk
+I'm not sure what you're asking, but there are a small set of ways the std lib is special cased. 1. it's shipped with the compiler. 2. the types in std.builtin are used for some of the language features
+
+1572202511
+andrewrk
+package stuff is one of the big topics of this release cycle
+
+1572202629
+saskwach
+That will be good stuff.
+
+1572202667
+saskwach
+I guess I'll go look at some existing libraries and how they're used.
+
+1572205024
+tgschultz
+3. "std" package (and "builtin") are automatically available without --pkg-begin/end
+
+1572205068
+tgschultz
+..which I guess was already covered, so nevermind
+
+1572205200
+erandria
+andrewrk: I managed to reproduce the build bug I mentioned
+
+1572205248
+erandria
+I tried using the `--verbose-ir` option, but the segfault happens before the behaviour of that option "runs"
+
+1572205281
+erandria
+huh, disregard, it actually works
+
+1572205379
+mikdusan
+heads-up with `--verbose-ir`, it is not fully-vetted, there are cases (especially with large reproductions) that simply using --verbose-ir cases a segfault. it is highly recommended to get a minimal reduction, and use a few tricks to reduce what the compiler is doing (like define your own panic fn)
+
+1572205535
+erandria
+oh, I see
+
+1572205558
+mikdusan
+here is an issue with examples of defining your own panic() and using `export fn ...` to avoid even using main. note this means you need to "zig build-obj" or similar:
+
+1572205572
+mikdusan
+
+
+1572205683
+erandria
+but if I build with `build-obj` it doesn't cause a segfault
+
+1572205718
+erandria
+huh... this is a runtime segfault... I don't know how I missed that
+
+1572205737
+mikdusan
+oh that's happened to me before too. assumption mother of all evil
+
+1572205805
+erandria
+I was running `zig build` before, which runs the tests
+
+1572205820
+erandria
+mikdusan: haha, agree
+
+1572207354
+andrewrk
+lunamn, hmmm if we put a fs watch on /etc/resolv.conf, then we could detect when it changes while waiting for DNS results to come back. This would allow zig programs to seamlessly work when someone loses internet and reconnects to a different network mid-request
+
+1572207862
+lunamn
+andrewrk: that'd be cool
+
+1572207889
+lunamn
+I was experimenting with poll() earlier but hit a compiler segfault so I went to other things
+
+1572208070
+andrewrk
+damn, that's annoying
+
+1572208097
+andrewrk
+I'll take a quick peek
+
+1572208165
+andrewrk
+lunamn, you can do `zig build` instead of `zig build install --prefix ~/.local/ `
+
+1572208176
+andrewrk
+it defaults to zig-cache as the install folder
+
+1572208221
+lunamn
+sure, it became kind of muscle memory after being confused where the binaries were lol
+
+1572208224
+lunamn
+still segfaults, tho
+
+1572208388
+andrewrk
+lunamn, here's how you can add an assert to show how to work around the crash at least:
+
+1572208404
+andrewrk
+now it outputs: when analyzing /home/andy/Downloads/zigdig/src/packet.zig:407:48: assertion failed. This is a bug in the Zig compiler.
+
+1572208459
+andrewrk
+let me look into this though, it appears to be a bug with codegen of async functions
+
+1572208570
+lunamn
+I was gonna say that was my wild guess
+
+1572208607
+lunamn
+after commenting/uncommenting lines I got it related to io.Deserializer and being in an async fn
+
+1572210902
+andrewrk
+lunamn, this is a missing compile error for invalid async fn recursion
+
+1572210924
+lunamn
+oh
+
+1572210942
+andrewrk
+somehow deserializeName is async
+
+1572210947
+lunamn
+yeah the deserializer is recursive, that'd make sense
+
+1572210947
+andrewrk
+but it probably shouldn't be
+
+1572210960
+andrewrk
+unless it calls read
+
+1572210964
+andrewrk
+then it makes sense
+
+1572210983
+lunamn
+it shouldn't call read, I read it before deserialization, check packet.recvDNSPacket
+
+1572211004
+andrewrk
+I haven't enabled this compile error yet because it's going to be coupled with
+
+1572211155
+lunamn
+so I should heap allocate deserializeName?
+
+1572211291
+andrewrk
+let me work on the compile errors for this case, hopefully I can make it clear what should be done that way
+
+1572211296
+andrewrk
+but I gotta go soon
+
+1572211349
+lunamn
+it's allright, it isn't all that urgent
+
+1572211480
+andrewrk
+lunamn, here's what I've got with my unpushed changes:
+
+1572211617
+andrewrk
+yeah so your choices are to heap allocate to break the cycle, or to separate deserialization from reading
+
+1572211632
+andrewrk
+I'll make a separate master branch commit with a test case adding this compile error
+
+1572211684
+andrewrk
+here's an example of heap allocating an async function frame:
+
+1572211701
+andrewrk
+note that this chore is planned to be required for non-async recursive functions as well.
+
+1572211742
+lunamn
+ooh wait in_stream even though it uses a buffer (via SliceInStream) becomes async, that makes sense
+
+1572211793
+lunamn
+I'll make deserializeName heap-allocated and see what happens, thanks
+
+1572211815
+andrewrk
+yeah I'll try to get this compile error into master branch soon, but I'm gonna go have dinner with friends, later!
+
+1572211835
+lunamn
+cya!
+
+1572211925
+andrewrk
+I pushed to std.net branch
+
+1572214905
+lunamn
+andrewrk: I tried to heap-allocate the call but yet I still get the same compiler error, maybe it's because i'm doing 'try await' to get the value from the frame?
+
+1572217485
+mq32
+pixelherodev:
+
+1572217500
+mq32
+initialisizing VGA with 16 colors/640x480 pixels works!
+
+1572219856
+daurnimator
+andrewrk:yes watching /etc/resolv.conf is common enough. e.g. dnsmasq does it
+
+1572220152
+daurnimator
+
+
+1572220179
+pixelherodev
+mq32, neat!
+

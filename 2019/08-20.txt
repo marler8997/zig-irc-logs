@@ -1,0 +1,1180 @@
+1566261308
+marler8997
+so, is "--strip" the opposite of "-g" in gcc?
+
+1566261444
+daurnimator
+marler8997: I think zig always emits debug info; and then removes it from the linker.
+
+1566261515
+daurnimator
+I thought there was an issue open about not generating it in the first place; but I can't find it....
+
+1566261629
+scientes
+there isn't much of a use case for that besides 1) being a little faster, 2) creating easier-to-read llvmir-
+
+1566261648
+scientes
+anyways, that is my opinion
+
+1566261672
+marler8997
+I'm just trying to translate GCC command-line to the equivalent zig command-line
+
+1566261721
+daurnimator
+marler8997: --strip is more the equivalent of -Wl,--strip-debug
+
+1566261734
+marler8997
+ok
+
+1566261744
+marler8997
+any idea if there is an equivalent for -g?
+
+1566261761
+daurnimator
+-g is the default in zig and can't be turned off
+
+1566262315
+marler8997
+next step is to be able to invoke the C preprocessor
+
+1566262362
+marler8997
+I think in general, I'm going to need the ability to invoke clang, except after libc is built and with the arguments that are required to include it
+
+1566262379
+daurnimator
+marler8997: like via `zig cc`?
+
+1566262397
+marler8997
+"except after libc is built and with the arguments that are required to include it"
+
+1566262409
+marler8997
+clang+libc
+
+1566262842
+marler8997
+looks like there is a "zig libc" command, but it doesn't seem to print the same paths that I see when compiling C code with --verbose-cc
+
+1566262909
+daurnimator
+marler8997: zig libc is more like a couple of select pieces of `gcc -dumpspecs`
+
+1566262948
+marler8997
+I've got a bunch of different ideas to get this to work but I'm just not sure the right path at this point
+
+1566262965
+marler8997
+The end goal is to be able to call zig like it's a normal C compiler
+
+1566262992
+marler8997
+I wrote a small tool that will translate basic options to zig...but now I need to be able to inoke the preprocess (-E)
+
+1566262999
+daurnimator
+marler8997: have you looked at the implementation of std/build's addCSource?
+
+1566263049
+marler8997
+I've looked at what the compiler does when C files are added to the command-line.  I assume it's the same result
+
+1566263101
+daurnimator
+marler8997: note that your "c compiler" like gcc/clang is several tools in one: it's a preprocessor, compiler, linker and more: it's probably useful to break down the operations as such.
+
+1566263120
+marler8997
+right, I'm at the preprocessor point right now
+
+1566263137
+daurnimator
+marler8997: so trying to map `gcc -E` invocations?
+
+1566263142
+marler8997
+right now yes
+
+1566263163
+marler8997
+but it seems to me that the simplest way to support all the options would be to have a way to invoke zig's clang with libc
+
+1566263176
+marler8997
+And then I can provide any clang options I want, along with the options for libc
+
+1566263192
+marler8997
+Or if there was a way I could pull the libc options from zig
+
+1566263224
+marler8997
+I could run a simple "build-exe" and "build-obj" and read/parse the options from zig's output
+
+1566263251
+marler8997
+I think that would work, but I dont' want to go implement it since I'm sure there's something simpler
+
+1566263372
+marler8997
+And if I did implement that, I would probably just run the compiler before every command, enable a "dry-run" mode where it doesn't generate any output, and then re-invoke it with the command-line I got and any options I want to add
+
+1566263481
+marler8997
+another idea is to add a "--c-args" where zig adds those arguments to any clang invocations
+
+1566263697
+fengb
+Is there a way to make a hybrid slice / ArrayList?
+
+1566264227
+fengb
+Bleh I think I need a separate context to build the slice
+
+1566270311
+bgiannan
+is there a way to import c macros too?
+
+1566272811
+daurnimator
+bgiannan: at the moment
+
+1566272824
+daurnimator
+bgiannan: IIRC you can use --verbose-cimport to get a list of untranslateables
+
+1566272864
+bgiannan
+ok. i ended up rewrite the equivalent in zig.
+
+1566272906
+bgiannan
+Following the point 2 at
+
+1566272943
+fengb
+Yes, Zig doesn't have a general allocator yet
+
+1566273118
+daurnimator
+bgiannan: yep. you can use the C heap allocator for now. one day we'll have our own....
+
+1566273136
+daurnimator
+fengb: btw how did you go with your allocator. it was you I was teaching about allocators right?
+
+1566273145
+fengb
+Yeah, it works™
+
+1566273157
+fengb
+
+
+1566273160
+fengb
+Test case of 1
+
+1566273222
+daurnimator
+I should try and pick up my allocator again. I got sad by mismatches between C and zig allocation apis which means you actually need a worst-of-both-worlds approach
+
+1566273274
+daurnimator
+(for C allocators you have a known max alignment but don't get the length passed in; for zig you get the length passed in but it can be any run-time alignment)
+
+1566273286
+fengb
+I made some concessions. I have a TODO for allowing 16 bit+ alignment, but it works well enough(?) and it's much smaller than dlmalloc
+
+1566273335
+fengb
+I adopted metadata right before the memory, which is where 8 bit alignment is stuck
+
+1566273364
+daurnimator
+I got distracted trying to optimize for high alignment small size items.... and then went off and worked on other things
+
+1566273365
+fengb
+(8 bit on wasm32)
+
+1566273387
+daurnimator
+fengb: indeed. the problem with metadata before the memory is that you end up wasting.... a lot
+
+1566273427
+daurnimator
+though in practice its safer....
+
+1566273443
+daurnimator
+because people are much more likely to overrun the end of an allocation than use the area before
+
+1566273462
+fengb
+Hmm I never thought about that
+
+1566273566
+daurnimator
+With all these limitations I ended up thinking "I should just do it with a prefix tree instead"
+
+1566273579
+daurnimator
+but then I thought "prefix trees are gnarly with threads; I should use a maple tree instead"
+
+1566273590
+daurnimator
+and then I never wrote the maple tree implementation.
+
+1566273605
+fengb
+Well I'm glad I don't care about threads or performance :P
+
+1566273607
+daurnimator
+partially because there is no userspace RCU with a liberal license
+
+1566273619
+daurnimator
+and so I went off to shave the RCU yak
+
+1566274065
+fengb
+Would it be worthwhile to port an existing allocator like dlmalloc or (sounds scary) jemalloc?
+
+1566274393
+daurnimator
+fengb: I don't think so. they don't allow the arbitrary alignment that zig does....
+
+1566274421
+daurnimator
+nor do they usually allow multiple allocators in a single process
+
+1566274449
+daurnimator
+I should just finish my "classic allocator" and put the metadata at the end
+
+1566274453
+daurnimator
+so we have
+
+1566274545
+fengb
+I suppose I could try adopting mine to be more general purpose
+
+1566274678
+fengb
+Damnit, nrdmn added my silly protobuf experiment. I was actually planning on punting on that because I can't do what I wanted :(
+
+1566275407
+daurnimator
+fengb: huh? added what where?
+
+1566275444
+fengb
+
+
+1566276332
+hspak
+anyone have a good resource for operations like 'ls' and 'cd' in zig? it's not super obvious to me from digging in the std lib
+
+1566276900
+hspak
+found walkPath, looks like that's what I'm looking for
+
+1566277213
+hspak
+interesting zig has an assert on paths that end in '/'
+
+1566277703
+daurnimator
+hspak: generally you should never need to `cd`... it's a bit of an antipattern
+
+1566277792
+daurnimator
+hspak: but yes; for `ls` see std.fs.Dir and iterate with .next()
+
+1566277836
+daurnimator
+hspak: note that walkPath is recursive (`ls` isn't)
+
+1566278114
+hspak
+daurnimator:  I see, thanks for the pointers!
+
+1566280244
+bgiannan
+I have a strange compile error: expected type '*.cimport:2:13.struct_SDL_Renderer', found '*.cimport:2:13.struct_
+
+1566280245
+bgiannan
+SDL_Renderer'
+
+1566280265
+bgiannan
+complains that i give A when it expected... A
+
+1566282055
+bgiannan
+i was doing 2 cImport of sdl
+
+1566284101
+bgiannan
+is there a for loop in the classical sense? `for (var i = 0; i < 10; i++) ...` ? I only see example of `for` over an array/slice
+
+1566284536
+bgiannan
+if i understand the doc correctly, `for`  is only used to iterate over array and slices so i should use `while`
+
+1566284562
+daurnimator
+bgiannan: that's correct
+
+1566284577
+bgiannan
+ah there's a continue expression
+
+1566284597
+bgiannan
+so should be:  `var i = 0; while (i < 10) : i += 1 {...}`
+
+1566284600
+bgiannan
+?
+
+1566284617
+daurnimator
+yep. but you'll still need to declare your loop variable. `var i = usize(0); while (i < 10) : (i += 1) { .... }`
+
+1566284630
+daurnimator
+note that you need parenthesis for the continue expression
+
+1566284640
+daurnimator
+also that you'll need to pick the variable type of the index
+
+1566284913
+bgiannan
+so there's no default arguments and i can define the same functions with different arguments either? do i have to declare several functions with different names which provide the default values?
+
+1566284954
+daurnimator
+yes
+
+1566284992
+bgiannan
+or maybe i could make those arguments optional? i would have to pass null but at least i'm not redefining X functions
+
+1566285028
+daurnimator
+if you want to, sure
+
+1566286813
+bgiannan
+i do i get the size of an array?
+
+1566286877
+gonz_
+`array.len`
+
+1566286893
+bgiannan
+thx
+
+1566287554
+gonz_
+I realize now that wasn't really an answer to getting the size, but I hope it made sense
+
+1566295407
+bgiannan
+how do i print a string when its a [*]const u8 (coming from C)?
+
+1566296008
+tiehuis
+bgiannan: use '{s}' to print a null-terminated pointer/string
+
+1566296016
+bgiannan
+ah thx
+
+1566308741
+fengb
+Is there a way to add a declaration to a struct at comptime?
+
+1566308983
+scientes
+fengb, you can have two versions of the struct chosen at comptime
+
+1566308997
+scientes
+yeah, you could probably do that
+
+1566309005
+scientes
+oh, except its a const
+
+1566309023
+scientes
+and it kinda has to be a const
+
+1566309033
+scientes
+because other code gen depends on the way the struct is layed out
+
+1566309066
+fengb
+I need a separate struct declaration not a field. I want to add a "tag" to a struct
+
+1566309123
+scientes
+yeah i don't know what you mean by tag
+
+1566309213
+fengb
+
+
+1566309234
+fengb
+Only needed for comptime reflection uses
+
+1566309258
+scientes
+that would be really problematic to implement
+
+1566309269
+scientes
+because you are creating dependency issues
+
+1566309274
+scientes
+reading is fine
+
+1566309279
+scientes
+but writing is complicated
+
+1566309282
+fengb
+Alright
+
+1566309298
+fengb
+My other solution is shove the number into the type when I create it. It's less elegant but that's fine
+
+1566309320
+scientes
+if we want a comptime database, then create a comptime database
+
+1566309386
+fengb
+It's just to emulate Go tags or Java annotations
+
+1566309421
+fengb
+I mean, yes I'll create a comptime lookup of sorts, but this localizes the data so I don't have to cross reference it
+
+1566309478
+scientes
+oh weird
+
+1566309482
+scientes
+
+
+1566309571
+fengb
+Yeah they're just reflection data that has no natural code meaning
+
+1566309594
+scientes
+I get the use case, but I'm not sure its worth it
+
+1566309608
+scientes
+it seems like an abuse of a turing complete language
+
+1566309609
+fengb
+Useful for thinks like serialization:
+
+1566309619
+scientes
+that such data should be in a non-turing complete language
+
+1566309637
+fengb
+Then this generated code would be hideous
+
+1566309653
+fengb
+Again, I can create a manual mapper, but then it'd be write-only
+
+1566309685
+fengb
+I really just need the field number. Zig represents everything else pretty well
+
+1566309713
+scientes
+well if we had comptime file handling, then you could even write your own parser
+
+1566309728
+scientes
+maybe....
+
+1566309729
+fengb
+I plan on doing that too
+
+1566309736
+fengb
+But I still like the generated code to be readable
+
+1566309759
+scientes
+then just name the fields by the name of the tag
+
+1566309767
+fengb
+The field number is the problem
+
+1566309775
+scientes
+the number could be the name
+
+1566309782
+fengb
+But then it's not named
+
+1566309790
+fengb
+And at that point, it's adhoc tags
+
+1566309800
+scientes
+if they really are numbered then you can access them with typeinfo
+
+1566309806
+scientes
+cause the compiler numbers them
+
+1566309826
+fengb
+The numbers aren't always sequential
+
+1566309828
+fengb
+And they can be missing
+
+1566309830
+scientes
+oh ok
+
+1566309879
+fengb
+I'd like a tagging system, but I'm okay without them if I can figure out a decent way around them
+
+1566309893
+fengb
+I think something like this works:
+
+1566310008
+samtebbs
+fengb: I haven't followed the conversation but does this help?
+
+1566310027
+fengb
+I looked at that and got scared
+
+1566310150
+scientes
+samtebbs, >Zig can't (and probably won't ever) infer return types.
+
+1566310167
+scientes
+there is a bug for that, and I kinda need it for doing SIMD stuff in user-space instead of the compiler
+
+1566310176
+fengb
+Yeah I'm not a big fan of inferred return types
+
+1566310195
+fengb
+At least... not without a working IDE
+
+1566310203
+scientes
+yeah I get the complaint
+
+1566310215
+scientes
+but how else am I suppose to concatenate two vectors?
+
+1566310388
+scientes
+otherwise it ends up as a compiler builtin, and I'm trying to avoid those as much as possible
+
+1566310539
+mq32
+scientes, can't you just query vector size?
+
+1566310552
+mq32
+so two-step return type inferring?
+
+1566310574
+scientes
+that would be really ugly
+
+1566310575
+mq32
+fn(a : var, b : var) inferReturnTypeForTwoVecs(a,b) { }
+
+1566310592
+scientes
+but yeah that would work
+
+1566310632
+scientes
+the actual concatenation is done with @shuffle
+
+1566310683
+scientes
+there is also a patch in that series where you can do arr[idxs] = vector
+
+1566310688
+scientes
+where idxs is a vector of indexes
+
+1566310694
+scientes
+which i thought was pretty slick
+
+1566310708
+scientes
+but only when arr is a vector right now and idxs is constant
+
+1566310715
+scientes
+i'm working on doing it with arrays
+
+1566310740
+scientes
+multiple concurrent assignment
+
+1566310750
+scientes
+and load
+
+1566310806
+mq32
+scientes: as you're working on vectors: is swizzling possible (maybe even @shuffle is swizzling)?
+
+1566310832
+scientes
+not exactly sure what swizzling is, but i'm pretty sure that is shuffle
+
+1566310863
+scientes
+@shuffle is very versitile
+
+1566310875
+scientes
+and I made the zig version even more versitile
+
+1566310888
+scientes
+as the vector sizes don't have to match
+
+1566310913
+mq32
+swizzling is the shader coding term for
+
+1566310921
+mq32
+"vec.xyz = vec.wzz"
+
+1566310930
+mq32
+so indexing a vector with kinda arbitrary indizes
+
+1566310944
+scientes
+if the index is variable then @shuffle can't do that
+
+1566310957
+scientes
+and such instructions are only really available on x86 AFAIU
+
+1566311128
+mq32
+GPUs do it even in assembler
+
+1566311166
+scientes
+I'm pretty sure swizzling is supported
+
+1566311175
+mq32
+so you can just expand a float to a vec4 by using "f.xxxx"
+
+1566311188
+scientes
+one float?
+
+1566311201
+scientes
+that would be @splat()
+
+1566311211
+scientes
+(which is implemented in llvm with @shuffle)
+
+1566311217
+mq32
+hmm
+
+1566311226
+scientes
+but ppc for example has a special instruction for that
+
+1566311231
+scientes
+*special instructions
+
+1566311235
+mq32
+do you plan to index .x, .y and such for vector types?
+
+1566311251
+scientes
+there was a guy doing that type of stuff with what is already there
+
+1566311291
+mq32
+the documentation on what is there for vectors is a bit sparse ^^
+
+1566311310
+scientes
+mq32, are you working from my patch series?
+
+1566311314
+scientes
+cause I did add documentation
+
+1566311316
+mq32
+ah
+
+1566311317
+scientes
+not any examples
+
+1566311321
+mq32
+then i have to look that up!
+
+1566311335
+mq32
+do you have a link?
+
+1566311360
+scientes
+
+
+1566320849
+andrewrk
+daurnimator, --strip prevents debug info from being generated, as well as setting a comptime global constant, which the std lib notices and avoids trying to dump a stack trace when it knows there's no debug info
+
+1566320870
+andrewrk
+there's one little issue left, where
+
+1566320950
+andrewrk
+oh I don't think marler knows that you can pass any C cli args between --c-source and the next positional argument
+
+1566323569
+Tetralux
+Is std.Buffer.appendByte meant to panic if .len == 0?
+
+1566324131
+Tetralux
+Only I was under the impression that it was just a zero-terminated array.
+
+1566325155
+marler899776
+andrew just saw your message about --c-source...
+
+1566325192
+marler899776
+I'm not sure I understand though, how would I pass say "-E"?
+
+1566325215
+marler899776
+oh wait, you're saying until you see an argument without a "-" in front of it
+
+1566325222
+marler899776
+got it
+
+1566325322
+Tetralux
+Should you be able to do this: `var x: EnumType = if (cond) .A else .B;`
+
+1566325330
+Tetralux
+Only I feel like I should, since I gave it the type.
+
+1566325348
+Tetralux
+And if you shouldn't be able to, why not?
+
+1566325395
+fengb
+Peer type inference overwrites result type inference right now
+
+1566325409
+fengb
+So yes you should be able to but no it’s not working right now
+
+1566325416
+FireFox317
+This PR solves that:
+
+1566325430
+fengb
+Oh it’s a PR already?
+
+1566325505
+FireFox317
+Yes, but i'm not sure if my implementation is correct, it does pass the tests tho
+
+1566325519
+fengb
+I think this is a different issue:
+
+1566325624
+plumm
+quick question, any reason why @typeName(@typeOf(A.B.c)) (where A is a struct and B is a nested struct, with c being a boolean property of B)
+
+1566325629
+plumm
+does not compile?
+
+1566325677
+andrewrk
+B.c is not valid, there is no instance of B to access c from
+
+1566325692
+andrewrk
+there is a way to do what you're trying to do however
+
+1566325751
+andrewrk
+marler899776, it's not perfect because if any C cli args take a positional argument then it'll get messed up. we'll need to adjust that CLI at some point to handle this
+
+1566325765
+marler899776
+yeah
+
+1566325797
+marler899776
+--c-args-start ... --c-args-end ?
+
+1566325806
+fengb
+plumm: std.meta.fieldInfo(A.B, "c")
+
+1566325858
+plumm
+thx!
+
+1566325946
+marler899776
+hmmm, I don't see the --c-source arguments getting forwarded to "zig cc"
+
+1566325955
+marler899776
+zig build-exe --name a.out --library c --c-source hello.c --verbose-cc --c-source -E
+
+1566325956
+marler899776
+.4.0+3f7f5200/lib/zig/libc/include/x86_64-linux-gnu -isystem /home/marler8997/bin/zig-linux-x86_64-0.4.0+3f7f5200/lib/zig/libc/include/generic-glibc -isystem /home/marler8997/bin/zig-linux-x86_64-0.4.0+3f7f5200/lib/zig/libc/include/x86_64-linux-any -isystem /home/marler8997/bin/zig-linux-x86_64-0.4.0+3f7f5200/lib/zig/libc/include/any-linux-any -mar
+
+1566325956
+marler899776
+ch=native -g -fno-omit-frame-pointer -D_DEBUG -fstack-protector-strong --param ssp-buffer-size=4 -fPIC -o zig-cache/tmp/Tm_l3etbxNYV-hello.o -c hello.c
+
+1566326241
+andrewrk
+marler899776, the args go between --c-source and hello.c
+
+1566326275
+andrewrk
+it's hard to read that output, might be time for a pastebin-like service
+
+1566326350
+marler899776
+ok thanks, I'll try to remember to use pastebin in the future as well
+
+1566326598
+marler899776
+cool, now I'm able to pass -E to "zig cc", but of course not it fails because zig is expecting the output file to be an object file
+
+1566326682
+marler899776
+there's a couple ways I can think of to get this "Zig C Compiler Emulation" tool to work, I'm wondering which route we should go
+
+1566326731
+marler899776
+The best idea I have so far is to be able to run "zig cc", but then have a way to signal it to add any applicable libc arguments as well
+
+1566326751
+marler899776
+Or if there was some way to query the zig compiler for what those libc arguments might be?
+
+1566326794
+marler899776
+That way we could expose any clang functionality without also having to have an equivalent in zig
+
+1566327445
+FireFox317
+andrewrk: I see you merged my PR and added a way to specify the target for the compiler error tests, but since it generates a compiler error on every target and no assembly, does it make sense to specify a target?
+
+1566327546
+andrewrk
+FireFox317, I actually thought it would be an error if the assembly mismatched the target, but I see now that the other error is checked first. so either way would be fine in this case. but the idea is to isolate only the one error, for each compile error test, so I do think this is better
+
+1566328024
+FireFox317
+Uhm yes, but for the test that I added it is not a target specific compiler error, so the target shouldn't be specified right? And right now we get an LVVM error when the assembly is not valid on a target.
+
+1566328102
+FireFox317
+The compiler error I added checks if the variable (thing inside %[..]) is actually specified in the inputs or outputs of the inline assembly.
+
+1566328105
+andrewrk
+it is a target specific test case because it has inline assembly
+
+1566328147
+andrewrk
+there's no requirement for the compiler to check whether or not the parameter exists before checking that the assembly matches the target
+
+1566328567
+Tetralux
+Is std.meta.isSlice(type) meant to return false for []const u8?
+
+1566328575
+Tetralux
+That seems wrong to me.
+
+1566328900
+FireFox317
+Well, I think that we always first have to check if a variable inside a inline assembly template is not defined, because if it is not then the inline assembly doesn't make any sense. That is how I see it
+
+1566328975
+FireFox317
+But for now it is fine anyway, it works and for the self hosted compiler it could be better
+
+1566329271
+andrewrk
+FireFox317, thanks for the patch
+
+1566329600
+andrewrk
+FireFox317, it's not out of the question for zig to gain more intelligent understanding of assembly; in this case the compiler could participate more in the syntax and awareness of inline assembly semantics
+
+1566329660
+FireFox317
+andrewrk: You are welcome!
+
+1566331329
+marler899776
+quick question, how do you access the "tag" field of a tagged union?
+
+1566331559
+andrewrk
+marler899776, implicit cast to the enum tag type
+
+1566331572
+marler899776
+thanks
+
+1566340799
+Tetralux__
+Q: What's the best way to deal with a situation where you do a fn call to start something, you get back a token of some sort, and you `defer token.finish()` or whatever.
+
+1566340812
+Tetralux__
+Problem is, both starting and finishing the thing can fail.
+
+1566340822
+Tetralux
+So you can't defer it.
+
+1566344387
+Tetralux
+Yes, BUT, because you're returning it, it'd copy it into the `thing`.
+
+1566344392
+fengb
+It wouldn't disappear. Previously it creates a copy upon return, and copy it into the result location
+
+1566344404
+Tetralux
+fengb:
+
+1566344448
+donpdonp
+ah, the Self{..} in init would be in the init callstack memory, then copied into the spot inthe callstack for the return value.
+
+1566344508
+fengb
+yep
+
+1566344513
+donpdonp
+but now its copied into the address of what its being assign to.
+
+1566344542
+Tetralux
+Indeed.
+
+1566344549
+Tetralux
+Except "copy" = "write"
+
+1566344552
+Tetralux
+So there's no copy.
+
+1566344622
+donpdonp
+well that helps a lot thx.
+
+1566344649
+Tetralux
+o7
+
+1566344704
+donpdonp
+i not saying I would write it  but ive toyed with the idea of a zig basics document and came up with a title: "Zig Pointers" get it?
+
+1566344804
+donpdonp
+to answer my own other question about the "address" of the return value of init, there is no other address other than &thing because the struct is copied into the ram that was created on the stack for thing (being a var thing: OtherThing and not a pointer)
+
+1566344872
+donpdonp
+it really does work more like a param to init() than thing = init()
+
+1566344978
+andrewrk
+yes
+
+1566345023
+Tetralux
+Indeed - though that part about it really working like a param to init; I should note that's
+
+1566345059
+Tetralux
+Any fn that returns a value will work like that.
+
+1566345063
+donpdonp
+aaand my problem is fixed now by using allocator.create() \o/ \o/ im getting nice unique structs at OtherThing()@21f6590 OtherThing()@2342100. Otherthing is actually a Mastodon Toot for
+
+1566345103
+Tetralux
+Curious :3
+
+1566345304
+donpdonp
+
+
+1566345357
+donpdonp
+that shows the two kinds of inits. if I var thing = allocator.create(OtherThing) and thing = OtherThing.init() could I keep using fn init() Self{ return Self{} } and it would be copied into the heap?
+
+1566345381
+Tetralux
+YES
+
+1566345394
+donpdonp
+id argue that that shortcut is actually not a great idea because here I am reassigning it and yet its dependent on the previous value
+
+1566345420
+Tetralux
+The thing you get back from .create is undefined.
+
+1566345423
+andrewrk
+donpdonp, for the heap one it should be `const thing_ptr` not `var thing`
+
+1566345423
+Tetralux
+So you HAVE to set it.
+
+1566345441
+donpdonp
+oh. interesting.
+
+1566345443
+Tetralux
+And yes, as andrewrk said, you get a *OtherThing back from create.
+
+1566345450
+andrewrk
+and then to initialize it you would do thing_ptr.* = init()
+
+1566345457
+Tetralux
+^^
+
+1566345465
+Tetralux
+andrewrk: beat me to it :p
+
+1566345465
+donpdonp
+okay so THATS the pattern Im missing.
+
+1566345471
+Tetralux
+HUZZAH
+
+1566345483
+Tetralux
+BY JOVE I THINK THEY HAVE IT.
+
+1566345484
+andrewrk
+donpdonp, does it make sense why it would be const?
+
+1566345513
+donpdonp
+well if thing_ptr were only assigned to once, that would keep later code from changing it?
+
+1566345517
+andrewrk
+correct
+
+1566345534
+andrewrk
+just one less accident to worry about
+
+1566345578
+donpdonp
+'The thing you get back from .create is undefined.' thats still puzzling.
+

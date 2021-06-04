@@ -1,0 +1,2040 @@
+1562113581
+fengb
+I'm not sure how I survived before comprehensive switch detection
+
+1562118536
+daurnimator
+hryx: what did you think about
+
+1562118553
+daurnimator
+apparently other people didn't like it.... 2 thumbs down 0 thumbs up :(
+
+1562118677
+hryx
+daurnimator: is the controversy that it introduces runtime length calculation?
+
+1562118683
+hryx
+the .len thing
+
+1562118716
+daurnimator
+maybe?
+
+1562118805
+hryx
+it does raise some concern just because of the idea that "only things that look like functions invoke functions". if it were .len() it might feel less out of character
+
+1562118849
+daurnimator
+I don't see it as that different to e.g. passing a struct by value invoking memcpy
+
+1562118896
+hryx
+that's a reasonable argument
+
+1562118907
+emekankurumeh[m]
+does .len work on [*] pointers?
+
+1562118938
+daurnimator
+emekankurumeh[m]: no. the length of those is unknown
+
+1562119061
+fengb
+`c"aoeu" is of type [4]null const u8`
+
+1562119074
+fengb
+I don't particularly like the len == 4 while @sizeOf == 5
+
+1562119119
+scientes
+wait, we have null types now?
+
+1562119125
+daurnimator
+scientes: no. we're discussing the proposal
+
+1562119137
+scientes
+oh ok, for a moment there I was pretty excited...
+
+1562119159
+fengb
+But I'm not sure what the alternative would be. It'd be awkward that slicing `[N]null const u8` gives you an extra null character
+
+1562119188
+daurnimator
+fengb: huh?
+
+1562119194
+scientes
+yeah I think it should have a length
+
+1562119241
+fengb
+`c"foo"[0..] => "foo\0"` would be weird
+
+1562119242
+scientes
+but maybe some way to avoid getting that length stack allocated
+
+1562119257
+daurnimator
+btw, we have other situations where @sizeOf isn't what you may naively expect: e.g. hidden tag on unions.
+
+1562119262
+scientes
+but what if you set a byte inside it to null, what is the length then?
+
+1562119281
+fengb
+Or would it? I'm assuming transparent interop but maybe there should be some friction
+
+1562119285
+scientes
+^^^
+
+1562119297
+daurnimator
+scientes: part my proposal (linked above) is that everytime you fetch .len it does `strlen`.
+
+1562119306
+scientes
+but then it shouldn't have a length
+
+1562119312
+scientes
+if that is your definition
+
+1562119326
+scientes
+just just need to make actual strlen() marked pure
+
+1562119357
+scientes
+well that wouldn't be sufficient
+
+1562119371
+scientes
+because its a pointer, so you can't mark it const
+
+1562119377
+daurnimator
+scientes: please read the proposal before debating it....
+
+1562119382
+scientes
+sorry...
+
+1562120029
+scientes
+It is valid to read [N]null T at N. You are guaranteed to get null.
+
+1562120037
+scientes
+or rather "it is undefined behavior to not have null there"
+
+1562120126
+scientes
+so can you assign to len, and if so does it insert a null?, and does it change the type too?
+
+1562120166
+daurnimator
+scientes: no. you cannot assign to len.... in any slice/array type in zig
+
+1562120176
+scientes
+and can you assign a smaller to a larger at a specific index, i.e. [10]null T, [5]null T, a[2] = b
+
+1562120208
+scientes
+oh you have to re-slice yes of course
+
+1562120234
+scientes
+[]null T can be 'cast' to []T via nullslice[0..nullslice.len]. The .len here is invoking a strlen-like operation.
+
+1562120286
+scientes
+and so if you write to in a null it would change the type
+
+1562120295
+daurnimator
+scientes: ?
+
+1562120305
+daurnimator
+scientes: where are you writing?
+
+1562120309
+scientes
+if you had [5]null T, and did a[3] = 0
+
+1562120318
+scientes
+then you would suddenly have [2]null T
+
+1562120320
+scientes
+which is a differn't type
+
+1562120328
+daurnimator
+scientes: no.
+
+1562120337
+daurnimator
+scientes: [5] there is the capacity; not the length.
+
+1562120379
+scientes
+so it implicitely casts to a shorter capacity?
+
+1562120404
+daurnimator
+no.
+
+1562120426
+scientes
+why not?
+
+1562120434
+scientes
+oh of course
+
+1562120437
+scientes
+you would need a null
+
+1562120531
+scientes
+how do you specify the capacity when dereferencing a null slice?
+
+1562120553
+scientes
+or you can't do that, because like in C arrays are really pointers?
+
+1562120554
+daurnimator
+scientes: ? what do you mean
+
+1562120576
+scientes
+how do you allocate a null array not on the stack?
+
+1562120633
+scientes
+oh nvm, that is a dumb question
+
+1562120660
+scientes
+It is similar to []null T except uses a strnlen-like instead of a strlen-like.
+
+1562120670
+scientes
+it would use strlen always in release-fast mode
+
+1562120824
+daurnimator
+scientes: strnlen with a compile-time-known length can be faster than strlen
+
+1562120836
+scientes
+oh yes
+
+1562120865
+scientes
+didn't think of that
+
+1562120873
+daurnimator
+scientes: also note that
+
+1562120877
+scientes
+Null arrays must always be zero-initialized when they are created
+
+1562120891
+scientes
+that's the thing I don't think you mentioned in your proposal
+
+1562120903
+scientes
+there is really no other way to do it
+
+1562120928
+daurnimator
+the main usecase for non-constant null terminated arrays is the structures returned from `getdents` and unix socket addresses from `getpeername`
+
+1562120945
+daurnimator
+why would null arrays need to be zero-initialized?
+
+1562120951
+scientes
+null arrays are really useful in low-memory situations
+
+1562121000
+scientes
+daurnimator, because you have to set the last element by your own admission, and otherwise then length would be far less useful
+
+1562121024
+scientes
+they are actually quite useful in certain data strutures
+
+1562121027
+scientes
+usually containing pointers
+
+1562121062
+scientes
+where you are already linearly iterating, so a length is pointless
+
+1562121087
+daurnimator
+scientes: actually due to branch predicition factors its often faster to strlen and then iterate to it anyway :P
+
+1562121103
+scientes
+but i guess then a pointer is the size of a length
+
+1562121121
+scientes
+so there is not a good reason against just using a slice there
+
+1562121131
+scientes
+*a null is the size of a length
+
+1562121160
+scientes
+sometimes a length is just u32 too, but I don't think zig will ever do that
+
+1562121170
+daurnimator
+scientes: to expand on the use case above: var ss: sockaddr_storage = undefined; try linux.getpeername(sock, &ss); const mynullslice = ss.sun_path[0..ss.sun_path.len];
+
+1562121186
+scientes
+but llvm likes to use such things: 32-bit lengths on 64-bit platforms
+
+1562121195
+scientes
+to save memory
+
+1562121195
+fengb
+c"" is ~3-7 bytes smaller than "" :P
+
+1562121223
+scientes
+daurnimator, yes i've used those APIs
+
+1562121233
+scientes
+fengb, generally 7 these days
+
+1562121259
+daurnimator
+scientes: note the lack of zero initialisation.... we just rely on the OS to avoid > 2:13:56 <scientes>or rather "it is undefined behavior to not have null there"
+
+1562121285
+fengb
+I've been doing a lot of wasm so I'm biased towards 32bit
+
+1562121331
+daurnimator
+fengb: 64bit wasm is a thing...
+
+1562121337
+scientes
+daurnimator, that's why you need the zero initialization.....
+
+1562121359
+daurnimator
+scientes: how would that help (e.g. if the OS decided to get rid of the 0)
+
+1562121366
+scientes
+but i guess you are at least testing for an error
+
+1562121379
+fengb
+It's undefined. Only wasm32 is a real spec
+
+1562121385
+fengb
+Er... finalized*
+
+1562121386
+daurnimator
+scientes: also that's why .len on an null array uses strnlen
+
+1562121394
+scientes
+yes
+
+1562121397
+scientes
+that is nice
+
+1562121422
+scientes
+and you could even fix up some strage apis that don't terminate
+
+1562121428
+scientes
+by having an extra byte
+
+1562121451
+scientes
+but then you have to initialize.....
+
+1562121465
+scientes
+cause you have to initialize if you want to cast to [*]T
+
+1562121479
+scientes
+and then use a strlen-like function
+
+1562121521
+scientes
+yeah I'm not really feeling it
+
+1562121532
+scientes
+i feel that [*] pointers do most of the job
+
+1562121566
+scientes
+and we just need to add a strnlen builtin, either to zig or llvm
+
+1562121597
+daurnimator
+scientes: the important thing is have a type to use with e.g. `open`
+
+1562121598
+scientes
+llvm would probably be interested in that
+
+1562121610
+daurnimator
+scientes: so that e.g. you can't pass a non-null-terminated string to open
+
+1562121685
+scientes
+yes, your proposal is basically about adding debug safety
+
+1562121702
+scientes
+for a common use case
+
+1562121757
+scientes
+but you could only do that if the api accepting had a maximum slice length
+
+1562121773
+scientes
+cause otherwise the debug checks would potentially search all 64bits of address space
+
+1562121786
+scientes
+looking for a null
+
+1562121841
+scientes
+we can use PATH_MAX for that, but your proposal doesn't cover lengths of slices
+
+1562121847
+scientes
+and that is kinda getting ugly
+
+1562121879
+scientes
+at the debug checks could themselves segfault
+
+1562121890
+scientes
+and invoke UB
+
+1562121933
+scientes
+it wouldn't be adding new UB so its OK, but still......
+
+1562122117
+scientes
+It would be nice however to get rid of the copy when calling open()
+
+1562122168
+scientes
+
+
+1562122168
+scientes
+make string literals [N]null u8
+
+1562122170
+scientes
+oh interesting
+
+1562122177
+scientes
+yeah that is actually reasonable
+
+1562122200
+scientes
+its smaller than what we have now
+
+1562122306
+scientes
+yeah I came around and I think your proposal is sound daurnimator
+
+1562122474
+scientes
+hmmm, you could store the length of a set of pointers in the low bits
+
+1562122500
+scientes
+if the low bit is 1 then there are more, and 0 for the last one
+
+1562127128
+daurnimator
+scientes: assuming your pointers are aligned... and what made you think that?
+
+1562128446
+daurnimator
+to risk an old argument.....
+
+1562129227
+fengb
+Like all internet flamewars, tabs peeps and spaces peeps just loudly talk over each other
+
+1562129287
+fengb
+I'd love a point where tabs and character alignment can actually be independent but I haven't seen an editor do that correctly, let alone all of them
+
+1562129313
+daurnimator
+fengb: I've almost never seen alignment that I agree with
+
+1562129316
+fengb
+Although... go fmt does it really well so
+
+1562129335
+daurnimator
+fengb: i.e. my answer to "but tabs suck for alignment" is "stop aligning"
+
+1562129365
+fengb
+Uh... sure. Tell that to everybody else :P
+
+1562129592
+fengb
+I also wish editors actually display tabs so it's obvious what's happening :/
+
+1562129614
+daurnimator
+does yours not?
+
+1562129618
+fengb
+And one thing I'm actually adamant about is "don't mix tabs and spaces"
+
+1562129637
+fengb
+Mine does yea, but most don't. And people get it wrong all the time
+
+1562129658
+daurnimator
+I wish it was easier to run linting from CI
+
+1562129712
+fengb
+Other than that... I like auto formatters and prefer to just adapt whatever is the default
+
+1562129728
+fengb
+I fought go fmt for about a week before giving up and realizing it's just better to not care >_>
+
+1562129741
+daurnimator
+I'm glad zig fmt exists..... it's not something you can easily bolt on afterwards
+
+1562129779
+daurnimator
+Though I'm sad that we don't run it on CI of zig itself....
+
+1562130048
+fengb
+Obviously the solution is configurable widths for spaces :P
+
+1562130094
+gonz_
+The accessibility argument is a good one and one that I personally hadn't considered.
+
+1562130537
+IntoxicatedHippo
+Is there currently a way to specify the calling convention for a single function (as in __attribute__((ms_abi)) in clang/gcc)?
+
+1562130710
+daurnimator
+IntoxicatedHippo: huh? don't you just give your function e.g. the fastcall function attribute
+
+1562130893
+fengb
+Can I not refer to pointers in struct default values?
+
+1562130947
+gonz_
+Wut, did we already get struct default values?
+
+1562130963
+daurnimator
+gonz_: yeah that was a while ago
+
+1562130977
+daurnimator
+which is to say, a month or so
+
+1562131104
+fengb
+No I can't... but somehow I am and it's crashing
+
+1562131427
+fengb
+Ah... default values don't run on heap allocation
+
+1562131519
+IntoxicatedHippo
+I found this but it doesn't seem like there's a way to specify ms_abi:
+
+1562131602
+daurnimator
+IntoxicatedHippo: so sorry I read your question as asking about how to do it in C
+
+1562131646
+daurnimator
+IntoxicatedHippo: yeah we do have a way to specify a calling convention, but we're missing support for most calling conventions
+
+1562131766
+daurnimator
+IntoxicatedHippo:
+
+1562132397
+IntoxicatedHippo
+How does LLVM handle calling conventions? Perhaps it would be possible to have callconv take a CallingConvention struct which has functions to generate the prologue and epilogue as well as specifying callee-saved registers.
+
+1562132921
+daurnimator
+that gives me an idea.......
+
+1562132938
+daurnimator
+andrewrk: what if `asm` blocks returned naked functions?
+
+1562147476
+samtebbs
+via: Here's some docs on the m0's registers:
+
+1562155360
+marijnfs__
+andrewrk: planning any live codings soon?
+
+1562156061
+daurnimator
+marijnfs__: he usually does fridays
+
+1562156286
+via
+making a barebones freestanding arm zig program that links in libopencm3 was actually easy (coming from someone just starting out with zig)
+
+1562156302
+via
+need to figure out if zig is outputing hardfloat or not though
+
+1562156627
+via
+does cInclude not do well for static inline'd functions in a header file?
+
+1562157233
+via
+i spoke too soon, i'm running into a lot of issues with all the headers for libopencm3 when i actually start trying to use them :(
+
+1562157604
+via
+
+
+1562157623
+via
+though if i add a #error to the line where GPIO_PORT_B_BASE is installed, i get that error, so i know zig is seeing the line
+
+1562158050
+samtebbs
+via: I get some libc-related errors when trying to build your project
+
+1562158067
+samtebbs
+note: libc headers not available; compilation does not link against libc
+
+1562158070
+samtebbs
+Seen that before?
+
+1562158129
+via
+yeah, but only when there's an error, i know there's no libc so that does't seem like it would be a problem
+
+1562158166
+samtebbs
+I also get cimport.h:2:10: note: 'libopencm3/stm32/memorymap.h' file not found
+
+1562158190
+via
+re: my earlier static inline funcs, i think the issue is ' warning: TODO handle C GCCAsmStmtClass', so there goes that
+
+1562158200
+via
+there's a submodule in there for libopencm3
+
+1562158233
+via
+also, memorymap.h shouldn't need to be directly included, i was just debugging and accidentally left that in there
+
+1562158662
+via
+i'm guessing libopencm3's preprocessor shenanigans are too extreme for zig to deal with, but in my libopencm3 projects i keep all that interaction to a single c file anyway, so i could just keep that part c
+
+1562159267
+daurnimator
+via: zig has all of clang, so preprocessor shenanigans aren't a problem unless you want to use macros from zig
+
+1562160584
+fengb
+When I use an allocator for a struct, the compiler doesn't tell me things are wrong. Is this a bug?
+
+1562160597
+fengb
+and I forget to initialize it*
+
+1562161207
+samtebbs
+fengb: Could you share a code example?
+
+1562161475
+fengb
+
+
+1562161503
+fengb
+.slice is uninitialized and pointed at garbage
+
+1562161562
+via
+daurnimator: then i'm not sure why thats not working
+
+1562161885
+fengb
+Also, it's not really obvious that struct default values don't run when using an allocator but I'm not sure that can be fixed
+
+1562163678
+fengb
+via: huh... it works if I manually set "#define GPIO_PORT_B_BASE (0x0400)"
+
+1562163838
+via
+fengb: where? in the one of the opencm3 headers?
+
+1562163994
+fengb
+I think it's a limit to how #define is translated
+
+1562164010
+fengb
+It seems to only work with literals, not expressions
+
+1562164039
+via
+bummer -- though i'd think if clang were doing all the heavy lifting tere that it wouldn't matter
+
+1562164071
+via
+i won't be able to directly use libopencm3 until the gcc inline assembly works anyway, so i'll stick to the hardware/libopencm3 interface in c, and the rest of the codebase in zig
+
+1562164543
+fengb
+via:
+
+1562164608
+via
+i guess even though i'm not directly using those macros, i'm using macros that use those macros
+
+1562164610
+fengb
+Also
+
+1562164673
+via
+cool
+
+1562164674
+fengb
+Yeah, C macros are a complicated beast. We have to make some decisions regarding side effects and syntax rewrites
+
+1562164688
+fengb
+That said... simple expressions should be translated but aren't atm so that's not idea
+
+1562164690
+fengb
+ideal*
+
+1562164705
+via
+fair enough
+
+1562165186
+dimenus
+how would I initialize a known length array variable to all 0s?
+
+1562165234
+andrewrk
+marijnfs__, yes, thursday at 17:00 EST
+
+1562165272
+andrewrk
+I'm guessing that is Friday for daurnimator :)
+
+1562165303
+daurnimator
+yep :P
+
+1562165336
+andrewrk
+dimenus, [1]T{0} ** N
+
+1562165534
+dimenus
+that feels odd compared to the c version -> { 0 }
+
+1562165639
+fengb
+A single element can be [1]T{0}. The ** N is expanding to multiple elements
+
+1562165648
+dimenus
+agreed
+
+1562165804
+andrewrk
+it's a bit verbose, but it teaches you how to use the more advanced feature at the same time
+
+1562165831
+andrewrk
+e.g. [2]i32{1, 2} ** (N / 2)
+
+1562165848
+andrewrk
+now you have a repeating pattern 1,2,1,2,1,2,1,2 filling your array
+
+1562165859
+fengb
+Oh I didn't know you could repeat any argument
+
+1562167219
+dimenus
+ah it felt overly verbose because i was specifying the type too
+
+1562167222
+dimenus
+but i don't need to in this case
+
+1562167327
+dimenus
+eg, var err_log = [1]u8{0} ** LOG_BUFF_LEN;
+
+1562167491
+FireFox317
+And I think [_]i32{1, 2} ** (N / 2) is now also possible, zig infers the length
+
+1562167531
+dimenus
+yeah, [_
+
+1562167536
+dimenus
+* [_] works here
+
+1562167763
+fubd
+I still can't figure out how to link against windows DLLs that have _underscorePrefixedFunction names
+
+1562167766
+fubd
+using @cImport
+
+1562167785
+fubd
+since to zig, the functions should be exported as "underscorePrefixedFunction"
+
+1562167914
+dimenus
+that's usually the impl, there should be other symbols that match the names you're looking for
+
+1562167917
+dimenus
+are your c funcs dllexport?
+
+1562168051
+andrewrk
+fubd, hmmm, you might be able to use @cDefine to change the mangling
+
+1562168565
+dimenus
+fubd: can you share the code at all? is this a dll you built?
+
+1562170045
+fubd
+dimenus i'm just trying to build andrew's tetris example
+
+1562170124
+fubd
+the issue is libraries like glfw
+
+1562170124
+andrewrk
+fubd, I'm going to wait until package manager is here to do windows support for that particular example
+
+1562170134
+fubd
+
+
+1562170139
+fubd
+but their exports are like _glfwInit
+
+1562170150
+andrewrk
+hmm
+
+1562170153
+fubd
+I basically need a way of telling lld.exe to prepend all functions with an underscore
+
+1562170208
+andrewrk
+there's probably a #define you can set in the @cImport block
+
+1562170263
+fubd
+you mean like in
+
+1562170264
+fubd
+hmm
+
+1562170267
+fubd
+i'll go see
+
+1562170284
+andrewrk
+
+
+1562170311
+andrewrk
+try @cDefine("GLFW_DLL", 1); before the @cImport of glfw
+
+1562170341
+andrewrk
+I don't remember if translate-c supports this
+
+1562170353
+andrewrk
+the dllimport attribute, I'd have to check
+
+1562170420
+andrewrk
+hmm yeah zig doesn't ever set the dllimport attribute currently
+
+1562170460
+andrewrk
+
+
+1562170514
+andrewrk
+I need a windows expert to figure out how this is supposed to work
+
+1562170522
+andrewrk
+it's confusing to me
+
+1562170596
+andrewrk
+I think the issue is that DLLs can choose to mangle or choose not to mangle, and you just have to know whether they did or not
+
+1562170633
+fubd
+andrewrk that still results in "lld: error: undefined symbol: glfwInit"
+
+1562170645
+fubd
+i can see with a tool that _glfwInit is exported
+
+1562170663
+andrewrk
+are you linking against the import lib? glfw.lib
+
+1562170666
+emekankurumeh[m]
+
+
+1562170668
+fubd
+yes
+
+1562170680
+fubd
+the lib that was built with the mangling msvc linker
+
+1562170681
+fubd
+that
+
+1562170685
+fubd
+*that's the problem I suppose
+
+1562170698
+emekankurumeh[m]
+fubd: try a mingw lib
+
+1562170708
+fubd
+hmm
+
+1562170712
+andrewrk
+fubd, that's still supposed to work, if your target C ABI is msvc
+
+1562170740
+fubd
+andrewrk I'm not calling setTarget in my build.zig
+
+1562170749
+fubd
+what is the default abi in zig build on windows?
+
+1562170759
+emekankurumeh[m]
+msvc
+
+1562170781
+andrewrk
+`zig targets` shows you what it thinks is native
+
+1562170816
+dimenus
+i'll compile glfw on windows and investigate
+
+1562170859
+fubd
+msvc (native)
+
+1562170860
+fubd
+yeah
+
+1562170879
+andrewrk
+I think it's (1) translate-c needs to notice the dllimport attribute and output zig code that has that attribute and (2) zig needs to support the attribute
+
+1562170931
+andrewrk
+I was originally hoping we could just ignore that stuff and make everything "just work" but my current understanding is that it's a coin flip whether they decided to build with mangled symbols or not, so you are forced to specify whether they did when importing
+
+1562170970
+andrewrk
+kernel32 stuff, for example, doesn't need dllimport, and in fact things break if you use that
+
+1562171025
+fubd
+dimenus vcpkg will install the binaries i'm using if you run into trouble
+
+1562171047
+fubd
+it's also reproducible i'm sure if you just make a one function exporting dll
+
+1562171057
+fubd
+and then attempt to use it via @cImport
+
+1562171080
+dimenus
+you're link time loading then?
+
+1562171082
+dimenus
+not runtime?
+
+1562171113
+fubd
+yes
+
+1562171115
+fubd
+link time
+
+1562171120
+fubd
+lld.exe has an undefined symbol
+
+1562171123
+fubd
+"glfwInit
+
+1562171218
+dimenus
+is there a reason you're using lld instead of link?
+
+1562171221
+fubd
+
+
+1562171231
+fubd
+dimenus i'm just attempting to use "zig build"
+
+1562171242
+andrewrk
+dimenus, zig uses lld on all platforms
+
+1562171260
+andrewrk
+zig is a self contained compiler & linker and that's why cross compiling works so well
+
+1562171271
+dimenus
+ah, i thought at one time it called out to link :P
+
+1562171273
+dimenus
+it's been awhile
+
+1562171280
+andrewrk
+that's actually never been the case
+
+1562171297
+andrewrk
+although it can be useful to troubleshoot sometimes
+
+1562171362
+emekankurumeh[m]
+can you expand on the problems with LLVMSetDLLStorageClass?
+
+1562171419
+andrewrk
+when I turned it on, I got linker errors
+
+1562171481
+andrewrk
+I believe it was e.g. "undefined symbol: _ExitProcess" when ExitProcess (no underscore) would have been just fine
+
+1562171495
+emekankurumeh[m]
+with windows libraries like kernel32?
+
+1562171507
+andrewrk
+yes
+
+1562171529
+andrewrk
+I don't think the zig test suite will pass on windows with that code uncommented
+
+1562173025
+emekankurumeh[m]
+andrewrk:
+
+1562173089
+emekankurumeh[m]
+as well as
+
+1562173371
+dimenus
+great resources
+
+1562173373
+dimenus
+thank you
+
+1562173641
+companion_cube
+andrewrk: have you seen
+
+1562174050
+mmx87
+^ Might make for a nice default allocator.
+
+1562174134
+andrewrk
+here's a new builtin @unionInit working with result location semantics:
+
+1562174135
+emekankurumeh[m]
+not so fast,
+
+1562174151
+andrewrk
+thanks for the links emekankurumeh[m]
+
+1562174156
+emekankurumeh[m]
+benchmarks for mimalloc are going to be added soon
+
+1562174178
+mikdusan
+my limited experience with mimalloc was not so positive -- felt that it's not very polished; docs say you can use static override but .a never gets built nor is there cmake directives for it
+
+1562174200
+mikdusan
+the dynamic override immediately crashes on macos
+
+1562174273
+mikdusan
+do admit though that I didn't give it more than some tinkering time and after meeting this resistance just moved on.
+
+1562174540
+mmx87
+To be fair, it's fairly new. I'm sure they improve it. I wasn't aware of rpmalloc.
+
+1562175146
+emekankurumeh[m]
+the part i find amusing is that the author works at microsoft
+
+1562176465
+andrewrk
+damn. might be time to pay off some excessive memory usage debt
+
+1562176763
+emekankurumeh[m]
+imo we need to clean up some of the tests
+
+1562176787
+emekankurumeh[m]
+some use S.doTheThing and other have external functions
+
+1562176831
+andrewrk
+feel free to do that, as long as the tests continue to cover the thing they're trying to cover
+
+1562176850
+andrewrk
+tgschultz, @unionInit is merged
+
+1562177002
+emekankurumeh[m]
+should i use S.doTheTest?
+
+1562177025
+andrewrk
+emekankurumeh[m], btw #2799 looks pretty good, if you add a test
+
+1562177048
+andrewrk
+I'd like to try to get your other PRs merged
+
+1562177052
+andrewrk
+let me know if anything is blocking you
+
+1562177094
+emekankurumeh[m]
+i just added a compiler error test and i'm adding a behavioral test right now
+
+1562177178
+emekankurumeh[m]
+i think i might also put a note in the langref
+
+1562177736
+andrewrk
+emekankurumeh[m]: in answer to your question, I prefer the namespaced tests (S.doTheTest) but there should be one test to cover calling functions outside of the test scope
+
+1562177778
+emekankurumeh[m]
+so both?
+
+1562177861
+andrewrk
+All behavior tests can namespace, except 1 which is testing calling a function from the scope of the current file
+
+1562177885
+emekankurumeh[m]
+i see what you mean
+
+1562177961
+andrewrk
+Please be real careful. It would be a shame to lose test coverage without realizing it
+
+1562178076
+andrewrk
+Personally I don't mind the inconsistency; I don't think it causes problems in practice
+
+1562178132
+emekankurumeh[m]
+i don't really mind either, it just confused me a bit when i was adding a test
+
+1562180716
+fengb
+andrewrk: are there supposed to be guards against uninitialized structs from allocators?
+
+1562180737
+andrewrk
+I'm not sure what you mean
+
+1562180755
+fengb
+
+
+1562180760
+fengb
+I had a hanging pointer
+
+1562180774
+fengb
+And this was only caught due to out of bounds access
+
+1562180834
+fengb
+It wasn't even "out of bounds" by the program since the slice length was initialized to garbage
+
+1562181138
+andrewrk
+was it initialized to garbage? or was it initialized to 0xaaaaaaaa ?
+
+1562181235
+andrewrk
+if you change your warn to std.debug.warn("{x} {x}\n"
+
+1562181240
+andrewrk
+1/1 test "foo"...7efffb664010 aaaaaaaaaaaaaaaa
+
+1562181264
+andrewrk
+that's what `undefined` looks like in debug builds
+
+1562181565
+Tetralux
+I wonder how hard it would be to have static analysis for "attempt to read from undefined".
+
+1562181641
+emekankurumeh[m]
+are the default subarches for clang documented anywhere?
+
+1562181652
+andrewrk
+reading from undefined is allowed. branching is not:
+
+1562181655
+emekankurumeh[m]
+or would zig have it's own default arches?
+
+1562181662
+emekankurumeh[m]
+*subarches
+
+1562181682
+andrewrk
+advanced control flow analysis to detect branching on undefined is planned, as well as runtime checks to detect branching on undefined
+
+1562181738
+andrewrk
+I'm not aware of the concept of default sub-arches
+
+1562181746
+Tetralux
+Seems alright.
+
+1562181769
+Tetralux
+I can't think of a good reason to read from undefined though. Am I missing something? Or is that just hard to do?
+
+1562181845
+emekankurumeh[m]
+
+
+1562181868
+andrewrk
+Tetralux, have a look at
+
+1562181893
+andrewrk
+reading undefined and even doing operations on undefined makes sense sometimes
+
+1562181951
+andrewrk
+operations which have no possible side effects operating on undefined result in undefined; provided the value is never branched on, everything is fine
+
+1562182907
+andrewrk
+nice, after  timonkruiper's PR, on Linux, `zig build-exe ../example/hello_world/hello.zig --release-small --strip --single-threaded` yields a 9.8KB executable, and stripping debug info with `strip` (zig's --strip feature isn't complete yet) takes it down to 6.0KB
+
+1562182948
+andrewrk
+that's still initializing TLS, which could potentially be avoided in some cases
+
+1562183177
+emekankurumeh[m]
+nice
+
+1562183298
+andrewrk
+I think they go by FireFox317 here
+
+1562183355
+emekankurumeh[m]
+compared to
+
+1562183397
+emekankurumeh[m]
+where you have to throw away much of the stdlib and lots of features to get binaries that small
+
+1562183660
+FireFox317
+andrewrk: Thanks for merging the PR, btw I just changed my github username to firefox317 xD
+
+1562183704
+fengb
+andrewrk: It's 0xaaaaa. I'm wondering if there's a could be better detection, like for statically allocated structs
+
+1562183722
+andrewrk
+fengb, yeah that's planned. better compile time detection and better runtime detection
+
+1562183730
+fengb
+Okay cool
+
+1562183750
+andrewrk
+here are some exciting related issues:
+
+1562183793
+fengb
+2414 is what I was thinking 👍
+
+1562183977
+andrewrk
+FireFox317, do you have a twitter handle? I'm going to brag about how small binaries can be now
+
+1562184306
+FireFox317
+Nope, maybe you could name my github username :)
+
+1562184374
+darithorn
+did error handling change recently?
+
+1562184405
+darithorn
+if I have a function that can throw an error. I can simply "ignore" the error by assigning to a variable. Is that intentional?
+
+1562184439
+emekankurumeh[m]
+if the variable is not `_` then it should be fine
+
+1562184492
+darithorn
+okay. has it always been that way?
+
+1562184516
+darithorn
+i guess i've been a good boy and always handled my errors and never noticed lol
+
+1562184528
+mikdusan
+andrewrk: just fyi your github sponser button complains of .yml errors
+
+1562184544
+fengb
+It complains because he's not actually sponsored :P
+
+1562184559
+emekankurumeh[m]
+yes, errors can be stored in variables
+
+1562184568
+mikdusan
+that's a silly error ;)
+
+1562184578
+andrewrk
+I hope GitHub "fixes" the "error" soon
+
+1562184582
+fengb
+"Some users provided are not enrolled in GitHub Sponsors. Apply to the beta."
+
+1562184598
+emekankurumeh[m]
+they should just go ahead and fix
+
+1562184599
+fengb
+They should fix it by turning it into a promote link
+
+1562184608
+fengb
+Although that could be pretty abusable
+
+1562184994
+andrewrk
+darithorn, that's a known thing. but there's a planned compile error for if you never use a variable
+
+1562185146
+darithorn
+okay that's good to know
+
+1562186256
+THFKA4
+those errors make working with Go really annoying :(
+
+1562186280
+THFKA4
+like if you're messing around and commenting things, now you have to remove the variable entirely before rebuilding
+
+1562186309
+THFKA4
+c..can it be an error in release build only?
+
+1562186344
+emekankurumeh[m]
+andrewrk: on windows that produces an executable with 4KB
+
+1562186411
+emekankurumeh[m]
+hello_windows produces a 2KB executable
+
+1562186725
+darithorn
+THFKA4, true, i have messed with Go and they can get a bit out of hand.
+
+1562186755
+darithorn
+but i think if they are only limited to variables that may contain errors, which i don't think is too often, then it should be okay
+
+1562187239
+tgschultz
+I agree with THFKA4
+
+1562187270
+Tetralux
+darithorn: "I don't think is too often" - I suspect the opposite is true, but yes xD
+
+1562187391
+darithorn
+haha maybe
+
+1562187449
+darithorn
+maybe i should say those types of variables that go unused. I do think it fits well with zig's philosophy of perfect software
+
+1562187458
+darithorn
+having an error that isn't handled should be an error in itself
+
+1562187503
+darithorn
+i do agree Go takes it way too far giving an error on
+
+1562187565
+emekankurumeh[m]
+perhaps zig could have something like a "must_use" attribute
+
+1562188226
+Tetralux
+Jai reportedly has a #must directive you can mark a return value with that means you
+
+1562188254
+Tetralux
+(Jai has multiple return values and you can do things equivalent to `var x, _ = f()`
+
+1562188261
+Tetralux
+(..which ignores the second return value.)
+
+1562188271
+Tetralux
+(..which you then can't do if it's marked #must.)
+
+1562188325
+emekankurumeh[m]
+jai reportedly had a compiler as well /a
+
+1562188339
+emekankurumeh[m]
+*/s
+
+1562188341
+Tetralux
+hahahahahahahahahahahaha /s xD
+
+1562188369
+wrl
+there's more jai fanfiction than there is jai canon at this point
+
+1562188444
+Tetralux
+I will simply say that if Jai does get released at some point, I will be making use of that.
+
+1562188458
+Tetralux
+I do like Zig's attempt to mitigate the need to step-through debug your program though.
+
+1562188461
+Tetralux
+Although..
+
+1562188469
+Tetralux
+Haven't made a big program in Zig yet.
+
+1562188471
+emekankurumeh[m]
+me as well
+
+1562188475
+Tetralux
+It may prove to become unavoidable.
+
+1562188496
+emekankurumeh[m]
+i hope it really doesn't turn out like the release of vlang
+
+1562188582
+Tetralux
+Did the guy who made Vlang do any streams of making it?
+
+1562188586
+Tetralux
+I don't believe so right?
+
+1562188600
+Tetralux
+That honestly increases my confidence quite a bit.
+
+1562189015
+fubd
+any chance of zig ever getting a `using` statement like odin's? that's a big one I miss having experimented in both a bit now
+
+1562189375
+companion_cube
+rust has this must_use attribute, for Result
+
+1562189386
+companion_cube
+(or at least you get a warning if you don't use the result)
+
+1562190088
+donpdonp
+std.fmt.allocPrint is my new favorite function
+
+1562191134
+andrewrk
+donpdonp, it's a good one isn't it? :)
+
+1562191164
+andrewrk
+THFKA4, I'm considering that
+
+1562191207
+THFKA4
+awesome :)
+
+1562191239
+andrewrk
+one of my goals is if you're collaborating with someone, the language will encourage them to not commit any code that is in an unfinished state
+
+1562191259
+andrewrk
+errors for unused variables are annoying but they do align with that goal
+
+1562193310
+geemili
+Compiling hello world with `-target armv7-linux-musleabi` gives a compile error with syscalls not being found; is armv7 unsupported right now?
+
+1562193333
+andrewrk
+geemili, have a look at
+
+1562193430
+geemili
+Hmm
+
+1562193432
+andrewrk
+if you're interested in contributing to the standard library, zig's lazy analysis means that you only have to fix that which your application depends on in order to get it to work
+
+1562193444
+geemili
+Ah, okay
+
+1562193465
+geemili
+So the architecture is supported, but not the stdlib?
+
+1562193499
+andrewrk
+the architecture is supported but the part of the zig std lib that interfaces with linux needs some work for this target to be better supported
+
+1562193640
+geemili
+Okay
+
+1562193707
+andrewrk
+geemili, you can disable some features and get a working hello world for that target
+
+1562193733
+geemili
+Do you know if I could I build an app that uses zig for the business logic?
+
+1562193747
+geemili
+Oh
+
+1562193753
+andrewrk
+zig build-exe ../example/hello_world/hello.zig --library c -target armv7-linux-musleabi --single-threaded --strip
+
+1562193771
+andrewrk
+this successfully creates hello: ELF 32-bit LSB executable, ARM, EABI5 version 1 (SYSV), statically linked, not stripped
+
+1562193855
+scientes
+geemili, what's your use case?
+
+1562193870
+scientes
+I did the arm64 and armhf is not that difficult, EXCEPT for the C ABI, which is quite a PITA
+
+1562193881
+scientes
+(and we don't have the C ABI for arm64 either)
+
+1562194030
+geemili
+scientes: I'm want to build an desktop program and an android app that share their "business logic"
+
+1562194049
+scientes
+why is arm64 not usable?
+
+1562194063
+scientes
+most androids are arm64 these days
+
+1562194065
+geemili
+`aarch64`?
+
+1562194068
+scientes
+even the really cheap $50 phones
+
+1562194071
+scientes
+yes aarch64
+
+1562194102
+geemili
+I did build a `aarch64` executable
+
+1562194111
+scientes
+yeah it has support because of me
+
+1562194123
+scientes
+I am just not sure if armhf is worth it, as it doesn't have much of a future
+
+1562194131
+scientes
+ARM8-M does, but that doesn't use syscalls
+
+1562194136
+scientes
+even though it is 32-bit
+
+1562194157
+geemili
+But when I tried to run it in Termux I got an `exec format error` message
+
+1562194178
+scientes
+maybe your android is ancient?
+
+1562194183
+scientes
+or maybe you are compiling against glibc
+
+1562194187
+scientes
+instead of statically against musl
+
+1562194227
+scientes
+geemili, what does file foo tell you?
+
+1562194253
+geemili
+This is the command I used to compile: `~/downloads/zig/zig-linux-x86_64-0.4.0+fcc0728a/zig build-exe hello.zig -target aarch64v8-linux-musleabi`
+
+1562194256
+scientes
+(or with a libc)
+
+1562194267
+scientes
+yeah i want the output of "file"
+
+1562194279
+scientes
+*without a libc
+
+1562194315
+scientes
+and as I was saying, you may run into problems where it refused to build against C, because the C ABI is not implemented
+
+1562194334
+andrewrk
+scientes, those errors will only occur if you have functions that would require doing the C ABI
+
+1562194348
+andrewrk
+and they would manifest as the zig compiler crashing or emitting a compile error
+
+1562194362
+scientes
+that is correct
+
+1562194371
+scientes
+I don't thing it does bad code gen
+
+1562194386
+andrewrk
+yeah I took care to avoid bad code gen
+
+1562194402
+andrewrk
+nobody wants to debug that
+
+1562194480
+geemili
+`file hello`: `hello: ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, with debug_info, not stripped`
+
+1562194506
+scientes
+hmmmm, what does `uname -a` in termux give you?
+
+1562194534
+scientes
+or uname -m
+
+1562194728
+geemili
+`armv7l`
+
+1562194739
+geemili
+My phone is a Moto G5 Plus, I believe
+
+1562194796
+scientes
+well there is your problem
+
+1562194799
+scientes
+you need a newer phone
+
+1562194892
+andrewrk
+or you can contribute to zig std lib for that target :)
+
+1562194905
+geemili
+Yeah
+
+1562194994
+geemili
+Hmm, so theoretically, if I just implement the syscalls that zig complains, everything should work?
+
+1562195003
+geemili
+Well, maybe not "just"
+
+1562195010
+andrewrk
+yes
+
+1562195039
+scientes
+uhhhhhhhh I just got armv7l from termux on my armv8 phone
+
+1562195050
+scientes
+so I think they are shipping armv7 for some reason
+
+1562195060
+scientes
+or maybe android has a armv7 user-land and aarch64 kernel
+
+1562195078
+scientes
+to conserve memory with 32-bit pointers
+
+1562195099
+scientes
+but in that case, why would it use linux's personalities to lie to programs that it is armv7l?
+
+1562195212
+geemili
+I looked up the chip my phone has, and according to wikipedia it's Armv8
+
+1562195282
+scientes
+yeah android is a 32-bit user-space, but it would still work for static binaries except they must be using personalities (man setarch)
+
+1562195368
+scientes
+try "setarch64"
+
+1562195370
+scientes
+and then run it
+
+1562195385
+scientes
+"setarch linux64"
+
+1562195435
+scientes
+hmm if i do "setarch linux32" x86_64 binaries still work
+
+1562195689
+geemili
+Termux doesn't appear to have that command
+
+1562195690
+geemili
+I wonder if it's actually Android that's enforcing the arch
+
+1562195916
+scientes
+I'm looking at the kernel config and there is no way to turn off 64-bit syscalls (on mainline)
+
+1562196174
+scientes
+all i can think of is trying to use -fPIC
+
+1562196182
+scientes
+because android DOES require that for shared libraries
+
+1562196191
+scientes
+but i doubt it has any way to enforce it for static binaries
+
+1562196202
+scientes
+yeah super weird
+
+1562196226
+scientes
+maybe seccomp too
+
+1562196309
+scientes
+ahh yeah probably
+
+1562196366
+scientes
+oh no
+
+1562196366
+scientes
+<scientes> maybe seccomp too
+
+1562196370
+scientes
+apps. In total, the filter blocks 17 of 271 syscalls in arm64 and 70 of 364 in arm.
+
+1562196459
+scientes
+yeah i remember that termux declined to support aarch64 to avoid breaking things
+
+1562196476
+scientes
+because they were using an old API that is not supported with aarch64
+
+1562196776
+geemili
+Ah, okay
+
+1562196785
+scientes
+nah that isn't right
+
+1562196799
+scientes
+so my guess is that android is thinking it is smart by using seccomp to disable arm64
+
+1562196807
+scientes
+good old helpful big brother
+
+1562196820
+scientes
+but if you install termux 64-bit it should work
+
+1562196830
+scientes
+although i don't think you can do that if your device has a 32-bit user-land
+
+1562196837
+scientes
+which the low-ram devices use
+
+1562196888
+scientes
+considering that they advertise them as armv8 that kinda means false advertising
+
+1562196891
+geemili
+I've got 4GB of RAM, so that shouldn't be an issue
+
+1562196920
+scientes
+Google is always telling Apps what to do
+
+1562196950
+scientes
+well, i'm not going to politicize that
+
+1562196983
+scientes
+only on Android can you set writable pages executable
+
+1562196997
+scientes
+which blocks Firefox from the other platforms
+

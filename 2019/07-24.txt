@@ -1,0 +1,1200 @@
+1563935546
+daurnimator
+andrewrk: thanks for the async examples
+
+1563936595
+andrewrk
+daurnimator, progress is going well. I have the behavior tests passing the whole time in the rewrite-coroutines branch
+
+1563936622
+daurnimator
+andrewrk: huzzah
+
+1563936645
+daurnimator
+andrewrk: I've had a few questions here in the channel over last few days. Could you answer a few of them?
+
+1563945805
+andrewrk
+daurnimator, can you repeat the questions or post them to the mailing list?
+
+1563945823
+daurnimator
+andrewrk: sure. will reask one at a time now
+
+1563945953
+daurnimator
+andrewrk: 1. `pub fn @"bool"() bool {` fails due to shadowing. is it intentional you can never have a method named the same as a builtin type?
+
+1563946040
+andrewrk
+yes it's intentional - otherwise `bool` in the scope would be ambiguous
+
+1563946082
+andrewrk
+I guess that's a way that keywords are actually more convenient than builtin types
+
+1563946155
+daurnimator
+andrewrk: I feel like I should be able to do it, but maybe only access via explicit `@This().bool`
+
+1563946183
+andrewrk
+I believe there is a relevant issue open for this
+
+1563946187
+daurnimator
+oh?
+
+1563946196
+andrewrk
+
+
+1563946231
+daurnimator
+2. something like `fn foo(anything: var) { std.debug.warn("{}", @typeName(@typeOf(anything)));` fails with `error: parameter of type 'type' requires comptime` when I try and pass a type in --> but I don't want to make the parameter comptime. Is there something planned that might help here?
+
+1563946290
+andrewrk
+interesting. I think we can relax that
+
+1563946312
+andrewrk
+proposal welcome for that
+
+1563946417
+daurnimator
+okay, will create one.
+
+1563946421
+daurnimator
+3.
+
+1563946444
+daurnimator
+(scroll down to bottom file first)
+
+1563946692
+daurnimator
+Created #2940 for question 2. above.
+
+1563946864
+daurnimator
+Also in 3. note that the bug report URL in clang is missing :P
+
+1563947069
+andrewrk
+daurnimator, you crashed clang, so the next steps are to repro in the llvm9 branch and then if it's still crashing, make an upstream bug report
+
+1563947254
+daurnimator
+How should I obtain/test with llvm 9?
+
+1563947454
+andrewrk
+
+
+1563947467
+andrewrk
+and then use the llvm9 branch of zig
+
+1563947509
+daurnimator
+4. Is allowing `@field` as an lvalue intentional? I was surprised that it worked... but happy :) Maybe it deserves a mention in the docs?
+
+1563947522
+andrewrk
+oh and you want -DZIG_FORCE_EXTERNAL_LLD for the llvm9 branch (for now)
+
+1563947534
+andrewrk
+yes it is intentional
+
+1563947594
+andrewrk
+I think the docs have it correct: "Preforms[sic] field access equivalent to lhs.field_name, except instead of the field "field_name", it accesses the field named by the string value of field_name. "
+
+1563947604
+andrewrk
+lhs.field_name works as an lvalue
+
+1563947628
+andrewrk
+an example would be an improvement
+
+1563947633
+daurnimator
+I read "access" to imply
+
+1563947640
+andrewrk
+I see
+
+1563947662
+andrewrk
+"access" does mean both though
+
+1563947683
+andrewrk
+regardless, adding an example will be an improvement
+
+1563947840
+daurnimator
+k. created an issue to track
+
+1563947924
+andrewrk
+thx
+
+1563947950
+andrewrk
+I think we're going to realize our async/await dream
+
+1563947957
+andrewrk
+it's gonna work
+
+1563947970
+daurnimator
+andrewrk: great :)
+
+1563948000
+andrewrk
+zig functions work at compile time, at runtime, blocking, event-based, single-threaded, multithreaded
+
+1563948001
+daurnimator
+I'm eager to start on networking abstractions once its done.
+
+1563948018
+andrewrk
+it's a language for writing actually reusable code
+
+1563948107
+daurnimator
+andrewrk: to clarify your async examples: `async foo()` that returns a Frame right? it doesn't actually begin executing the function?
+
+1563948119
+andrewrk
+it does both
+
+1563948135
+andrewrk
+if it didn't actually begin executing the function it would be a generator
+
+1563948158
+andrewrk
+async foo() means "do this now. but I don't need the result yet."
+
+1563948172
+andrewrk
+and it's valid for all functions, even normal blocking ones
+
+1563948175
+daurnimator
+andrewrk: idea. what if `async foo` was the frame. and calling a frame `()` resumed it?
+
+1563948203
+andrewrk
+start with the use case. what are you trying to solve?
+
+1563948261
+daurnimator
+often when writing "async" code you don't want to actually start the operation "now": you just want it to be "done" by the time wait() returns.
+
+1563948272
+andrewrk
+well how's it going to get done if it doesn't start?
+
+1563948298
+daurnimator
+--> immediately starting the function means that you end up doing a context switch and thrash your cpu cache
+
+1563948316
+andrewrk
+what do you mean context switch?
+
+1563948335
+daurnimator
+andrewrk: in this example: a call to a non-trival function
+
+1563948459
+andrewrk
+you can start it whenever you want
+
+1563948484
+daurnimator
+andrewrk: is "starting" different to "resuming" at all?
+
+1563948498
+andrewrk
+the only difference is setting resume_index to 0
+
+1563948544
+daurnimator
+hrm. I might need to understand more
+
+1563948555
+andrewrk
+were you able to grok the LLVM IR?
+
+1563948567
+andrewrk
+
+
+1563948572
+daurnimator
+I didn't really look at it too hard. I mainly looked at the zig code
+
+1563948584
+andrewrk
+it's pretty readable in this branch, unlike master
+
+1563948597
+andrewrk
+I can explain any of those instructions
+
+1563948621
+daurnimator
+andrewrk: in that gist, you have an explicit `async`: how does that tie in with 1778?
+
+1563948696
+andrewrk
+related to those questions are a couple screen shots:
+
+1563948743
+andrewrk
+in this simple example `entry` is the c calling convention entry point into the object. so it can't be async. that's the function where you would, for example, create an event loop
+
+1563948769
+andrewrk
+the `async` in the entry function makes it able to call an async function, because it does not represent a suspend point
+
+1563948849
+daurnimator
+andrewrk: is there any plan for an @isAsync() builtin?
+
+1563948849
+andrewrk
+async is used to express concurrency
+
+1563948865
+andrewrk
+that's a similar question to @isComptime()
+
+1563948883
+andrewrk
+it would be strongly discouraged, if it existed
+
+1563948915
+andrewrk
+"is it async?" and "is it comptime?" are the wrong questions to be asking
+
+1563948924
+daurnimator
+okay. I see in your #1778 post you used `if (std.event.loop.instance) |event_loop| {` -> so it would be based on a global rather than inferred from context. makes sense I think.
+
+1563948966
+andrewrk
+right. the whole idea here is that packages are agnostic, and the main application gets to make a choice
+
+1563949036
+andrewrk
+which is why async is allowed on any function, and is used to express concurrency
+
+1563949053
+andrewrk
+but it can always be folded into single-threaded blocking
+
+1563949131
+andrewrk
+look at that beautiful list of "Depends on:" issues in 1778 that are all done now
+
+1563949175
+gonz_
+Timewise, how far off are we from having the new async stuff in master?
+
+1563949184
+daurnimator
+andrewrk: turn it into a checklist ;)
+
+1563949252
+andrewrk
+gonz_, hard to predict but I'll be happy if it's in master branch by sept 1
+
+1563949266
+daurnimator
+o.o that far away?
+
+1563949326
+gonz_
+I wouldn't have worded it precisely like that, but I feel the same. Mostly because I feel like zig will basically be exactly for what I do all day every day suddenly.
+
+1563949460
+andrewrk
+we'll see. progress has been rapid so far, maybe it will magically continue like that
+
+1563949549
+gonz_
+Do it at the pace you can or slightly less, IMO
+
+1563949554
+gonz_
+Don't burn out :/
+
+1563949666
+andrewrk
+I know how to take care of myself :)
+
+1563949675
+andrewrk
+this weekend I'm actually traveling for an arcade game tournament
+
+1563949774
+daurnimator
+andrewrk: `async<std.heap.direct_allocator>` <-- does this make the allocator interface part of the language?
+
+1563949795
+andrewrk
+daurnimator, you're looking at the master branch example which is provided for comparison
+
+1563949803
+daurnimator
+ah okay
+
+1563949819
+andrewrk
+one of the benefits of the coroutine rewrite is that the allocator interface stops being part of the language
+
+1563949847
+daurnimator
+right. I see the `async<result2>` example instead.
+
+1563949865
+andrewrk
+yeah and even that's not going in the first design iteration
+
+1563949876
+andrewrk
+there will be no more <> to async for now
+
+1563949891
+daurnimator
+andrewrk: going back to my earlier idea: what if calling a frame "resumed" it?
+
+1563949910
+andrewrk
+what problem are you solving?
+
+1563949919
+daurnimator
+so rather than `async<result2>`, it was just: `result2()`
+
+1563949964
+daurnimator
+minimisation of concepts while providing powerful foundations.
+
+1563950364
+gonz_
+daurnimator: What was the thing you were looking to use as a base for the future networking stuff?
+
+1563950379
+daurnimator
+gonz_: on which target?
+
+1563950384
+gonz_
+Windows
+
+1563950412
+daurnimator
+gonz_: on windows it'll be overlapped IO for most things, and talk directly to AFD for TCP/UDP things.
+
+1563950423
+gonz_
+AFD, right
+
+1563951605
+daurnimator
+andrewrk: thanks for the answers :) go get yourself some sleep!
+
+1563951970
+daurnimator
+gonz_: If you're interested in implementing any of it please do! I don't use windows myself so I'm not going to get to it any time soon
+
+1563953527
+daurnimator
+companion_cube: in reply to something you said ages ago... but zig pieces in the kernel isn't as far fetched as you may think
+
+1563953564
+gonz_
+daurnimator: I'll at least look into some of it. I do use Windows but it's been ages since I did any socket stuff for Windows.
+
+1563953637
+daurnimator
+gonz_: I'd start by just porting this example to zig:
+
+1563953736
+gonz_
+Thanks, this will be good to have.
+
+1563953878
+daurnimator
+gonz_: you should be able to make a zig PR of various windows pieces required to implement that
+
+1563953920
+gonz_
+I'm currently working on a few win32 things so it's a good companion project, probably
+
+1563955987
+daurnimator
+hryx: do you think you'll implement #1717 ?
+
+1563956054
+companion_cube
+daurnimator: well it all depends on whether Linus would spit on zig, wouldn't it?
+
+1563956139
+daurnimator
+companion_cube: I got kees and willy intrigued.... If we had a stability guarantee and non-reliant on LLVM I think I could get things over the line given the right project
+
+1563956301
+companion_cube
+yeah, the llvm dep is probably the biggest thing. Anyway that'd be nice
+
+1563956369
+daurnimator
+companion_cube: I was messing around with
+
+1563956446
+daurnimator
+a couple of the issues found during that experiment have been fixed now; so I should give things another go...
+
+1563956593
+daurnimator
+If anyone is going to LPC in september it would be a great topic to bring up.....
+
+1563974280
+fengb
+Oh wow function expressions!
+
+1563974377
+mq32
+fengb: ?
+
+1563974414
+fengb
+
+
+1563974695
+companion_cube
+nice
+
+1563974744
+companion_cube
+in the `sort` example it feels like the function should be comptime
+
+1563974808
+mq32
+fengb: ah i thought there would be something new on the thread. i'm kinda stalking it since i've commented
+
+1563974839
+fengb
+Yeah I just noticed it was accepted. Got too excited >_>
+
+1563974848
+fengb
+And... I guess I'll punt on my emulator's CPU until that blah
+
+1563975035
+fengb
+Oh I never thought about comptime function dispatch
+
+1563975156
+fengb
+willamcol3's proposal is giving me flashbacks of Ruby :P
+
+1563975191
+companion_cube
+it's like rust's distinction between `fn foo<F:Fn(A)->B>(f: F) …` and `fn foo(f: &dyn Fn(A)->B) …`
+
+1563975205
+companion_cube
+first is specialized, second is dynamic dispatch
+
+1563975212
+companion_cube
+(which allows closures, not just functions)
+
+1563975235
+companion_cube
+but passing comptime functions would allow closures too, I think
+
+1563975240
+fengb
+Yeah, I think it makes sense if comptime could be enabled by default since a lot of usecases are comptime known
+
+1563975271
+fengb
+Although having the compiler automatically deciding could be confusing
+
+1563975346
+companion_cube
+yeah…
+
+1563975421
+fengb
+Also curious how that'd work. Wouldn't each comptime callback require its own instance of the function?
+
+1563975478
+companion_cube
+every call to `sort` with a distinct function would be specialized, yes
+
+1563975486
+companion_cube
+(same as each combination of types for containers)
+
+1563975546
+fengb
+I suppose that's no different from std.debug.warn technically translating to a bunch of different functions underneath the covers
+
+1563975641
+companion_cube
+reminds me of a talk of Stroustrup about performance where he talks about qsort being slower than C++ because of that
+
+1563975655
+companion_cube
+(much harder to inline in the C version)
+
+1563976883
+fengb
+companion_cube: sticking "comptime" onto the callback argument already does this
+
+1563976939
+fengb
+
+
+1563976955
+fengb
+Also took me way too long to write a sort function
+
+1563978175
+daurnimator
+samtebbs: re: 'extern' that actually relates to a different issue I encountered in the linux kernel module experiement
+
+1563978205
+daurnimator
+`export const _1 linksection(".modinfo") = MODULE_LICENSE("MIT");` <-- there was no way to add something to a link section without giving it a name.
+
+1563978244
+daurnimator
+samtebbs: oh wait. I confused extern vs export
+
+1563978314
+samtebbs
+daurnimator: I think I did as well, bit perhaps the point still stands... :p
+
+1563978319
+samtebbs
+but*
+
+1563978423
+daurnimator
+`extern` is a calling convention. `export` is a shortcut for `@export(, .GlobalLinkage)`
+
+1563978458
+daurnimator
+uh `.Strong`
+
+1563978751
+samtebbs
+Is extern also not a hint to the compiler that this symbol isn't defined in the analysed source, but in another object file that will be linked in
+
+1563978780
+samtebbs
+So therefore a name is required as otherwise you wouldn't know what symbol to get from that other object file at link time
+
+1563979298
+daurnimator
+oh I forgot about that meaning
+
+1563979309
+daurnimator
+wow `extern` is really overloaded in meanings isn't it
+
+1563979350
+samtebbs
+Yeah :D
+
+1563979392
+mq32
+fengb: that comptime function parameter is quite awesome
+
+1563979444
+fengb
+comptime is just one of those things that works so well, I question my sanity
+
+1563979508
+mq32
+yeah, that's true
+
+1563979531
+daurnimator
+I still want someone to write a PEG library that works at comptime too
+
+1563979559
+mq32
+you mean a parser generator?
+
+1563979626
+daurnimator
+yess
+
+1563979644
+mq32
+hah, would be neat
+
+1563979755
+mq32
+reminds me of the CTRE library for C++
+
+1563979772
+mq32
+that would create compile time regular expressions
+
+1563979788
+mq32
+which means the compiler would
+
+1563979814
+fengb
+Well... templates are turing complete so
+
+1563979842
+mq32
+yeah
+
+1563979847
+mq32
+but something like
+
+1563979875
+mq32
+if(CTRE("$x").match(str)) { } would compile to an "if(str[0] == 'x') { }"
+
+1563979890
+fengb
+The video where Andrew discussed C++ compile time stuff made me feel sick
+
+1563979913
+mq32
+yeah, it kinda sucks on
+
+1563979920
+daurnimator
+mq32: sort of... I was just thinking that you could essentially step the VM along as far as you can until you hit a runtime input
+
+1563979936
+fengb
+I mean... that syntax looks decent lol
+
+1563980064
+daurnimator
+fengb: for syntax I was thinking of copying lpeg.... as much as you can without operator overloading: for the base layer you get a sort of ugly: `PEG.FollowedBy(PEG.P("foo"), PEG.P("bar"))`... but because it works at comptime, you can implement pseudo-regexes on top
+
+1563980083
+fengb
+
+
+1563980121
+daurnimator
+fengb:
+
+1563980146
+fengb
+You seem to want to port over all of Lua :P
+
+1563980151
+daurnimator
+fengb: just the good bits
+
+1563980165
+mq32
+do you know the RPAtk C library?
+
+1563980175
+samtebbs
+Is a PEG similar to a parser combinator?
+
+1563980208
+mq32
+
+
+1563980268
+daurnimator
+on the topic of PEGs, guido wrote a blog post today about potentially changing python's lexer+parser to a PEG...
+
+1563980681
+fgenesis
+oh, medium.com gives a 500 right now
+
+1563980749
+halosghost
+feature, not a bug
+
+1563980750
+dec05eba
+I tried using a peg parser before for writing a programming language, but i switched to a regular recursive descent parser as it was easier to read (as code flow)
+
+1563980776
+halosghost
+PEGs are really pleasant
+
+1563980850
+daurnimator
+halosghost: compared to the alternatives... usually yes.
+
+1563980935
+dec05eba
+i also dislike generated code in general. It makes it harder to debug
+
+1563981309
+fengb
+dec05eba: I agree in general, but comptime isn't the same as traditionally generated code
+
+1563981341
+gonz_
+Has anyone used rouge (ruby library:
+
+1563981511
+gonz_
+Though some of their existing lexers aren't as crazy as I would've thought
+
+1563984138
+tane
+howdy
+
+1563985789
+dimenus
+00007FF77F5AE71D  movaps      xmm0,xmmword ptr [rsp+8Ch]
+
+1563985790
+dimenus
+:(
+
+1563987426
+dimenus
+is there a way to specify the alignment of an array?
+
+1563987449
+dimenus
+assigning to vectors is segfaulting because the memory address is not 16 byte aligned
+
+1563987573
+mikdusan
+yup i have patch
+
+1563987576
+mikdusan
+just testing
+
+1563988180
+dimenus
+mikdusan: were you working on this already?
+
+1563988222
+mikdusan
+no i saw your issue and it's the inverse direction of a previous fix i did (vector -> array copy) so i figured it was straight fwd
+
+1563988604
+mikdusan
+dimenus:
+
+1563988698
+dimenus
+very cool, thank you sir
+
+1563988934
+scientes
+also bool vectors are 1 bit width and bool arrays are 1 byte width
+
+1563988944
+scientes
+and they don't convert right
+
+1563989364
+dimenus
+mikdusan: that PR fixed my issue
+
+1563989380
+mikdusan
+👍
+
+1563993318
+mikdusan
+scientes: is this correct? `@sizeOf(@Vector(4,u1))` == 4
+
+1563993770
+scientes
+i
+
+1563993772
+scientes
+i'm not sure
+
+1563993776
+scientes
+comptime works
+
+1563993781
+scientes
+it just fails on run-time
+
+1563993786
+scientes
+and i wasn't even using @sizeOf
+
+1563993793
+scientes
+i just noticed that mem.eql() doesn't work
+
+1563993888
+mq32
+scientes, sounds like padding is applied and only the lowest bit is used
+
+1563993993
+scientes
+the vector puts all the bits right next to each other
+
+1563993997
+scientes
+so the conversion is wrong
+
+1563994007
+scientes
+vector->array
+
+1563994089
+mikdusan
+if vector packs bits, i would think first step is to fix @sizeOf
+
+1563994113
+dimenus
+why even have a vector of bools? seems like it causes more confusion
+
+1563994125
+dimenus
+since they don't align with what bools are in non-vectors
+
+1563994126
+fengb
+There's no packed array atm
+
+1563994129
+scientes
+dimenus, comparisons return vectors of bools
+
+1563994137
+dimenus
+ah
+
+1563994138
+scientes
+comparisons of vectors
+
+1563994171
+fengb
+
+
+1563994177
+scientes
+actually the conversion needs to use extractelement
+
+1563994192
+scientes
+cause its definitely packed on x86, which has special mask registers
+
+1563994207
+scientes
+but its just sext 8 16 32 or 64 on ppc for example
+
+1563994238
+scientes
+anyways, i will have to look at that code
+
+1563995334
+Tetralux
+Q: Is there a way to refer to an extern fn by a different name than the one you're linking with?
+
+1563995359
+Tetralux
+(.. Without using a `const otherName = foreign_fn_name;`
+
+1563995366
+dimenus
+why without?
+
+1563995398
+Tetralux
+You might have an entire API with very generic names that you don't want polluting your file's namespace.
+
+1563995410
+Tetralux
+I'm guessing you cannot do this.
+
+1563995445
+Tetralux
+For instance, WINAPI's `socket` fn.
+
+1563995742
+fengb
+They need to resolve at link time so there's not much you can do to work around it
+
+1563995758
+fengb
+I suppose you can toss the references into a different file and manually wire in that way
+
+1563997427
+Tetralux
+Essentially, I want to be able to tell Zig to link with a name that isn't what I'm calling the fn.
+
+1563997493
+Tetralux
+Like `extern "libsomething" .linkname(my_extern_fn) fn MyExternFn(...);`
+
+1563997509
+Tetralux
+I could then call it with `my_extern_fn(...)`
+
+1563997522
+Tetralux
+Or no
+
+1563997524
+Tetralux
+Other way around
+
+1563997534
+Tetralux
+I could then call it as `MyExternFn(...)`
+
+1563997545
+Tetralux
+But it would be linked as `my_extern_fn`.
+
+1563997569
+Tetralux
+And my_extern_fn would not be an identifier in the file scope.
+
+1563997622
+andrewrk
+Tetralux, extern function prototypes might move to builtin function calls with #1717
+
+1563997687
+andrewrk
+something like: const foo = @extern("libname", "linkname", fn_prototype);
+
+1563997846
+mikdusan
+Tetralux: is the desire to have a completely diff name, or simply to put it in a namespace to avoid pollution?
+
+1563997901
+Tetralux
+Both for the same reason: I want it to be clear that I'm calling into a DLL and not the code in the file's scope.
+
+1563997921
+Tetralux
+And if the DLL has very generic names, I have to rename it or namespace it.
+
+1563997941
+Tetralux
+I'm guessing the latter would be idiomatically done by putting `struct { ... }` around it?
+
+1563997955
+mikdusan
+maybe i misunderstand but how about `const Box = struct { extern "c" fn printf() void; };` and then `Box.printf();` is namespaced.
+
+1563997999
+Tetralux
+That's one valid choice, sure.
+
+1563998007
+fengb
+andrewrk: that looks really slick
+
+1563998057
+Tetralux
+Also, andrewrk, regarding `@extern` - having to provide the link name if you don't want it to be different seems unfortunate.
+
+1563998063
+Tetralux
+Otherwise, LGTM.
+
+1563998088
+Tetralux
+I'm guessing the CC would be part of the prototype?
+
+1563998097
+andrewrk
+I'm expecting nearly every extern function to be renamed due to namespacing
+
+1563998120
+Tetralux
+If you do the struct namespacing thing, then you'd have no need to though.
+
+1563998131
+Tetralux
+In which case I'd be cutnpasting.
+
+1563998958
+Tetralux
+Q: Should you be able to do `return switch (self) .V1 => .V2` where self is and enum and the return type is an enum?
+
+1563998988
+Tetralux
+(.. assume curly brackets around `.V1 => .V2`.)
+
+1563999752
+bwb_
+andrewrk: zig progaganda on my heavy rustlang twitter
+
+1563999754
+bwb_
+smh
+
+1564000627
+Tetralux
+`zig run test.zig -target x86_64-windows` breaks Zig.
+
+1564000642
+Tetralux
+It breaks while attempting to print a stack trace.
+
+1564001144
+dimenus
+on master?
+
+1564001293
+Tetralux
+Yeah
+
+1564001364
+hryx
+daurnimator: I personally enjoy working on things that affect the syntax, so I would enjoy working on #1717. I'm not dead set on being the one to do it though, and would probably need to step up my understanding of the IR transformations
+
+1564001390
+hryx
+cool to see all this discussion about what to do about extern in relation to fn expressions
+
+1564001453
+hryx
+bummed that I've been too busy to work on zig this week. Lookin' forward to a little weekend hacking
+
+1564001476
+Tetralux
+dimenus: zig0 doesn't segfault, but instead just prints out that posix spawn failed.
+
+1564001491
+Tetralux
+But zig is generated my `make install`, so that's what I'm using.
+
+1564001555
+Tetralux
+I would imagine that attempting to `zig run` an executable that's non-native isn't supposed to work is it. xD
+
+1564001566
+Tetralux
+That does raise an interesting question:
+
+1564001581
+Tetralux
+Is it possible to
+
+1564001611
+Tetralux
+e.g: use `-target x86_64-windows`; able to run `gdb program.exe -ex run` on a linux x86_64 machine.
+
+1564001625
+Tetralux
+Or something along those lines, rather.
+
+1564001673
+Tetralux
+This is the crash btw: zig/src-self-hosted/stage1.zig:37:5: 0x7cc679 in stage2_panic (userland)
+
+1564001691
+Tetralux
+@panic(ptr[0..len]);
+
+1564002946
+scientes
+Tetralux, you can run it with wine
+
+1564002976
+scientes
+Tetralux,
+
+1564002995
+scientes
+inc. winedbg --gdb
+
+1564003026
+scientes
+that is the only way to use valgrind with windows applications
+
+1564003100
+Tetralux
+RIGHT
+
+1564003119
+Tetralux
+Never tried to debug an app with Wine before.
+
+1564003122
+Tetralux
+Huh..
+
+1564003124
+Tetralux
+Interesting.
+
+1564004800
+fgenesis
+23:17 < scientes> that is the only way to use valgrind with windows applications
+
+1564004806
+fgenesis
+so how would you call this then?
+
+1564004822
+fgenesis
+winedbg --valgrind ./thing.exe ?
+
+1564004832
+scientes
+i don't know look at the valgrind documentation
+
+1564004853
+scientes
+i think you just do valgrind wine foo.exe
+
+1564004861
+fgenesis
+ohman this is great
+
+1564004862
+scientes
+or you can remove the "wine" if you have binfmt set up
+
+1564004880
+scientes
+becauase the kernel recognizes the exe and calls the wine interpreter
+
+1564009663
+scientes
+umm trying to get a lock on stderr means that zig sometimes just hangs
+
+1564009837
+scientes
+oh its not, srrry i confused fd 3 and 2
+

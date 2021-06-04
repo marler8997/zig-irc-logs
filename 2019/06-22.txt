@@ -1,0 +1,1144 @@
+1561161995
+xcko
+actually I may have built from master 0.4.0 - disregard
+
+1561162229
+xcko
+./zig version; 0.4.0+
+
+1561178257
+andrewrk
+AlexMax, note that in zig `inline` is force inline
+
+1561178271
+andrewrk
+(I think you already knew that, but there are 104 people in here)
+
+1561179625
+andrewrk
+mikdusan1, I know why ArenAllocator deinit is failing
+
+1561179641
+mikdusan1
+ir_gen_while_expr ?
+
+1561179645
+mikdusan1
+tell me
+
+1561179671
+andrewrk
+here's the LLVM IR:
+
+1561179731
+andrewrk
+looking at the source code for deinit(), in the result location branch,  the variable `node` no longer is an extra allocation. it is actually a reference directly to the payload of `it`
+
+1561179731
+mikdusan1
+something to do with duplicate %it ?
+
+1561179749
+andrewrk
+so `it = node.next` directly modifies `node`
+
+1561179763
+mikdusan1
+yup with you so far
+
+1561179764
+andrewrk
+because in the case of ?*T, `it` and `node` refer to the exact same memory location
+
+1561179780
+andrewrk
+but master branch depends on different semantics
+
+1561179792
+andrewrk
+it depends on `it` and `node` being separate memory locations
+
+1561179826
+andrewrk
+master branch assumes that `node` has a copy of `it`, but in result location branch it's not true
+
+1561179842
+andrewrk
+this is an important decision for the language specification
+
+1561179864
+andrewrk
+I'm inclined to make the result location semantics the new correct semantics, because it means less memcpy, and it seems a reasonable restriction to live with
+
+1561179872
+andrewrk
+but I have to admit it's a bit of a footgun
+
+1561180039
+andrewrk
+mikdusan1, so this is the fix:
+
+1561180258
+andrewrk
+0x000000000077d510 in zig.ast.AsyncAttribute.firstToken (self=0xaaaaaaaaaaaaaaaa) that `self` memory address, hmmmmmmmmmmmmmmmmmmmmmmm
+
+1561180322
+mikdusan1
+i like that `node` would no longer force a new slot
+
+1561180418
+andrewrk
+oh shit! zig links now
+
+1561180425
+mikdusan1
+:)
+
+1561180455
+mikdusan1
+on macOS we need that 1-liner to fix __mh_execute_header symbol
+
+1561180488
+andrewrk
+oh I thought I merged that
+
+1561180495
+fu5ha
+It is merged i believe
+
+1561180574
+andrewrk
+
+
+1561180663
+curtisf
+unrelated question: given a tagged-union `T: type` and a field name `n: []const u8`, what's the right way to get the type of T's field named n?
+
+1561180719
+mikdusan1
+my meaning was 2711 not yet merged to copy-elision-3 branch
+
+1561180731
+andrewrk
+ahhh ok let me merge master
+
+1561180833
+andrewrk
+mikdusan1, pushed
+
+1561180910
+mikdusan1
+heh nice to know you `zig0` but step aside. we'll be talking to `zig` from now on :)
+
+1561181016
+mikdusan1
+zig links for me on macOS - has 2 ld warnings that I'll look into.
+
+1561181054
+andrewrk
+much appreciated
+
+1561182957
+mikdusan1
+the 2 macOS ld warnings go away if not using Xcode 11 beta2, so not going to worry about them right now
+
+1561184782
+andrewrk
+sounds good
+
+1561208483
+tgschultz
+curtisf: std.meta.TagPayloadType(T, T.n);
+
+1561208514
+tgschultz
+which could be cleaned up now with enum literals so you only needed `std.meta.TagPayloadType(T, .n);`
+
+1561209352
+geemili
+j
+
+1561214345
+gonz_
+How exactly does one use `usingnamespace`? Alternatively, how do I get at the `bits.zig` files for the platforms?
+
+1561214388
+Tetralux
+gonz_, I believe you can `use @import(...)`
+
+1561214929
+tralamazza
+gonz_: not sure about 0.4, i am using master, but you prepend usingnamespace to your @import and it makes the pub symbols visible to the current namespace, no need to use a const
+
+1561214939
+tralamazza
+i am also a beginner here
+
+1561215000
+tralamazza
+gonz_:
+
+1561215043
+gonz_
+Yeah, it's not the command that's the problem, it's actually not being able to get the bits files from the standard library.
+
+1561215063
+tralamazza
+i guess the name comes from c++ using namespace
+
+1561215087
+tralamazza
+a bit shlong as a keyword, but it works
+
+1561215192
+gonz_
+Does anyone have a repository with the bindings to Win32 that shows clearly how to make these bindings without the bits files or by somehow getting at the bits files from the standard library?
+
+1561215277
+andrewrk
+gonz_, std.os has all those declarations in it
+
+1561215304
+andrewrk
+e.g. std.os.O_CLOEXEC
+
+1561215396
+gonz_
+Yeah, I tried that but got this: `container 'std.os' has no member called 'LPCSTR'`
+
+1561215412
+andrewrk
+oh, that's in std.os.windows
+
+1561215427
+andrewrk
+std.os has POSIX stuff
+
+1561215434
+gonz_
+Ugh, yeah, tried that just now :/
+
+1561218469
+AlexMax
+How self contained is zzig on windows?
+
+1561218528
+AlexMax
+Do I need an SDK installed?  Or Visual C++ installed?  And if I dont need it for standard stuff, when would I need it?
+
+1561218588
+AlexMax
+I already have MSVC installed so I dont know what I would be nissing by not installing it or ehatever SDK
+
+1561218745
+AlexMax
+like a windows SDK for example
+
+1561220054
+gonz_
+You would think I would be able to answer this since I built the compiler very recently on Windows but I've dumped so many runtime libraries onto this box in such a short time that I don't even know if I just have the correct set of dependencies installed.
+
+1561220135
+AlexMax
+Okay, so let's say that somebody wants to build a zig program or static library as part of their build process, and they have their own build system and presumably might not even have zig installed.  I'm wondering if it's just a matter of "download zig, extract it someplace, use zig to build the library, done"
+
+1561220153
+AlexMax
+like, treating the zig compiler as if it was a dependency or something
+
+1561221661
+daurnimator
+AlexMax: yes you can. but only for programs that don't need windows headers
+
+1561221698
+daurnimator
+IIRC we don't have many windows C function definitions shipped with zig
+
+1561222587
+IntoxicatedHippo
+Am I doing something wrong here that would cause the stack to not be aligned correctly?
+
+1561222618
+IntoxicatedHippo
+Zig is generating a movaps instruction which is causing a GP fault
+
+1561223371
+AlexMax
+hrm, no response to
+
+1561223396
+AlexMax
+I hope my question wasn't due to my ignorance or something
+
+1561224501
+Tetralux
+My understanding -- though I could be wrong -- is that unless you do `--library c` etc the executable Zig produces has no dependencies. Correct if wrong.
+
+1561224585
+Tetralux
+If I am, then I'd also like to know :p
+
+1561226260
+andrewrk
+AlexMax, you need msvc to build zig on windows, and llvm+clang libraries. that's it. the std lib has no dependencies, not even on libc
+
+1561226284
+andrewrk
+you can get the llvm+clang libraries prebuilt (by me) from
+
+1561226381
+andrewrk
+AlexMax, I'll get to your issue - sorry been focused on finishing up this result location branch
+
+1561226448
+andrewrk
+I believe the answer to your question above about download/extract/build library is "yes". That works today, if you run into issues I'd like to know about them
+
+1561226493
+andrewrk
+the windows binaries on ziglang.org/download are entirely self-contained, you need nothing else installed. however if you want to link libc, you have to have msvc. however it is planned for zig to even provide a windows libc without msvc
+
+1561226527
+scientes
+linux binaries too
+
+1561226539
+AlexMax
+andrewrk: Okay, no rush, I just wanted to make sure that the issue was like....comprehensible
+
+1561226581
+AlexMax
+Sometimes I see things that make go "Wait...what are they talking about?"
+
+1561226603
+andrewrk
+IntoxicatedHippo, do you know what source that movaps corresponds to?
+
+1561226739
+andrewrk
+IntoxicatedHippo, is there a reason you can't use zig's lld to do the link, and use build-exe? did you run into a bug?
+
+1561226777
+andrewrk
+do we need to change the linker flags passed for UEFI?
+
+1561228519
+IntoxicatedHippo
+andrewrk, This line from fmt.zig, I've tried adding align 32 and I still have the same issues so it's almost certainly something to do with stack alignment: var buf: [math.max(@typeOf(value).bit_count, 1)]u8 = undefined;
+
+1561228646
+andrewrk
+IntoxicatedHippo, try this: var buf: [math.max(@typeOf(value).bit_count, 1)]u8 align(16) = undefined;
+
+1561228662
+andrewrk
+if that solves the problem it's a clue but you shouldn't have to do that
+
+1561228691
+andrewrk
+we might be missing safety checks for @alignCast, I need to double check
+
+1561228748
+IntoxicatedHippo
+Still have the same issue with that
+
+1561228780
+mikdusan1
+in copy-elision-3 this test fails only on macOS:
+
+1561228830
+fu5ha
+hey! back again with another question :p any chance someone could look at vec2 and vec3 and see why vec2 compiles and runs perfectly but vec3 errors out? Specifically on the array access lines; here's an error log
+
+1561228843
+mikdusan1
+smells like an alignment issue. comparing llvm-ir master, it used to invoke memcpy with aligns. and now it efficiently uses a store but i don't see any alignment
+
+1561228886
+mikdusan1
+on linux it doesn't crash because the stack variable is aligned at 16 byte for whatever reason. on macOS result_var ends up on 8-byte align.
+
+1561229033
+IntoxicatedHippo
+I haven't been able to work out how to get Zig's linker to do what I want, I assume build-exe if meant to do it, but that fails silently
+
+1561229156
+andrewrk
+damn. it's not supposed to do that
+
+1561229185
+IntoxicatedHippo
+I've just realised there's a --verbose-link option, the command it invokes gives this output: Invoke ld.lld (Unix), ld64.lld (macOS), lld-link (Windows), wasm-lld (WebAssembly) instead
+
+1561229200
+IntoxicatedHippo
+Using lld-link instead gives this output: Invoke ld.lld (Unix), ld64.lld (macOS), lld-link (Windows), wasm-lld (WebAssembly) instead
+
+1561229211
+IntoxicatedHippo
+subsystem should be efi-application
+
+1561229230
+emekankurumeh[m]
+IntoxicatedHippo is your stack aligned correctly?
+
+1561229258
+IntoxicatedHippo
+or efi_application rather
+
+1561229330
+andrewrk
+mikdusan1, if the store/load instruction doesn't have an align attr, it uses ABI align of the type
+
+1561229338
+andrewrk
+can I see a paste of the llvm ir?
+
+1561229355
+emekankurumeh[m]
+i.e. @setStackAlign
+
+1561229370
+IntoxicatedHippo
+emekankurumeh[m], using Zig's linker command? No
+
+1561229372
+andrewrk
+IntoxicatedHippo, the startup code on windows does an align stack thing, maybe we need that for UEFI?
+
+1561229389
+andrewrk
+IntoxicatedHippo,
+
+1561229438
+andrewrk
+ah yes emekankurumeh[m] just pointed that out
+
+1561229470
+andrewrk
+emekankurumeh[m], you have become increasingly helpful and knowledgable in general. it's been really cool to watch
+
+1561229485
+mikdusan1
+andrewrk: llvm-ir for copy-elision-3 vs. master -- i am thinking line 33 (ce3) vs. 38 (master)
+
+1561229489
+mikdusan1
+
+
+1561229604
+emekankurumeh[m]
+it's been really cool to see zig grow as a language as well
+
+1561229629
+scientes
+yes
+
+1561229710
+IntoxicatedHippo
+Assuming I used that correctly, it didn't fix it:
+
+1561229722
+andrewrk
+mikdusan1, yes this looks incorrect. in ce3 code,  %result_array = alloca [4 x i32], align 4
+
+1561229725
+IntoxicatedHippo
+the new linker command is the one zig uses
+
+1561229743
+andrewrk
+that's align 4. then it gets casted and used with  store <4 x i32> %11, <4 x i32>* %12, !dbg !11167
+
+1561229749
+andrewrk
+which assumes ABI align of vectors which is 16
+
+1561229795
+mikdusan1
+ok just to confirm i grok, because llvm.memcpy was explicit align 4, it was ok. but now that store is used with implicit ABI, the stack slot has to be attributed align 16 to be correct
+
+1561229844
+andrewrk
+mikdusan1, I think this is a "missing feature" in the ce3 branch because when it does the result location cast, it needs to deal with the alignment. I think I know what's happening here
+
+1561229861
+andrewrk
+that's correct
+
+1561229878
+andrewrk
+either you have to align the thing more, or annotate that the load/store is under-aligned
+
+1561229906
+andrewrk
+I believe master works because there is an intermediate value with the larger alignment
+
+1561229945
+andrewrk
+IntoxicatedHippo, maybe I can use this as the live coding topic on thursday if you don't figure it out by then
+
+1561229959
+andrewrk
+(I don't have a solution; I would be troubleshooting it)
+
+1561230157
+IntoxicatedHippo
+I've just realised I'm not using the efi file generated by the new command... but now I'm getting a gp fault somewhere between calling real_main and the first print
+
+1561230306
+IntoxicatedHippo
+
+
+1561230324
+IntoxicatedHippo
+It only prints "before real_main"
+
+1561230344
+fu5ha
+ok here's a trivial reconstruction, not sure what these errors mean/what's causing them
+
+1561230747
+andrewrk
+fu5ha, this appears to be a bug
+
+1561230822
+fu5ha
+ok so I just switched everything to being [4]f32 and it works again
+
+1561230830
+fu5ha
+so I guess there's something special about 3 that's making it not be happy :p
+
+1561230884
+andrewrk
+IntoxicatedHippo, @setStackAlign doesn't do anything at runtime
+
+1561230899
+andrewrk
+those print statements may as well be next to each other
+
+1561230914
+andrewrk
+it makes it so that the call to real_main will align the stack before calling
+
+1561230945
+andrewrk
+IntoxicatedHippo, ohh you might want this workaround too
+
+1561230959
+andrewrk
+
+
+1561230965
+andrewrk
+oh wait, that's for posix
+
+1561230968
+andrewrk
+well it's worth a try
+
+1561230971
+fu5ha
+I'll file a bug for that real fast... another quick question, is there a way to implement functions that would get me 'method syntax' on non-struct types, like directly on a [4]f32 for example?
+
+1561231021
+andrewrk
+IntoxicatedHippo, ignoring the @noInlineCall thing, what happens if you put @setAlignStack in your efi_main and make it a normal extern fn?
+
+1561231030
+andrewrk
+why nakedcc?
+
+1561231078
+andrewrk
+fu5ha, why does the struct have to be packed? it works if I don't make it packed
+
+1561231084
+andrewrk
+(it's still a bug though)
+
+1561231108
+emekankurumeh[m]
+fu5ha: no zig doesn't have anything like ufcs
+
+1561231121
+andrewrk
+fu5ha, even if the struct is not packed, the array will still be contiguous
+
+1561231138
+andrewrk
+I'd recommend non-packed for your vec3 struct
+
+1561231141
+fu5ha
+andrewrk it probably doesn't for now, though the idea is to make it directly interoperable with opengl/vulkan
+
+1561231153
+andrewrk
+the `data: [3]f32` alone will accomplish that
+
+1561231164
+fu5ha
+though as you say it should be fien since I'm using actual float arrays
+
+1561231169
+fu5ha
+fine*
+
+1561231285
+fu5ha
+I'll do not packed for now, thanks :D
+
+1561231289
+fu5ha
+also, opened
+
+1561231541
+gamester
+V source code has been released. It's a few thousand lines of code. The doom translation? One file so far.
+
+1561231560
+IntoxicatedHippo
+andrewrk, that fixes it, I can't remember why I had nakedCC
+
+1561231659
+Tetralux
+Is there any circumstance where you
+
+1561231753
+andrewrk
+IntoxicatedHippo, glad you got it working
+
+1561231809
+andrewrk
+IntoxicatedHippo, let me know if there's some reason you can't use zig build-exe and you have to use a separate lld, that's not supposed to be necessary
+
+1561231967
+IntoxicatedHippo
+Zig needs to invoke lld-link instead of lld and it needs to add /SUBSYSTEM:efi_application to the command
+
+1561232026
+andrewrk
+use the --subsystem efi_application CLI arg
+
+1561232051
+andrewrk
+lld-link is the same thing as lld, it's just the "windows driver" which zig knows to choose based on the target
+
+1561232095
+andrewrk
+the reason zig couldn't infer the subsystem arg is because there are other choices for the same target: efi_boot_service_driver, efi_rom, efi_runtime_driver
+
+1561232211
+IntoxicatedHippo
+It was telling me to use lld-link instead of lld, but setting the subsystem fixes that
+
+1561232253
+andrewrk
+hmm sounds like zig should detect that and add a more helpful error
+
+1561232266
+andrewrk
+"subsystem arg mandatory for uefi target" something like that
+
+1561232715
+IntoxicatedHippo
+New problem: debug builds won't run. I assume they need some sort of runtime support?
+
+1561232812
+IntoxicatedHippo
+Nevermind, it was valgrind stuff breaking it
+
+1561232886
+IntoxicatedHippo
+nevermind^2, it's still broken
+
+1561232900
+emekankurumeh[m]
+Tetralux: yes you can use `@newStackCall`
+
+1561232948
+emekankurumeh[m]
+
+
+1561232964
+Tetralux
+emekankurumeh[m], So @noInlineCall and @newStackCall are the only two ways to call stuff inside nakedcc unless you use asm to set it up yourself? Something like that?
+
+1561233079
+scientes
+Tetralux, as long as you advance the stack pointer it would be fine
+
+1561233080
+emekankurumeh[m]
+i don't think @noInlineCall should unless you already have a stack set up
+
+1561233121
+scientes
+oh I see, yeah @noInlineCall
+
+1561233125
+emekankurumeh[m]
+i think there is a proposal for a builtin for calling functions but i can't find it right now
+
+1561233136
+scientes
+maybe zig should just automatically set that on nakedcc functions?
+
+1561233159
+scientes
+emekankurumeh[m], you mean calling conventions, yes
+
+1561233195
+emekankurumeh[m]
+no i mean a builtin like @funcCall(fun, args...)
+
+1561233219
+scientes
+we already have that, its called @field()
+
+1561233235
+scientes
+and every function is also a function pointer in a namespace
+
+1561233307
+Tetralux
+I'm just thinking that if there's only a few valid ways to call a function from nakedcc, it's probably better to have a compile error that tells you what you need to do than it is to be scratching your head.
+
+1561233339
+scientes
+Tetralux, no, zig should just set the noinline attribute automatically, and then its on you to protect stack variables
+
+1561233347
+scientes
+but if you don't use the stack then it will work fine
+
+1561233414
+Tetralux
+Can you elaborate on 'protect'?
+
+1561233427
+scientes
+if you write to the stack then you have to advance the stack pointer
+
+1561233455
+scientes
+and zig variables would work too
+
+1561233471
+scientes
+but if you use assembly of course you are on your own
+
+1561233501
+scientes
+i'm not sure why we have nakedcc actually......how does it differ from a function with no arguments?
+
+1561233513
+scientes
+that is extern
+
+1561233513
+Tetralux
+Just as if it's an memory arena; and if you don't advance it, the next stack var would overwrite it - i.e: if you have a stack var inside nakedcc, advance the stack pointer enough before calling a fn?
+
+1561233526
+scientes
+yeah
+
+1561233531
+Tetralux
+Okay. Makes sense.
+
+1561233546
+Tetralux
+You'd do the advancing with asm?
+
+1561233554
+scientes
+that is the only way
+
+1561233559
+Tetralux
+I figured.
+
+1561233564
+Tetralux
+Okay ta.
+
+1561233564
+scientes
+as zig doesn't have @alloca() anymore
+
+1561233626
+Tetralux
+I'm guessing the logic was "If you're using nakedcc, you know what asm advances the stack if you need to."
+
+1561233691
+Tetralux
+And I'd also be interested to know what makes nakedcc different from extern fn().
+
+1561233709
+scientes
+yeah I don't think there is much difference
+
+1561233714
+Tetralux
+Never dabbled with any of that stuff.
+
+1561233735
+scientes
+cause you still have to declare the type signature elsewhere in order for the calling conventions to work
+
+1561233769
+emekankurumeh[m]
+doesn't nakedcc mean no function prologue or epilogue?
+
+1561233849
+scientes
+yes it does
+
+1561233855
+scientes
+there must be a llvm feature that this is tied to
+
+1561233888
+emekankurumeh[m]
+don't extern functions have prologues and epilogues then?
+
+1561233897
+emekankurumeh[m]
+so how are they the same?
+
+1561233930
+andrewrk
+IntoxicatedHippo, what's happening with debug builds?
+
+1561233948
+andrewrk
+i'll modify the logic to disable valgrind for that target
+
+1561234006
+scientes
+emekankurumeh[m], yeah but zig doesn't have code like that
+
+1561234020
+scientes
+so i'm wondering where the llvm feature docs are
+
+1561234025
+andrewrk
+IntoxicatedHippo, looks to me like valgrind stuff is disabled for that target by default:
+
+1561234053
+scientes
+naked
+
+1561234054
+scientes
+This attribute disables prologue / epilogue emission for the function. This can have very system-specific consequences.
+
+1561234079
+emekankurumeh[m]
+what do you mean by that? zig doesn't update the stack pointer or insert `ret` instructions for extern functions?
+
+1561234156
+scientes
+emekankurumeh[m], that was a paste from
+
+1561234196
+emekankurumeh[m]
+i know, i just don't understand what you mean by "zig doesn't have code like that"
+
+1561234296
+scientes
+emekankurumeh[m], zig have very little target-specific code
+
+1561234307
+scientes
+that's what I meant
+
+1561234316
+scientes
+so i knew there had to be a llvm feature
+
+1561234327
+emekankurumeh[m]
+but llvm will insert that code regardless
+
+1561234429
+fu5ha
+this seems cool
+
+1561234492
+emekankurumeh[m]
+i'm waiting for it to be added to the benchmarks here:
+
+1561234747
+fu5ha
+i find the graphs they have in the mimalloc repo obtusely hard to read lol
+
+1561234909
+scientes
+yeah they are pretty bad
+
+1561234916
+scientes
+especially as they use abbreviations in the legend
+
+1561234984
+scientes
+why can't we just use a C general purpose allocator?
+
+1561234994
+scientes
+for our general purpose allocator
+
+1561235018
+emekankurumeh[m]
+you don't always want to link to libc
+
+1561235048
+scientes
+oh yes of course
+
+1561235055
+scientes
+but maybe it would be possible to remove that dependancy
+
+1561235071
+scientes
+not all c programs require libc
+
+1561235155
+emekankurumeh[m]
+plus the system c allocator isn't always the best for all situations, i.e. highly concurrent programs
+
+1561235166
+scientes
+i'm not talking about the system allocator
+
+1561235172
+scientes
+i'm talking about using code written in C in zig
+
+1561235191
+scientes
+but i guess that isn't really that important yet
+
+1561235193
+emekankurumeh[m]
+oh i see what you mean
+
+1561235543
+andrewrk
+scientes, the wip general purpose allocator I have takes advantage of zig std lib stuff, such as collecting stack traces
+
+1561235559
+andrewrk
+and does comptime logic based on std.mem.page_size
+
+1561235574
+andrewrk
+and has comptime-configurable options
+
+1561235578
+scientes
+cool
+
+1561235588
+andrewrk
+
+
+1561236347
+curtisf
+What's the reason for disallowing runtime `continue` in `inline for` loops? (
+
+1561236432
+andrewrk
+curtisf, `continue` in an inline loop is defined to go to the next iteration of the loop right? but it's inlined so it has to do that goto at comptime. but in this example the `continue` is inside a branch that is only known if it's taken at runtime
+
+1561236454
+andrewrk
+you can't unroll a loop if you have a `continue` that the compiler doesn't know will get executed until runtime
+
+1561236506
+andrewrk
+I'm proud of that error message, I think it's quite helpful
+
+1561236654
+curtisf
+I don't follow. What prevents a runtime goto in the `if` in each unrolled iteration?
+
+1561236818
+scientes
+just nest another block if you need that
+
+1561236842
+scientes
+otherwise sure it could be allowed when there is no continue statement
+
+1561236887
+scientes
+*no continue block
+
+1561236914
+redj
+very nice andrewrk :)
+
+1561237321
+curtisf
+scientes: do you mean do it like this?
+
+1561237359
+scientes
+yes
+
+1561237384
+curtisf
+that's unfortunate
+
+1561237386
+scientes
+except you used "break;" where you meant "continue;"
+
+1561237404
+curtisf
+?
+
+1561237412
+scientes
+oh that wont work
+
+1561237423
+andrewrk
+doesn't it make sense? if you unroll a loop, your loop control flow has to be comptime
+
+1561237441
+scientes
+curtisf, just put the warn inside a if()
+
+1561237478
+curtisf
+scientes: the real code that is prompting this pattern wants to `continue` in one of the error cases in a select, where that isn't an option
+
+1561237526
+scientes
+andrewrk, actually continue and break could be supported, the trick is knowing how many times the loop executes if there is no break
+
+1561237554
+curtisf
+To me, unrolling a loop over a comptime array should just mean duplicating the array body in sequence, with the indices and elements bound. I don't see why skipping to the end of a particular iteration would be outlawed
+
+1561237574
+curtisf
+Maybe `break` is different from `continue`, but since the control flow of `continue` is entirely within one iteration it seems like it should be allowed
+
+1561237644
+andrewrk
+curtisf, I see, maybe that can work
+
+1561237648
+andrewrk
+make a proposal
+
+1561237658
+curtisf
+Okay
+
+1561237662
+andrewrk
+sorry let me rephrase: a proposal would be welcome
+
+1561243920
+andrewrk
+mikdusan1, found another example of code that had to be changed for new semantics
+
+1561243956
+andrewrk
+
+
+1561244591
+Tetralux
+Are the new semantics suitably summed up by saying that now, if you want to make a value copy of a stack variable, you have to do it explicitly?
+
+1561244594
+Tetralux
+Is that a fair summation?
+
+1561244673
+Tetralux
+Also - will that the example you just linked would be an error in the future?
+
+1561245260
+andrewrk
+yes that is a fair summation
+
+1561245286
+andrewrk
+the aliasing proposal would cover it
+
+1561245292
+andrewrk
+but that's very researchy
+
+1561245317
+andrewrk
+note that it's also possible to walk back this stack variable copying thing without compromising the rest of this result location stuff
+
+1561245329
+andrewrk
+it's actually a separate thing that I accidentally did at the same time
+
+1561245550
+Tetralux
+I gotcha
+
+1561246200
+curtisf
+I'm getting real confused. How do I initialize a value of a tagged-union type if I know the name of the field?
+
+1561247055
+andrewrk
+curtisf, overwrite the whole value
+
+1561247071
+andrewrk
+there should be an example here:
+
+1561247079
+andrewrk
+yeah it's mentioned
+
+1561247105
+andrewrk
+if you want to activate another tag without having a value yet, use undefined
+
+1561247140
+andrewrk
+if you think about it, this matches variable initialization, where you have to explicitly say something is undefined
+
+1561247209
+curtisf
+I mean the name is a `comptime []const u8`. I tried ```var choice: Into = undefined;  @field(choice, field.name) = field_value;``` but I get a runtime error ("access of inactive union field")
+
+1561247295
+andrewrk
+ahhh sorry there's an issue for this and an open PR to solve it
+
+1561247320
+andrewrk
+
+
+1561247332
+andrewrk
+I haven't reviewed the PR yet
+
+1561247433
+curtisf
+ah, thanks, so I wasn't missing something!
+
+1561247508
+curtisf
+in the meantime, does there happen to be any "hacky" way to do this like blocking the safety check?
+

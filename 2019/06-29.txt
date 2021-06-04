@@ -1,0 +1,1096 @@
+1561766422
+hryx
+(^_^)_b I love all the debuggin' goin' on
+
+1561766429
+Tetralux
+:p
+
+1561766502
+cameris
+But isn't it not kind of dangerous to implicitly cast arrays to slices (basically pointers), at least for return values?
+
+1561766628
+hryx
+it can be -- the buggo I asked about earlier is (I think) caused because of returning a slice into a stack allocated array -- one whose pointer is no longer valid after returning
+
+1561766640
+hryx
+but returning a slice into a heap-allocated array is fine
+
+1561766665
+hryx
+in fact cameris that's the interface of an allocator in zig
+
+1561766679
+hryx
+it returns e.g. []u8
+
+1561766700
+Tetralux
+A slice is essentially an array that doesn't own it's memory - it points to someone else's.
+
+1561766705
+Tetralux
+If that memory is on the heap, then you can return it.
+
+1561766745
+Tetralux
+If it's on the stack, you can return it... but it will get clobbered by other local variables the next time you call a fn.
+
+1561766777
+Tetralux
+And so you should not do that.
+
+1561766824
+Tetralux
+.. Which is what happens when you do { var x: [4]u8; return x[0..]; }
+
+1561766876
+cameris
+yeah, ofc you can return a slice. But what I find disturbing is that you could return an array inside such a function and it is implicitly cast to a pointer(==slice).
+
+1561766888
+Tetralux
+It isn't.
+
+1561766896
+Tetralux
+It's "casted" by x[0..]
+
+1561766903
+Tetralux
+The slicing syntax is what's casting it.
+
+1561766915
+Tetralux
+Although "casting" is not the right word here.
+
+1561766933
+Tetralux
+But you get my point.
+
+1561766976
+Tetralux
+Unless I'm not understanding what you mean :p
+
+1561766989
+cameris
+ok. But #2749 wants exatly that.
+
+1561767007
+hryx
+I see your point cameris, but to echo Tetralux, the implicit cast only happens because the return type of the function demands it
+
+1561767032
+hryx
+implicit cast from array to slice is very useful. but I do see how this might be a gotcha
+
+1561767060
+cameris
+and boolToStr does `return "true"` instead of `return "true"[0..]`, but for strin literals that seems fine I guess.
+
+1561767087
+Tetralux
+I don't really understand where this whole "implicit" thing is coming from - because it isn't. The [0..] is explict.
+
+1561767089
+hryx
+cameris: regarding 2749, I probably should have used a different type to demonstrate the issue, which is about peer resolution and not array-to-slice specifically
+
+1561767089
+Tetralux
+And yes.
+
+1561767094
+mikdusan3
+i hope i'm correct here; when creating the expression for array... if it's LITERAL then safe to slice and return. if there is any runtime item in array, it's no longer literal and now stack-based and unsafe to slice/return.
+
+1561767116
+Tetralux
+If the type is [N]T
+
+1561767120
+Tetralux
+Then it's on the stack.
+
+1561767136
+Tetralux
+And you should not return a slice that into to it.
+
+1561767146
+hryx
+Tetralux: `[_]u8{c}` is an array type. so in my example in 2749, it is implicitly being cast to a slice `[]u8{c}`
+
+1561767155
+hryx
+upon being returned
+
+1561767167
+mikdusan3
+i'm looking at llvm-ir and if [N]T is something like [_]u8{ 1,2,3 } is not stack.
+
+1561767228
+mikdusan3
+var a: u8 = 10; [_]u8{ 1, a, a } is stack tmp. so that would be unsafe to slice/return.
+
+1561767266
+Tetralux
+See - there's a point there that I agree with. Having the _ tells me "infer how many goes here". So if it produces an array that isn't on the stack, I'd consider that a bit of a gotcha.
+
+1561767277
+Tetralux
+Unless there's some reason for that that makes more sense.
+
+1561767314
+mikdusan3
+i wonder if this is something the compiler could check. if stack sliced is returned, emit error.
+
+1561767359
+Tetralux
+I think there are considerations of that.
+
+1561767375
+Tetralux
+I don't know if there's an issue for it, but I seem to recall the idea that it would become a compile error.
+
+1561767404
+emekankurumeh[m]
+there's an open issue for it
+
+1561767414
+fengb
+Returning a pointer to a stack variable generates an error so the same should apply for slices
+
+1561767447
+Tetralux
+^
+
+1561767726
+cameris
+well, thx everyone for clearing that up for me.
+
+1561768781
+Tetralux
+cameris, Welcome o7
+
+1561768854
+hryx
+mikdusan3: pushed your change, thanks so much
+
+1561768888
+mikdusan3
+👍
+
+1561768891
+hryx
+I'll make it not return a bad pointer too, even though tests are passing for me locally
+
+1561769713
+tgschultz
+not necessarily. comptime [N]T is totally a thing.
+
+1561769737
+tgschultz
+ack, I was a few lines behind it seems
+
+1561770144
+Tetralux
+hyrx: If you return it and then immediately read it without calling anything else beforehand, it's very possible it'd work.
+
+1561771026
+hryx
+Tetralux: surely that explains why the tests passed sometimes. but since the behavior is undefined I shouldn't leave it in there
+
+1561771229
+Tetralux
+Seems reasonable.
+
+1561774913
+mikdusan3
+is this activated only for non-NDEBUG builds, for performance reasons?
+
+1561774915
+mikdusan3
+
+
+1561781508
+fengb
+incompatible types: 'u16' and 'i8'
+
+1561781522
+fengb
+Shouldn't I be able to do 'u16' + 'i8'?
+
+1561781696
+curtisf
+what would you expect the result type to be in that case? i16?
+
+1561781749
+fengb
+u16
+
+1561781754
+tgschultz
+fengb: consider the case that u16 = 1 and i8 = -2. The result would overflow. That's fine, but zig requires you to be explicit about how you want that to go down.
+
+1561781756
+fengb
+Subtract if it's negative
+
+1561781809
+curtisf
+why u16? is it because it has more precision? or because that's the left operand type?
+
+1561781821
+fengb
+Both in this case :P
+
+1561781834
+curtisf
+it seems weird that u16 + i16 would be u16 but i16 + u16 would be i16
+
+1561781851
+curtisf
+I really think that this kind of thing should require an explicit cast
+
+1561781859
+fengb
+tgschultz: but overflow can happen already. And I don't have an operator for 2s complement overflow for mixed types
+
+1561781867
+fengb
+Problem is, it's not just a cast
+
+1561781896
+fengb
+if (offset >= 0) src._ + @intCast(u8, offset) else src._ - @intCast(u8, -offset);
+
+1561781902
+fengb
+I have to type this everywhere
+
+1561782087
+tgschultz
+while that behavior may be obvious for your particular use case, I can think of several other behaviors that would be obvious for others, which is why zig requires the explicitness.
+
+1561782142
+fengb
+I kinda want another operator here :P
+
+1561782144
+tgschultz
+anyways, why not just bitcast it to u8?
+
+1561782168
+tgschultz
+my_u16 +%= @bitCast(u8, my_i8)
+
+1561782175
+fengb
+Because I need subtraction and the bigger addr
+
+1561782219
+tgschultz
+adding a bitcasted i8 is the same as what you're doing because that's how two's compliment works.
+
+1561782243
+tgschultz
+well, until you go negative on the result anyway
+
+1561782256
+curtisf
+maybe specifically `+%` could allow unsigned +% signed?
+
+1561782258
+fengb
+u8 negative isn't u16 negative
+
+1561782280
+fengb
+I'd have to extend the i8 negative into u16 negative space
+
+1561782283
+tgschultz
+oh right, there is that. you'd have to sign extend it to i16, forgive me
+
+1561782305
+curtisf
+will bitcast not sign extend for you?
+
+1561782325
+tgschultz
+you can only bitcast to something that has the same byte representation
+
+1561782352
+fengb
+I could intCast to i16 then bitcast to u16
+
+1561782354
+tgschultz
+so you can bitcast i8/u8, i4/u8, i13/u16, but not i8/u16
+
+1561782381
+fengb
+I'll toss this into a function and deal with it later
+
+1561782467
+fengb
+As much as I'm complaining... this is helping find some brutal edge cases that were totally hidden in my C code
+
+1561782488
+tgschultz
+there's a reason zig makes you be explicit
+
+1561782496
+curtisf
+Maybe `@bitCastSignExtend` would be useful? Although I suppose it can be implemented in terms of bit-casting and int-casting so maybe it could just be a library function if it's not already one
+
+1561782860
+fengb
+I didn't know about bitcast though. That's really handy thanks
+
+1561783993
+daurnimator
+curtisf: the whole point of @bitCast is it has to be the same exact size
+
+1561783997
+daurnimator
+its casting bits
+
+1561784190
+daurnimator
+fengb: I think you're looking for: @bitCast(u16, @intCast(i16, myuint8)) or you can probably write: @bitCast(u16, i16(myuint8))
+
+1561784688
+curtisf
+but sign extending does involve the same bit pattern; I don't think it's unreasonable to tie them together since it really is a single operation since part of the 'interpretation' of a type from bits includes how to fill in "missing" leading bits. I see it a bit unfortunate that you need to write both `u16` and `i16` in that expression when it does
+
+1561784688
+curtisf
+n't actually add anything to clarity or safety (in fact it's a place where a typo / miscommunication becomes possible)
+
+1561784718
+daurnimator
+curtisf: but you can't bitcast e.g. a u8 to a u16. you can't bitcast to something a different size
+
+1561784850
+curtisf
+why not, though? For example, the bit pattern `0b1111` interpreted as an `i8`
+
+1561784881
+curtisf
+I think it's reasonable for this to maybe be a concept with a slightly different name, but I think this is a reasonable concept to include in the language or at least in the standard library
+
+1561785359
+fengb
+It's not quite as nice since underflows and overflows should be treated distinctly
+
+1561785380
+fengb
+But... in my case I don't care so it works :P
+
+1561785431
+fengb
+Casting to unsigned makes all subtraction operations overflows, which isn't always correct
+
+1561785553
+fengb
+Er... not subtraction but rather "add by negative" triggers overflow, but so does actual overflow (0xFFFFFFFF + 1 vs 1 + 0xFFFFFFFF)
+
+1561785566
+fengb
+It's late and my words are failing
+
+1561785995
+daurnimator
+curtisf: 0b1111 is a comptime_int
+
+1561786003
+daurnimator
+curtisf: you can't bitcast a comptime_int
+
+1561786598
+curtisf
+I was referring abstractly to the concept of 4 bits, not a zig literal
+
+1561798193
+fubd
+trying to build the
+
+1561798252
+fubd
+
+
+1561798271
+fubd
+lld: error: undefined symbol: glfwSetErrorCallback
+
+1561798296
+fubd
+but when i open the DLL that corresponds to the glfw.lib i'm linking against, i see the glfwSetErrorCallback function
+
+1561798968
+fubd
+now I've got to this ponint:
+
+1561798969
+fubd
+C:\Users\Kevin\src\tetris>zig build play -Dwindows=true
+
+1561798983
+fubd
+is windows/msvc supported yet?
+
+1561799223
+fubd
+C:\Users\Kevin\src\tetris>zig --libc win.libc build play -Dwindows=true
+
+1561799236
+fubd
+C:\Users\Kevin\src\tetris>zig build play --libc win.libc -Dwindows=true
+
+1561799246
+fubd
+It's not clear to me where I should be putting the --libc argument.
+
+1561808274
+IntoxicatedHippo
+Is there some way I could do this? comptime { asm (@embedFile("foo.s"); }
+
+1561808596
+IntoxicatedHippo
+Nevermind, I've just realised the compiler has a flag to add assembly files
+
+1561821341
+scientes
+how do i resolve a ZigTypeIdMetaType to a real type?
+
+1561821377
+scientes
+i probably shouldn't be using it at all, but i realized get_vector_type returns a metatype rather than a type
+
+1561821458
+scientes
+oh it looks like i can just pun it to a vector
+
+1561821629
+scientes
+nvm
+
+1561825081
+fubd
+I'm trying to call a function in a DLL/lib with @cImport on Windows, but the linker isn't prefixing my function name with an underscore. using `dumpbin /exports glfw.lib` shows that the exported functions look like _glfwInit
+
+1561825088
+fubd
+how do I get lld to prefix my function names?
+
+1561826348
+darithorn
+fubd are you trying to use glfw in zig?
+
+1561826440
+darithorn
+inside your @cImport you can just do @cInclude("GLFW/glfw3.h"); and then in your build.zig you link the DLL there
+
+1561826476
+darithorn
+but i may be understanding your issue incorrectly
+
+1561828858
+rbscott
+Hello, I am stuck trying to figure out how to use the function sqlite3_bind_text from zig, the last argument is a callback and can pass sqlite3.SQLITE_STATIC = 0, and is compile time error. sqlite3.TRANSIENT is -1, and that is also a compile time error. Probably an easy fix, but I am at a loss.
+
+1561829288
+fubd
+@darithorn i am doing that
+
+1561829301
+fubd
+but the issue is that my glfw is built by a windows linker
+
+1561829307
+fubd
+which prefixes all function names with an underscore
+
+1561829325
+fubd
+but when i cImport the header, zig is expecting to link with the functions without underscores
+
+1561829360
+samtebbs
+andrewrk: When trying to copy what you did with build_options in clashos, I get an `error: FileNotFound`. I'm adding the build_option with `const obj = b.addObject(file, file_path); obj.addBuildOption(u8, "test", 'a');`
+
+1561829397
+samtebbs
+The error:
+
+1561829678
+rbscott
+For sqlite3.SQLITE_STATIC, `null` works as a substitute, but it looks like constants from cImport don't work.
+
+1561830135
+marler8997_
+marler
+
+1561830247
+rbscott
+For sqlite3.SQLITE_TRANSIENT converted it to `@intToPtr(extern fn(?*c_void) void, 0xFFFFFFFFFFFFFFFF)` and that seems to work.
+
+1561830357
+Tetralux
+rbscott: Makes sense.
+
+1561830369
+Tetralux
+Kinda funky that's how SqlLite works, but... /shrug.
+
+1561831219
+Sahnvour
+is there a generic way to query the active tag of a tagged union ? ie. get the enum value associated, without a switch
+
+1561831307
+Tetralux
+Does the @typeInfo have it?
+
+1561831378
+emekankurumeh[m]
+std.meta.ActiveTag
+
+1561832943
+Sahnvour
+emekankurumeh[m]: thanks, I missed it
+
+1561835922
+HelloThere54321
+I need some help with a generic list, I need a list that can have any type of data
+
+1561835985
+emekankurumeh[m]
+a homogeneous or heterogeneous list?
+
+1561836376
+Tetralux
+I am also curious about how one might do that.
+
+1561836421
+curtisf
+(assuming you mean heterogenous list) what do you need to do with it? do you operate on it at comptime or at runtime?
+
+1561836427
+HelloThere54321
+both i guess
+
+1561836436
+HelloThere54321
+at runtime
+
+1561836447
+HelloThere54321
+but will know the types and values at comptime
+
+1561836478
+curtisf
+to clarify: you need heterogeneous lists? std.ArrayList does not do what you want?
+
+1561836638
+curtisf
+For heterogeneous lists, I think you could use an array of TypeInfo, and an array of pointers-as-integers. Your `get` function would take a position, and (comptime) the type expected to be at that position, and it would assert that the TypeInfo matches, and then do the pointer cast for you.
+
+1561836766
+Tetralux
+You might also be able to store an array of struct { info: TypeInfo, valuePtr: usize } and do the same thing as above.
+
+1561836806
+curtisf
+locality would be better for storing them separately, no? but yea a list of pairs instead of a pair of lists would also work
+
+1561836832
+curtisf
+(especially if you want to turn of type-verification in release builds)
+
+1561836870
+HelloThere54321
+but the types of each tuple will be different and so cant declare a variable with a type as you dont know the type yet
+
+1561836918
+Tetralux
+You'd store std.ArrayList(Any), where const Any = struct { info: TypeInfo, valuePtr: *void };
+
+1561836932
+Tetralux
+The struct is the same type regardless of what type is stored within.
+
+1561836992
+HelloThere54321
+are, so u can have a void pointer
+
+1561837020
+Tetralux
+I would hope so.
+
+1561837032
+emekankurumeh[m]
+no you would have to have something like a *@OpaqueType
+
+1561837155
+Tetralux
+That's kind of weird that you cannot say *void...
+
+1561837157
+Tetralux
+But no matter
+
+1561837162
+Tetralux
+Just store it as a usize instead then.
+
+1561837179
+Tetralux
+And put a comment that it's a pointer, unless valuePtr is clear enough.
+
+1561837389
+HelloThere54321
+coolio, i'll try the *@OpaqueType
+
+1561837399
+HelloThere54321
+then will have to case
+
+1561837471
+HelloThere54321
+or take the address and store in usize :)
+
+1561837933
+Akuli
+i think someone has zig "void pointer" code on github
+
+1561838152
+Akuli
+last time i asked the suggestion was to make a big union(enum) :D
+
+1561838201
+curtisf
+well... if you actually can list out all of the possible cases that's probably going to be more understandable
+
+1561838939
+curtisf
+Oh, can you not use method syntax with comptime args? Do comptime args have to appear first? That's kind of inconvenient
+
+1561839005
+HelloThere54321
+cant seen to find the github thing, could u find a link
+
+1561839706
+hryx
+I don't understand the why the Windows CI is failing for this. Can anyone see the problem?
+
+1561840413
+Sahnvour
+hryx: these are static asserts failing at lines 1304 and 1330 of zig_clang.cpp
+
+1561840438
+hryx
+ah!
+
+1561840450
+Sahnvour
+as for why they fail, I don't know
+
+1561840470
+hryx
+curious, how did you find that? The CI output is pretty big and I can't navigate it well
+
+1561840502
+Sahnvour
+opened the BuildWindows tab, clicked on the red error line to get full output
+
+1561840529
+Sahnvour
+and at the end of log you can see `D:\a\1\s\src\zig_clang.cpp(1304): error C2338:  [D:\a\1\s\build\zig_cpp.vcxproj]`
+
+1561840541
+hryx
+got it, thanks
+
+1561840569
+hryx
+yeah, I wonder why these asserts are failing, and only on windows
+
+1561840639
+Sahnvour
+that's easy to get different sizes for a struct on different platforms
+
+1561840790
+hryx
+I think I see what's up. this is that type I had to get the size of experimentally:
+
+1561840817
+Sahnvour
+yeah that looks fishy :p
+
+1561840852
+hryx
+andrew and I had a conversation on IRC that led to that approach. I guess it will have to be different sizes on different platforms
+
+1561840917
+mikdusan3
+i think you have only the first field of that struct
+
+1561840984
+hryx
+there was some reason why I couldn't just define all the struct fields in there. I don't quite remember. Maybe I'm wrong and it's possible?
+
+1561841080
+hryx
+my knokwledge of C++ is pretty wimpy
+
+1561841119
+hryx
+mikdusan3: can you explain? The definition has one ValueKind enum and then an array to pad the rest of the struct
+
+1561841157
+mikdusan3
+i must be looking at wrong SourceLocation. where is clang::SourceLocation ?
+
+1561841201
+hryx
+This is for ZigClangAPValue, not ZigClangSourceLocation
+
+1561841206
+hryx
+just a couple lines above
+
+1561841214
+mikdusan3
+just shoot me.
+
+1561841227
+hryx
+I refuse!
+
+1561841230
+Sahnvour
+hryx: sizeof(clang::APValue) is 56 in debug mode on windows, fwiw
+
+1561841297
+hryx
+thanks Sahnvour. do you see any alternative to just hardcoding those two sizes based on platform?
+
+1561841309
+hryx
+here's the doc for clang::APValue
+
+1561841328
+hryx
+I think putting all the fields in would require defining a lot more clang types in zig
+
+1561841333
+Sahnvour
+I never looked closely to this zig_clang thing, but what it's doing is absically defining opaque typedefs over clang types ?
+
+1561841355
+hryx
+OpaqueTypes are being created whenever we only need pointers
+
+1561841368
+hryx
+but in this case, the struct size needs to be known
+
+1561841393
+Sahnvour
+yes, I mean replicating clang types on zig side to have binary compatibility
+
+1561841413
+hryx
+ah, yep exactly
+
+1561841419
+Sahnvour
+ok
+
+1561841512
+Sahnvour
+#ifdefing the struct definition would be the simplest I think
+
+1561841593
+hryx
+sounds good. hopefully there aren't any other differences based on release mode etc.
+
+1561841597
+hryx
+thanks for finding the size
+
+1561841632
+hryx
+could this difference be because the Kind enum is different sizes on different platforms?
+
+1561841651
+hryx
+I don't know how enums behave under the hood
+
+1561841666
+Sahnvour
+bare enums default to int's size
+
+1561841724
+Sahnvour
+note that 56 is the full size of the class, you'd still have to subtract `Kind` from this
+
+1561841737
+hryx
+gotcha
+
+1561841851
+Sahnvour
+I think `DataType Data;` might be the member changing size
+
+1561841875
+Sahnvour
+it's a typedef over AlignedCharArrayUnion which inherits fdrom AlignedCharrArray
+
+1561841899
+Sahnvour
+which has a different implementation on windows, regarding alignment and such
+
+1561841928
+hryx
+ahh right, now I remember. there's that super weird template-based union which determines the size
+
+1561841935
+hryx
+what you said
+
+1561841949
+Sahnvour
+but it's too late for the rabbit hole so I will stop there :P
+
+1561841978
+hryx
+thanks again, this should get things passing
+
+1561841996
+Sahnvour
+no problem
+
+1561844865
+emekankurumeh[m]
+setting the target in build.zig seems to brake my entire build
+
+1561845224
+tgschultz
+tetralux, Tuple form of comptime pseudo struct may interest you:
+
+1561845240
+tgschultz
+see also:
+
+1561846026
+emekankurumeh[m]
+zig's lazy analysis is kinda making me mad right now
+
+1561846126
+emekankurumeh[m]
+i spent way too long trying to figure out why some symbols weren't being exported until i realized it was because i didn't have `comptime { _ = already_imported_module; }` in my files
+
+1561846157
+Tetralux
+Things that are exported should probably always be there?
+
+1561846181
+Tetralux
+Also tgschultz, that's interesting. Kinda hard to follow, but interesting that you can do that.
+
+1561846207
+emekankurumeh[m]
+nope, because the file imported wasn't used anywhere so zig didn't compile it
+
+1561846246
+Tetralux
+But `already_imported_module` though?
+
+1561846258
+Tetralux
+Oh oh
+
+1561846267
+tgschultz
+Yeah, sorry, the blog entry was meant to try and explain the base concept, but I admit it isn't my best documentation.
+
+1561846269
+Tetralux
+It wasn't compiling it because without the comptime block using it
+
+1561846276
+Tetralux
+It just goes "Meh - don't need this!"
+
+1561846289
+Tetralux
+Whereas with it, it's forced to look at it, and therefore includes it?
+
+1561846318
+emekankurumeh[m]
+which is strange because i wasn't getting any errors despite the linker file needing those symbols
+
+1561846328
+Tetralux
+tgschultz, I gotta be honest, I find the code to actually make that work pretty unreadable and hard to understand xD
+
+1561846412
+Tetralux
+emekankurumeh[m], That... is quite odd.
+
+1561846495
+tgschultz
+Well the base version is pretty simple, but the version I distribute does some code reuse, so yeah. The basic idea is that you have a struct type S, right? That contains a member representing the type you want to store, T, as well as some other struct P. Then you create another struct S' where P is S, then do it again, and again... then there are some accessor functions to allow accessing the desired embedded value by some
+
+1561846495
+tgschultz
+identity. In Tuple, it's an int.
+
+1561846688
+Tetralux
+I see.
+
+1561846751
+Tetralux
+I feel like varargs would be useful here...
+
+1561846779
+tgschultz
+you'd think that wouldn't you? unfortunately not, due to not being usable in comptime functions
+
+1561846788
+tgschultz
+that'll be remedied when varargs are replaced
+
+1561846795
+Tetralux
+Something like "const T = MakeStruct(U, V, W, X, Y, Z).init(1, f64(2.0), f32(3.0), u64(47));
+
+1561846807
+Tetralux
+And not only that
+
+1561846830
+Tetralux
+But have it easier to write such an implementation without having to resort to things like PsudeoStruct and .Add and Self.Add and things.
+
+1561846844
+Tetralux
+I'd have to read it like 5 times to figure out how it actually did what it's doing xD
+
+1561846880
+tgschultz
+actually you could just do `const T = Tuple(u8(1), f65(2.0), f32(3.0), u64(47));` if varargs worked right at comptime
+
+1561846904
+tgschultz
+there's a variation of that already in Psudo
+
+1561848215
+Sahnvour
+I look forward to when we won't have to go to such lengths to create types :) but it's impressive nonetheless tgschultz
+
+1561848295
+scientes
+how do i test if something is undefined?
+
+1561848393
+Sahnvour
+scientes: you can't really, unless you have a reserved value to represent a particular undefined state
+
+1561848465
+scientes
+cause i need it to write a test
+
+1561848507
+scientes
+oh actually i can
+
+1561848514
+scientes
+because it is just a bool
+
+1561848521
+scientes
+and undef with be != true, and != false
+
+1561848547
+scientes
+and undef and NAN is the only thing that does not equal itsself
+
+1561848578
+tgschultz
+is this a comptime undef? as in the undefined type?
+
+1561848580
+scientes
+(only if you never hit llvm)
+
+1561848593
+scientes
+yeah bin_op doesn't take undefs currently
+
+1561848599
+scientes
+ran accross that while fixing something else
+
+1561848604
+scientes
+like > = !=
+
+1561848777
+scientes
+hmm, in godbolt is seems to work
+
+1561848783
+scientes
+guess i will have to look at it some more
+
+1561848817
+scientes
+yeah its generating code for a comptime variable
+
+1561848824
+scientes
+
+
+1561848885
+Tetralux
+scientes: In C, `false` is 1, but any value that is not zero is considered true.
+
+1561848891
+Tetralux
+I don't know if that's true in zig or not.
+
+1561848915
+Tetralux
+If so, I'd suggest that to check for undefined, cast to int and check it's != 0 and != 1.
+
+1561848932
+scientes
+you can just do undefined == undefined
+
+1561848951
+scientes
+ahh there is the error
+
+1561849006
+scientes
+oh undefined == undefined return undefined....
+
+1561849010
+scientes
+what am i thinking
+
+1561849023
+scientes
+i already coded it that way, but i wasn't thinking
+
+1561849040
+scientes
+its a poison value
+

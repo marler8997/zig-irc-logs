@@ -1,0 +1,616 @@
+1575075316
+andrewrk
+daurnimator, your fifo code is proving useful for test coverage. currently it's the last remaining std lib test failing, blocking the merge of #3787
+
+1575075345
+andrewrk
+pixelherodev, are you referring to this?
+
+1575075379
+andrewrk
+once we're shipping self-hosted, then this only has to be how much memory it takes to build self-hosted
+
+1575075523
+stratact
+andrewrk: After getting used to build.zig from before, I appreciate how straightforward it is to link more C libraries with it. In FreeBSD, I find what I need with `find /usr/local/lib -name "*name*"` for the lib object in build.zig and `find /usr/local/include name "*name*"` for the cInclude in the source. Boom, it compiles.
+
+1575075558
+andrewrk
+there's an issue open for that, too.
+
+1575075615
+stratact
+wait, there is more room for it to improve? :)
+
+1575076049
+stratact
+Ah right, a package manager can help automate that.
+
+1575076141
+stratact
+but I think, as you have said, requires more planning.
+
+1575076787
+pixelherodev
+Gotcha
+
+1575078857
+daurnimator
+andrewrk: all the talk around align(0) and packed structs happens to align with what I was thinking last night.... about 2 hours before you mentioned them :)
+
+1575078879
+daurnimator
+I was looking into capnproto support for zig: I was trying to figure out how to map their concept of unions
+
+1575078903
+daurnimator
+==> in capnproto, if you have a struct with a union member, it allows members of that union to be spread through the whole struct
+
+1575079082
+nooga
+ha, just found out that my terminal does font ligatures
+
+1575079266
+daurnimator
+leeward: isn't everyone ditching mercurial at this point? didn't they refuse to move to python3, and hence everyone is dropping mercurial at python2 end of life in a few months?
+
+1575079284
+daurnimator
+nooga: terrifying :P
+
+1575079289
+daurnimator
+nooga: tried putting firacode in there?
+
+1575079339
+daurnimator
+andrewrk: I'm happy to hear about the value-range-propagation proposal. However I'm scared it might result in a code explosion as different types are passed to a generic.
+
+1575079352
+daurnimator
+wondering if input to a generic needs to be "marked" for which properties are used
+
+1575079390
+daurnimator
+e.g. if I have a pure-storage generic, like ArrayList, then the range of the members doesn't really matter for the code: all I really care about is the size of it.
+
+1575079502
+leeward
+daurnimator, but I like it better, and it will move to py3k eventually.
+
+1575079529
+andrewrk
+daurnimator, that's a valid concern
+
+1575079573
+daurnimator
+leeward: looks like they at least stopped trying to fight the move:
+
+1575079821
+daurnimator
+andrewrk: added as a comment on your proposal.
+
+1575079870
+daurnimator
+andrewrk: let me know if you need me to explain more about what capnproto does: its both a puzzle to figure out how to interface with it from zig; but also it provides us some ideas/concept on how we can do struct layout ourselves...
+
+1575079949
+andrewrk
+is that the deserialization library that tries to not parse untrusted input? seems misguided
+
+1575079993
+daurnimator
+andrewrk: its not so much a deserializer as a struct-layout ABI + an RPC protocol
+
+1575080044
+andrewrk
+ok that sounds more reasonable
+
+1575080061
+andrewrk
+
+
+1575080192
+daurnimator
+andrewrk: 2 main concepts from it: 1. the fastest way to parse is to not parse at all: have a struct ABI thats the same "everywhere" and now no one needs to parse/serialise. 2. RPC with promises; where you can send a request "call function X with the result from function Y" => which looks like: `promise = Y(x,y,z); new_promise = X(promise); result = new_promise.resolve()`
+
+1575080215
+andrewrk
+ok now we're back to "seems misguided". you can't not parse untrusted input
+
+1575080290
+andrewrk
+there has to be a layer where you translate input into program state which upholds your data semantics
+
+1575080340
+andrewrk
+anyway, what's the trouble with matching the ABI?
+
+1575080409
+daurnimator
+okay so example, here is the "source" struct:
+
+1575080422
+daurnimator
+in compiled/annotation for that becomes:
+
+1575080458
+daurnimator
+notice that the union pieces are strewn throughout the struct
+
+1575082352
+daurnimator
+andrewrk: also I'm curious what the fifo code is showing you about #3787
+
+1575082463
+andrewrk
+daurnimator, this was the fix:
+
+1575082493
+andrewrk
+uh, the top half. bottom half is just cleaning up messy codegen
+
+1575082578
+daurnimator
+oh, another thing, did you see this error message I posted last night: "error: expected type 'usize', found 'i30' note: unsigned 64-bit int cannot represent all possible unsigned 30-bit values"
+
+1575082728
+daurnimator
+I had a quick look into it... and it seemed like there may be a deeper bug lurking
+
+1575082803
+andrewrk
+daurnimator, looks like a 1 line fix to me, I typo'd `wanted_type` 2x instead of making the 2nd one `actual_type`
+
+1575082834
+andrewrk
+"error: expected type 'usize', found 'i30' note: unsigned 64-bit int cannot represent all possible signed 30-bit values"
+
+1575082842
+andrewrk
+the corrected message is correct
+
+1575082858
+daurnimator
+ahhhhh'
+
+1575082871
+daurnimator
+I was looking at the sprintf arguments
+
+1575082875
+daurnimator
+I didn't look two lines above
+
+1575082876
+daurnimator
+doh
+
+1575082926
+daurnimator
+here I was worried that result location was messing up the type's is_signed field
+
+1575082983
+andrewrk
+will push the fix in a moment
+
+1575083013
+daurnimator
+no problems. sorry for not looking closer
+
+1575083051
+andrewrk
+no worries
+
+1575083403
+daurnimator
+Looks like 3787 touches a lot of things: I'm betting a lot of other PRs will need to be rebased
+
+1575084016
+andrewrk
+I'm about to merge it too
+
+1575084922
+pixelherodev
+3787?
+
+1575084941
+pixelherodev
+Ah
+
+1575085048
+andrewrk
+I don't expect anybody to rebase their PRs that are already finished before breaking changes are merged
+
+1575085227
+daurnimator
+So many interesting proposals lately
+
+1575089978
+cncl
+just curious: if i'm stuck on mac os 10.12, but want to play with zig, should i use a linux vm? or docker? (i have no idea how to use docker, but i'm presuming this is the sort of thing it gets used for)
+
+1575091654
+Spacemonkey2126
+Hey folks. I'm checking out zig for the first time. I'm a long time C programmer (20+ years) that has been looking for a Better C for sometime.
+
+1575091679
+andrewrk
+howdy Spacemonkey2126
+
+1575091683
+Spacemonkey2126
+I was looking into compile times since that is one of the most important things to me (iteration times are crucial)
+
+1575091703
+Spacemonkey2126
+Here was my initial results:
+
+1575091705
+Spacemonkey2126
+~/prj/zig_eval/01_comp_speed $ cat main.c
+
+1575091839
+Spacemonkey2126
+
+
+1575091906
+Spacemonkey2126
+The zig binary is significantly larger which probably explains it (zig is compiling a lot more code)
+
+1575091908
+Spacemonkey2126
+~/prj/zig_eval/01_comp_speed $ ls -la main main-clang main-gcc
+
+1575091914
+andrewrk
+you're comparing -O2 clang to zig in debug mode, which is unfair to clang
+
+1575091958
+Spacemonkey2126
+Any ideas on how to reduce the amount of code the compiler sees?
+
+1575091961
+andrewrk
+but it's a moot point; it's not time to measure compile time perf yet. this is the bootstrapping compiler, it is optimized for simplicity so that we can get to self-hosted status
+
+1575092032
+Spacemonkey2126
+Sure. But, there's clearly there is probably a couple orders of magnitude more IR being thrown at LLVM than required. Is this expected?
+
+1575092054
+andrewrk
+yeah, zig has stack traces on in debug builds
+
+1575092062
+andrewrk
+try getting a segfault :)
+
+1575092167
+Spacemonkey2126
+Any ideas on how to get a small build down to 200-ish millis
+
+1575092256
+andrewrk
+try passing --strip, this will disable debug info stuff
+
+1575092268
+Spacemonkey2126
+Otherwise I'm probably going to have to wait for the stage 2 or stage 3 compiler .. my workflow efficiency is super important to me .. I have large large projects in C that compile fully in under 10s and incrementals in under 1s
+
+1575092277
+andrewrk
+yeah sounds like you should come back in 1 year
+
+1575092297
+andrewrk
+but for sure compilation speed is a high priority for self-hosted
+
+1575092321
+Spacemonkey2126
+(err.. medium size code-wise but they do a lot for the code size)
+
+1575092372
+andrewrk
+Spacemonkey2126, check the 0.6.0 release notes in april
+
+1575092396
+Spacemonkey2126
+Ooo --strip is better.. how painful is it to debug a segfault now?
+
+1575092434
+andrewrk
+I'm sure it's nothing as painful as it would be for me to watch you try to debug a segfault with --strip enabled when we have perfectly good stack traces
+
+1575092464
+Spacemonkey2126
+Ha.
+
+1575092576
+Spacemonkey2126
+Okay, well there's probably something workable here.. I will definitely keep an eye out for 0.6.0.. Otherwise, there is a lot pointing in the right directions for zig.. Just don't kill it with feature creap ;-)
+
+1575092599
+andrewrk
+I'm getting good at saying "no"
+
+1575093130
+andrewrk
+Spacemonkey2126, oh, also clang is dynamically linking libc and zig is creating a static binary. you can dyn link glibc by using -lc
+
+1575093149
+andrewrk
+(assuming you're on a glibc system)
+
+1575093588
+Spacemonkey2126
+I don't have a strong preference on that at this stage (I'm in explore / eval mode).. but I strongly prefer static binaries anyways .. at the moment there is no compile-time speed difference. It seems to all be debug-data overhead that takes it from 200 millis => 1000 millis
+
+1575093687
+Spacemonkey2126
+Extremely hypothetically, if someone wanted to help Zig reach its build speed goals, what might one help with?
+
+1575093777
+andrewrk
+with improving the completeness and robustness of std lib's evented I/O support
+
+1575093839
+andrewrk
+for example, one might start with `zig fmt`, as a smaller project. get all the I/O that that uses to be properly evented, on all OS's, and fuzz test it to make sure there aren't bugs in the event loop implementation
+
+1575093893
+andrewrk
+self-hosted will be using all the available CPU cores from the very beginning
+
+1575093955
+andrewrk
+you could also help with
+
+1575094074
+andrewrk
+there's also this:
+
+1575094243
+Spacemonkey2126
+Okay, thanks. I'll have to think about it. I have a very time-consuming career as is (you know about that...), but I'd really like to see this project succeed.
+
+1575094255
+Spacemonkey2126
+I appreciate your time. Keep up the good work!
+
+1575094272
+andrewrk
+thanks
+
+1575111034
+mq32
+andrewrk: both #3803 and #3804 are good proposals
+
+1575112146
+stratact
+oh no... either I'm doing something wrong or the Zig compiler (even freshly built from latest git HEAD) can't import the C macros I need from libjpeg for some reason...
+
+1575112199
+Snektron
+I think its the latter
+
+1575114176
+nooga
+I'm trying to implement mal in Zig,
+
+1575114202
+nooga
+loads of fun
+
+1575114249
+nooga
+one thing that gets me is managing allocators manually and that the repl IO is 30 LoC instead of 5 :D
+
+1575114306
+mq32
+Snektron: macros are poorly supported by translate-c
+
+1575118075
+Snektron
+yeah i imagine its hard to make
+
+1575118221
+Snektron
+i remember it working before, was there any reason its not anymore?
+
+1575147793
+stratact
+andrewrk: does Zig currently have the ability to take these C macros and integrate them as callable functions?
+
+1575147905
+stratact
+I need the decompress macro to get jpeg pixels and convert that data to a X11 pixmap in Zig
+
+1575148019
+andrewrk
+one trick is to wrap the preprocessor code in a C API
+
+1575148035
+andrewrk
+ironic when you have to wrap a C library with a C API, eh?
+
+1575148070
+stratact
+it takes away the enjoyment ;)
+
+1575149049
+stratact
+Still, I'm impressed by your solution, it seems to compile
+
+1575149113
+andrewrk
+it's proposed to allow arbitrary C code in @cImport. this would help when you have to wrap a macro
+
+1575149207
+stratact
+
+
+1575149424
+andrewrk
+very reasonable thing to do
+
+1575149589
+stratact
+Well, I borrowed the idea from you though ;)
+
+1575149592
+stratact
+
+
+1575149606
+stratact
+At least, I thought this is what you meant earlier
+
+1575149879
+stratact
+Using the C API to make a C API trick, it still blows my mind.
+
+1575149921
+fengb
+Unfortunately C macros aren’t really C >_>
+
+1575150290
+daurnimator
+
+
+1575150413
+stratact
+wow and he successfully build and ran gimp, inkscape, and firefox with it, that's pretty cool.
+
+1575150446
+andrewrk
+we can test zig allocators with that strategy
+
+1575150451
+andrewrk
+I hadn't realized that before
+
+1575150480
+fengb
+I should test out zee_alloc with a real project >_>
+
+1575150500
+andrewrk
+daurnimator, I posted this to
+
+1575151203
+daurnimator
+I love it when my "i386-linux" PR contains mips enabling code :P
+
+1575152247
+mikdusan
+andrewrk: is `(ResultLoc *) == nullptr` semantically equivalent to `result_loc->id == ResultLocIdNone`
+
+1575155594
+andrewrk
+mikdusan, yes, idea there being to save memory. but if we freed ResultLocs after pass1 that wouldn't be an issue
+
+1575155620
+andrewrk
+now that your ZigValue change is merged, I think it would be pretty straightforward to free all pass 1 IR instructions and Result Locations
+
+1575156817
+adamkowalski
+andrewrk: if you use vim-test, I have a fork that supports Zig
+
+1575156879
+adamkowalski
+I'm looking for people to try it out and see what breaks before I submit a PR back to vim-test. So if you hate it, love it, want to throw tomatoes or whatever just let me know and i'll try and improve it and get it ready for use
+
+1575156908
+andrewrk
+neat, how's that working for you?
+
+1575157078
+andrewrk
+mikdusan, btw I'm happy to do another comment on #3794 if you prod me with another comment :)
+
+1575157094
+adamkowalski
+I'm used to that workflow from other languages, so it's nice to have it here too
+
+1575157109
+adamkowalski
+It supports :TestNearest :TestFile :TestLast :TestVisit
+
+1575157136
+adamkowalski
+so when you just want to run one test over and over until it works, you move your cursor to the test in question, run :TestNearest
+
+1575157154
+adamkowalski
+Then you go to the implementation file, start making changes, and then run :TestLast without having to go back to the test file
+
+1575157178
+adamkowalski
+Once you're happy with it, and you want to write your next test you can :TestVisit to go back to the test file no matter where you currently are
+
+1575157194
+adamkowalski
+Then as a sanity check you can :TestFile and commit and push
+
+1575157217
+adamkowalski
+I still haven't figured out how to implement :TestSuite though. I could use some help with that
+
+1575157229
+andrewrk
+my only complaint would be that :TestFile is 12 keystrokes but alt+tab, up, enter is 4
+
+1575157239
+andrewrk
+but I suppose that's what one's vimrc file is for
+
+1575157246
+adamkowalski
+Oh yeah I would never type that out manually
+
+1575157253
+adamkowalski
+I have it set to <leader>tf
+
+1575157255
+adamkowalski
+for test file
+
+1575157257
+andrewrk
+neat
+
+1575157258
+adamkowalski
+<leader>tn
+
+1575157260
+adamkowalski
+and so on
+
+1575158280
+Spacemonkey2126
+I've been doing some more testing, comparing C vs Zig esp in respect to code-gen on simple examples. I'm using LLVM in both cases to help make it more isolated.
+
+1575158317
+andrewrk
+oh lovely, godbolt has zig asm code again
+
+1575158338
+Spacemonkey2126
+For the most part, very similar ..  most differences explainable by different codegen decisions, zig having inlining that is too aggressive, etc
+
+1575158351
+Spacemonkey2126
+But, I was caught massively off-gaurd by an implicit copy which surprised me. To me, this is one of my biggest gripes with C/C++ and was hoping this would be better given Zig's Philosophy (There is no hidden control flow, no hidden memory allocations, no preprocessor, and no macros. If Zig code doesn't look like it's jumping away to call a
+
+1575158351
+Spacemonkey2126
+function, then it isn't)
+
+1575158394
+Spacemonkey2126
+Basically: `var memptr = arr.mem;` vs `var memptr = &arr.mem;`
+

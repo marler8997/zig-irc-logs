@@ -1,0 +1,464 @@
+1558572104
+andrewrk
+nrdmn, mmmm no, that should only be possible when exporting
+
+1558572137
+andrewrk
+exporting variables needs an audit right now
+
+1558572427
+daurnimator
+andrewrk: welcome back :)
+
+1558572469
+andrewrk
+thanks daurnimator
+
+1558572516
+daurnimator
+Aransentin: andrewrk: the "async stream abstraction" is sort of what I'm working on with the uring work
+
+1558572555
+daurnimator
+--> currently figuring out the lower level bits. Once we get coroutines the 'nice' user API can be made.
+
+1558574081
+nrdmn
+I'd like to assign an array of arrays. Currently I'm using [][2]i8{ []i8{1, 2}, []i8{3, 4} }. The inner []i8 seems redundant. Is there any way to avoid such redundancy in this example?
+
+1558574205
+daurnimator
+nrdmn: I know there's an issue around for that...
+
+1558574332
+daurnimator
+nrdmn:
+
+1558574552
+nrdmn
+daurnimator: ah, thanks
+
+1558574596
+daurnimator
+nrdmn: maybe throw your comment in there too. different example use-cases are nice IMO
+
+1558574851
+nrdmn
+
+
+1558574903
+nrdmn
+not sure if I was just overthinking that loop :D
+
+1558574932
+daurnimator
+nrdmn: jeez, make yourself a Point() type
+
+1558575195
+daurnimator
+re: point types: it would be cool if you could make aliases for array members... e.g. with a point type you often want it to be implemented with a @Vector. but you'd like to access members via 'x', 'y', etc.
+
+1558575277
+daurnimator
+which I think is related to interesting thing I ran into last night: I have struct members that needs to be accessed atomically (get with .Acquire, set with .Release): I had to write getters/setters.
+
+1558575295
+daurnimator
+--> is there something zig can do to make getters/setters nicer to use?
+
+1558575346
+nrdmn
+aliases for array members... Isn't that just a struct?
+
+1558575378
+daurnimator
+maybe some special syntax? e.g. (probably a bad idea) reading mystruct.x -> invokes `mystruct.x()`. only works for functions that take no arguments and annotated with 'getter'.
+
+1558575421
+daurnimator
+nrdmn: struct layout in zig isn't defined for non-extern structs
+
+1558575444
+nrdmn
+not even for packed structs?
+
+1558575502
+daurnimator
+nrdmn: i.e. union{Vector: @Vector(i32, 2), XY:struct{x: i32, y: i32}} -> nothing says zig can't reorganise the struct!
+
+1558575566
+fengb
+“Unlike normal structs, packed structs have guaranteed in-memory layout:”
+
+1558575615
+daurnimator
+ah. I thought packed just meant "no padding"
+
+1558575617
+daurnimator
+TIL
+
+1558575808
+AlexMax
+how would a packed yet out-of-order struct even be useful?
+
+1558575949
+daurnimator
+AlexMax: to tell zig to optimize memory usage and don't bother with alignment or making it fast to load/store members. so e.g. pointers can be unaligned. bitfields are packed as tight as possible. etc.
+
+1558576592
+AlexMax
+
+
+1558576753
+daurnimator
+oh, project for someone: dns packet formats
+
+1558577157
+fengb
+Is there a way to create a strict type alias? I have 3 different types of u8s and would like to keep them distinct
+
+1558577332
+daurnimator
+fengb:
+
+1558577510
+fengb
+Aha
+
+1558577562
+daurnimator
+fengb: what's your usecase?
+
+1558577601
+lunamn
+daurnimator: your dns issue is interesting because I've been working on a zig dns parser for the last couple of days
+
+1558577671
+daurnimator
+fengb: also I had an idea... distinct integer types seem like it could be similar to non-exhaustive enums..... what if `distinct(i32)` was effectively: `enum(i32) {_}`
+
+1558577703
+emekankurumeh[m]
+daurnimator, wouldn't that getter stuff violate "no hidden control flow"?
+
+1558577720
+daurnimator
+emekankurumeh[m]: yep.
+
+1558577815
+daurnimator
+emekankurumeh[m]: I was trying to come up with a different syntax for it. e.g. mystruct:x instead of mystruct.x.... which I've been meaning to propose as a resolution to
+
+1558577852
+daurnimator
+oh hyrx already sort of did
+
+1558578204
+daurnimator
+lunamn: got a link? :)
+
+1558578238
+lunamn
+daurnimator:
+
+1558578345
+daurnimator
+lunamn: thanks :) packet.zig isn't far from what I was thinking of
+
+1558578413
+daurnimator
+lunamn: perhaps volunteer in the issue; and if it gets "approved" by andrewrk then you can send a PR?
+
+1558578420
+andrewrk
+daurnimator, the packed but out of order use case you described is planned with
+
+1558578434
+andrewrk
+idea being you can specify 1 byte alignment on all the fields
+
+1558578450
+andrewrk
+well maybe this needs a separate proposal - but if you were able to specify sub-1-byte alignment then zig would be free to pack stuff
+
+1558578509
+daurnimator
+andrewrk: how about `align(0)` -> align to anything you want, even to a bit.
+
+1558578552
+andrewrk
+hmm yeah I do think this needs a separate proposal
+
+1558578570
+andrewrk
+that's a good starting point, and then we need to explore how it would work in various examples
+
+1558578806
+daurnimator
+andrewrk: on the topic of bit field packing... is it possible to create a struct specifying the bit offsets? would be useful for flag arguments
+
+1558578966
+daurnimator
+e.g. mmapflags = struct { shared: offset(MAP_SHARED) u1, private: offset(MAP_PRIVATE) u1, ... }
+
+1558579017
+daurnimator
+(actually those mmap flags are a bad example... substitute a different flags example of your choice)
+
+1558579767
+fengb
+daurnimator: emulator. I have 8 bit registers, 8 bit memory addresses, and strings
+
+1558579799
+fengb
+In C, I wrapped them with a struct so I didn't accidentally pass the wrong pointer / value
+
+1558579817
+daurnimator
+fengb: you can wrap them in a struct in zig too
+
+1558579898
+fengb
+Yeah but it's still clunky :P
+
+1558579920
+daurnimator
+fengb: would my non-exhaustive enum idea be better?
+
+1558579975
+fengb
+It's not the most obvious solution but yeah it'd work
+
+1558579994
+fengb
+Although I'm actually rethinking how I'm structuring registers... so maybe it won't be a big deal
+
+1558580089
+fengb
+Hmm, can you stick methods onto enums? Go lets you add methods to any custom type, even "primitives"
+
+1558580392
+daurnimator
+fengb: yes.
+
+1558580614
+fengb
+Oh cool
+
+1558580619
+fengb
+Not sure how I missed that
+
+1558587305
+fengb
+daurnimator: welp you're right, I need metadata for this allocator
+
+1558608798
+merlyndmg
+Yup, looks like you can't really link to a DLL without manually wrapping the definitions with: extern "somedll" stdcallcc - I decided to just compile libepoxy statically instead, and cimport start working again. Would be nice to get a version of that which let you specify the lib name (and possibly also the right calling convention).
+
+1558608872
+merlyndmg
+(a version of cImport/cInclude)
+
+1558612285
+merlyndmg
+...and I got the tetris version building running on a Windows host and running. Should I do a write-up somewhere?
+
+1558612334
+merlyndmg
+(well, that was redundant. super late... definitely not writing anything tonight)
+
+1558622269
+andrewrk
+merlyndmg, nice work. I'll look into the DLL thing at some point. seems like there may be an issue there
+
+1558622319
+andrewrk
+I'm focusing on other things for now but once we have the package manager I'm going to focus intensely on the various use cases of building stuff. building things that can or cannot be packaged
+
+1558622348
+andrewrk
+for the tetris example specifically all of its dependencies could be packaged and thus it should be an example that can be cross-compiled on any target for any target
+
+1558624059
+FireFox317
+Hi guys! I'm new to Zig and I just build the compiler and tried to use zig fmt. I was trying to run `zig fmt -h`, because i thought that would show me the options I could use. This resulted in a segfault and a stack trace with only questionmarks. I would like to solve this issue, however I need some help. I already found out that the code for this is in 'userland' stage2 zig code, but I would like some tips to better debug this. So
+
+1558624097
+andrewrk
+hi FireFox317
+
+1558624167
+andrewrk
+I think your message got cut off after "So"
+
+1558624222
+FireFox317
+I would like to solve this issue, however I need some help. I already found out that the code for this is in 'userland' stage2 zig code, but I would like some tips to better debug this. Sorry for this long message :)
+
+1558624278
+andrewrk
+I'm happy to help. When debugging a segfault, the most straightforward way to solve the problem is with a debugger
+
+1558624294
+andrewrk
+on linux or freebsd, gdb. on windows, msvc. on macos, lldb
+
+1558624453
+FireFox317
+Ah okay, I'm on Linux, so I'm gonna try to use gdb. Thanks for the suggestion! I'm wondering whether the compilers zig code is built in debug or release mode?
+
+1558624696
+andrewrk
+FireFox317, debug mode
+
+1558624883
+andrewrk
+FireFox317, when I do `zig fmt -h` I don't get a segfault, I get an error message, and I get an error return trace that shows where the error came from
+
+1558624903
+andrewrk
+ah, there is a segfault at the end of the trace
+
+1558624914
+FireFox317
+Jup, it takes some time indeed
+
+1558624917
+andrewrk
+
+
+1558624940
+andrewrk
+the slowness is a recent regression:
+
+1558624982
+andrewrk
+anyway the segfault is coming from the stack trace itself. it's not the reason for `zig fmt -h` not working. you can actually debug this without a debugger (if your goal is to implement -h)
+
+1558625065
+FireFox317
+Ah i see, however in my case I don't get any text in the stack trace:
+
+1558625347
+andrewrk
+FireFox317, hmm, so that's a separate problem. something to do with zig's dwarf parsing code
+
+1558625422
+FireFox317
+Ah yes indeed, I'm gonna try to figure out why that is happening. Thanks for the help anyway! I really like and appreciate your project
+
+1558625628
+andrewrk
+thanks
+
+1558625733
+mikdusan
+andrewrk: i'm adding some unit tests for stacktraces; i see that release-fast/small simply emit "error: [stringname]"
+
+1558625787
+mikdusan
+and release-safe does a trace, but it's showing the same function in each frame. i'll put up a pastie in a sec.
+
+1558625849
+mikdusan
+
+
+1558625967
+andrewrk
+mikdusan, look at std/special/bootstrap.zig specifically the function that calls main(), that will explain some of that
+
+1558627239
+tgschultz
+I've found a comptime bug I've never seen before. When this code is run at runtime it works fine, but at compile time it infinite loops until Linux kills it.
+
+1558627480
+tgschultz
+at least I assume it is infinite, it may just be looping a lot during eval where "a lot" is fewer than 1 million and yet enough to exhaust memory.
+
+1558628528
+tgschultz
+interesting. @compileLog reports that a value is somehow magically becoming runtime during the comptime evaluation
+
+1558628717
+tgschultz
+screw it, I'll just comment out the test. Who needs interfaces that work at comptime anyway?
+
+1558628937
+andrewrk
+yeah one thing at a time. I can take on the issue of making those work at comptime at some point
+
+1558629692
+tgschultz
+As you've probably notice, I've been particularly frustrated by comptime evaluation bugs lately. I feel these latest iterations of interface reform will have pretty much fully explored the concept of doing it in userland and put the ball in your court, andrewrk, for how to proceed. With that off my plate I'll be interacting with comptime evaluation bugs less often and my mood should improve.
+
+1558629753
+andrewrk
+tgschultz, makes sense to me. thanks for your efforts
+
+1558629777
+andrewrk
+I have to balance bug fixing with language modifications, because language modifications change the premises of the codebase and therefore introduce bugs
+
+1558629872
+andrewrk
+it kinda makes sense to let things be a little buggy until it's time to stabilize everything
+
+1558630123
+tgschultz
+I get it. And I don't even mind if all this work ultimately gets thrown out. Every time I go to rewrite my image libraries in a more zig-like fashion (streams instead of allocating large chunks of memory) I can't help but think about how poorly the the streams interface optimizes currently, so I needed to do something toward making interfaces better, even if it was just to show that the alternatives are worse.
+
+1558630337
+tgschultz
+One thing I've come to realize is that the current pattern has a significant advantage in its simplicity and not relying on type erasure.
+
+1558630519
+tgschultz
+Someone wrote a go program to convert ELFs to LEs. That may help my plans for using Zig with DOS.
+
+1558630575
+andrewrk
+in theory the current pattern should optimize just fine. I'm not sure why it doesn't
+
+1558631099
+tgschultz
+if that gets fixed, then the only significant feature of what I've done will be that it removes the common footgun, which would honestly be better handled by the uncopyable struct/field idea. ErrorSet management is still an issue, which the iteration in my current PR makes a bit easier, but I personally think that pattern is too complicated. I think it will come down to which we want more: ErrorSets that are
+
+1558631099
+tgschultz
+different depending on the implementer, or a universally usable interface. Having both is, in my opinion, messy.
+
+1558634060
+merlyndmg
+sounds good! builds on all platforms does seem like a priority that will really come into play with package management
+
+1558643178
+FireFox317
+Andrewrk: are you going to stream tonight?
+
+1558643273
+andrewrk
+FireFox317, no - I'm catching up on pull requests
+
+1558643754
+tgschultz
+sadly this ELF to LE converter seems to expect some very specifically structured ELF file. Another bust.
+
+1558649471
+tgschultz
+andrewrk: it occurs that the only time specific ErrorSet information is really desired from an interface is when you switch on the error, right? And specific ErrorSet information is the reason we have a differentiation between "comptime" and "runtime" interfaces and do all the convoluted stuff we do with Streams right? So... what if we just had a different channel to build that resulting error set and cast
+
+1558649472
+tgschultz
+before you switch on it? We're already partly there because of what we have to do to work around error inferrence bugs. Then all interfaces could be anyerror and you'd only use the specific ErrorSet info when a) all pieces of the interface (like a chain of streams) are comptime known and b) you actually care.
+
+1558650893
+nrdmn
+How can I copy a struct? I can't seem to find anything on that in the documentation
+
+1558652187
+merlyndmg
+The docs seem to gloss over it, but I think assignment to another struct instance will copy the struct by value. Seems to work that way in the test program I just ran
+

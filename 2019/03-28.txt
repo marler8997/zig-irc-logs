@@ -1,0 +1,620 @@
+1553731200
+scientes
+*locks between processes
+
+1553731203
+daurnimator
+the downside (which you already figured out I think) is that you can only have a single robust mutex handler per
+
+1553731207
+daurnimator
+and usually libc takes it
+
+1553731224
+scientes
+daurnimator, no, per thread
+
+1553731226
+scientes
+you are wrong
+
+1553731449
+daurnimator
+ah yes
+
+1553731667
+daurnimator
+but yes; prefer eventfd over futexes where possible.
+
+1553731730
+daurnimator
+it does wonders for the more-common-than-anyone-thinks use case of "wait on mutex or stdin or socket"
+
+1553731830
+wrl
+i did tests some time ago to see if eventfd was any slower than non-composable signalling primitives (basically, futex and anything on top of it)
+
+1553731840
+wrl
+but i tested in the blocking case
+
+1553731851
+wrl
+i'm sure in the case where the futex is elided completely they're faster
+
+1553731861
+wrl
+but in the blocking case eventfd is no faster or slower than anything else
+
+1553731866
+wrl
+pipes are the slowest
+
+1553731877
+wrl
+everything else is pretty much... couple hundred nanoseconds for wakeup
+
+1553731881
+wrl
+
+
+1553731907
+wrl
+
+
+1553731918
+wrl
+i forget what the speed tests were but i think it was to test how fast the write side was
+
+1553731934
+wrl
+actually, hah, looks like andrewrk wrote the futex test code :)
+
+1553731937
+wrl
+i thought i remembered that
+
+1553733056
+daurnimator
+wrl: got results published anywhere?
+
+1553733340
+wrl
+daurnimator: nothing handy on this computer
+
+1553733345
+wrl
+run it yourself and let me know :)
+
+1553733360
+wrl
+the latency test is more generally interesting
+
+1553733407
+wrl
+it spins up a bunch of thread pairs, one sender and one receiver
+
+1553733433
+wrl
+the sender sleeps for an interval, gets the current system time (clock_gettime(CLOCK_MONOTONIC)), and sends that time to the receiver
+
+1553733456
+wrl
+the receiver, waiting on a sync primitive, wakes up, gets the current system time (again, CLOCK_MONOTONIC) and logs the difference
+
+1553733481
+wrl
+each sender has a static wait time, configured in test_params.h
+
+1553734199
+daurnimator
+wrl: okay ran them
+
+1553734203
+daurnimator
+yep eventfd won
+
+1553734222
+scientes
+is this a bug?
+
+1553734271
+daurnimator
+wrl:
+
+1553734530
+wrl
+daurnimator: yeah makes sense
+
+1553734537
+wrl
+i mean honestly i wasn't even interested in seeing if there was a winner
+
+1553734551
+wrl
+eventfd being composable is a huge advantage over the futex-based primitives
+
+1553734559
+wrl
+so i just wanted to see if it were any slower as a result
+
+1553734562
+wrl
+as it turns out, no
+
+1553734835
+daurnimator
+wrl: as much as I prefer eventfd; they both have things the other doesn't
+
+1553734851
+daurnimator
+wrl: e.g. futexes can do priority inheritence to avoid priority inversion
+
+1553734892
+daurnimator
+my preference is eventfd by default; futexes where you need specific functionality that is unavailable otherwise
+
+1553735043
+wrl
+ah, good point yeah
+
+1553735408
+wrl
+daurnimator: i like structuring things in a loose actor pattern, where actors listen on both a mailbox from other actors and also whatever else they need to (sockets, inotify, window system events, etc)
+
+1553757447
+Hejsil
+andrewrk, so if all string literals will be `*const [N]null u8`, then I'd assume that all `var a = "abc"` should be turned into `var a = "abc".*` correct?
+
+1553765507
+forgot-password
+Hey guys, I just updated to the latest zig build, but when trying to build a recent project I now get an error about std.build.Builder.addCommand. Has the API changed?
+
+1553766010
+Hejsil
+forgot-password, seems there was two changes. addCommand was replaced with addSystemCommand, and LibExeObjStep got a `run` function
+
+1553766105
+forgot-password
+Hejsil: Thanks, it seems like addSystemCommand now only takes 2 arguments instead of 4
+
+1553766181
+forgot-password
+Got it, I just generated a new project via init-exe and did some copying ;)
+
+1553766184
+forgot-password
+Thank you
+
+1553792114
+andrewrk
+yes Hejsil
+
+1553797176
+mikdusan
+is std.LinkedList good for FIFO, or is another more suitable?
+
+1553797186
+mikdusan
+*is there another more suitable?
+
+1553797310
+andrewrk
+mikdusan, it's fine as far as time complexity goes, but depending on your particular use case there may be a more optimized data structure that the std lib doesn't have yet
+
+1553797348
+andrewrk
+it's certainly not a mistake to start with std.LinkedList. easy to swap out the component later
+
+1553797366
+mikdusan
+yup i’ll use it. just making sure i’m not missing any (better) existing std options
+
+1553798088
+Hejsil
+A linked list + A good allocator goes a long way in terms of speed. In the advent of code I did a LinkedList + FixedBufferAllocator  solution which was only 4x slower than the ring buffer solution liampwll made
+
+1553798161
+andrewrk
+Hejsil, in answer to your string literal question above - yep. Or if you wanted to change strings later you'd have to give it a type, like this: var s: []const u8 = "hi"; s = "bye";
+
+1553798179
+andrewrk
+but dereferencing it would allow you to use it to initialize an array, as you pointed out
+
+1553798210
+Hejsil
+Right, was just making sure we intended to break this code :)
+
+1553798220
+Hejsil
+'break' as in breaking change
+
+1553798236
+andrewrk
+yep. we still have a lot of breakage to go before stabilizing
+
+1553798370
+andrewrk
+I'm working on a major bug fix - decoupling LLVM types / LLVM debug info types from Zig types in stage1
+
+1553798427
+scientes
+what is ConstValSpecialUndef ?
+
+1553798437
+andrewrk
+scientes, `undefined`
+
+1553798456
+andrewrk
+that's how `undefined` is represented in ConstExprValue
+
+1553798534
+scientes
+i'm confused how implicit_cast managed to convert a u16 to a u8
+
+1553798550
+scientes
+here
+
+1553798569
+scientes
+anyways, ill focus on the other bugs there
+
+1553798611
+andrewrk
+any comptime-known integer value is allowed to implicit cast to any other integer type if the value fits
+
+1553798623
+scientes
+but in this case it doesn't fit
+
+1553798637
+scientes
+oh my bad
+
+1553798642
+scientes
+bad code
+
+1553798647
+scientes
+caused by copy-paste
+
+1553798723
+Hejsil
+andrewrk, wasn't llvm types used for @sizeOf?
+
+1553798745
+scientes
+I hope what you are doing doesn't merge conflict with my work on some builtins
+
+1553798791
+andrewrk
+Hejsil, yes. after my change zig computes struct offsets and sizes itself
+
+1553798811
+andrewrk
+it will make
+
+1553798829
+andrewrk
+I didn't really understand struct layout and alignment when I started zig but now I understand it quite well
+
+1553798858
+Hejsil
+Aah. I see
+
+1553798882
+andrewrk
+right now packed structs always have alignment of 1, for every field
+
+1553798890
+andrewrk
+which makes it only useful for bitfields really
+
+1553798913
+andrewrk
+but if you have the power to align fields manually then it becomes a powerful tool that can be used to lay things out in memory with great precision
+
+1553798934
+Hejsil
+Sounds like something that also relates to Zig reordering fields of normal structs
+
+1553798935
+andrewrk
+(which obviously you only need sometimes; normal structs should be OK for most things)
+
+1553798952
+andrewrk
+yes, that will be more straightforward after this change too
+
+1553799005
+andrewrk
+we also don't waste time creating llvm types and debug types that are only used at comptime
+
+1553799051
+andrewrk
+it's taking me a few days though. with the upcoming release this comes at the cost of some other bug fixes
+
+1553799054
+fengb_
+[Benjamin Feng, fengb] Wow, looks great. I've been dabbling with writing an emulator and having the language help align the memory correctly would be amazing
+
+1553799113
+andrewrk
+scientes, it will probably merge conflict in ir.cpp but in easy-to-resolve ways
+
+1553799138
+andrewrk
+do you have 3 way conflicts set up?
+
+1553799153
+andrewrk
+[merge]
+
+1553799153
+andrewrk
+conflictstyle = diff3
+
+1553799159
+andrewrk
+this changed my life
+
+1553799163
+scientes
+i'll start with that
+
+1553799438
+mikdusan
+git config --global merge.conflictstyle diff3
+
+1553799476
+Hejsil
+Hmm, found a bug in master while working on the comptime slicing
+
+1553799483
+scientes
+mikdusan, he gave me something to put directly in ~/.gitconfig
+
+1553799509
+Hejsil
+Actually, the alignment is unneeded
+
+1553799987
+andrewrk
+scientes, mikdusan's command inserts it for you
+
+1553799999
+scientes
+yes i know
+
+1553805594
+andrewrk
+live coding on GeneralPurposeDebugAllocator starts in 20 minutes.
+
+1553807318
+scientes
+an Allocator wrapper could be used to profile memory usage in debug mode
+
+1553814850
+allochi
+Hey, I have  question about zig slices
+
+1553815088
+emekankurumeh[m]
+ask away
+
+1553815309
+allochi
+Hey, could you have a look at this
+
+1553815366
+allochi
+the test throws an error, I haven't done anything with zig for a while and I'm really rusty
+
+1553815376
+allochi
+I can't figure it out
+
+1553815703
+emekankurumeh[m]
+you need to import "std" to get the warn function
+
+1553815745
+allochi
+not that sorry, I do import the std
+
+1553815774
+allochi
+I'm sorry, I should be clear...
+
+1553815780
+allochi
+what fails is `atest.value[0] = 0;`
+
+1553815811
+allochi
+if I comment this, the test pass and prints out the first element of each array
+
+1553815862
+allochi
+also, are there slice literals in zig?
+
+1553815886
+mikdusan
+u have to “toslice” the array.
+
+1553815898
+mikdusan
+and since it’s const, you’ll have to adjust your var.
+
+1553815904
+mikdusan
+field.
+
+1553815933
+allochi
+what is constant?
+
+1553815935
+mikdusan
+but i don’t think u want that.
+
+1553815963
+allochi
+which part is constant?
+
+1553816016
+mikdusan
+well u have field value: []i32 which wants u want to use as mutable looking at your code.
+
+1553816054
+mikdusan
+so it needs mutable storage. and forcing it to use address-of a literal array means (i believe) you just wrote to immutable storage.
+
+1553816069
+emekankurumeh[m]
+what version of zig are you using?
+
+1553816077
+mikdusan
+latest
+
+1553816108
+allochi
+latest
+
+1553816120
+emekankurumeh[m]
+your code seems to work fine
+
+1553816157
+mikdusan
+runtime: stop reason = EXC_BAD_ACCESS
+
+1553816212
+allochi
+not here, I'm on macOS
+
+1553816272
+emekankurumeh[m]
+i suppose there is a problem with godbolt then
+
+1553816329
+allochi
+ok, I will check on my linux tomorrow, my other question is how toSlice?
+
+1553816349
+allochi
+I know that with a variable I can do something like this a[0..]
+
+1553816376
+allochi
+but how to slice with an array literal?
+
+1553816406
+emekankurumeh[m]
+the arrays literals are stored as constants so any slices or references to them will be constant as well.
+
+1553816453
+allochi
+ah! good to know.
+
+1553816503
+allochi
+could this be why my code didn't work?
+
+1553816579
+mikdusan
+this is ugly but it allocates the memory you need. and you’ll have to free it somewhere.
+
+1553816625
+allochi
+yeah, not really pretty at all :)
+
+1553816644
+allochi
+but there is something else...
+
+1553816652
+emekankurumeh[m]
+i think in this situation a FixedBufferAllocator, wrapped in a ArenaAllocator would be better
+
+1553816688
+mikdusan
+point is value needs mutable storage
+
+1553816704
+allochi
+if the array literals are constant, why when I assign a variable an array literal and use the address of the variable, I can mutate the array.
+
+1553816707
+allochi
+?
+
+1553816730
+allochi
+I will paste the snippet, give me a minute.
+
+1553816767
+emekankurumeh[m]
+i just realized godbolt only compiles the code, it doesn't run it
+
+1553816885
+allochi
+have a look at this
+
+1553816886
+allochi
+
+
+1553816927
+allochi
+you see if I assign the array literal to a variable and then use the variable address, I'm able to mutate the array, so it's not constant.
+
+1553817007
+allochi
+sorry, this is not making sense, the array literal is basically just a memory block inside the code, and is can be accessed and modified.
+
+1553817049
+mikdusan
+i think you’re right. i’m wrong. but the difference in your code is: 1 does it with a tmp that vanishes. the other does it with storage that’s around longer.
+
+1553817177
+mikdusan
+line 28. `var a` is alive during use in line 33. while line 14 []i32{24,2} does not live past line 15. yet you use that memory in loop at line 17.
+
+1553817198
+allochi
+I'm not sure it vanishes, again that array is in the stack, and I try to modify it while I'm still in the same stack.
+
+1553817257
+allochi
+are you sure? is so what would be the workaround without using the heap?
+
+1553817446
+allochi
+actually, this is not correct, I'm sorry
+
+1553817455
+allochi
+it doesn't vanish
+
+1553817499
+allochi
+the simple proof of that if I comment the line that mutate the array `atest.value[0] = 0;`
+
+1553817525
+allochi
+the for loop is able to read the first element of every array and prints it out.
+
+1553817559
+allochi
+if it vanish, then I should get segfault.
+
+1553817581
+mikdusan
+in your original that’s what i got. a bad access.
+

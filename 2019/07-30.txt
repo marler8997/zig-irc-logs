@@ -1,0 +1,868 @@
+1564453212
+dimenus
+anyone having issues building zig (master) on mingw64?
+
+1564453334
+dimenus
+getting a bunch of undef references to z3_* libclangStaticAnalyzerCore
+
+1564453337
+dimenus
+even with Z3 installed
+
+1564453562
+daurnimator
+dimenus: 2965 and 2958 were recently merged.... does it work from before they were merged?
+
+1564453603
+scientes
+we don't need maskedLoad or maskedStore
+
+1564453629
+scientes
+you can just use | and & and let the optimizer figure it out
+
+1564453874
+daurnimator
+scientes: I don't think that fits zig's philosophy
+
+1564453891
+scientes
+daurnimator, we could just put it in std lib
+
+1564453902
+scientes
+we only need @gather and @scatter
+
+1564453903
+daurnimator
+scientes: e.g. if you have half of a vector next to something with PROT_NONE: i'd want to be using a masked load.
+
+1564453931
+scientes
+daurnimator, ahh unaligned loads?
+
+1564453952
+daurnimator
+scientes: not unaligned. but when you
+
+1564453958
+scientes
+the optimization should just be guaranteed
+
+1564453976
+scientes
+daurnimator, yeah, but it will always be 16-byte aligned, so PROT_NONE is impossible
+
+1564454000
+daurnimator
+howso?
+
+1564454009
+scientes
+it has to be page aligned
+
+1564454026
+daurnimator
+16-byte aligned can still go over a page long if your vector is > 16 bytes.....
+
+1564454033
+scientes
+and thus is simd aligned
+
+1564454050
+scientes
+again, you just have to guarantee that the optimization is wrong
+
+1564454054
+scientes
+optimization is right
+
+1564454067
+scientes
+LLVM has already annonced that these instructions will be deprecated too
+
+1564454105
+scientes
+I feel its a bug in LLVM
+
+1564454114
+daurnimator
+whats a bug?
+
+1564454129
+scientes
+if it isn't getting optimized to a maskedstore/maskedload
+
+1564454135
+scientes
+if you use | and &
+
+1564454144
+daurnimator
+why should it be?
+
+1564454155
+daurnimator
+| and & can be much slower than a masked store/load
+
+1564454163
+scientes
+its equilivent
+
+1564454167
+daurnimator
+no its not
+
+1564454168
+scientes
+the optimizer would figure it out
+
+1564454190
+daurnimator
+from
+
+1564454212
+daurnimator
+a sequence of branches guarding loads is for sure slower than plain `|` and `&`
+
+1564454227
+scientes
+oh I see
+
+1564454252
+scientes
+uggh, its still code smell to me
+
+1564454258
+scientes
+they could add a optimization attribute
+
+1564454302
+daurnimator
+scientes: from the zig side: if I didn't have @maskedLoad: how would I indicate that I want to load half a vector without reading the other half?
+
+1564454306
+scientes
+I only see that it could cause problems if the pointer was unaligned
+
+1564454312
+daurnimator
+it's not about alignment
+
+1564454328
+scientes
+daurnimator, how do you specifiy that you only want to read one bit?
+
+1564454346
+daurnimator
+you don't. a byte is called a byte because its the smallest addressable quantity
+
+1564454358
+daurnimator
+however a vector is more than a byte.
+
+1564454380
+daurnimator
+(at least, most of the time... I guess we can have vectors of u1 )
+
+1564454399
+scientes
+and those get bit-packed
+
+1564454404
+daurnimator
+right
+
+1564454411
+daurnimator
+but imagine a 64 byte vector
+
+1564454417
+daurnimator
+split across two pages
+
+1564454428
+scientes
+it would be two vector loads
+
+1564454437
+scientes
+oh, x86 is weird in that way...
+
+1564454446
+scientes
+and also supports unaligned
+
+1564454462
+daurnimator
+a 64 byte vector only needs to be aligned to 16 bytes.
+
+1564454465
+scientes
+daurnimator,
+
+1564454521
+scientes
+the compiler can load whatever the hell it wants
+
+1564454524
+scientes
+it just can't modify it
+
+1564454529
+daurnimator
+??
+
+1564454543
+daurnimator
+the whole point of a maskedload is to tell it it can't load whatever it wants
+
+1564454666
+scientes
+well two things 1) I still think an instruction is not necessarily, but could be an attribute flag, 2) it seems like using a hammer to solve a edge condition
+
+1564454688
+daurnimator
+> Edge cases matter.
+
+1564454693
+scientes
+like it would be faster to test if you are at a boundary
+
+1564454695
+scientes
+yes of course
+
+1564454707
+scientes
+but the compiler doesn't know where the boundries
+
+1564454712
+daurnimator
+exactly!
+
+1564454713
+scientes
+so it generates ship code
+
+1564454716
+daurnimator
+which is why it needs to be a builtin
+
+1564454717
+scientes
+*shit
+
+1564454731
+scientes
+it would be easier to have a check before doing the load/store
+
+1564454739
+scientes
+and only then use this expensive one
+
+1564454756
+scientes
+which wouldn't have to then be implemented this way
+
+1564454774
+daurnimator
+`x | mask` -> may or may not access masked off bits: don't care, do whatever is fast. `@maskedLoad(x, mask)` -> do
+
+1564454791
+scientes
+well, I guess this would be OK, like on power 8 there is a load/store that takes a length
+
+1564454811
+scientes
+but then you would have to do a ctz + clz + popcount
+
+1564454826
+scientes
+instead of just one clz or ctz depending on where the border was that you were avoiding
+
+1564454902
+scientes
+i doubt they would have the optimization to avoid that
+
+1564454911
+scientes
+and see how the mask was generated
+
+1564454949
+scientes
+and you could instead just use differnt length vector types
+
+1564454962
+scientes
+like use a 61-byte vector
+
+1564454985
+scientes
+LLVM is deprecating these instructions too
+
+1564455016
+scientes
+daurnimator, how is your use-case not solved by generating a llvm type that is the length you want?
+
+1564455023
+scientes
+zig can't do that well right now, but LLVM is working on it
+
+1564455073
+scientes
+basically you would just page align your vector loads/stores
+
+1564455082
+scientes
+by splitting them
+
+1564455126
+scientes
+<daurnimator> but imagine a 64 byte vector
+
+1564455126
+scientes
+<daurnimator> split across two pages
+
+1564455130
+scientes
+<daurnimator> it's not about alignment
+
+1564455136
+scientes
+yes it is
+
+1564455192
+scientes
+you can't split pages if you are naturally aligned
+
+1564455231
+scientes
+and page alignment is not relevent here
+
+1564455288
+scientes
+*stack alignement is not relevent
+
+1564455526
+daurnimator
+scientes: yes you can
+
+1564455548
+scientes
+a 4k stack means the bottom 12 bits are zeros
+
+1564455591
+daurnimator
+scientes: e.g. an avx-512 loads can be 64 bytes. yet it only needs to be 16-byte alignerd
+
+1564455596
+scientes
+daurnimator, a 64-byte vector might have alignOf of 16 bytes
+
+1564455602
+scientes
+yes, we were thinking the same thing
+
+1564455610
+scientes
+but that's not natural alignment
+
+1564455614
+daurnimator
+??
+
+1564455649
+scientes
+
+
+1564455658
+scientes
+natural alignment has a strict definition
+
+1564455676
+scientes
+that there is only a single bit in the size
+
+1564455708
+daurnimator
+oh okay; I didn't know that definition
+
+1564455770
+scientes
+maskedLoad just seems very x86 specific to me, and kindof a hack, and doing the optimizations to make it possible to use right on ppc for example, I doubt those have been done
+
+1564455792
+scientes
+but yeah with the way avx-512 has 16-bit alignOf, maybe it is necessary
+
+1564455806
+scientes
+*128-bit
+
+1564455894
+daurnimator
+scientes: it probably defaults to the series of branches lowering I quoted above
+
+1564455916
+scientes
+even though on vsx it doesn't need to, but the optimizations would be difficult
+
+1564455939
+scientes
+and the programmer would probably not generate the mask right for that either
+
+1564455950
+scientes
+even though C11 would allow such a zombie read
+
+1564455961
+daurnimator
+scientes: though also: doesn't llvm allow arbitrary vector sizes?
+
+1564455962
+scientes
+inside of the page
+
+1564455971
+scientes
+daurnimator, yes it does, but not variable length
+
+1564455991
+scientes
+the lowering of those is also quite bad right now
+
+1564455997
+scientes
+but it does work
+
+1564455997
+daurnimator
+scientes: e.g. I could have a @Vector(8, u32768) for a vector of pages.
+
+1564456118
+scientes
+lol, I don't have enough RAM to compile that
+
+1564456154
+daurnimator
+huh?
+
+1564456167
+daurnimator
+Why would that take lots of ram to compile?
+
+1564456178
+daurnimator
+it's just 8*4KB.
+
+1564456201
+scientes
+well I did 1MB
+
+1564456219
+curtisf
+while it's kinda neat that zig (theoretically) supports integers that large, I question how reasonable it is to support numbers that require compiling loops to do things like addition
+
+1564456255
+scientes
+also clang has a more sane max
+
+1564456264
+scientes
+I was using gcc
+
+1564456268
+scientes
+d.c:2:36: error: vector size too large
+
+1564456269
+scientes
+typedef int badass
+
+1564456299
+scientes
+daurnimator, yeah that is too large for clang
+
+1564456332
+daurnimator
+curtisf: not different to targetting a 8bit microcontroller and adding u32s...
+
+1564456391
+scientes
+yeah clang's max is 1024 vector_length
+
+1564456392
+curtisf
+there's a difference of scale, having 4 instructions unrolled is totally different from having hundreds
+
+1564456429
+curtisf
+you'd probably not want to have addition of u32768 be unrolled, which is odd
+
+1564456451
+daurnimator
+curtisf: my immediate thought is of
+
+1564456462
+scientes
+yeah the gcc 1MB simd multiplication is still compiling
+
+1564456490
+daurnimator
+scientes: you had to pick multiplication :P
+
+1564456491
+curtisf
+I agree, there's no good place to put the limit. This is more like a "please don't do this" feature
+
+1564456517
+daurnimator
+scientes: try e.g. a XOR instead. which isn't completely unreasonable for some cryptography algorithms.
+
+1564456598
+scientes
+daurnimator, oh wow, it just turned it into a loop!
+
+1564456610
+scientes
+without and simd at all
+
+1564456638
+scientes
+oh, that is because its xor with itsself
+
+1564456663
+daurnimator
+xor with itself should just give you a zero vector :P
+
+1564456674
+scientes
+yeah with optimizations it used memset()
+
+1564456706
+scientes
+d.c:3:8: note: The ABI for passing parameters with 1048576-byte alignment has changed in GCC 4.6
+
+1564456707
+scientes
+lawl
+
+1564456758
+scientes
+yeah, not enough RAM
+
+1564456788
+daurnimator
+scientes: can you share your sample. I want to try for myselfd
+
+1564456807
+scientes
+
+
+1564456813
+scientes
+it would be easy to do in zig too
+
+1564456815
+scientes
+i'm just lazy
+
+1564456824
+scientes
+and i wanted to try gcc
+
+1564456925
+daurnimator
+scientes:
+
+1564456959
+scientes
+but it doesn't generate a loop
+
+1564456968
+scientes
+because we are abusing it
+
+1564457049
+scientes
+daurnimator, aww yeah
+
+1564490471
+gonz_
+Hmm, is subsystem detection broken?
+
+1564490525
+gonz_
+Having `WinMain` and not `main` seems to still give `windows.subsystem == .Console`
+
+1564498815
+Tetralux
+What's a good example of how to use .format on your type so that you can print it with warn?
+
+1564499495
+Tetralux
+Nvm - figured it out :)
+
+1564508617
+emekankurumeh[m]
+dimenus: it seems like I introduced a regression
+
+1564514996
+Hourglass
+Hello, I'm having trouble building clashos (
+
+1564515096
+Hourglass
+I'm using zig 4.0 and the host machine is a 64bit debian
+
+1564515122
+scientes
+Hourglass, you should use master for now
+
+1564515174
+Hourglass
+the actual compilation seems to work fine but then the build script stalls when using objcopy
+
+1564515193
+Hourglass
+so i'm not sure swithing to master will do any good
+
+1564515240
+Hourglass
+specifically objcopy complains that the input file format is not recognizable
+
+1564515299
+Hourglass
+I've checked with hexdump and it looks like a regular ELF file (and readelf agrees also)
+
+1564515383
+nrdmn
+Hourglass: what does readelf -h say about it?
+
+1564515402
+emekankurumeh[m]
+@dimenus: i'm not getting any build errors...
+
+1564515420
+emekankurumeh[m]
+are you static linking or dynamic linking?
+
+1564515514
+nrdmn
+Hourglass: I mean, what's the exact output
+
+1564515680
+Hourglass
+En-tête ELF:
+
+1564515680
+Hourglass
+Classe:                            ELF64
+
+1564515680
+Hourglass
+Données:                          complément à 2, système à octets de poids faible d'abord (little endian)
+
+1564515680
+Hourglass
+Version:                           1 (current)
+
+1564515680
+Hourglass
+Magique:   7f 45 4c 46 02 01 01 00 00 00 00 00 00 00 00 00
+
+1564515681
+Hourglass
+OS/ABI:                            UNIX - System V
+
+1564515681
+Hourglass
+Version ABI:                       0
+
+1564515682
+Hourglass
+Type:                              EXEC (fichier exécutable)
+
+1564515682
+Hourglass
+Machine:                           AArch64
+
+1564515683
+Hourglass
+Version:                           0x1
+
+1564515683
+Hourglass
+Adresse du point d'entrée:         0x0
+
+1564515684
+Hourglass
+Début des en-têtes de programme :  64 (octets dans le fichier)
+
+1564515711
+halosghost
+LC_ALL=C might be useful for some folk
+
+1564515804
+nrdmn
+Hourglass: does your objcopy support AArch64?
+
+1564515956
+Hourglass
+nrdmn: good question, I don't know. How can I check that ?
+
+1564516036
+nrdmn
+objcopy --info
+
+1564516209
+Hourglass
+nrdmn: good catch, it doesn't. I suppose its logical since my host computer is x86_64 and I'm trying to target arm64. I'm a bi new to this cross-compilation stuff
+
+1564516219
+Hourglass
+*bit
+
+1564516849
+nrdmn
+hmm, there seems to be no way to create a File with an outStream() method that returns an OutStream with a custom OutStream.stream.writeFn
+
+1564517827
+nrdmn
+which makes it difficult to support platforms where stdin, stdout, stderr aren't files
+
+1564518408
+emekankurumeh[m]
+daurnimator: can you point me to some implementations or header files that define `sockaddr_any`?
+
+1564519678
+FireFox317
+gonz_: I found the issue for the subsystem detection. You have to declare the WinMain function as a pub function. In the example that andrewrk gave this wasn't specified and that caused the issue.
+
+1564519810
+FireFox317
+Maybe we should add the same restriction that the 'normal' main function has. Namely the fact that the main function needs to be pub.
+
+1564520044
+FireFox317
+Not sure how to properly solve this
+
+1564520060
+gonz_
+Indeed, that was the reason
+
+1564520082
+gonz_
+`pub export` seems to do the trick
+
+1564520577
+FireFox317
+I will make a issue to track this.
+
+1564520658
+gonz_
+In retrospect it's somehow obvious
+
+1564520906
+FireFox317
+Yeah it is, but the detection should be polished a bit
+
+1564521142
+gonz_
+The annoying thing is it half-working without the `pub`, yes
+
+1564521155
+gonz_
+If it didn't, you might just try adding it and end up where you needed to be
+
+1564524353
+andrewrk
+how does one order a pinebook pro?
+
+1564524391
+andrewrk
+gonz_, it's a bug, pub should not be required if the function is exported
+
+1564524470
+THFKA4
+i think you need a forum account that's older than a month
+
+1564524482
+THFKA4
+which you then use to get a coupon code during checkout
+
+1564524843
+andrewrk
+I found a support email address. I sent them a description of my use case, hopefully they let me buy one
+
+1564526618
+bwb_
+woah, they are way cheaper than I expected
+
+1564526767
+daurnimator
+emekankurumeh[m]:
+
+1564527442
+fengb
+Wow that's cheap
+
+1564527978
+daurnimator
+andrewrk: FWIW I have a box from works-on-arm. it's a beast of a machine
+
+1564527989
+daurnimator
+we'd be allowed to use it for zig if we wanted
+
+1564527999
+daurnimator
+just give me a daemon to run on it to run CI jobs
+
+1564528005
+daurnimator
+which I guess is where gitlab CI might come in
+
+1564528010
+andrewrk
+daurnimator, I believe that's what
+
+1564528013
+daurnimator
+because you can run your own runners.
+
+1564528068
+daurnimator
+andrewrk: ah yes. "Andrew could also set up an official gitlab mirror, and then just authenticate the arm64 CI runner"
+
+1564528089
+daurnimator
+andrewrk: I think that would be a good way forward for a lot of platforms where existing CI providers don't exist
+
+1564528106
+andrewrk
+agreed
+
+1564528337
+daurnimator
+andrewrk: if you set up the gitlab account I'm happy to start the runner
+
+1564528385
+daurnimator
+the box is a
+
+1564529184
+bwb_
+I might have a spare cavium around here...
+
+1564529197
+bwb_
+lemme check
+
+1564530920
+andrewrk
+daurnimator, nice, let me try setting that up now
+

@@ -1,0 +1,276 @@
+1556467727
+rivten
+hey everybody ! I hope you are doing fine :) I'm pretty new to Zig and I've got a quick question (hope this is a good place to ask :P). I'm debugging some memory allocation (with FixedBufferAllocator) and, in the process of understanding what's going on, I'm stuck on understandling this lign of the allocator :
+
+1556467727
+rivten
+lot :)
+
+1556468027
+Sahnvour
+rivten, the underlying allocator interface is based on two functions: `reallocFn` and `shrinkFn`. reallocFn is used to increase the allocation size (which is potentially 0 for a new allocation) and shrink to reduce it. in this case, as `alignedAlloc` is known to be called when the user wants a new allocation, this calls reallocFn to query for a new allocation of size `byte_count` but has to pass the "old" (in this case,
+
+1556468028
+Sahnvour
+undefined) allocation to satisfy the interface
+
+1556468110
+Sahnvour
+and this is a good place to ask :)
+
+1556468515
+daurnimator
+rivten: passing undefined like that means we don't care what we pass as that parameter
+
+1556468565
+daurnimator
+note that in debug builds, your program will panic if it tries to use (e.g. compare/add) an undefined value.
+
+1556468598
+daurnimator
+rivten: `([*]u8)(undefined)[0..0]` is a way to get a 0 length slice.
+
+1556468706
+daurnimator
+to decompose it: `[*]u8(undefined)` an undefined pointer to an unknown number of u8 values. => `[0..0]` => take a 0 length slice of it. so now we have a slice of u8 with an undefined pointer, and a length of 0.
+
+1556470587
+rivten
+ok thanks everyone ! what's weird is that : if undefined means "it shouldn't be used in the called function", then the realloc, on a FixedBufferAllocator, we do use the old_mem and old_align params which are passed as undefined
+
+1556470637
+scientes
+rivten, llvm will optimize out those things
+
+1556470729
+scientes
+when it know val is undefined
+
+1556470846
+rivten
+oh ok. So if my program fails on the OutOfMemory error, then it's the compile time pass that was not able to properly resolve the memory allocation ? (otherwise it would have been optimized out ?)
+
+1556470905
+scientes
+undefined behavior is undefined
+
+1556471009
+Sahnvour
+rivten, OutOfMemory error is more likely to come from a programming mistake, I don't think the optimization pass should have any impact on the observable result of your code
+
+1556471259
+daurnimator
+huh? no
+
+1556471305
+daurnimator
+rivten: you get OutOfMemory if there wasn't enough memory available to satisfy the request; whether that's because your fixedbuffer is too small; your OS failed the mmap() call; or if everything is just too fragmented
+
+1556471324
+daurnimator
+OutOfMemory is rarely if ever a programming mistake
+
+1556471415
+Sahnvour
+asking too much memory from a fixed buffer is a programming mistake
+
+1556471481
+rivten
+hmm ok ! I will keep reviewing my code then :P it's weird but I do give a
+
+1556471569
+jjido
+rivten using newruntime?
+
+1556471581
+jjido
+oops wrong channel
+
+1556478333
+donpdonp
+im trying to alloc ram for a new struct, but gettting an error I dont understand
+
+1556478369
+donpdonp
+pub const Actor = struct {...}; if (allocator.alloc(Actor, 1)) |actor| { ...} => error: expected optional type, found '@typeOf(std.mem.Allocator.alloc).ReturnType.ErrorSet![]thread.Actor'
+
+1556478395
+donpdonp
+A!B type seems like it is an 'optional type'
+
+1556478956
+tyler569
+?T is the optional type (a value of T or null), A!B is the error union type (a value of type B or an error of set A)
+
+1556479140
+donpdonp
+isnt expr in  'if(expr) |value| { }' expected to be an error union?
+
+1556479181
+tyler569
+I think you might have to provide an else clause for error unions, since zig makes strong guarantees about handling error conditions
+
+1556479207
+tyler569
+it could just be else { unreachable } if you want to assert that that will never happen and get a stack trace in debug mode if it does
+
+1556479250
+donpdonp
+ah that was the problem, thx!
+
+1556480220
+tgschultz
+generally we use `try` and `catch` to unwrap error unions: `const instance = try allocator.alloc(Actor, 1);` or `const instance = allocator.alloc(Actor, 1) catch unreachable;` also, for single instances you can use alloc.create(T) and alloc.destroy(T);
+
+1556480902
+donpdonp
+nod. thx.
+
+1556481004
+donpdonp
+my struct has a field of []u8. im passing in a []u8 and warn says the addr is "[]const u8@204b40" which seems reasonable, but when I set my_struct.array = my_u8_arry, and warn/print the address of &my_struct.array, I get "[]const u8@7fff345cc5b8"
+
+1556481057
+donpdonp
+i figured the address by my_struct.array  would be the first address. also surprised by the difference in width of the address
+
+1556481542
+tgschultz
+[]u8 is a slice of u8 (ptr + len), not an array
+
+1556481562
+tgschultz
+&my_struct.array gives the address of the slice, not what it points to
+
+1556481624
+tgschultz
+my_struct.ptr would be where the slice points
+
+1556481641
+tgschultz
+er: my_struct.array.ptr
+
+1556481953
+donpdonp
+fn myfun(data: []const u8) how do i tell if data is an array or a slice?
+
+1556482028
+donpdonp
+and similarly, struct { payload: []const u8 }, is that an array or a slice?
+
+1556482077
+Sahnvour
+array types have their size inside the brackets, it is known at compile time
+
+1556482094
+Sahnvour
+slices are denoted by `[]`
+
+1556482111
+donpdonp
+oh! thx
+
+1556482155
+Sahnvour
+you can take a look at
+
+1556482252
+donpdonp
+yeah thats not confusing at all when the first example of an array uses what looks like a slice declaration :)
+
+1556482492
+tgschultz
+there's an issue for that, actually.
+
+1556482691
+tgschultz
+
+
+1556482876
+donpdonp
+intersting.
+
+1556484046
+donpdonp
+how do i get the type of a variable? @typeName(my_var) complains my_var is not a type, which is understandable, im just not sure how to get at the type
+
+1556484076
+emekankurumeh[m]
+@typeName(@typeOf(my_var))
+
+1556484097
+donpdonp
+thx!
+
+1556484238
+donpdonp
+warn("{} {}", actor, &actor); both print the struct. im trying to get the address of the struct
+
+1556484309
+emekankurumeh[m]
+`warn("{} {p}", actor, &actor);` should work
+
+1556484421
+donpdonp
+warn("typeOf {} {p}\n", @typeName(@typeOf(actor)), &actor); => typeOf Actor Actor{ .thread = 5, .read_fd = 0, .payload =  }
+
+1556484429
+donpdonp
+its still dumping the actor contents
+
+1556484472
+donpdonp
+are there docs for the {} substitutions? i dont see them on
+
+1556484599
+donpdonp
+"{x}" @ptrToInt(&actor) works ok
+
+1556484712
+emekankurumeh[m]
+`warn("{} {*}", actor, &actor);` should print the type and the address.
+
+1556484856
+tyler569
+std isn't super well documented, but std/fmt.zig is pretty eazy to follow in my opinion.  it implements a state machine, so you just look for the character to State mapping and follow that
+
+1556484890
+donpdonp
+emekankurumeh[m]: {*} is great. looks like ruby.
+
+1556485265
+donpdonp
+here's another puzzler. doit(number) => error: expected type 'c_ulong', found '*c_ulong'
+
+1556485303
+donpdonp
+doit(*number) => error: expected type 'type', found '*c_ulong'
+
+1556485355
+donpdonp
+oh i just remembered seeing in the docs, its number.*
+
+1556486090
+donpdonp
+here's another one. im passing a struct to pthread_create, and the callback func is getting the right address in the void ptr, but when i look at the contents, its all zeros
+
+1556486155
+donpdonp
+var actor = Actor@7ffedb6d2248 Actor{ .thread_id = c_ulong@7ffedb6d2290 ...}; pthread_create(..., &actor); thats fine
+
+1556486189
+donpdonp
+callback is fn go(data: ?*c_void); Actor@7ffedb6d2248 Actor{ .thread_id = c_ulong@0 ...} (all data zeroed out)
+
+1556486217
+donpdonp
+i had to use var data8 = @alignCast(@alignOf(thread.Actor), data); var actor = @ptrCast(*thread.Actor, data8);
+
+1556486227
+donpdonp
+so maybe im not doing something right there.
+
+1556490515
+bketelsen
+shritesh: epic wasm, my friend.  That's awesome.
+

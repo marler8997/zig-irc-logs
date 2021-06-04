@@ -1,0 +1,228 @@
+1546907674
+emekoi
+does the example hello_libc work currently?
+
+1546907896
+emekoi
+because if you export main in your root file and link libc doesn't the main in bootstrap also get exported?
+
+1546911297
+unique_id
+I'm going to stop using "use @import". For some reason I was stuck in the ways of C/C++ but I now see how much better zig's recommended way of doing things is. Also, though I don't think I'm using many globals, it kinda makes them less terrible because it's more obvious when code is using globals (a global from another file isn't referred to in the same ways as local variables).
+
+1546916077
+testuser678
+What allocator should I be using in "production" code?  Do people lean on the debug.global_allocator?
+
+1546916998
+daurnimator
+testuser678: depends..... are you writing a library? or an application? do you want to use the libc allocator? are you linking against libc?
+
+1546918221
+MajorLag
+debug.global_allocator is a fixed-size buffer that never frees. Absolutely should not be used in production. Generally speaking, use DirectAllocator and layer an appropriate allocator for each problem on top of it.
+
+1546918682
+MajorLag
+Well, ok, global_allocator is just a FixedBufferAllocator, so as long as you never need more than the fixed buffer size (10MiB IIRC) you'll be ok, but you should probably just use your own defined fixed buffer and FixedBufferAllocator.
+
+1546919222
+daurnimator
+MajorLag: it's not a terrible choice for short lived scripts.
+
+1546919286
+daurnimator
+(or misc small purpose command line tools)
+
+1546919349
+MajorLag
+I suppose not, but you can accomplish the same thing using your own FBA and it won't have the smell of depending on something in the debug namespace.
+
+1546919512
+andrewrk
+I think std.debug.global_allocator is too easy to abuse. certainly libraries should not use it, not even in library tests. because you don't know how much memory other libraries will use
+
+1546919609
+andrewrk
+it's handy for writing unit tests for applications, but then you have to have the discipline to rewrite your passing unit test with a fixed buffer allocator
+
+1546919640
+andrewrk
+I don't have plans to yank it from standard library, but I would consider it deprecated for internal use in the standard library
+
+1546959279
+forgot-password
+Why is it, that when I access the field of a struct via a variable I need to get a pointer to that field? Do the values get copied otherwise?
+
+1546959322
+andrewrk
+I'm not sure what you're talking about
+
+1546959347
+andrewrk
+do you have a code example?
+
+1546959373
+forgot-password
+Say I have a value of type A, which has a field of type B: var a = A { .field = B { .value = 42 } };
+
+1546959396
+forgot-password
+Then I want to modify a.field.value like this: var field = a.field; field.value = 0;
+
+1546959411
+forgot-password
+But that didn't work, I had to do it like this: var field = &a.field; field.value = 0;
+
+1546959456
+forgot-password
+Does a.field get copied into my stack in the first example, instead of having a reference to a.field?
+
+1546959498
+forgot-password
+Well, I guess that makes sense, since I then have a pointer to a B, right?
+
+1546959528
+andrewrk
+that's right. when you use `var` you are declaring a memory location. so the field `field` was copied into the variable `field`'s memory. Then your next statement modifies the variable `field`s memory
+
+1546959589
+andrewrk
+when you use a variable that is a pointer, you're still declaring a memory location. but then the memory location you are declaring is the pointer bytes, not the actual data bytes
+
+1546959678
+andrewrk
+your pointer variable can probably be const
+
+1546959795
+forgot-password
+If I were writing C I would have to set the value of that pointer via `field->value = 42;`, correct?
+
+1546959816
+forgot-password
+Not the value of the pointer, I meant the value of the struct the pointer is referencing
+
+1546959850
+forgot-password
+the value of the field*, to be 100% correct
+
+1546961004
+andrewrk
+forgot-password, no, you'd have the same issue in C
+
+1546961013
+andrewrk
+you'd still have to use a pointer
+
+1546961028
+andrewrk
+but then yes, to access fields from pointers in C you have to use ->
+
+1546961034
+forgot-password
+No wait, I was already assuming to have a pointer
+
+1546961052
+forgot-password
+Alright, thanks. :)
+
+1546961062
+andrewrk
+sorry, I misunderstood
+
+1546961075
+forgot-password
+No worries, I didn't make it easy to understand :p
+
+1546964234
+forloveofcats[m]
+Is there some way to convert instances of builtin types to strings? I am trying to write a usize to the console and I cannot just cast to u8 as that would output an ASCII character instead of the value "as" a string.
+
+1546964281
+andrewrk
+forloveofcats[m], have you seen the family of functions in std.fmt?
+
+1546964303
+andrewrk
+what OS are you targeting?
+
+1546964315
+forloveofcats[m]
+Oooooh that looks nice
+
+1546964325
+forloveofcats[m]
+I am currently on Windows but usually use GNU/Linux
+
+1546964345
+andrewrk
+std.debug.warn("here is my usize: {}\n", x);
+
+1546964465
+forloveofcats[m]
+Ok apparently I'm just dumb. I saw that trick for warn but I thought that warn only worked with compile-time values as I had had errors with it before, turns out I needed to remove the `try`...
+
+1546965089
+forloveofcats[m]
+Is there any documentation for the standard library?
+
+1546965105
+forloveofcats[m]
+if so where may I find it?
+
+1546965112
+andrewrk
+no:
+
+1546969883
+Hejsil
+andrewrk, fun-with-zig would probably be a good test repo for copy elision
+
+1546969901
+andrewrk
+Hejsil, ah yes of course. I'll be sure to look at that one
+
+1546970561
+MajorLag
+Wasn't someone working on draft std docs? Or was it more of a doc generator?
+
+1546973255
+andrewrk
+I believe hryx started the effort
+
+1546973272
+andrewrk
+it's a big project though
+
+1546974874
+andrewrk
+hmm, I just noticed that the logic for the return type of functions in @typeInfo is very questionable. I missed it in code review
+
+1546978270
+testuser678
+I'm writing some code that is decoding binary structures from a byte slice - what's the safest way to reinterpret the bytes?  In C I'd check that the number of bytes is sizeof(MyStruct) and cast a pointer to it - is there an idiomatic way to do that in Zig?
+
+1546979695
+Hejsil
+testuser678, if you have a slice of bytes, you can do: if (bytes.len != @sizeOf(T)) return; const t = @bytesToSlice(T, bytes);
+
+1546979708
+Hejsil
+@bytesToSlice(T, bytes)[0]*
+
+1546982539
+MajorLag
+andrewrk: I'm not surprised, @typeInfo is really useful but it strikes me as needing quite a bit of cleanup.
+
+1546982618
+MajorLag
+not to mention we still have to figure out the situation with generic parameters and return types...
+
+1546987005
+andrewrk
+497 / 521 behavior tests passing in copy elision branch
+
+1546991984
+n3t
+Hi \o
+

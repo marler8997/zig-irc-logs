@@ -1,0 +1,780 @@
+1565395242
+nrdmn
+panicking is another thing I don't know how to proceed with. panic and all the functions it calls expect stderr to be a file with a file handle and everything. In uefi, stderr has something you could call a handle, but the operations you can do on it are very different from those you can do on actual files
+
+1565395302
+andrewrk
+what's different about stderr in uefi?
+
+1565395435
+andrewrk
+if it's ok with you - at some point here I'm going to have a look at your fork and merge everything into master that I think makes sense, and then try to work with you on the rest of the stuff, so that you can be building your projects against upstream and be happy with it
+
+1565395473
+andrewrk
+I've been neglecting this for a week or two, been really focused on async functions
+
+1565395590
+nrdmn
+in uefi, stderr is of type EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL which is a struct that has methods to set the screen resolution and output strings. Files are represented by EFI_FILE_PROTOCOL structs which can be open()ed and have write() and read() methods, all o
+
+1565395594
+nrdmn
+f which EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL does not
+
+1565395652
+nrdmn
+the handles are basically just pointers to these structs
+
+1565395688
+nrdmn
+so to distinguish between them, our efi fd_t would have to be a struct that carries information about the type of struct
+
+1565395714
+andrewrk
+could it be a global constant with fd_t being a pointer to it??
+
+1565395722
+andrewrk
+oops, didn't mean to add an extra '?' there.
+
+1565395996
+nrdmn
+what do you mean? stderr is globally available
+
+1565396063
+nrdmn
+I'm just not sure how to fit efi text output, efi files, efi block devices etc. into structures that are meant for unix files which are all of these in one
+
+1565396101
+andrewrk
+fd_t can be any type depending on the target
+
+1565396134
+andrewrk
+I see the problem
+
+1565396584
+nrdmn
+also stderr is only available as long as the application is in boot mode. uefi applications are supposed to tell the firmware that they're done initializing. After that, they have to use their own drivers to access devices
+
+1565396680
+andrewrk
+hmm yeah that's an interesting problem
+
+1565396699
+andrewrk
+that's why I'm tempted to say ok everybody should just provide their own panic function for UEFI
+
+1565396763
+andrewrk
+I guess in that case the default should assume that it's not done initializing. and then when someone's project gets sophisticated enough to pass that point, they "graduate" by supplying their own panic function
+
+1565396768
+nrdmn
+in theory we could probably read the pdb file that zig generates and print pretty stack traces
+
+1565396843
+nrdmn
+Is it possible yet to add a panic function during runtime? Or would we have to write something to do that specifically for uefi?
+
+1565396870
+andrewrk
+no, what that looks like is an if statement inside the global function
+
+1565396918
+andrewrk
+well - the default panic handler could use @hasDecl to look at the root source file for multiple different panic handlers. e.g. maybe it looks for panicBoot and panicWithDrivers
+
+1565396940
+andrewrk
+that seems a bit overengineered to me though
+
+1565399110
+rsdimenus
+andrewrk: not sure if you mentioned this in IRC yesterday, but what CPU did you go with for the new build?
+
+1565400089
+andrewrk
+rsdimenus, sorry I don't understand your question
+
+1565400106
+andrewrk
+is "build" referring to a desktop tower computer?
+
+1565400144
+rsdimenus
+indeed
+
+1565400162
+andrewrk
+ahhh. ok yeah I got the dell XPS 15 7590
+
+1565400165
+andrewrk
+laptop
+
+1565400253
+rsdimenus
+ah, nice
+
+1565400294
+andrewrk
+it's pretty great to be able to build llvm faster and be able to fit a debug build of 8 and 9 at the same time on the hdd
+
+1565400362
+rsdimenus
+i bet. I've got a first gen Ryzen CPU at home and I'm itching to get upgrade
+
+1565400380
+rsdimenus
+I don't even bother with debug llvm builds at work though :( takes way too long
+
+1565400413
+rsdimenus
+also, compiling in general seems to be much faster on linux than windows
+
+1565414114
+fubd
+is it easy to see the LLVM textual representation? it'd be fun to try rigging the zig compiler up to
+
+1565449638
+firefox317
+andrewrk: In tools/update_glibc.zig you are also using a `std.AutoHashMap([]const u8`, but you didn't add the compile error in that file. Maybe you should also add it there
+
+1565452298
+Tetralux
+I cannot seem to run the http.headers tests that the CI runs from my working copy.
+
+1565452307
+Tetralux
+Am I doing something stupid or can I actually not do that?
+
+1565452360
+Tetralux
+Also - I may have found a compiler bug.
+
+1565452373
+Tetralux
+See
+
+1565455647
+sarna
+hi, I want to build a program that uses stuff from std.c and I get "dependency on library c must be explicitly specified in the build command" - how do I do that?
+
+1565455657
+sarna
+I tried searching in the docs, but found nothing
+
+1565455745
+Tetralux
+Add `--library c` to the command line
+
+1565455758
+Tetralux
+Or `b.addSystemLibrary("c")` to build.zig, if you're using that.
+
+1565455875
+sarna
+Tetralux: now I'm getting "no member named 'addSystemLibrary' in struct 'std.build.Builder'"
+
+1565455894
+Tetralux
+Oh right
+
+1565455895
+Tetralux
+My bad
+
+1565455900
+Tetralux
+It's linkSystemLibrary
+
+1565455921
+sarna
+also, where to put it? at the very start, after setting the mode, somewhere else? is there any convention
+
+1565455948
+Tetralux
+See
+
+1565455963
+sarna
+ohh, and it's called on exe, not b
+
+1565455972
+Tetralux
+Whoops xD
+
+1565455978
+Tetralux
+NO-ONE SAW ANYTHING
+
+1565455985
+Sahnvour
+sarna: put it where you want, the order is not important as you're only giving instructions on how to build, not
+
+1565456011
+sarna
+nice, thanks Tetralux - it works :)
+
+1565456016
+sarna
+Sahnvour: I see, that's cool
+
+1565456023
+Tetralux
+o7
+
+1565456537
+sarna
+hmm, and when I linkSystemLibrary("c") I can use extern fns from C.. how does this work? does this link a libc?
+
+1565456567
+Tetralux
+linkSystemLibrary("c") links libc, yeah.
+
+1565456586
+sarna
+the one I have on my system, or musl?
+
+1565456587
+Tetralux
+I believe that you can use extern fns without libc though.
+
+1565456598
+sarna
+sorry I'm a dummy when it comes to system programming :)
+
+1565456603
+Tetralux
+The one that Zig builds on the fly for your system that is packages as source with Zig.
+
+1565456611
+Tetralux
+packaged*
+
+1565456616
+sarna
+I see
+
+1565456624
+Tetralux
+(This is much more flexible and reliable than using the one on the machine.)
+
+1565456644
+Tetralux
+And means you don't have to maintain libc versions and things.
+
+1565456652
+sarna
+well, I couldn't use system() when I didn't have it linked
+
+1565456655
+sarna
+yeah that's cool!
+
+1565456666
+sarna
+let's see if I can use puts without linking libc
+
+1565456678
+Tetralux
+I don't think so, because that's part of libc.
+
+1565456688
+sarna
+yup, can't do it
+
+1565456696
+Tetralux
+BUT
+
+1565456699
+Tetralux
+You shouldn't need it
+
+1565456705
+Tetralux
+Because you have std :)
+
+1565456717
+Tetralux
+std.debug.warn especially.
+
+1565456722
+Tetralux
+That's the printf of Zig.
+
+1565456738
+sarna
+oh yeah, I just wanted to check if I can call C functions
+
+1565456765
+Tetralux
+I don't know if you need libc to do that. I haven't tried it.
+
+1565456769
+sarna
+I'm rewriting a disfunctional C program I wrote a month ago for practice :D
+
+1565456779
+Tetralux
+But I suspect  you can if the fn you are calling doesn't use libc in any way.
+
+1565456792
+Tetralux
+Ah-ha!
+
+1565456795
+Tetralux
+A noble goal xD
+
+1565456823
+sarna
+it keeps segfaulting and I don't know why :D I want to find out
+
+1565456862
+Tetralux
+When you rewrite it, pay close attention to times where you do `= undefined` and then don't set a field.
+
+1565456866
+Tetralux
+That'll bitecha.
+
+1565456897
+sarna
+yeah, this one should help
+
+1565456899
+Tetralux
+When you set to undefined, it does NOT set fields to their default values that you declared them to have in the struct definition.
+
+1565456900
+sarna
+along with optionals
+
+1565456919
+Tetralux
+That's bitten me a couple of times.
+
+1565456922
+sarna
+yeah, it's an invalid value then, right? using it is an error
+
+1565456942
+Tetralux
+Nope.
+
+1565456946
+Tetralux
+It's just not initialized.
+
+1565456948
+Tetralux
+No error.
+
+1565456952
+Tetralux
+It'll prob crash.
+
+1565456957
+Tetralux
+Or hit unreachable somewhere.
+
+1565456974
+Tetralux
+That's why when you use `undefined`, it's like doing `int x;` in C.
+
+1565456985
+sarna
+isn't using an uninitialized value a programming error :)
+
+1565456986
+Tetralux
+You cannot trust anything about the value it has until you fully set everything about it.
+
+1565456994
+Tetralux
+I mean yes.
+
+1565457022
+Tetralux
+But thinking that it has the default value you provided and it actually not because undefined ignores them.... :)
+
+1565457069
+Tetralux
+You have to either do `= { .field1 = value1, ... }` or `= undefined`.
+
+1565457079
+Tetralux
+And if you do the latter, be wary.
+
+1565457081
+Tetralux
+xD
+
+1565457089
+sarna
+yeah, thanks :)
+
+1565457131
+Tetralux
+The number of times I've thought "Oh, I gave them specific default values, so undefined will only no initialize the ones I HAVENT given defaults to" has bitten me is... more than I'd like to admit.
+
+1565457256
+sarna
+yeah I see how that would unfold :D you'd get a compile error though, right?
+
+1565457266
+Tetralux
+Nope.
+
+1565457274
+Tetralux
+Because I did `var x: T = undefined;`
+
+1565457298
+sarna
+oh darn
+
+1565457321
+Tetralux
+See - I like the idea of undefined - if you're about to set the fields to values anyway, or a function call will or something, it makes sense to do that.
+
+1565457326
+sarna
+do you use C-style for loops in zig? don't see any in the docs
+
+1565457341
+Tetralux
+You _can_... but not with `for`.
+
+1565457346
+Tetralux
+They look this instead:
+
+1565457362
+Tetralux
+`var i: usize = 0; while (i < n) : (i += 1) { // code }`
+
+1565457373
+sarna
+oh my
+
+1565457406
+Tetralux
+Personally, I'd rather something like `for (var i: 0..n-1) { // code }`
+
+1565457412
+Tetralux
+Bu that was rejected I believe.
+
+1565457457
+Tetralux
+Or rather, it'd be:
+
+1565457467
+Tetralux
+`for (0..n-1) |i| { // code }
+
+1565457498
+sarna
+if you created an array of voids and for'd over them.. :^)
+
+1565457557
+Tetralux
+I'm not sure that even works xD
+
+1565457561
+Tetralux
+Or is fast, if it does work.
+
+1565457571
+Tetralux
+`const ITR: [n]void = undefined; for (ITR) { } // no `i`
+
+1565457580
+fengb
+Andrew mentioned he’s open to for loops over generators
+
+1565457586
+Tetralux
+THAT is true.
+
+1565457608
+Tetralux
+`for (range(0, n)) |i| {}`
+
+1565457615
+Tetralux
+Ugh.
+
+1565458081
+sarna
+hey look it works :D
+
+1565458245
+Tetralux
+But
+
+1565458248
+Tetralux
+Is it FAST though ;)
+
+1565458275
+sarna
+foo() is called on comptime (I think) and it's 0 bits.. :>
+
+1565458312
+sarna
+it's still an awful piece of code though :D even if it was fast
+
+1565458455
+fengb
+You could probably do const range: [5]void = undefined
+
+1565458505
+sarna
+zig has ranges?
+
+1565458693
+fengb
+Not yet but there’s some discussion for standardizing generators / iterators
+
+1565458714
+fengb
+Range would probably be a generator like Python, not a first class construct
+
+1565458721
+sarna
+I see
+
+1565459357
+Tetralux
+Yeah - I'm never liked Python's range xD
+
+1565459362
+Tetralux
+RIP.
+
+1565462108
+firefox317
+I'm trying to build zig using msys2 which uses mingw-w64. Can I use the prebuild binaries of llvm for Windows or do I have to built them myself?  And
+
+1565463687
+DutchGh0st
+ehh. Is this okey to do?
+
+1565463692
+DutchGh0st
+look at the 2 functions at the bottem
+
+1565463715
+DutchGh0st
+comment the `foo` function and it compiles
+
+1565464152
+fengb
+"export" means use C ABI, but slices don't exist in C so there's no way to properly return it
+
+1565464184
+DutchGh0st
+but because I use a packed union that basically wraps directly around any T, it works?
+
+1565464194
+fengb
+That should be a bug
+
+1565464202
+DutchGh0st
+hehe
+
+1565464224
+DutchGh0st
+sooo do I report it?
+
+1565464228
+fengb
+I don't think slices have packed representation
+
+1565464269
+Akuli
+this online thing supports zig? :D
+
+1565464314
+nrdmn
+fengb: why wouldn't they?
+
+1565464316
+DutchGh0st
+it has for quite some time
+
+1565464331
+DutchGh0st
+but you need `export fn` to see the asm, which is kinda sad
+
+1565464394
+fengb
+Okay this is a little weird. Slices are not allowed in packed structs but just fine in packed unions
+
+1565464438
+fengb
+DutchGh0st: it's because Zig is lazy. If there's no reference to a specific definition, Zig doesn't bother compiling it
+
+1565464479
+nrdmn
+also seems like you can't choose the target architecture for zig in godbolt
+
+1565464501
+DutchGh0st
+probably a commandline option?
+
+1565464553
+fengb
+nrdmn: I don't think Zig has defined the slice ABI yet, so the compiler can arbitrarily choose to put the pointer first or last. There's a proposal:
+
+1565464585
+DutchGh0st
+So but is slices in packed unions a bug or not?
+
+1565464603
+DutchGh0st
+and probably other normally non-exportable types as well
+
+1565464617
+fengb
+I'm not sure... I'd expect it to be but I don't know if packed unions and packed structs should be semantically identical
+
+1565464677
+DutchGh0st
+ha, now I crashed the compiler
+
+1565464697
+DutchGh0st
+
+
+1565464703
+DutchGh0st
+okey thats gonna be a report then
+
+1565464723
+nrdmn
+fengb: thanks
+
+1565464749
+fengb
+Actually looking at this code... packed unions really shouldn't allow zero types
+
+1565464755
+fengb
+void types*
+
+1565464785
+DutchGh0st
+hehe
+
+1565464797
+fengb
+Since there's no field to swap between, it's impossible to tell what's "active"
+
+1565464819
+fengb
+I think that's a bug based on my understanding of packed unions
+
+1565464854
+andrewrk
+I have that example from the stream a couple days ago working now
+
+1565464882
+DutchGh0st
+the async stuff?
+
+1565465000
+DutchGh0st
+I managed to return a packed union containing a slice from an extern function, should that be allowed?
+
+1565465061
+fengb
+Since slices aren't allowed in packed structs I don't think they should be allowed in packed unions
+
+1565465108
+Tetralux
+wait
+
+1565465118
+Tetralux
+you cant put a slice in a packed struct?
+
+1565465145
+fengb
+Tetralux:
+
+1565465177
+andrewrk
+I'm going to change how packed structs work soon so that you can put any type in them
+
+1565465188
+andrewrk
+with
+
+1565465253
+Tetralux
+isnt the memory layout of a slice is obvious?
+
+1565465270
+Tetralux
+i.e known and fixed at 16 bytes
+
+1565465305
+Tetralux
+meaning theres nothing to pack, and therefore has a welldefined layout
+
+1565465350
+Tetralux
+
+
+1565465400
+Tetralux
+I'd certainly be surprised if i couldn't put a type into a packed struct.
+
+1565465646
+DutchGh0st
+how to get a stacktrace in gdb?>
+
+1565465665
+fengb
+Gosh, I had thought errdefer was just some nice sugar but it fixes so many semantics
+
+1565465673
+DutchGh0st
+backtrace, cool
+
+1565466111
+DutchGh0st
+any type andrewrk? so also arraylists? and purely Zig types?
+
+1565468520
+scientes
+ok, if I do &array[0] then I get a PtrLenSingle, but if I do &array then I get a pointer with the wrong sizeof
+
+1565468547
+scientes
+so i think i'm going to have to allow pointer arithmatic on PtrLenSingle for SIMD
+
+1565468551
+scientes
+because there is no other way to do it
+
+1565468592
+scientes
+maybe could do Array[idx], where idx is a vector, produces a vector, but that is too suprising
+
+1565468606
+scientes
+even though it would have the safety properties
+
+1565475247
+andrewrk
+yeah i'm gonna do a follow up stream now
+

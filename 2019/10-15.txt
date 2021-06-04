@@ -1,0 +1,916 @@
+1571119122
+pixelherodev
+Regarding the zig kernel I mentioned a few days ago, the latest crash I'm getting is "reached unreachable code" in parseAbbrevTable. This is very fun to debug. Very.
+
+1571119135
+pixelherodev
+Debugging the debugging facilities is a
+
+1571119193
+mq32
+pixelherodev, as long as you have something like printstring, everything will be fine
+
+1571119200
+pixelherodev
+I have one better actually
+
+1571119219
+pixelherodev
+I overrode std.os so that STDERR goes to the terminal :)
+
+1571119222
+mq32
+std.debug.warn already works? ^^
+
+1571119226
+mq32
+neat
+
+1571119234
+pixelherodev
+Which means e.g. std.debug.warn outputs over VGA :)
+
+1571119261
+mq32
+i recommend also outputting to a serial device
+
+1571119284
+pixelherodev
+I plan on setting that up soon, and switching stderr to serial, then setting stdout to the terminal
+
+1571119285
+mq32
+you can redirect serial output to a file with QEMU => you have log files of your OS
+
+1571119294
+pixelherodev
+Anyone know what attr_id and form_id actually mean in the DWARF abbrev table?
+
+1571119331
+pixelherodev
+Actually, it might be an array_list failure...
+
+1571119371
+pixelherodev
+Yeah, append() seems to be crashing :(
+
+1571119701
+mq32
+how are you allocating memory?
+
+1571119827
+pixelherodev
+I set up a heap, and created a mem.Allocator using it
+
+1571119847
+pixelherodev
+The problem isn't actually in array list though
+
+1571119871
+pixelherodev
+Seems to be either in leb.readULEB128 or an error handler
+
+1571120314
+pixelherodev
+I think it might be a bug in my allocator though
+
+1571120329
+pixelherodev
+With the default global_allocator, it runs OOM but it parses the header w/o issue
+
+1571120353
+pixelherodev
+Does end up hitting another unreachable code at a later point though
+
+1571121075
+pixelherodev
+At least now it's dying in scanAllCompileUnits instead of scanAllFunctions, though this means I need to fix the allocator
+
+1571124939
+pixelherodev
+Alright, got it to the point where it's printing addresses :) Now it's just claiming that the debug info is missing (unit_length == 0)
+
+1571125503
+pixelherodev
+Got it working!
+
+1571125518
+pixelherodev
+The offsets used by default are wrong due to the way the debug info is being included
+
+1571125560
+pixelherodev
+(line_info_offset is the correct offset; adding di.debug_line.offset gives an invalid address)
+
+1571127274
+daurnimator
+pixelherodev: you might find my PR refactoring that code useful to consult
+
+1571127388
+pixelherodev
+I have it working now, I'm not breaking it :P
+
+1571127446
+pixelherodev
+I did figure out my heap issue though - it's alignment issues. If allocated memory isn't going to be aligned, it's allocating extra memory and returning a slightly higher address, and it's passing that modified address to realloc instead of the original address
+
+1571128390
+mq32
+hey again
+
+1571128414
+mq32
+have to circle it in on a minimal example, but: it deletes code
+
+1571128982
+mq32
+
+
+1571129153
+pixelherodev
+Alrighty, got the heap fully working (passing the tests & actually working for the debug info dump)! Now for the actually fun stuff :O
+
+1571132658
+ceymard
+quick question that I've been pondering : why keep a stage 1 C++ compiler ? If it is to ensure buildability on a fresh system, has it ever been considered to have C sources as a possible compiler output (like nim) ?
+
+1571142531
+daurnimator
+ceymard: because we use LLVM/clang... and they only have a C++ API
+
+1571142892
+mikdusan
+what does nim use for codegen?
+
+1571142924
+mikdusan
+oh i c. it's backend is to emit C .
+
+1571143088
+ceymard
+daurnimator: aren't there some C wrappers for llvm ?
+
+1571143151
+daurnimator
+ceymard: yes.... infact there's one in zig itself to get translate-c working :)
+
+1571143171
+daurnimator
+but then you need a C++ compiler for the wrapper anyway
+
+1571143204
+daurnimator
+so a C++ compiler is a necessity for bootstraping, as long as we continue to rely on LLVM (which isn't forever! but is for an extended period still)
+
+1571143218
+ceymard
+why would zig move away from llvm ?
+
+1571143254
+ceymard
+daurnimator: I don't mind having to use a C++ compiler, I'm just wondering about having to maintain not one, but two compilers
+
+1571143268
+ceymard
+because in the end you have to duplicate efforts ?
+
+1571143289
+daurnimator
+ceymard: because LLVM doesn't support every target we want. but also because zig as a language has no reason to be tied to a specific compiler
+
+1571143306
+mq32
+ceymard: you will always need a bootstrap compiler
+
+1571143309
+fengb
+Theoretically we could write a backend that compiles stage2 to C. Would that be a easier endeavor than maintaining the C++ compiler?
+
+1571143319
+daurnimator
+ceymard: we have been reducing the duplication. e.g. `zig fmt` used to be written in C++. but now it's in zig
+
+1571143429
+mq32
+fengb, that would actually be a sane(?) option as your bootstrap compiler will be in a source-form (so in theory could be adapted to any platform)
+
+1571145207
+ceymard
+mq32: sure, but what if the bootstrap was the zig compiler itself, turned into C/C++/whatever
+
+1571145210
+ceymard
+then you ship that
+
+1571145216
+ceymard
+it builds a first compiler
+
+1571145227
+ceymard
+which then re-builds the compiler itself
+
+1571145231
+ceymard
+or something.
+
+1571145252
+ceymard
+that's like. compiler inception
+
+1571145256
+ceymard
+! :o
+
+1571145282
+daurnimator
+ceymard: but then you need the zig compiler to build the zig compiler
+
+1571145289
+ceymard
+fengb: this was what I was going to :)
+
+1571145292
+ceymard
+yes !
+
+1571145293
+ceymard
+inception !
+
+1571145310
+ceymard
+daurnimator: it's not really a problem actually, it means the previous zig compiler "generation" builds the next
+
+1571145343
+ceymard
+and only one compiler gets maintained
+
+1571145346
+ceymard
+in lieu of two.
+
+1571145375
+daurnimator
+ceymard: I assume you've seen
+
+1571145415
+daurnimator
+ceymard: see comments there for why your approach wasn't taken
+
+1571145435
+ceymard
+the backdoor problem ?
+
+1571145462
+daurnimator
+yes
+
+1571145463
+ceymard
+I had not seen the comments
+
+1571145466
+fengb
+Ah yeah I remember this discussion
+
+1571145473
+ceymard
+it does make sense
+
+1571150385
+tgschultz
+darn, fixing 3378 did not fix the mysterious issue with @ptrCast seeing the wrong alignment
+
+1571150423
+tgschultz
+Also another bug: the presence of a doc comment caused a compile error because it expected a `}`
+
+1571150566
+tgschultz
+`error: expected token '}', found 'DocComment'`, changing it to a normal comment fixes it. So is having a comment with three forward slaashes explicitly disallowed in certain contexts now?
+
+1571150605
+mq32
+tgschultz, seems like it. afaik you may only comment declarations with a doc comment
+
+1571150646
+tgschultz
+yeah, docs confirm it: `Doc comments are only allowed in certain places; eventually, it will become a compile error to have a doc comment in an unexpected place, such as in the middle of an expression, or just before a non-doc comment.`. Seems like "eventually" means "now"
+
+1571150748
+mq32
+but it's really good to have doc comments as a language feature
+
+1571150814
+tgschultz
+It's fine. It's a little jarring to suddenly have to distinguish between // and ///, but it's a rational choice
+
+1571151076
+daurnimator
+FWIW, I think we need a 3rd type of comments
+
+1571151088
+daurnimator
+at the moment we have // zig fmt: off
+
+1571151107
+daurnimator
+but I think it should be some special comment instead. e.g. //! zig fmt: off
+
+1571151114
+mikdusan
+i like that
+
+1571151147
+mikdusan
+comm-sha-bang
+
+1571152863
+tgschultz
+while doesn't seem to work properly on optionals anymore
+
+1571153094
+mikdusan
+?
+
+1571153306
+mq32
+tgschultz: huh? i'm using it a lot in my current projects
+
+1571153322
+mq32
+but maybe result location has changed some behaviour
+
+1571153330
+mq32
+there were issues regarding mutability of captured elements
+
+1571153350
+tgschultz
+I'm about to post a ticket, just want to define the circumstances.
+
+1571153366
+tgschultz
+it uses a captured element, but it doesn't write to it
+
+1571153445
+mq32
+var node : ?*LinkedListNode = …; while(node) |elem| { node = elem.next; allocator.free(elem); }
+
+1571153455
+mq32
+this code will crash / not work
+
+1571153463
+mq32
+as when changing "node", "elem" gets also changed
+
+1571153485
+mikdusan
+maybe this
+
+1571153510
+mikdusan
+which means in certain cases you will need to make copy yourself
+
+1571153532
+mq32
+yeah the case i've stated is such a case
+
+1571153537
+tgschultz
+sounds related as this is also iterating over a linked list
+
+1571153577
+mq32
+which i think is a design/implementation problem, as it contradicts "Reduce the amount one must remember."
+
+1571153582
+tgschultz
+only I don't touch anyting. it's `while(node) |next| : (node = next) { }` and it loops infinitely.
+
+1571153681
+tgschultz
+oddly, in my actual case changing the continuation expression to the gnarly `(node = if(node != null) node.?.next else null)`works but in my minimized test case it still loops
+
+1571153691
+mq32
+tgschultz, that could will always loop infinitly
+
+1571153710
+mq32
+you assign "node" to itself
+
+1571153724
+mq32
+node = node.?
+
+1571153728
+mq32
+there's a ".next" missing
+
+1571153747
+tgschultz
+ugh, you're right. hold on
+
+1571153813
+tgschultz
+yeah, ok. nevermind
+
+1571153818
+tgschultz
+I'm just an idiot today.
+
+1571153838
+tgschultz
+trying to track down why some other code is failing and got caught up on this
+
+1571153929
+tgschultz
+this is all because a linked list structure that worked in 0.4.0 suddenly doesn't in 0.5.0. I'm in the lucky position of having 0.5.0 break about half of my things.
+
+1571154003
+fengb
+Oh that’s result location stuff ::
+
+1571154043
+fengb
+The argument in the loop is now a “view” into the original variable instead of a separate data copy
+
+1571154092
+tgschultz
+I think I got tripped up because in this case the linked list is a freelist, so it's an extern union wehre the value of node is the pointer to the next element.
+
+1571154103
+fengb
+So you need to do `const copy = val`
+
+1571154140
+tgschultz
+that may be what is ultimately wrong in the code
+
+1571154292
+mikdusan
+here is (iirc) one of the 2 cases std was hit by the change. notice the explicit copy:
+
+1571154294
+mikdusan
+
+
+1571154448
+tgschultz
+that behavior seems wrong to me.
+
+1571154470
+mikdusan
+andrew has mentioned it's not necessarily "final"
+
+1571154488
+fengb
+It's a byproduct of result location. I don't think anyone was really happy with it
+
+1571154567
+tgschultz
+but a capture group without a `*` means the capture value should be immuatble. you cant' assign to it so result location should be irrelevent.
+
+1571154572
+fengb
+Anyone who matters? 🙃
+
+1571154609
+tgschultz
+unfortunately I don't think that can explain the problem I'm seeing. Outside of the debug code I don't have any such iteration occurring.
+
+1571154673
+tgschultz
+ah, however, I do have an if statement that uses a capture...
+
+1571154740
+tgschultz
+and that was the culprit
+
+1571154747
+tgschultz
+I consider this behavior a footgun
+
+1571154833
+fengb
+Yeah so does andrew :P
+
+1571155326
+tgschultz
+anyways, time to find the real problem: why @ptrCast thinks *Node is align(16)
+
+1571155341
+mq32
+<tgschultz> I consider this behavior a footgun +1
+
+1571155354
+mq32
+it's way too easy to shoot yourself in the foot with that
+
+1571155377
+mq32
+reference capture should only happen with |*x|, not |x|
+
+1571155493
+mq32
+mikdusan, yeah i know that, but i'm not sure if i like that behaviour
+
+1571155494
+tgschultz
+that's true, and I get the reasoning. Maybe we need a new operator that means "no seriously, explicitly copy this" or something.
+
+1571155527
+mikdusan
+someone a while back brought up a use case. how to explicitly tell the compiler, yes, i want a copy of this pointer, because i'm going to modify the pointer.
+
+1571155590
+tgschultz
+I dunno. It's less obviously wrong to me than it was 10 minutes ago. But it has clearly caused enough confusion to be something that needs addressing.
+
+1571155625
+tgschultz
+Any way to implement a runtime safety check?
+
+1571155655
+mq32
+i think for unwrapping it could be done mostly by static analysis
+
+1571155668
+mq32
+some error like "write-back to currently unwrapped value" or similar
+
+1571155677
+mikdusan
+the unwrap-source is known so that might be decent
+
+1571155680
+tgschultz
+that might be good enough to prevent this.
+
+1571155693
+tgschultz
+has anyone had any issue with it in other circumstances?
+
+1571155845
+mq32
+hmm
+
+1571155854
+mq32
+i have a design problem/question:
+
+1571155855
+fengb
+I think it's only a major footgun in block capture
+
+1571155862
+mq32
+var con = Connection.init(…);
+
+1571155879
+mq32
+my connection handler needs to run a background thread that references the Connection
+
+1571155892
+fengb
+Theoretically it can happen with function arguments (passing both a value and a pointer to the value, or multithreaded stuff) but those are really rare
+
+1571155909
+mq32
+is there a good way to do that without having to care if the Connection will be copied/moved by someone?
+
+1571155956
+mq32
+fengb, yeah but i'd rather not have a footgun that shoots me in the foot in one out of thousand cases than one that triggers always
+
+1571156010
+fengb
+I'm not saying it's a good thing
+
+1571156054
+fengb
+Andrew has pointed out that this is a bad footgun that should be addressed, but he was trying to move onto async at the time
+
+1571156092
+fengb
+It also might not be addressed until stage2 :/
+
+1571156159
+tgschultz
+ah, problem isn't @ptrrCast, it's @alignOf. It really is align(16) with the changes to struct alignment
+
+1571156252
+tgschultz
+If it can be done with static analysis and emit a compiler error then that should be done sooner than later. The design decision can be delayed.
+
+1571156691
+tgschultz
+Nope, I was wrong again. @alignOf isn't wrong, I asked the the alignment of the ptr instead of what it aligned to, which only worked before by coincidence.
+
+1571156713
+tgschultz
+So count that as a bug found by the new changes instead of created by it
+
+1571158414
+nrdmn
+how do I build the std lib documentation?
+
+1571158652
+mikdusan
+something like this-> `zig -femit-docs --output-dir zig-cache test lib/std/std.zig`
+
+1571158702
+tgschultz
+I'm down to one bug remaining until all the code I care about works again.
+
+1571158732
+tgschultz
+Unfortunately it is not just me being dumb this time, it's definitely a bug in codegen.
+
+1571159287
+nrdmn
+mikdusan: thanks!
+
+1571159300
+nrdmn
+(in build/) ./zig -femit-docs --override-lib-dir ../lib/ --output-dir zig-cache test ../lib/std/std.zig
+
+1571159941
+tgschultz
+andrewrk: I know you're busy with other things, but has there been any progress on working out the codegen bug triggered by that bmp code I sent you?
+
+1571161527
+andrewrk
+tgschultz, no progress yet
+
+1571161558
+andrewrk
+I took some time off the weekend but now I'm back at it
+
+1571161576
+fengb
+Welcome back
+
+1571161924
+andrewrk
+there are a few more std lib docs things which are almost done, that I want to push on. then I'll take some time for pull requests & bugs
+
+1571161925
+nrdmn
+hmm.. why are some attributes shown in the documentation such as std.os.uefi.is_the_target but all other attributes in std.os.uefi not?
+
+1571161954
+andrewrk
+nrdmn, multibuilds.
+
+1571161963
+andrewrk
+this is one thing that I actually have almost solved, at least for generated docs
+
+1571163544
+tgschultz
+andrewrk: no biggie. I know I didn't exactly hand you a minimal test case or anything.
+
+1571163848
+andrewrk
+tgschultz, what command to get the behavior, after unzipping img_pkg.7z?
+
+1571163870
+tgschultz
+zig test bmp_test.zig
+
+1571163898
+mikdusan
+(save you a few seconds... there is doc comment that makes error on master)
+
+1571163989
+andrewrk
+thanks, yep, and now I can reproduce the issue
+
+1571164988
+andrewrk
+tgschultz, we have @unionInit now btw, (just saw the TODO can't wait for @unionInit comment)
+
+1571165001
+andrewrk
+oh, you're already using it
+
+1571165785
+tgschultz
+I may not have replaced it everywhere I could
+
+1571165800
+tgschultz
+Though IIRC that comment is still in std
+
+1571165888
+tgschultz
+oh, is this in bmp? I think I actually made the change and didn't remove the comment in the PixelStream that wraps all other PixelStreams.
+
+1571165995
+tgschultz
+yeah, I should fix this quick:
+
+1571166281
+nrdmn
+so right now only functions, variables etc. are only added to the documentation if they're used in some tests, right?
+
+1571166305
+andrewrk
+right. only referenced things make it into the docs
+
+1571167536
+pixelherodev
+What's the correct way to declare an array of strings? I've gotten "inferred array size invalid", "internal compiler error," etc. with my attempts so far
+
+1571167730
+mikdusan
+array of literals:
+
+1571167731
+mikdusan
+
+
+1571167845
+pixelherodev
+I take that back, I have a `[][]u8`w/o issue
+
+1571167856
+pixelherodev
+The problem is it refuses to be `for`ed :(
+
+1571168384
+pixelherodev
+I forgot to declare it `const` :P
+
+1571168426
+andrewrk
+tgschultz, I have produced a minimal test case
+
+1571168515
+andrewrk
+
+
+1571168520
+pixelherodev
+I now have fully working backtracing on x86. I also fixed the heap (passes tests from std.mem) :D
+
+1571168555
+andrewrk
+pixelherodev, nice, is this building off of #3388 ?
+
+1571168585
+pixelherodev
+Nope, freestanding kernel
+
+1571168595
+andrewrk
+ahh sweet
+
+1571168621
+pixelherodev
+Yep - and as I mentioned earlier, I implemented stderr over the VGA terminal
+
+1571168652
+pixelherodev
+I cleaned up the terminal you used in HellOS, and extended it a bit
+
+1571168673
+pixelherodev
+`std.io.writeFile("/dev/stderr", "Hello!");` actually works :)
+
+1571168748
+andrewrk
+neat
+
+1571168876
+daurnimator
+andrewrk: welcome back :)
+
+1571168920
+andrewrk
+thanks
+
+1571169475
+tgschultz
+thanks andrewrk
+
+1571169534
+andrewrk
+looks like the generated code is fine, it just needs to bitcast the parameter
+
+1571169553
+andrewrk
+this might actually simply be a new assertion in llvm9 catching a missing bitcast, that accidentally worked before
+
+1571172389
+FireFox317
+andrewrk: If I have a simple zig file with the only content being 'const std = @import("std");\n const json = std.json;' and I merged this into a dump of the std, how would I find the types and functions that are in std.json? The problem is that the declaration that has the @import("std") can be assigned to a different name, so I cannot assume that std always refers to the standard library I think.
+
+1571172418
+FireFox317
+Asking this because I'm working on a LSP Server that uses the new dump-analysis.json files
+
+1571172728
+andrewrk
+FireFox317, I'll have a better solution for you in the future, but for now, you'll need to reference json to get the info you want
+
+1571172807
+andrewrk
+comptime { if (builtin.is_test) { _ = json; } }
+
+1571172923
+andrewrk
+if you're working on this now, I recommend to work based on an existing std lib json dump. the work you do will translate to live edited applications with some minor adjustments
+
+1571173094
+FireFox317
+Yeah, I generated a dump before starting the LSP and then merge the current file that is being edited into that dump. I think I should be able to get some information then.
+
+1571173161
+andrewrk
+how did you merge it without the merge tool being complete?
+
+1571173203
+andrewrk
+I'm about 30% done with it
+
+1571173214
+FireFox317
+Hahah whoops, busted XD actually the thing I said was what I'm going to do, I thought I could already merge some stuff
+
+1571173315
+andrewrk
+ahh ok
+
+1571173329
+andrewrk
+the format of the merged dump is the same as pre-merged
+
+1571173343
+andrewrk
+so any progress you make won't be wasted; it will just be enhanced
+
+1571173353
+FireFox317
+Jup, I saw that, nice!
+
+1571175509
+daurnimator
+Anyone used leveldb from zig before?
+
+1571175613
+andrewrk
+daurnimator, heh, I haven't yet but it's one of the major dependencies of groove basin, which I plan to start rewriting in zig soon
+
+1571175650
+andrewrk
+leveldb will be a good candidate to make a zig package for and have zig built it from source
+
+1571175796
+daurnimator
+andrewrk: isn't it written in C++ though?
+
+1571175854
+andrewrk
+yeah. the zig implementation that links clang & llvm can build c++ code
+
+1571175914
+andrewrk
+leveldb has a really simple API, and I'm pretty sure it comes with a C API layer
+
+1571175932
+daurnimator
+It would be an interesting use case for a zig package because we can both build it; however its also available in most distros; and we should be able to build it or link to existing
+
+1571175945
+daurnimator
+yeah it comes with a C API layer (
+
+1571175948
+andrewrk
+yes it will be an interesting case study
+
+1571176825
+andrewrk
+tgschultz, the bmp issue is fixed
+
+1571176923
+tgschultz
+cool. Thanks, I appreciate it.
+
+1571177332
+gruebite
+what's the zig strategy for accept a type that has certain attributes/methods
+
+1571177337
+gruebite
+traits, so to speak
+
+1571177392
+andrewrk
+gruebite, there isn't really one, but you can try using std.meta.trait
+

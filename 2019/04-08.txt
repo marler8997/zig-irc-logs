@@ -1,0 +1,1556 @@
+1554681616
+andrewrk
+wrl, I'll have you using zig build for your C project before you know it
+
+1554681624
+telemach
+so, regarding embedding — most libs i looked into wants to own event loop and/or assume single instance (i.e. glfw)
+
+1554681639
+telemach
+but wrl could explain much better, he hit and overcome most of those problems
+
+1554681650
+telemach
+i'm just starting my path on that minefield
+
+1554681684
+andrewrk
+event loops can be joined if the API does it right. I made sure the libsoundio event loop was compatible with external event loops
+
+1554681742
+wrl
+andrewrk: pretty well invested in waf for the time being but eyeing zig for some other tasks ;)
+
+1554681817
+wrl
+yeah so just to sum things up with audio plugins and UI embedding – when the host application calls into the plugin and says "open your editor window", it passes in a parent window into which the plugin should open its window
+
+1554681833
+wrl
+HWND on win, xcb_window_t on lin, NSView * on mac
+
+1554681850
+wrl
+on linux, you can then spin up a thread and just run an event loop as normal from there
+
+1554681875
+wrl
+on win/mac, the host application already owns the event loop, so the plugin window has to hook into it for redraws, generally with a timer event
+
+1554681916
+wrl
+there's like... one or two low-level GL libs that support that kind of thing. the general purpose libs (SDL2, GLFW, etc) are wholly unsuitable
+
+1554682075
+hryx
+oops, just realized I left an issue draft open last night :O
+
+1554682082
+hryx
+*unsubmitted
+
+1554682129
+andrewrk
+the key to joining multiple event loops is 3 things: (1) an API to flush/poll the event queue that doesn't block on empty queue, (2) a function pointer callback that signals the event queue has become non-empty, which can be called from any thread, and (3) an API to signal to wake up a blocking call to the event loop run function
+
+1554682158
+andrewrk
+in theory there is a more efficient way to do it, but this is correct and generally good enough
+
+1554682188
+andrewrk
+I mean obviously the more efficient way to do it is to only have 1 event loop
+
+1554682243
+wrl
+right
+
+1554682259
+wrl
+the tricky bit with the UI loops is that you also need to wake it up at regular intervals to redraw
+
+1554682365
+andrewrk
+yeah. with ui loops I prefer to poll the other event loops every frame
+
+1554682440
+wrl
+same as i'm doing
+
+1554686457
+scientes
+why not use two differn't threads?
+
+1554693055
+emekankurumeh[m]
+are we going to bump the open issues to 0.5.0?
+
+1554693113
+emekankurumeh[m]
+or release a version 0.4.1 or something like that?
+
+1554695416
+andrewrk
+emekankurumeh[m], I'm probably going to spend most of tomorrow working on release notes and issues
+
+1554695434
+andrewrk
+and then yes when I cut the release I'll organize the milestones
+
+1554695513
+andrewrk
+everybody ready for a fun media day?
+
+1554695635
+shritesh
+Excited!!!
+
+1554695687
+hryx
+ready (°_°)7
+
+1554710227
+l1x
+=^.^=
+
+1554729281
+daurnimator
+andrewrk: addendum to 2): much better than a function callback is a function that returns a fd to poll.
+
+1554729337
+daurnimator
+or more specifically: 0+ fds and their poll mode (POLLOUT/POLLIN/POLLPRI), a timeout.
+
+1554729358
+daurnimator
+then the 'real' main loop passes them all to epoll/kqueue/poll/select
+
+1554729434
+daurnimator
+(or on windows: ZwWaitForMultipleObjects + an AFD pollset)
+
+1554729505
+wrl
+scientes: we can use two different threads on linux, which is what I do
+
+1554729514
+wrl
+but on win/mac, the native windowing system doesn't play nice with threading
+
+1554729537
+scientes
+with wayland there is no reason multiple threads cannot write to the buffer
+
+1554729541
+daurnimator
+wrl: same with ios and in a way: JavaScript for the web :(
+
+1554729572
+wrl
+scientes: on mac, there's a whole host of instance types that are marked "main thread only", and that includes things like NSWindow, NSView, etc
+
+1554729587
+wrl
+on windows, things.... just don't really work. random stalls, window contents not getting updated, etc
+
+1554729588
+scientes
+yuck
+
+1554729594
+wrl
+i
+
+1554729603
+scientes
+
+
+1554729607
+daurnimator
+wrl: the problem on windows is that they hid the main GDI EVENT handle from win xp sp2
+
+1554729610
+wrl
+on linux everything is great. tight redraws, low CPU usage, etc
+
+1554729627
+daurnimator
+wrl: the problem on OSX is that they don't expose the internal CFRunLoop mach port set
+
+1554729635
+wrl
+ugh, yep
+
+1554729653
+daurnimator
+dragonflybsd has the best story
+
+1554729658
+daurnimator
+I wish everyone copied them...
+
+1554729668
+wrl
+there's some other approaches I'm planning on looking into – notably, CVDisplayLink on Mac and some... other type of timer thread on windows
+
+1554729672
+wrl
+but I'm not there yet
+
+1554729684
+wrl
+daurnimator: how's it look over there? i'm familiar with the whole token concept but not intimately
+
+1554729696
+scientes
+daurnimator, i thought the BSDs just used the linux graphics layer these days, because of DRM
+
+1554729729
+daurnimator
+wrl: to summarize it: on dragonfly bsd, all the internals are built on
+
+1554729743
+wrl
+daurnimator: love it, yeah
+
+1554729756
+wrl
+honestly i feel like windows has the worst story here
+
+1554729763
+daurnimator
+wrl: vs on other bsds, they still have all the select/poll/other machinery in parellel to kqueue. sometimes kqueue built on top of an internal poll() call
+
+1554729783
+daurnimator
+wrl: windows actually has it really really good at the NT layer. it's win32 that has the bad story
+
+1554729787
+wrl
+sure, there's the generalised IOCP or overlapped operations, WaitForMultipleEvents and all, but you can't get window events the same way
+
+1554729792
+wrl
+there's MsgWaitForMultipleEvents but
+
+1554729804
+daurnimator
+wrl: right. and window events are all in win32 :)
+
+1554729813
+wrl
+MsgWaitForMultipleObjects, my bad
+
+1554729814
+wrl
+yeah
+
+1554729827
+daurnimator
+wrl: window events are all driven off an internal/hidden EVENT handle.
+
+1554729852
+daurnimator
+wrl: in win2000 you could just get the internal EVENT handle and use it; sidestepping all the mess and do an event loop the right way
+
+1554729854
+wrl
+daurnimator: aha, so internally everything
+
+1554729871
+wrl
+how could you do that on win2k? i'm not planning on doing it, ofc, but i'm interested in reading about it
+
+1554729908
+daurnimator
+wrl: uh, some offset from the segment register there was a pointer to a struct with the EVENT handle in it
+
+1554729940
+wrl
+aha so it was undocumented
+
+1554729943
+wrl
+makes sense
+
+1554729953
+wrl
+i bet you could still pull the same trick but you'd have to hardcode the offset
+
+1554729960
+daurnimator
+you always had to hardcode the offset
+
+1554729969
+scientes
+uggggh this all sounds horrible
+
+1554729972
+wrl
+well i mean
+
+1554729975
+daurnimator
+but then in winxp service pack they marked that structure as readable only by the kernel
+
+1554729983
+wrl
+aha
+
+1554729983
+wrl
+welp
+
+1554729998
+wrl
+scientes: linux got this right honestly
+
+1554730015
+daurnimator
+scientes: no...not really
+
+1554730019
+scientes
+what specifically, epoll?
+
+1554730020
+daurnimator
+uh *wrl
+
+1554730029
+daurnimator
+epoll is a mess. but at least it is usable
+
+1554730039
+daurnimator
+but X and wayland both messed up graphics event handling
+
+1554730048
+scientes
+what is wrong with wayland?
+
+1554730059
+wrl
+scientes: window system handle being waitable like any other handle
+
+1554730074
+wrl
+rather than it being hidden somewhere
+
+1554730074
+daurnimator
+we
+
+1554730090
+wrl
+daurnimator: is the GBM/EGLStream fight still going on?
+
+1554730117
+daurnimator
+wrl: yep. last I checked everyone except nvidia uses GBM. nvidia are doing their own thing; and linux graphics suffers for it
+
+1554730128
+wrl
+fucking nvidia, man
+
+1554730173
+daurnimator
+IIRC in GBM you just get to poll a file descriptor to get events. usable with epoll/etc. with EGLStreams you get this weird callback from the graphics driver using a shared memory futex-but-with-ioctl mess
+
+1554730186
+wrl
+christ
+
+1554730223
+scientes
+yuck
+
+1554730234
+scientes
+maybe i should get into graphics
+
+1554730313
+daurnimator
+scientes:
+
+1554730354
+wrl
+daurnimator: i've seen arcan here and there
+
+1554730361
+wrl
+what's the benefit over wayland in particular?
+
+1554730392
+wrl
+... wait why does it handle audoi
+
+1554730393
+wrl
+audio
+
+1554730405
+daurnimator
+wrl: have a read of the blog there. so much good technical information
+
+1554730414
+scientes
+yeah i gotta get my zig robust cross-process locks working
+
+1554730423
+scientes
+cause there are plenty of use cases, and glibc is buggy
+
+1554730430
+wrl
+scientes: use eventfd
+
+1554730436
+scientes
+so that 32-bit clients can use a 64-bit server
+
+1554730442
+scientes
+through shared-memory locks
+
+1554730478
+daurnimator
+wrl: because the hardest part of display servers is synchronisation and permissions..... and the same with audio servers. and you might notice that sometimes video and audio need to be synced together. why have two different mechanisms for the same thing. <-- logic as far as I recall.
+
+1554730566
+wrl
+i very much do not like that arcan also handles audio
+
+1554730595
+scientes
+wrl, why would you be forced to use it?
+
+1554730613
+scientes
+and it is reasonable if you ever want to stream with IP
+
+1554730644
+daurnimator
+not to mention that when you're e.g. targeting HDMI, video and audio are on the same cable...
+
+1554730666
+wrl
+scientes: because ALSA isn't great and when an application (such as an audio server) opens the audio device, that process "owns" the audio device
+
+1554730668
+scientes
+and its solid pthread all the way through
+
+1554730676
+wrl
+so i
+
+1554730678
+scientes
+while pulseaudio has a mutex abstraction
+
+1554730717
+scientes
+wrl, not if you have hardware mixing, like a SoundBlaster :)
+
+1554730729
+daurnimator
+wrl: arcan can output to e.g. openal instead of grabbing the alsa device
+
+1554730731
+scientes
+but thats why you need pulseaudio or audioflinger
+
+1554730737
+wrl
+scientes: any more recent cards you can name with hardware mixing? ;)
+
+1554730774
+scientes
+I just had a Sound Blaster when everyone was complaining about pulseaudio. I switched back to ALSO and never had a problem :)
+
+1554730814
+daurnimator
+wrl: anyway, have a read of the arcan blog. also join #arcan if you want. beware that you'll learn of horrors in your systems that you never knew were there.
+
+1554730884
+scientes
+daurnimator, how close are they to declaring the protocol stable?
+
+1554730936
+daurnimator
+scientes: not at all. the next major milestone IMO is the wayland<>arcan bridge so that you can run wayland understanding applications under arcan.
+
+1554730961
+scientes
+ok, cause I could make 32-bit clients on 64-bit systems first-class, but it requires more work in zig
+
+1554731001
+scientes
+pthreads doesn't support that
+
+1554731148
+wrl
+scientes: just because of the size of the structures differing?
+
+1554731233
+scientes
+basically, there is an offset in there that is send to the kernel, and it varies between 32-bit and 64-bit
+
+1554731261
+wrl
+hm.
+
+1554731287
+wrl
+i remember the JACK guys dealt with this
+
+1554731318
+wrl
+they're using futexes directly, looks like
+
+1554731322
+wrl
+
+
+1554731338
+scientes
+but they did it wrong
+
+1554731359
+scientes
+anyways, I need to get my code working so i'm not talking out of my ass
+
+1554731408
+wrl
+scientes: howso?
+
+1554731430
+scientes
+they are not using set_robust_list(), so if a client crashes, it will lock up jack
+
+1554731445
+daurnimator
+wrl:
+
+1554731493
+wrl
+"The above research and inferences were made without access to a mac." hahaaaa yep i know that feeling
+
+1554731540
+daurnimator
+wrl: just reading the sources, theory crafting, and then getting someone to confirm :)
+
+1554731604
+wrl
+i do damn near all of my mac dev on a linux box
+
+1554731623
+wrl
+i'm wondering if the _4CF at the end of those functions is some sort of name-mangling
+
+1554731655
+daurnimator
+nope. it's "for CoreFoundation"
+
+1554731672
+wrl
+hah
+
+1554731673
+wrl
+got it
+
+1554731681
+daurnimator
+(
+
+1554731709
+daurnimator
+i.e. it's an undocumented function meant only for CoreFoundation
+
+1554731761
+wrl
+you get it from looking at symbol names?
+
+1554731785
+daurnimator
+got that from reading the gnu fork/reimplementation of core foundation
+
+1554731797
+wrl
+got it
+
+1554731972
+wrl
+daurnimator: curious to read anything you've got on the win32 EVENT thing also
+
+1554732263
+daurnimator
+wrl: found the member name: "hEventQueueClient"
+
+1554732656
+daurnimator
+wrl: googling that should lead you down a weird and wonderful rabbithole
+
+1554732675
+daurnimator
+which ends in disappointment
+
+1554733253
+wrl
+daurnimator: aha, if it's in THREADINFO that makes sense why child/parent windows can't be on separate threads
+
+1554738582
+daurnimator
+wrl: how deep down the rabbit hole did you get?
+
+1554738692
+wrl
+daurnimator: haven't delved too far in
+
+1554739024
+andrewrk
+shritesh, would it be better if the file extension of wasm objects was .wasm?
+
+1554739031
+shritesh
+Definitely
+
+1554739050
+daurnimator
+andrewrk: how are things looking for the release?
+
+1554739065
+andrewrk
+daurnimator, just a couple more hours of release notes. I'm going to punt on all the remaining bugs
+
+1554739091
+andrewrk
+apologies for the business buzzword. I mean I'm going to move them to the 0.5.0 milestone
+
+1554739103
+shritesh
+WASM APIs in the browser expect the mimetype to be Type=application/wasm and the easiest way for webservers to enforce that is with the extension
+
+1554739105
+daurnimator
+what was the business buzzword?
+
+1554739114
+andrewrk
+punt, an american football metaphor
+
+1554739115
+daurnimator
+'milestone' is more business buzzword than anything else you said :P
+
+1554739139
+daurnimator
+andrewrk: punt doesn't come from american football ;)
+
+1554739140
+andrewrk
+shritesh, did you have any luck using them with node?
+
+1554739150
+wilsonk
+Does cross compiling to any other os/abi/libc combo work for anybody else when you try a combo besides the main (x86 or arm)/linux/(gnu or musl) combos?   Ie. things like  'zig build-exe --c-source t.c -target sparcv9-linux-gnu  --library c' don't work for me. Or is documenting the failing combos part of #2058
+
+1554739190
+shritesh
+I have not. I can try. I'll even see how it works with WASI
+
+1554739260
+andrewrk
+wilsonk, there are a lot of little problems, usually not too much effort to solve. I only really solved x86_64 and aarch64 as a proof of concept
+
+1554739290
+wilsonk
+ah, ok. I was under the impression that most were solved...my bad
+
+1554739326
+andrewrk
+well, they are in theory. I guess the percent that work without testing is lower than I expected
+
+1554739366
+scientes
+yeah I was suprised how easy it was to port to aarch64
+
+1554739382
+scientes
+(that was me)
+
+1554739500
+andrewrk
+shritesh, hmm I keep getting `SyntaxError: Invalid or unexpected token" from node v8.15.0
+
+1554739626
+wilsonk
+a few of them also don't really match up between the triple and the 'available' target triples listed for libc. Things like aarch64-linux-gnu needing to actually be aarch64v8-linux-gnu  (and v8_5a doesn't work, etc).  Just mentioning.  Scientes did you happen to keep any notes on porting aarch64? Might be some overlap with other targets
+
+1554739649
+andrewrk
+wilsonk, yeah, the sub-arch situation can be a bit clunky in that regard
+
+1554739653
+scientes
+wilsonk, yeah i ran into that too
+
+1554739657
+scientes
+the sub-arch thing
+
+1554739667
+andrewrk
+if you look at `zig targets` look at the tree structure of sub-architectures, that should at least explain the situation
+
+1554739671
+scientes
+wilsonk, it was pretty easy, just copy from musl when you are missig stuff
+
+1554739708
+scientes
+(except syscalls that is, get those from linux direct)
+
+1554739726
+andrewrk
+wilsonk, I'm definitely interested in increasing the quality and testing of these
+
+1554739743
+wilsonk
+hmm, maybe I will try to make up something comprehensive on which targets are at least recognized, and then error out.
+
+1554739749
+andrewrk
+this is sort of also why we have the "tier system" and note that only x86_64 linux, windows, macos are tier 1
+
+1554739766
+wilsonk
+andrewrk: right
+
+1554739772
+daurnimator
+andrewrk: would you have time to fix some last minute packaging bugs before release? (I don't know if there are any; I can start trying to package now)
+
+1554739774
+andrewrk
+I'd recommend focusing on the target that is personally interesting to you
+
+1554739784
+andrewrk
+daurnimator, yes
+
+1554739808
+andrewrk
+my goal is to tag the release within 1.5 hours
+
+1554739809
+scientes
+well aarch64 could be tier one...if someone paid me...I just couldn't pay for a testing VPS out of pocket
+
+1554739852
+shritesh
+andrewrk: I tried out an add(u32, u32) u32 function in NodeJS and it worked
+
+1554739860
+andrewrk
+what version of node?
+
+1554739869
+andrewrk
+and did you use build-obj build-lib or build-exe?
+
+1554739872
+shritesh
+11.6
+
+1554739877
+shritesh
+build-exe
+
+1554739883
+scientes
+is that emscripten?
+
+1554739898
+andrewrk
+scientes, zig supports webassembly now
+
+1554739912
+scientes
+oh, i didn't know v8 supported web assembly
+
+1554739951
+daurnimator
+andrewrk: okay. I'm checking things now. is Tiehuis in here?
+
+1554739953
+wilsonk
+scientes: can't you just run a qemu vm on your local machine and test aarch?
+
+1554739966
+scientes
+wilsonk, I test it on native aarch64
+
+1554739973
+scientes
+wilsonk, i am talking about automated tests
+
+1554739981
+wilsonk
+oh, I see
+
+1554739994
+scientes
+it can't be tier1 without automated tests
+
+1554740016
+wilsonk
+right, I see that now looking at the requirements
+
+1554740028
+andrewrk
+yeah everyone who doesn't run on aarch64 has to know when they break something
+
+1554740201
+andrewrk
+shritesh, hmm, I'm still getting `SyntaxError: Invalid or unexpected token` with `x = require('./test.wasm')` in the node 11.6.0 repl
+
+1554740213
+andrewrk
+you're doing -target wasm32-freestanding?
+
+1554740220
+shritesh
+Yes
+
+1554740243
+shritesh
+
+
+1554740302
+andrewrk
+ahh
+
+1554740307
+andrewrk
+I wonder why the direct require didn't work
+
+1554740371
+shritesh
+I don't think that's ready yet
+
+1554740514
+andrewrk
+ok cool this is enough for the release notes. I'll make note that it's a fresh feature and not well explored/tested yet
+
+1554740518
+daurnimator
+andrewrk: tldr on ZIG_FORCE_EXTERNAL_LLD ?
+
+1554740532
+andrewrk
+daurnimator, leave the default which is off
+
+1554740555
+daurnimator
+what LLD patches is it referring to?
+
+1554740571
+andrewrk
+run that git command in the comments and it'll show you
+
+1554740606
+daurnimator
+I don't have the git repo on this computer (am on a limit of 50Mb of net for the rest of the day)
+
+1554740659
+andrewrk
+no system that I'm aware of has zig's LLD patch
+
+1554740682
+andrewrk
+just leave the default
+
+1554740685
+daurnimator
+I can look at github for logs though.
+
+1554740705
+daurnimator
+for each vendored dep I need to record a reason why and where a corresponding bug is filed upstream
+
+1554740721
+andrewrk
+upstream in this case being zig or lld?
+
+1554740733
+daurnimator
+lld
+
+1554740751
+andrewrk
+
+
+1554740753
+andrewrk
+this is the only patch
+
+1554740760
+andrewrk
+there's a link to the upstream bug there
+
+1554740801
+daurnimator
+thanks.
+
+1554740822
+andrewrk
+np. I've done some debian packaging, I'm familiar with this process of patches having to be justified
+
+1554740850
+daurnimator
+given that it's an upstream bug for non-native target, I'd prefer to say its just on lld upstream to fix it
+
+1554740904
+andrewrk
+that's your discretion as a package manager. as an upstream author I want users to be able to rely on the same experience no matter what system they're on, which is why Zig maintains a fork of LLD
+
+1554740913
+andrewrk
+(there have been other patches but so far all others have been accepted upstream)
+
+1554740948
+daurnimator
+arch philosophy is pretty much to hound the upstream until they merge it. and only carry a patch if the upstream refuses.
+
+1554740975
+daurnimator
+and then: we'd carry the patch in our lld package; not vendor lld into the zig package
+
+1554740978
+andrewrk
+LLD has refused on this patch (for good reasons; it's a bit of a hack)
+
+1554741051
+andrewrk
+users will always be able to use the ziglang.org/download version of zig if they want the patch on arch
+
+1554741077
+andrewrk
+are you going to make softfloat an external dependency too?
+
+1554741196
+noonien
+hello folks!
+
+1554741206
+noonien
+how's ARM support?
+
+1554741223
+scientes
+noonien, i did the aarch64 port
+
+1554741236
+noonien
+ah, i'm interested in armv7
+
+1554741244
+scientes
+noonien, freestanding or linux?
+
+1554741256
+daurnimator
+andrewrk: why are the softfloat sources vendored in?
+
+1554741257
+noonien
+last time i tried, it appeared to have some support, just not user-facing
+
+1554741262
+noonien
+linux ATM
+
+1554741272
+scientes
+noonien, there is no linux armv7 support
+
+1554741277
+scientes
+but it isn't difficult to do
+
+1554741287
+scientes
+I would do it if I had some motivation
+
+1554741319
+noonien
+i see :(
+
+1554741319
+andrewrk
+daurnimator, the zig source tree is optimized for the developer experience of building from source
+
+1554741342
+andrewrk
+look at all the github issues that have not been filed because people didn't have softfloat installed, or it wasn't found by the build config, etc
+
+1554741347
+daurnimator
+andrewrk: sure. and now I'm trying to figure out what changes are required for the packager experience :P
+
+1554741361
+noonien
+AFAIR zig had a llvm backend, which should suport armv7, i'm guessing there's no init function, right?
+
+1554741377
+scientes
+noonien, yes, thats why it is so easy
+
+1554741390
+andrewrk
+yeah. it should just be LLD and softfloat. you might get some pushback from musl, glibc, and linux headers being distributed with zig, but that's not really negotiable. zig ships with a custom cross compilation toolkit
+
+1554741400
+shritesh
+andrewrk: Here's a better version of what's working right now:
+
+1554741401
+scientes
+and the support functions are being written by someone using armv7 freestanding
+
+1554741408
+scientes
+and that is most of the work
+
+1554741410
+daurnimator
+andrewrk: yeah that's next on my list....
+
+1554741423
+daurnimator
+andrewrk: why can't I use the native glibc headers?
+
+1554741437
+scientes
+noonien,
+
+1554741484
+andrewrk
+daurnimator, I guarantee it's not compatible with what zig ships. for example look at
+
+1554741510
+scientes
+noonien, start by looking at 342cff28f5033887ac9
+
+1554741518
+andrewrk
+thanks shritesh
+
+1554741521
+noonien
+scientes: awesome, thanks!
+
+1554741577
+daurnimator
+damn it... out of hard drive space
+
+1554741700
+wilsonk
+I just ordered new drive caddies for one of my servers as I am almost out also
+
+1554741703
+andrewrk
+daurnimator, you can wipe your global & local zig-cache folders for disk space
+
+1554741709
+andrewrk
+there's no cache eviction yet
+
+1554741999
+daurnimator
+andrewrk: is
+
+1554742075
+andrewrk
+daurnimator, no
+
+1554742130
+daurnimator
+andrewrk: cool; so it'll dynamic link against llvm automatically?
+
+1554742134
+daurnimator
+andrewrk:
+
+1554742181
+andrewrk
+that should be a warning not an error, and it should be silenced
+
+1554742192
+andrewrk
+zig_clang_cc1as_main.cpp is a vendored file
+
+1554742218
+daurnimator
+andrewrk: trying to figure out the flow: looks like you set -Werror ?
+
+1554742251
+andrewrk
+what compiler/version is that?
+
+1554742284
+andrewrk
+are you not making a release build? I'm pretty sure -Werror is only set in Debug builds
+
+1554742356
+daurnimator
+andrewrk: if you want cmake to use CPPFLAGS and other env vars (which we require for packaging), you
+
+1554742373
+andrewrk
+it only sets the release type if one isn't provided
+
+1554742381
+daurnimator
+which result in a build type of "None"
+
+1554742389
+andrewrk
+if(NOT CMAKE_BUILD_TYPE) \n   set(CMAKE_BUILD_TYPE "Debug" CACHE STRING
+
+1554742398
+daurnimator
+ah. that's a problem
+
+1554742432
+andrewrk
+why wouldn't the packaging script provide a build type?
+
+1554742442
+daurnimator
+
+
+1554742489
+andrewrk
+I don't agree with that decision
+
+1554742513
+daurnimator
+essentially, specifying no build type means "use env vars". specifying "Release" means "please append -O3 and -DNDEBUG"
+
+1554742548
+daurnimator
+(+ lots of other flags)
+
+1554742567
+andrewrk
+use -DCMAKE_BUILD_TYPE=None then
+
+1554742699
+daurnimator
+well yeah I can do that.... but seems silly when that's the default already for cmake
+
+1554742748
+noonien
++
+
+1554742752
+andrewrk
+the zig source tree is optimized for the developer experience of building from source
+
+1554742788
+andrewrk
+building from source has to be solved by N people; packaging has to be solved by 1 person
+
+1554743345
+scientes
+-Werror with unused variables is kind of annoying in debug mode
+
+1554743361
+scientes
+cause sometimes you are just testing stuff
+
+1554743401
+scientes
+daurnimator, use ninja -GNinja
+
+1554743677
+scientes
+why are there files in src-self-hosted that get installed to std?
+
+1554743683
+scientes
+why arn't those files just in std?
+
+1554743723
+scientes
+arm.zig main.zig and errmsg.zig
+
+1554743764
+andrewrk
+scientes, that's how stage1 zig fmt works
+
+1554743785
+andrewrk
+that will get deleted when we have a feature complete stage2
+
+1554743804
+scientes
+it just annoys me cause i like symlinking std
+
+1554743821
+andrewrk
+use --override-std-dir
+
+1554743831
+scientes
+no, i symlink, then run ninja install
+
+1554743855
+andrewrk
+I don't think that's a reasonable use case to support
+
+1554743858
+scientes
+but yeah that would do it
+
+1554743912
+scientes
+and --override wouldn't work unless i install
+
+1554743922
+scientes
+and I really want to be able to run the files that are in git
+
+1554743926
+scientes
+it simplifies my work-flow
+
+1554743980
+daurnimator
+grrr. my whole laptop locked up and I had to hard reboot
+
+1554743998
+scientes
+daurnimator, mine does that too :/
+
+1554744014
+daurnimator
+happended during compilation of translate_c.cpp
+
+1554744040
+mikdusan
+file an bug/issue :)
+
+1554744114
+daurnimator
+I think I just ran out of ram or something
+
+1554744133
+andrewrk
+overcommit is to blame
+
+1554744134
+scientes
+daurnimator, it usually is overheating with laptops
+
+1554744146
+mikdusan
+daurnimator: curious, which compiler is building your .cpp ?
+
+1554744162
+daurnimator
+mikdusan: gcc 9 I think
+
+1554744236
+mikdusan
+daurnimator: that might explain it. i recently did a llvm-8.0.0 build in a linux-vm. the first stage bootstrapped with gcc. and killed my vm hard. then i installed clang-7 and it ran much much leaner with 4 jobs. gcc failed with 2 jobs. same vm.
+
+1554744335
+mikdusan
+tldr- if you have resource constraints, building big llvm’ish things with gcc is more needy than clang
+
+1554744358
+scientes
+mikdusan, only because gcc optimizes it more
+
+1554744361
+daurnimator
+I gtg to dinner
+
+1554744387
+scientes
+mikdusan, are you using debug fission?
+
+1554744400
+andrewrk
+you have to build zig with the same system compiler used to build the clang/llvm packages
+
+1554744419
+scientes
+oh yeah, C++
+
+1554744428
+mikdusan
+ah yes important note.
+
+1554744471
+andrewrk
+none of this:
+
+1554744636
+mikdusan
+in the ghostbusters metaphor, if ghostbusters are developers, their plasma guns are compilers, what is the marshmallow man?
+
+1554744656
+scientes
+undefined behavior
+
+1554744698
+andrewrk
+A+
+
+1554744707
+mikdusan
+i think scientes wins
+
+1554745341
+shritesh
+andrewrk: I went down the WASM rabbit hole and it looks like Zig is really well suited for WASM. Being explicit about allocators, strings and @OpaqueType makes interfacing really easy even without the vast tooling that C and Rust have.
+
+1554745373
+andrewrk
+cool!
+
+1554745397
+andrewrk
+we need someone to do a wasm project with zig to help explore the use case. I'm sure there are lots of rough edges right now
+
+1554745541
+shritesh
+I wrote a BF WASM interpreter in Rust like two days after the support landed and any of the tooling existed:
+
+1554745588
+andrewrk
+took me a second to understand BF means "Basic Functionality" and not "Brain Fuck"
+
+1554745600
+andrewrk
+oh, nvm
+
+1554745607
+shritesh
+Not it does mean Brainfuck
+
+1554745618
+shritesh
+No*
+
+1554745631
+andrewrk
+got it, so it's not a wasm interpreter in rust, it's a brainfuck interpreter in wasm (from rust source)
+
+1554745790
+shritesh
+Especially with WASI and every CDN providing a WASM runtime at the edge, zig may be able do something here.
+
+1554745930
+shritesh
+Maybe someone can even write an OS with Zig that only runs WASI binaries.
+
+1554745981
+andrewrk
+there are some cool things you can do if all userspace is jitted. for example you can stay forever in privileged mode, relying on no sandbox escapes
+
+1554746048
+andrewrk
+something like that. I've never tried it
+
+1554747053
+scientes
+how do i resolve ConstValSpecialStatic ?
+
+1554747101
+scientes
+oh i C
+
+1554748917
+daurnimator
+back
+
+1554748931
+daurnimator
+and grrr.. turns out my irc box ran out of disk space comiling
+
+1554748934
+daurnimator
+*compiling
+
+1554748975
+daurnimator
+and for some reason I can't get into the real build boxes (ssh permission failing)
+
+1554749162
+daurnimator
+and my wine turned to vinegar.
+
+1554749175
+daurnimator
+the last hour or so was not kind to me
+
+1554749686
+Sahnvour
+that wine fermented pretty quickly
+
+1554749779
+daurnimator
+Sahnvour: I opened a 38 year old bottle :P
+
+1554749803
+Sahnvour
+milord!
+
+1554752549
+andrewrk
+I tagged the release. Still need the ~2 hours of CI time to finish the release notes
+
+1554753062
+halosghost
+ooh, a new release?
+
+1554753354
+shritesh
+I'm prepping a PR for homebrew with the new release. Or does someone else do that?
+
+1554753595
+andrewrk
+you are more than welcome to do that
+
+1554753638
+andrewrk
+I think you are the first one to it this release cycle
+
+1554753695
+shritesh
+
+
+1554753837
+andrewrk
+well that was straightforward
+
+1554753989
+hryx
+congratulations on 0.4.0 andrewrk (and the rest of the community)!
+
+1554754010
+andrewrk
+don't start the celebrations yet, I still have to post the release notes :)
+
+1554754011
+hryx
+I am pumped for the release notes, the press, and working on 0.5.0 with all ya
+
+1554754017
+hryx
+ha, true :>
+
+1554754056
+andrewrk
+turns out releasing is a very non-atomic operation
+
+1554754269
+halosghost
+
+
+1554754274
+halosghost
+s/ged/ted/
+
+1554754318
+tgschultz
+I should use this release as an oportunity to update all my code and ease back in to doing useful things with zig again. I've been really busy with other things lately.
+
+1554754336
+scientes
+i'm excited that my breaking code will be able to be reviewed
+
+1554754409
+scientes
+(if i can get the tests passing that is)
+
+1554755166
+emekankurumeh[m]
+is the native target decided at compile time is it decided at runtime?
+
+1554755279
+shawn_
+compile time
+
+1554755293
+scientes
+but you are not clear on what you are asking
+
+1554755294
+scientes
+or what you want to do
+
+1554755633
+emekankurumeh[m]
+I was wondering if for example download a msvc zig executable from the website and have it chose the right target when linking libc on mingw automatically
+
+1554755652
+emekankurumeh[m]
+but setting the target works just fine too
+
+1554762951
+andrewrk
+30 minutes, and I will have these notes done
+
+1554762957
+scientes
+sweet
+
+1554762981
+scientes
+something is returning g->builtin_types.entry_invalid; but i can't put a watchpoiint on that
+
+1554762984
+scientes
+ugggh
+
+1554762988
+scientes
+i need to learn gdb/lldb better
+
+1554763233
+gamester
+It looks like I'm going to miss the release celebration, my flu is forcing my will. Congratz Andrew on 0.4 and congratz on having so many awesome people now participating in Zig. 0.4 is a great release and future releases will be even better! Here's hoping that the growth of the community can eventually reduce the load off of you, financally and workwise. Good night!
+
+1554763656
+andrewrk
+good night gamester, feel better
+
+1554765953
+andrewrk
+ok it's done. download page updated, release notes published, documentation updated
+
+1554766001
+Flaminator
+Grats on the release.
+
+1554766019
+andrewrk
+
+
+1554766069
+telemach
+🎆
+
+1554766289
+andrewrk
+I'm going to post this to reddit and hacker news
+

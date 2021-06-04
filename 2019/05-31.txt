@@ -1,0 +1,632 @@
+1559261295
+emekankurumeh[m]
+if you are interacting with a c api that accepts null pointers do you use c pointers or nullable pointers?
+
+1559261965
+fengb
+emekankurumeh[m]: I think those convert to the same thing underneath the covers
+
+1559261992
+fengb
+So preferably do zig nulls and toss it over to C as is
+
+1559262244
+emekankurumeh[m]
+nvm c pointers are null terminated not just "auto-nullable"
+
+1559262982
+daurnimator
+silly idea: what if we bundled
+
+1559263014
+daurnimator
+that way there's just a single file "zig.exe" and it doesn't need installing ... or ... well.... anything beyond running it
+
+1559263032
+emekankurumeh[m]
+wouldn't that make the zig compiler a massive binary?
+
+1559263048
+shritesh
+A few megs more at most
+
+1559263123
+shritesh
+The lib directory that’s shipped compresses really well afaik
+
+1559263195
+daurnimator
+emekankurumeh[m]: maybe... but so what?
+
+1559263200
+shritesh
+It’s just 4K nvm
+
+1559263224
+emekankurumeh[m]
+i suppose that's not that much
+
+1559263248
+shritesh
+That was the inode size. I’m an idiot
+
+1559263271
+emekankurumeh[m]
+but some of zig's source files are quite large for just pure text
+
+1559263284
+daurnimator
+FWIW I'm not suggesting this as the "normal" way on linux; but would be good on windows; or embedded platforms where the concept of a filesystem is a bit more fuzzyb
+
+1559263284
+emekankurumeh[m]
+src/ir.cpp is 1.03MB
+
+1559263482
+shritesh
+3.3M compressed tarball
+
+1559263536
+shritesh
+We don’t need to ship the src, do we? Only the lib directory with the header files.
+
+1559263553
+daurnimator
+shritesh: we ship libc files and std/ .
+
+1559263574
+shritesh
+That’s what I meant
+
+1559263655
+shritesh
+We can extract and cache it on the first run like with musl
+
+1559263710
+shritesh
+But I don’t think package managers will like it
+
+1559264272
+daurnimator
+10:41:24 <daurnimator>FWIW I'm not suggesting this as the "normal" way on linux
+
+1559264790
+fengb
+daurnimator: does this architecture make sense to you?
+
+1559265659
+daurnimator
+fengb: nope. I mainly don't understand your diagrams :p
+
+1559265808
+fengb
+Boo
+
+1559265842
+daurnimator
+also not sure which comment you actually want me to review
+
+1559265867
+fengb
+Just the diagrams... but eh don't worry
+
+1559265873
+fengb
+I'll fail forwards :P
+
+1559265900
+fengb
+I've discovered where to store metadata and I'm trying to shove it alongside the allocated memory
+
+1559265994
+daurnimator
+fengb: okay so the first question you get to ask is: before or after?
+
+1559266016
+daurnimator
+(or both)
+
+1559266032
+daurnimator
+for classic C allocators, you must put it before: C's 'free' only gets the pointer to the start; not the length
+
+1559266058
+fengb
+Before for that reason lol
+
+1559266065
+fengb
+I ran into this issue because of C interop
+
+1559266113
+daurnimator
+now a problem is: dealing with alignment. if your base allocator gives out e.g. only align(4) blocks; and zig asks for a 16 aligned block: what do you do?
+
+1559266135
+daurnimator
+note that your metadata will need to move
+
+1559266151
+fengb
+So my base data structure only supports align(8)
+
+1559266155
+daurnimator
+which also means that your metadata will probably want to store the "real" allocation size
+
+1559266163
+fengb
+And I'm thinking of using padding to get to 16
+
+1559266175
+fengb
+And just giving up after 16
+
+1559266177
+daurnimator
+fengb: and what if I want align(4096)
+
+1559266194
+fengb
+Well... I've no idea >_>
+
+1559266220
+fengb
+I have one idea to support up to page_size / 2 alignment, but it's quite complicated
+
+1559266223
+daurnimator
+fengb: and now you know why working on an allocator is a danger to your mind ;)
+
+1559266234
+tgschultz
+only if you insist on making it one size fits all
+
+1559266290
+daurnimator
+fengb: I can try and show you my allocator WIP tonight or tomorrow if you want
+
+1559266294
+fengb
+Gotta make improvements!
+
+1559266300
+daurnimator
+yours is tending in the same direction
+
+1559266348
+fengb
+I'm never getting back to my emulator
+
+1559266452
+daurnimator
+emekankurumeh[m]: just saw your PR #2598 ... could you split up the windows/OSX stuff up into a different commit? or at least mention it in the PR...
+
+1559266484
+emekankurumeh[m]
+np
+
+1559266692
+fengb
+Should I be passing structs as value most of the time?
+
+1559266698
+daurnimator
+fengb: yep.
+
+1559266711
+daurnimator
+fengb: only time to pass as pointer is if you want to modify it
+
+1559266729
+daurnimator
+andrewrk:oooo default struct initialization. nice!
+
+1559266756
+fengb
+Okay, so Zig is smart enough to choose the correct strategy? (Is C smart enough too and I've been being bad?)
+
+1559266780
+daurnimator
+andrewrk: I think you should do a release when you get copy elision done (possibly wait for coroutines): there's so much since 0.4.0 already!
+
+1559266827
+shachaf
+In C what happens when you pass struct arguments by value is specified by the calling convention, it's not up to the compiler.
+
+1559266967
+emekankurumeh[m]
+zig doesn't have a calling convention so it's free to do what's most efficient
+
+1559267308
+fengb
+Ah okay thanks
+
+1559267769
+daurnimator
+there's no system-wide zig-cache is there?
+
+1559267811
+daurnimator
+I would like to package the cache for `zig fmt` in the distro package. otherwise its slow everytime you run it from a new directory. also it ends up littering zig-cache directories all over the place
+
+1559268053
+daurnimator
+filed as an issue.
+
+1559272956
+scientes
+so what is the roadmap to lambdas and closures?
+
+1559272996
+scientes
+actually llvm might be able to do what i need without those
+
+1559275678
+shawn_
+shit, I think I have something that can only be done with a macro....
+
+1559283572
+andrewrk
+This third attempt at no copy semantics is working beautifully. Actually made substantial progress today
+
+1559284677
+daurnimator
+andrewrk: yay :D
+
+1559298295
+euantor
+Has anybody posted a link to this yet? There are a few Zig code examples following through TempleOS's code:
+
+1559302549
+tralamazza
+euantor: do you know a good zig library example?
+
+1559302594
+euantor
+Depends on what you're wanting to do @tralamazza - is this just to look at an example Zig program?
+
+1559302679
+tralamazza
+how to organize multi arch code
+
+1559302684
+tralamazza
+in a zig library
+
+1559302743
+tralamazza
+to answer your question: yes
+
+1559304803
+SamTebbs33
+I only just joined the channel so don't thave the full context of the conversation, but if you'd like to compile different code depending on the architecture, you can do so by using the std.builtin.arch variable, which is of type std.builtin.Arch
+
+1559310788
+fengb
+tralamazza: I don't think the conventions are fully established, but the latest std.os reorg has a reasonable layout
+
+1559313020
+euantor
+sorry for my lack of repsonse, you caught me as I was heading out to lunch, but personally I'd look at the std.os stuff as above
+
+1559313384
+shritesh
+Here’s how bootstrap.zig switches on arch
+
+1559313814
+Xe
+shritesh: that webassembly thing i linked on twitter works for you right?
+
+1559313820
+Xe
+it's failing on my ipad
+
+1559314770
+shritesh
+Xe I’m on an iPad too and it doesn’t work. Lemme try on the Mac
+
+1559314933
+shritesh
+I don’t see a run button in either
+
+1559315047
+shritesh
+Xe: move the run button after the H1 and it works on Mac Safari
+
+1559315349
+shritesh
+...and on iOS too
+
+1559315852
+shritesh
+You can remove the unnecessary run button too:
+
+1559315998
+Xe
+huh
+
+1559316001
+Xe
+okay neat
+
+1559316069
+Xe
+thank you for fixing that shritesh
+
+1559316233
+shritesh
+np
+
+1559316523
+shritesh
+I didn’t realize the run button was to be pressed multiple times. My bad lol.
+
+1559316551
+Xe
+eh it's more of a "you can do this" thing lol
+
+1559316567
+Xe
+i need to figure out some way to avoid it having to parse the wordlist every time
+
+1559316589
+Xe
+i would really like it if zig had something like go's func init() that ran with the start instruction in wasm
+
+1559316618
+Xe
+could just shove god into a "global" lol
+
+1559316720
+shritesh
+Go can do that because of the assumptions set by the go wasm runtime. But you can have an init function. And then something like a next() to get the actual values.
+
+1559316874
+shritesh
+xterm.css is not being loaded, you might want to look into that too.
+
+1559316964
+fengb
+lol... zee_alloc has a smaller export when using release-safe over release-small
+
+1559316997
+Xe
+shritesh: i think part of my problem is that i relied on a third party .js and .css file
+
+1559317011
+Xe
+i should have downloaded them locally
+
+1559317018
+Xe
+i just wanted to avoid the NPM and webpack skinsanity
+
+1559317079
+Xe
+now i know for next time :)
+
+1559317181
+shritesh
+fengb: release-small was the largest for zig-fmt-web
+
+1559317230
+shritesh
+Xe: any reason you’re using xterm.js?
+
+1559317292
+Xe
+shritesh: you know there's not really a good reason for it i guess
+
+1559317308
+Xe
+it made sense for another demo of mine, and i just copy-pasted the code from it because i wanted it to work
+
+1559317310
+Xe
+lol
+
+1559317335
+tralamazza
+fengb: ty
+
+1559317345
+shritesh
+It’s a really good terminal emulator but I didn’t get why it was here. Makes sense lol
+
+1559317392
+Xe
+shritesh: it's overkill for this case yeah
+
+1559317397
+Xe
+i'm going to obviate it in the future
+
+1559317825
+fengb
+shritesh: is that an LLVM backend issue?
+
+1559317847
+fengb
+I also feel like "release-safe" isn't the best language. It sounds like training wheels
+
+1559317856
+fengb
+s/language/vernacular
+
+1559317928
+shritesh
+fengb: I think it’s just the semantics of WebAssembly.  Before a wasm module is loaded, it is validated by the runtime and maybe a lot of checks get compiled away.
+
+1559317959
+fengb
+But small should always be <= safe
+
+1559318027
+shritesh
+Probably.
+
+1559318353
+shritesh
+I also agree about the release modes. release-safe should just be called release. release-fast will then feel like an explicit opt-in to trading safety for speed.
+
+1559319102
+kristoff_it
+I have a C allocator that gives me word-aligned memory, which I have to cast using @alignCast. What's a good way of saying "word-aligned"? I'm currently using @alignOf(usize), is this good enough?
+
+1559320579
+tgschultz
+Assuming the traditional definition of "word" and not the MS API definition, I think so, yes.
+
+1559322186
+fengb
+til win32 WORD == 16 bits
+
+1559322275
+kristoff_it
+lol til too, thanks tgschultz
+
+1559322451
+merlyndmg
+apparently in the intel/amd docs "word" in their jargon = 16 bits since forever (or so says the person who wrote a correction on my ancient stack overflow answer a couple weeks ago)
+
+1559322568
+tgschultz
+considering their procs still boot into real mode that isn't super surprising
+
+1559322728
+merlyndmg
+"byte(tm), word(r), doubleword(c1990), quadword(intelinside)" --2002 Intel /s
+
+1559322771
+merlyndmg
+but yeah, they still refer to them by those names, so WORD is jargon in their manuals (even if I'm joking about them trademarking those names)
+
+1559322842
+merlyndmg
+I guess that sort of kind of promotes better backwards compatibility on their own stuff...
+
+1559339890
+gamester
+You know, I think I've had enough of Linux as a desktop OS. I've used it exclusively for 10 years and it just kinda changes but doesn't really get better. I've had an insane amount of issues every year for some reason. I'm done. Let's make a new OS at some point. Zig shows what's possible when you start fresh.
+
+1559339937
+gamester
+I mean at least every single system call has to be rethought. Yeah, those are my thoughts. I don't want to take things off topic though.
+
+1559340118
+fengb
+BSD? :P
+
+1559342237
+tgschultz
+gamester:
+
+1559342255
+tgschultz
+Those thoughts are a bit outdated, I have more ideas now for direction
+
+1559342356
+tgschultz
+But the most important thing I think is to keep it simple. No overcomplicated abstractions, no presumptive automation, etc. The problem with that is that hardware is absurdly complicated these days so you pretty much have to use an existing OS just to get a servicable amount of hardware support.
+
+1559342396
+tgschultz
+I'd be willing to abandon most of modern computing and use something like a Raspberry Pi, but only if there were such a thing as a completely open hardware platform. Which there isn't.
+
+1559342493
+tgschultz
+I should update that blog post, actually.
+
+1559342763
+gamester
+tgschultz: thanks for the link, I'll take a look. I'm just in the middle of windows installment (gonna try WSL so I can use vim), running to the store, etc
+
+1559343083
+nrdmn
+what an odd solution
+
+1559343374
+gamester
+nrdmn: Oh yeah? If I hit the Windows/Super key on Gnome + Wayland + Nvidia it'll pick a random window and display that window for all the windows. That's one random example of the thousands of issues I come across
+
+1559343457
+gamester
+well it's not a random example, but yeah
+
+1559343514
+gamester
+nrdmn: oh maybe vim is supported on windows
+
+1559343524
+emekankurumeh[m]
+gvim
+
+1559343570
+emekankurumeh[m]
+or neovim, but you might run into issues if you use it in conjunction with msys2
+
+1559343597
+shritesh
+I switched to Windows because the audio playing through my (beefy) linux box would stutter when I was compiling zig
+
+1559343647
+scientes
+shritesh, you just have to use ionice and nice
+
+1559343683
+gamester
+heh, audio stutters for me and the audio driver hits an unreachable state and logs it to systemd. I talked to a developer and he guessed a hardware issue, which may be true but I don't see the issue on windows
+
+1559343694
+gamester
+I've had that issue for months
+
+1559343694
+shritesh
+I don’t want to use an OS on the desktop where I have to worry about those things :)
+
+1559343728
+scientes
+I can't really convince you, but on Linux you can just submit the patch upstream
+
+1559343737
+nrdmn
+all of this doesn't sound particularly linux related
+
+1559343773
+shritesh
+The music played fine on Mac and Windows lol
+
+1559343781
+scientes
+I had a Nexus 7 and high bit-rate mp3 ALWAYS studdered, because the device had a special cpu for doing low-power audio, but they only tested it with 128kbps mp3s
+
+1559343814
+mikdusan1
+gamester: you are installing windows as a vm?
+
+1559343821
+gamester
+mikdusan1: no
+
+1559343868
+mikdusan1
+are you wanting to use vim by ssh'ing into the machine? or from its graphics console
+
+1559343893
+gamester
+mikdusan1: gvim on windows is fine. I'm good.
+
+1559343915
+scientes
+I haven't used anything since windows xp either
+
+1559343984
+tgschultz
+yes well, some of us have serious complaints about the Linux Desktop "experience" too, we should try to avoid an OS flamewar here though
+
+1559344005
+scientes
+agreed off-topic
+

@@ -1,0 +1,816 @@
+1558742437
+andrewrk
+daurnimator, sure. the first bullet point is describing master branch. the last bullet point is not relevant anymore, I've eradicated all of the `posix` namespace
+
+1558742479
+andrewrk
+"This may cause a OS's std/os/* to be quite small! " -> have a look at in that branch, std/os/freebsd.zig and the others that should be small - this matches your comment
+
+1558742531
+andrewrk
+the only differences I see here are that you want a new non exhaustive enum feature for SYS_* and you want std/os.zig to be empty. where would that code go then? it's used all over the place
+
+1558742579
+andrewrk
+maybe you can do a proof of concept PR that doesn't have to pass any tests, to show what you mean
+
+1558742585
+daurnimator
+andrewrk: the non-exhaustive enum thing was just an example of how the syscall wrappers should be 'zigified' => another example there is that syscall wrappers should return actual zig errors.
+
+1558742614
+daurnimator
+e.g. mmap should return: linuxError![*]align(4096) u8
+
+1558742632
+andrewrk
+you want to remove the feature that functions have limited error sets?
+
+1558742649
+daurnimator
+andrewrk: syscalls
+
+1558742651
+andrewrk
+I'm pretty confident the limited error sets are good
+
+1558742667
+andrewrk
+they certainly do; some errors would be undefined behavior
+
+1558742689
+daurnimator
+andrewrk: the limited error sets would be done in e.g. 'std/fs'; where e.g. for `open` you would switch on linuxError and say that ECONNREFUSED is unreachable
+
+1558742698
+daurnimator
+andrewrk: they aren't...
+
+1558742717
+andrewrk
+e.g. if you get ENOSYS from exit()
+
+1558742720
+daurnimator
+andrewrk: the kernel is free to use different errnos for any release. it's not considered stable api
+
+1558742753
+daurnimator
+see
+
+1558742795
+andrewrk
+I'm not going to change how error sets for linux work in this branch
+
+1558742824
+daurnimator
+andrewrk: I think you should; or very soon after: would be good to only have breakage happen once here
+
+1558742918
+andrewrk
+I'll keep an open mind about it, but I'm strongly of the opinion the limited error sets + Unexpected are significantly beneficial
+
+1558742942
+andrewrk
+there's a reason the man pages for syscalls list the possible errors
+
+1558743028
+daurnimator
+they are rarely correct...
+
+1558743049
+daurnimator
+not to mention that e.g. WSL introduces all sorts of different errnos for operations
+
+1558743095
+andrewrk
+zig's error sets are going to make zig one of the only platforms where it's reasonable to write software that behaves perfectly on WSL as well as real linux
+
+1558743147
+emekankurumeh[m]
+tgschultz: have you seen
+
+1558743266
+andrewrk
+daurnimator, zoom out a little - what are you trying to solve?
+
+1558743294
+daurnimator
+andrewrk: see the bottom of my comment: to "separate the 2 from the 3"
+
+1558743309
+andrewrk
+I don't see that as a goal in and of itself
+
+1558743381
+daurnimator
+andrewrk: but in general: std/os is only what the OS has made stable ABI. std/c is the bindings to libc; and implements any C conventions (such as errno) that aren't actually part of OS ABi
+
+1558743406
+shachaf
+Does Zig have a standard way to represent errors that contain more information than an integer?
+
+1558743421
+emekankurumeh[m]
+no
+
+1558743461
+andrewrk
+shachaf, that extra information has to be communicated via a separate channel
+
+1558743492
+emekankurumeh[m]
+hmm, if errors are like enums (as the docs say) why can
+
+1558743551
+emekankurumeh[m]
+'t we have tagged unions, using errors as the tag type?
+
+1558743628
+andrewrk
+emekankurumeh[m], how would `try` work?
+
+1558743706
+shachaf
+I do like the error handling primitives Zig came up with. They're very similar to what I was thinking about not long before I found out how Zig does it.
+
+1558743709
+emekankurumeh[m]
+the same as with regular errors
+
+1558743768
+andrewrk
+emekankurumeh[m], can you elaborate? regular errors are integers not error unions
+
+1558743780
+shachaf
+(
+
+1558743819
+shachaf
+Is there an example of how the separate channel thing happens in practice?
+
+1558743876
+daurnimator
+shachaf: I would guess that you do it via a threadlocal variable in your module "lastErrorDetails()" or some such...
+
+1558743899
+andrewrk
+nooo don't use threadlocal variables
+
+1558743912
+emekankurumeh[m]
+ugh, that sounds like errno to me
+
+1558743916
+daurnimator
+emekankurumeh[m]: yep
+
+1558743923
+daurnimator
+how else to get error details out if you can't attach them to the error itself?
+
+1558743939
+daurnimator
+a threadlocal variable is the only way I can think of to handle lifetime well....
+
+1558743967
+shachaf
+Arbitrarily-sized errors are one thing but maybe you just want a small fixed-size amount of error information.
+
+1558743990
+andrewrk
+shachaf,
+
+1558744006
+emekankurumeh[m]
+a "tagged error union" would implicitly cast to it's tag type like with regular tagged unions
+
+1558744006
+emekankurumeh[m]
+and vice versa when possible
+
+1558744042
+shachaf
+OK, so you returns it with an out parameter or something.
+
+1558744052
+andrewrk
+yeah, something like that
+
+1558744061
+andrewrk
+I really don't think it's so bad
+
+1558744077
+andrewrk
+plz don't use threadlocal variables
+
+1558744087
+emekankurumeh[m]
+but it could be better
+
+1558744094
+shachaf
+That works and is generally better than something errno-style.
+
+1558744124
+shachaf
+But if you don't need that sort of thing for regular return values, it's funny to require it here.
+
+1558744176
+emekankurumeh[m]
+"that works" really shouldn't be the goal with zig imo
+
+1558744292
+andrewrk
+emekankurumeh[m], I still don't understand your suggestion. so `try` would toss the error payload - if any-  in the trash?
+
+1558744328
+andrewrk
+do the same error names have to have the same payload type globally?
+
+1558744355
+shachaf
+What's the suggestion? That the error type be a tagged union, so it might be of different sizes depending on what errors are possible?
+
+1558744387
+andrewrk
+I'm not opposed to this idea if all the complexities and consequences of it can be worked out satisfactorily
+
+1558744390
+shachaf
+If that's the case then giving the same errors the same payloads seems like the only reasonable thing to do.
+
+1558744417
+shachaf
+It's already the case that you don't want two people ever using the same error name for different errors.
+
+1558744485
+andrewrk
+currently @sizeOf(anyerror) is 2, with an open issue to make that configurable. if errors could have payloads then this could potentially raise the size of `anyerror` to be large
+
+1558744508
+shachaf
+If I understand how errors work now, they seem kind of like Go interfaces, where they don't need to be explicitly declared but implicitly there's still a connection between different uses of them.
+
+1558744514
+andrewrk
+this is a proposal that needs a lot of consideration,examples, and explanation. feel free to open it and make the case
+
+1558744802
+daurnimator
+an off the cuff idea: a module can "define"/"claim" a error's payload. e.g. error.MyNetworkLibFail = struct {client_code: u8, server_code: u8, category: u8};
+
+1558744838
+daurnimator
+@sizeOf(ErrorSet) would be the max of any errors in that error set
+
+1558744894
+merlyndmg
+how would that work cross-module?
+
+1558744899
+emekankurumeh[m]
+and @sizeOf(ErrorSet.MyNetworkLibFail) would be the size of that specific struct?
+
+1558745004
+emekankurumeh[m]
+just allowing errors as union tags could be a huge improvement imo
+
+1558745107
+merlyndmg
+so different topic, is there a set of win32 test programs out there already? like "hello world window that doesn't open a console, has a proper event loop and callbacks", etc? If not, I'm tempted to make some.
+
+1558745165
+merlyndmg
+the tetris one kinda works but it pulls in a lot of deps to make it work, and so far it's been a bit screwy building it
+
+1558745198
+andrewrk
+if you target windows-only that should be pretty straightforward
+
+1558745218
+emekankurumeh[m]
+andrewrk: the error still persists with #2532
+
+1558745221
+andrewrk
+unfortunately cross platform window/graphics is a complete mess
+
+1558745249
+emekankurumeh[m]
+merlyndmg: there's this
+
+1558745328
+emekankurumeh[m]
+it's windows specific and it shouldn't be too hard to pick out the bits you might need
+
+1558745328
+emekankurumeh[m]
+it still opens a console though, but i'm working on a patch to fix that
+
+1558745572
+emekankurumeh[m]
+i'm thinking they would work something like this:
+
+1558745762
+merlyndmg
+oh, it's not hard to do. I know how to do a win32 app in C :) It's just some things seemed to be working out messily so I was thinking of making some "here's a win32 app" examples to test out if there's any linker behavior issues or no. i.e. --subsystem didn't seem to be working correctly for me last night.
+
+1558745792
+merlyndmg
+wanted to know if such a thing already existed and I'd be duping effort or not
+
+1558745851
+merlyndmg
+"it still opens a console though, but i'm working on a patch to fix that" - yeah, this is what I was talking about. didn't know anyone was actively working on it though
+
+1558745901
+emekankurumeh[m]
+the trick part will be getting zig to respect user defined entry points
+
+1558745909
+shachaf
+Man, I'm going to port my Linux+X11 C thing to Win32 at some point and I'm not looking forward to it.
+
+1558745918
+shachaf
+Not that X11 is a lot of fun.
+
+1558745936
+emekankurumeh[m]
+i think zig exporting its entry points as weak might do it
+
+1558746065
+merlyndmg
+oh I didn't notice the link you sent emek* due to the color and it being next to join/leave messages. checking that out now
+
+1558746199
+emekankurumeh[m]
+if it's the second link, its unrelated to the windows stuff we were talking about
+
+1558746253
+merlyndmg
+the first link is the one I meant. and yeah, looks basically like the win32 example test code I was thinking about writing
+
+1558746363
+merlyndmg
+plus dx/ogl support. so yeah, easy enough to delete half it
+
+1558746396
+emekankurumeh[m]
+can you try compiling
+
+1558746403
+merlyndmg
+sure
+
+1558746598
+merlyndmg
+no console window
+
+1558746665
+emekankurumeh[m]
+did you have the prototype wrong before then?
+
+1558746675
+merlyndmg
+possibly
+
+1558746695
+merlyndmg
+the signature was entirely different, and it wouldn't compile
+
+1558746712
+merlyndmg
+hence why I wanted to try actually doing it right :)
+
+1558746750
+emekankurumeh[m]
+a different signature wouldn't be a compile error though
+
+1558746758
+emekankurumeh[m]
+did you export the function?
+
+1558746789
+emekankurumeh[m]
+because i get the same error you were describing when i leave off the export
+
+1558746847
+merlyndmg
+could have been it, yeah. I trashed my context since last night so will take a bit to get back into the thick of it
+
+1558746866
+merlyndmg
+I'm going to experiment with just a hello world program for a bit and see if I can repro with that
+
+1558747142
+emekankurumeh[m]
+for some reason zig thinks my function is void not noreturn even when the last thing my function does is call another noreturn function
+
+1558747217
+emekankurumeh[m]
+nevermind
+
+1558747541
+emekankurumeh[m]
+this works:
+
+1558747542
+emekankurumeh[m]
+but this doesn't
+
+1558748362
+merlyndmg
+did you paste the wrong one? I did a diff and they're the same
+
+1558748570
+emekankurumeh[m]
+whoops
+
+1558748644
+emekankurumeh[m]
+fixed
+
+1558748722
+merlyndmg
+yeah, so "pub" vs "export" might have been the issue I ran into last night. Haven't gotten far enough in the language to know the difference between those
+
+1558748757
+merlyndmg
+But a "WinMain() void" seems to work and get the right subsystem, as long as I do "export" and not "pub"
+
+1558748813
+merlyndmg
+a function named winmain seems to work (at least, it compiles, runs, and doesn't make a console window) even without the right signature
+
+1558749209
+emekankurumeh[m]
+zig's behavior regarding winmain and winmaincrtstartup is a little weird as changing the calling convention changes which symbols are exported
+
+1558749427
+tgschultz
+emekankurumeh[m] com unfortunately won't cut it in the long run, but I did at least get llvm to assemble absolute-addressed 16-bit code to use a DPMI host to enter protected mode and allocate memory, then extract that from the ELF as a COM executable. The issue is that LLVM doesn't understand a single output format that is actually loadable by a DOS natively or any DPMI host I've found (except one, which would
+
+1558749428
+tgschultz
+handle PEs and a good chunk of Windows API... of only we could actually target 32-bit Windows right now at all).
+
+1558749431
+tgschultz
+Ultimately I'm not sure what the solution will look like, but it will probably involve a DPMI stub written in assembly, and teaching the compiler to output an MZ exe. Possibly it would need even more complication by then embedding the actual program as an LE, but we might be able to avoid that.
+
+1558749969
+merlyndmg
+how do I ifdef in different functions depending on OS?
+
+1558750007
+merlyndmg
+I know that comptime exists but not entirely how to use it
+
+1558750023
+merlyndmg
+and the builtin module
+
+1558750286
+andrewrk
+merlyndmg, `if` and `switch` expressions
+
+1558750299
+andrewrk
+as long as the condition/expr is comptime known
+
+1558750354
+merlyndmg
+I can't do a if at file scope can I?
+
+1558750427
+merlyndmg
+for example, say add and export 10 more functions if const some_config_value = true;
+
+1558750493
+andrewrk
+you have to do it in a declarative way, so to accomplish that you would put 10 functions in a struct, and then `use if (some_config_value) your_struct_with_10_funcs else struct{};`
+
+1558750542
+andrewrk
+but probably you don't need `use` and you can simply have those 10 functions namespaced (or not) and they won't be referenced if some_config_value is false
+
+1558750596
+merlyndmg
+I mean, really what I'm trying to do is rename main if I'm on windows :) you said that, and I started wondering if it was going to be able to see it if "namespaced" via a struct
+
+1558750632
+andrewrk
+does this have to do with exports?
+
+1558750676
+andrewrk
+have a look at this file
+
+1558750696
+merlyndmg
+oh nice, line 16 looks promising
+
+1558750935
+fengb
+What is an extern function with a body? Does it use an extern by default, and the internal one if not provided?
+
+1558750976
+merlyndmg
+hmm. in what cases does this bootstrap.zig get added to a program?
+
+1558751021
+andrewrk
+fengb, it means the C calling convention. planned change:
+
+1558751045
+andrewrk
+merlyndmg, when the root source file has pub fn main()
+
+1558751061
+andrewrk
+the build type is build-exe
+
+1558751065
+andrewrk
+*and the build type is build-exe
+
+1558751079
+andrewrk
+and the target is not freestanding
+
+1558751084
+emekankurumeh[m]
+or WinMain
+
+1558751117
+andrewrk
+that's either not correct or it's a bug
+
+1558751165
+fengb
+Oh I see
+
+1558751225
+emekankurumeh[m]
+scratch that, exporting WinMain does not cause bootstrap.zig to be linked in
+
+1558751589
+merlyndmg
+alright I found the codegen for including bootstrap, will dig in
+
+1558751596
+emekankurumeh[m]
+if you perform a weak export, then a strong export with the same name shouldn't the strong export work?
+
+1558751610
+emekankurumeh[m]
+ie. be exported without error?
+
+1558751658
+andrewrk
+emekankurumeh[m], yes in a separate compilation unit
+
+1558756700
+emekankurumeh[m]
+i'm noticing that fields in builtin.TypeInfo.Definition.Data aren't being set to true values
+
+1558757523
+emekankurumeh[m]
+the calling convention is always CallingConvention.Unspecified and is_exported is always false
+
+1558790641
+nrdmn
+andrewrk: is building zig only for specific targets supported?
+
+1558790708
+nrdmn
+I'm writing a gentoo ebuild for zig and would like to avoid it depending on an llvm that is built for all supported platforms
+
+1558792981
+tgschultz
+nrdmn I'm not sure that aligns with Zig's philosophy of being able to cross compile for any target from any target.
+
+1558793106
+tgschultz
+then again, that doesn't really work for the freestanding platforms, so... I don't know.
+
+1558795670
+andrewrk
+nrdmn, no that's not supported
+
+1558803393
+emekankurumeh[m]
+why wouldn't you want to able to cross compile?
+
+1558803584
+nrdmn
+emekankurumeh[m]: I'd want to, but usually gentoo users enable only those targets for their llvm builds which they actually need. Just to install zig, they'd have to recompile llvm, which takes well over an hour on a laptop
+
+1558803690
+andrewrk
+any builds of llvm/zig that do not support all the targets are not supported by the upstream zig project
+
+1558803708
+andrewrk
+it's not considered a valid use case
+
+1558809733
+shritesh
+It would be nice if `zig init-exe` created a .gitignore with zig-cache in it
+
+1558810974
+andrewrk
+shritesh, how about if it detecst a .git folder then it does that
+
+1558811054
+shritesh
+Maybe. My usual workflow is add some files -> git init.
+
+1558811191
+shritesh
+I know some web dev tools init git too (though they may not be the best model to follow)
+
+1558811303
+torque
+I think shoehorning version control interop into tools that aren't expressly for that purpose is bad practice
+
+1558811717
+emekankurumeh[m]
+what if svn or mecurial was being used?
+
+1558813273
+shritesh
+Yeah. I think it’s safe to just put zig-cache to global gitignore.
+
+1558813487
+shritesh
+Also, shouldn’t `zig build run -- args` pass arguments like `zig run src/main.zig -- args` does?
+
+1558814930
+mikdusan
+shritesh: a complication with `zig build run -- args` is build can have more than 1 top step to perform. `zig build run1 run2 test3`
+
+1558816049
+shritesh
+Can the run step be a special exception like install is?
+
+1558816916
+mikdusan
+hmm now i'm second-guessing my previous opinion about what `zig build run` should do: run from zig-cache or install dir.
+
+1558816980
+mikdusan
+presumably running from zig-cache is inconvenient due to hash in the pathname. and install dir is more straight forward. you know where it's going.
+
+1558817005
+mikdusan
+so in case of manually running from install, you can of course supply command line args.
+
+1558817090
+mikdusan
+in case of `zig build run`, maybe a rule like `-- args` is used ONLY if there is exactly one top-level step specified.
+
+1558818494
+Aransentin
+It seems like I can't cast an array to [*]u1 as to then get the n-th bit of it... Is there a nice ziggy way of doing that, or should I just use shifts and stuff like I would in C?
+
+1558819040
+emekankurumeh[m]
+would having use bring a specific identifiers into scope be acceptable
+
+1558819090
+emekankurumeh[m]
+ie `use module.some_fn;` is syntax sugar for `const some_fn = module.some_fn`
+
+1558819619
+marijnfs
+man i can't get linking to cuda work, i just want to get a simple cudamalloc to run
+
+1558819624
+marijnfs
+it links but then crashes
+
+1558820202
+tgschultz
+Aransentin: zig doesn't support bit-arrays in the language. an array of u1 is an array of bytes in which only 1 bit is used. What you want is supported in userland with std.PackedIntArray and std.PackedIntSlice
+
+1558820229
+Aransentin
+Ah, thanks :)
+
+1558820236
+tgschultz
+alternatively you could cast it to an array of packed structs.
+
+1558825498
+marijnfs
+hmm it seems I can call cuda functions, just malloc segfaults, probably because i screw up the arguments
+
+1558825522
+marijnfs
+to give a void pointer i make a ?*c_void right? can give a ref to that?
+
+1558825990
+marijnfs
+damn it works, apprently my code above that corrupted the stack:O
+
+1558826747
+shritesh
+This might be really stupid but why does this hello world program crash with EBADF?
+
+1558827269
+shritesh
+Or the actual problem I’m trying to solve: how do I do printf to stdout without allocating ?
+
+1558827372
+scientes
+yeah that is important, I didn't know zig didn't have that down
+
+1558827573
+scientes
+shritesh, glibc sometimes opens stdin/stdout/and stderr to make sure they are there, but they are not guaranteed
+
+1558827581
+scientes
+they are provided by the process that spawns your program
+
+1558827600
+scientes
+so the answer is that your are spawning the zig program from a weird environment
+
+1558827917
+shritesh
+I’m running it inside a TMUX session on a Ubuntu VM.
+
+1558828008
+scientes
+maybe try screen?
+
+1558828042
+scientes
+you could also just explicitely open /dev/stdout
+
+1558828083
+scientes
+and also add a sleep, and then look in /proc/<pid>/fds to see what is going on
+
+1558828123
+scientes
+but yeah those are suppose to be inherited across forks(), and while they are standard, they are not part of the Linux kernel nor required
+
+1558828140
+shritesh
+It works when I don’t use the steam and write directly to the file
+
+1558828160
+scientes
+so Zig should probably check that they exist when you do getStdOut()
+
+1558828189
+scientes
+shritesh, oh, then maybe the problem is that it is opened in non-buffering mode ????
+
+1558828202
+scientes
+but stdout is always non-buffered
+
+1558828207
+scientes
+its stderr that is buffered by default
+
+1558828235
+shritesh
+Interesting
+
+1558828272
+shritesh
+So what do I do in Zig? 😅 use a buffered stream or something?
+
+1558828474
+scientes
+well that might be why is returning  EBADF, because the other end isn't read()ing
+
+1558828481
+scientes
+e
+
+1558828546
+scientes
+nah
+
+1558828547
+scientes
+<shritesh> Interesting
+
+1558828547
+scientes
+<shritesh> So what do I do in Zig? 😅 use a buffered stream or something?
+
+1558828554
+scientes
+>  EBADF  fd is not a valid file descriptor or is not open for writing.
+

@@ -1,0 +1,716 @@
+1559521470
+fengb
+tgschultz:  error: invalid token: 'var'         pub fn init(ptr: ?var) Self {
+
+1559521513
+fengb
+Without the nullability — "error: parameter of type '(null)' requires comptime"
+
+1559521522
+tgschultz
+fengb: that's an invalid way to express that. just take `ptr: var`, then in the body check if `@typeOf(ptr) == @typeOf(null)`
+
+1559521534
+fengb
+Yeah it's not letting me
+
+1559521538
+tgschultz
+huh
+
+1559521542
+tgschultz
+hmmm...
+
+1559521590
+scientes
+"(null)" is a glibc thing....
+
+1559521595
+scientes
+so you are already invoking UB in C
+
+1559521602
+fengb
+".iface = comptime Allocator.Iface.init(null),"
+
+1559521606
+fengb
+Adding comptime worked
+
+1559521626
+scientes
+yeah but if you ever see "(null)" the C is incorrect
+
+1559521638
+scientes
+as that is technically UB
+
+1559521649
+scientes
+that glibc is glossing over
+
+1559521718
+tgschultz
+scientes there's no C here
+
+1559521731
+scientes
+oh ok, does zig format do the same thing?
+
+1559521755
+tgschultz
+fengb: that's unintuitive, I think we should do it the other way and update the error message.
+
+1559521769
+fengb
+Sure
+
+1559521773
+scientes
+<scientes> yeah but if you ever see "(null)" the C is incorrect
+
+1559521773
+scientes
+<scientes> as that is technically UB
+
+1559521773
+scientes
+<scientes> that glibc is glossing overrint.cpp uses "(null)"
+
+1559521786
+scientes
+ahh sorry, i see that ir_print.cpp uses "(null)"
+
+1559521900
+daurnimator
+fengb: heh. I ran into a similar thing myself last night. I wanted: [*]var
+
+1559521924
+daurnimator
+and another time I wanted *align(4096) var
+
+1559521928
+daurnimator
+all failed :(
+
+1559522004
+daurnimator
+Really I think we just need to replace 'var' with the proposal in #1669
+
+1559522074
+fengb
+Jimmi's proposal is great; basically what I wanted in Erlang / Elixir
+
+1559522118
+scientes
+yeah that makes sense
+
+1559522126
+scientes
+I've done that just in the function before
+
+1559522137
+scientes
+if (@typeInfo(var)) et cetera
+
+1559522157
+scientes
+something like that...
+
+1559522354
+fengb
+Also... want to avoid angle brackets >_>
+
+1559522457
+scientes
+<_< >->
+
+1559522477
+scientes
+<_>
+
+1559522483
+scientes
+^_^
+
+1559522692
+fengb
+Do as I say, not as I do
+
+1559522969
+tgschultz
+now that the plan is to have async not take an allocator, my guess is that angle brackets will stay out of the language. #1669 would probably be `var(func)`if implemented.
+
+1559523076
+scientes
+<<><>>>><><<<<<>>>
+
+1559523184
+mrkishi
+tgschultz: unrelated but #1669 is something I've been reading on-- has it been considered giving var a way to introduce names?
+
+1559523239
+mrkishi
+eg. `a: var A` to get a type A introduced instead of having to `@typeOf(a)`, possibly extended so that constraints can introduce even further names?
+
+1559523331
+daurnimator
+mrkishi: hrm. my first thought is that it seems like a bad idea. my 2nd thought is that a complex constraint might be doing an expensive calculatation that you want to save. my 3rd thought is that the proposal in #1669 requires that the constraint be comptime, so it's probably already cached.
+
+1559523644
+mrkishi
+it's not so much related to caching but to ergonomics, really. say defining a simple map over a generic list: if I'm not missing anything (high possibility), right now, you need to either be explicit like `fn map(comptime A: type, comptime B: type, allocator: *Allocator, f: fn (a: A) B, input: List(A)) !List(B)` or do imperative comptime type checking
+
+1559523694
+mrkishi
+with #1669 you could probably create constraints to input and helper functions to extract their types so you can construct the proper return type
+
+1559523782
+daurnimator
+mrkishi: I don't see any problems with being explicit like that
+
+1559523939
+mrkishi
+there's no problem per se, but consider something like `fn map(allocator: *Allocator, f: fn (a: var A) var B, input: List(A)) !List(B)`
+
+1559523973
+mrkishi
+imo that's more ergonomic while not hiding things as per zen of zig
+
+1559523991
+daurnimator
+my first question there is: what is 'A'?
+
+1559524019
+daurnimator
+A and B seem to be conjured from nowhere
+
+1559524027
+mrkishi
+a new name introduced by `var`, basically `@typeOf(a)`
+
+1559524049
+mrkishi
+yeah, it'd be a new concept and perhaps the syntax should be different
+
+1559524077
+mrkishi
+but allowing `var` to be an explicit inference keyword doesn't seem completely wacky
+
+1559524111
+mrkishi
+(where `var` doesn't need to be named `var` and the syntax doesn't need to be like that as well either)
+
+1559524223
+mrkishi
+explicit inference like `fn f(a: infer T, b: T)`. I saw there was talk of something similar on #470 and it was disregarded, but perhaps the `var` keyword could be augmented instead
+
+1559524937
+mrkishi
+back to #1699, consider the example `pub fn dot(a: var<isVector>, b: @typeOf(a)) @typeOf(a)`, the return there should actually be the type of the vector's scalar instead, so you need both `isVector` and `getVectorScalarType`
+
+1559525010
+mrkishi
+could we instead allow var's constraint functions to return types as well, and var itself assign names to these?
+
+1559525072
+scientes
+why not just use @typeInfo() on it?
+
+1559525079
+fengb
+mrkishi: So basically like generic aliases like in Typescript? function <T, F extends (T) => T>foo(a: F, b: F): T
+
+1559525090
+daurnimator
+fengb: argh, that looks like line noise :P
+
+1559525199
+mrkishi
+yeah, `@typeInfo()` is what we'd need to use to extract the scalar type, so for a constraint X we'd need to provide multiple functions: one for testing for the constraint and others for extracting associated types from it
+
+1559525217
+mrkishi
+that's what already proposed, right?
+
+1559525224
+fengb
+I think we can emulate it with comptime references: `pub fn dot(comptime V: isVector, b: V) V`
+
+1559525244
+scientes
+^
+
+1559525250
+scientes
+thats exactly what I'm saying
+
+1559525278
+mrkishi
+not sure I follow
+
+1559525316
+fengb
+"comptime V" defines the type that you can use in subsequent arguments
+
+1559525352
+scientes
+something about <> scares me
+
+1559525360
+mrkishi
+right, but then we're back pre #1699 and providing each type separately
+
+1559525388
+mrkishi
+`pub fn dot(comptime V: isVector, comptime S: scalar, a: V, b: V) S`
+
+1559525414
+fengb
+I kinda think that's more readable, even if it may be longer to type
+
+1559525420
+mrkishi
+or, rather, `pub fn dot(comptime V: isVector, a: V, b: V) getScalar(V)` using typeinfo
+
+1559525452
+scientes
+^yep
+
+1559525480
+scientes
+I still haven't figure out a good syntax for branching on vectors
+
+1559525503
+scientes
+for any comparison you have ALL, SOME, or NONE
+
+1559526202
+daurnimator
+scientes: you need more than that
+
+1559526217
+daurnimator
+scientes: you don't want "SOME", you want "elements 1,4,5"
+
+1559526219
+scientes
+I don't see any more being useful
+
+1559526230
+daurnimator
+scientes: i.e. you want a bitarray returned.
+
+1559526232
+scientes
+daurnimator, that is done with permute
+
+1559526239
+scientes
+and you already have a bitarray
+
+1559526241
+daurnimator
+which IMO makes sense to provide with a builtin
+
+1559526253
+scientes
+if only talking about branching
+
+1559526263
+scientes
+you can of course fiddle with the data beforehand
+
+1559526284
+scientes
+this is based on my experience with how ppc works
+
+1559527690
+mrkishi
+can zig types themselves have comptime fields somehow?
+
+1559527781
+mrkishi
+something like associated types
+
+1559527821
+mrkishi
+oh wait I see they can, sorry for noise
+
+1559533943
+emekankurumeh[m]
+mumbles about pattern matching
+
+1559536089
+daurnimator
+emekankurumeh[m]: I really want to see a PEG written in zig
+
+1559536105
+daurnimator
+I was going to have an attempt at it; but allocator and uring are keeping me busy
+
+1559536155
+emekankurumeh[m]
+i mean pattern matching in zig, like in rust
+
+1559536174
+emekankurumeh[m]
+that was one of the things I really like d about rust
+
+1559545909
+daurnimator
+Anyone in here a rusted-on windows developer?
+
+1559546018
+daurnimator
+Would be a great project to wrap some of the lower level NT apis; particularly the socket ones.
+
+1559548625
+very-mediocre
+daurnimator: afaik windows sockets are like 90% similar to BSD sockets
+
+1559548664
+very-mediocre
+sadly I'm swamped with work so can't contribute :{
+
+1559548709
+daurnimator
+very-mediocre: might have lost your messages over the netsplit
+
+1559548739
+daurnimator
+very-mediocre: windows sockets are implemeted in "AFD", if you want good performance or normal event semantics, you need to bind them directly instead of using winsock
+
+1559549039
+very-mediocre
+got disconnected, looked into AFD meanwhile
+
+1559549261
+daurnimator
+very-mediocre: it's quite interesting when you get deep into it :)
+
+1559549298
+very-mediocre
+was looking for this post I read a year ago or so:
+
+1559549331
+very-mediocre
+because i knew iocp was also a thing
+
+1559549339
+very-mediocre
+indeed it's very interesting
+
+1559549372
+daurnimator
+very-mediocre: nearly all socket operations are an NT ioctl call with underdocumented parameters :)
+
+1559549414
+daurnimator
+very-mediocre: midipix is probably one of the easiest to navigate codebases to get the details out of. e.g. for their implementation of send(), see
+
+1559549479
+very-mediocre
+that's great
+
+1559549492
+very-mediocre
+C can easily be unreadable
+
+1559549657
+daurnimator
+very-mediocre: so IMO, someone needs to wire up all those low level AFD APIs in zig
+
+1559550340
+very-mediocre
+can't find much about skipping user mode winsock entirely and doing it all that low level
+
+1559550360
+very-mediocre
+other than midipix are you aware of projects doing this?
+
+1559550464
+daurnimator
+very-mediocre: most projects only do it for the performance sensitive bits
+
+1559550478
+daurnimator
+libuv is one example of that
+
+1559550621
+daurnimator
+it's not disimilar to libc on linux vs raw syscalls: most people use libc, but sometimes you use the raw syscalls.
+
+1559550635
+very-mediocre
+right, gotcha
+
+1559550826
+very-mediocre
+tbh it seems pretty crazy on windows
+
+1559550841
+very-mediocre
+everything is debated.
+
+1559550938
+very-mediocre
+I'm googling around to get a better idea and I'm running into super long deliberations about how to implement things
+
+1559550985
+daurnimator
+very-mediocre: we don't need to make those decisions yet (though I have ideas/plans)
+
+1559551002
+daurnimator
+very-mediocre: to start with, what we'll need is the raw ioctl wrappers
+
+1559551074
+daurnimator
+decisions about when to use winsock vs raw ioctls vs wrapping all up in an event framework can happen later. and likely we'll want to give users the option (same as we let people choose if they want to link against libc or not today on linux)
+
+1559551390
+very-mediocre
+i'm sure you can tell i'm out of my element here, hence the not-so-riveting conversation :)
+
+1559551455
+very-mediocre
+i understand everything but I have no business evaluating any decisions about this
+
+1559551483
+daurnimator
+very-mediocre: an interesting starting project might be: try and send a UDP "hello" message using the raw ioctl API in pure zig.
+
+1559551505
+daurnimator
+very-mediocre: will require wrapping the 'create socket' operation; and the 'send udp packet' operation
+
+1559551549
+very-mediocre
+if this is a blocker for the HTTP client issue then winsock seems like a natural starting point
+
+1559551592
+daurnimator
+very-mediocre: no its not at all
+
+1559551615
+daurnimator
+very-mediocre: just a general 'useful to have' thing to for our zig toolbox
+
+1559551796
+very-mediocre
+i see
+
+1559570741
+scientes
+how do i build zig without libuserland.a?
+
+1559570905
+scientes
+oh i guess i have zig0 which is fine
+
+1559571457
+emekankurumeh[m]
+why would you want to do that?
+
+1559571530
+scientes
+porting to a new architecture
+
+1559573058
+scientes
+but i don't WANT to build compiler-rt....
+
+1559573344
+emekankurumeh[m]
+<scientes "but i don't WANT to build compil"> i pretty sure that libuserland.a is different from compiler-rt
+
+1559573354
+scientes
+yes it is
+
+1559573369
+scientes
+but once you avoid libuserland.a you run into zig always wanting to compile compiler-rt
+
+1559573375
+scientes
+even if just using build-obj
+
+1559573393
+emekankurumeh[m]
+i thought it was just the parts of the zig compiler written in zig
+
+1559573405
+emekankurumeh[m]
+like zen, fmt, and translate-c
+
+1559573410
+scientes
+compiler-rt is a llvm library, ported to zig
+
+1559573433
+emekankurumeh[m]
+libuserland not compiler-rt
+
+1559573438
+scientes
+yes i know
+
+1559573636
+emekankurumeh[m]
+have you tried building .a files?
+
+1559573673
+emekankurumeh[m]
+accord to this issue zig doesn't bundle compiler-rt with static libs:
+
+1559573871
+jfo
+hi all, does anyone know what the `@` means in the path being passed to import here?
+
+1559574026
+emekankurumeh[m]
+it's probably just a regular package that points to the build file in a project
+
+1559574078
+emekankurumeh[m]
+the `@` is so it doesn't conflict with any other package just like with `@root` in bootstrap.zig
+
+1559574266
+scientes
+emekankurumeh[m], @root is special
+
+1559574279
+scientes
+but @"" allows using reserved words and characters
+
+1559574284
+scientes
+and calling arbitrary symbols
+
+1559575029
+emekankurumeh[m]
+@root is just a package that refers to to the root file, any other name could have been chosen. the `@` could have been chosen for a special reason but as far as I can tell any other symbols could have been used just as easily.
+
+1559575142
+scientes
+emekankurumeh[m], yeah but it is special coded in the compiler
+
+1559575153
+scientes
+so it isn't really an example of a lanuage feature yet
+
+1559575200
+mikdusan1
+ie: "@root" == where `pub fn main()` is decl'd; "@build" == where `pub fn build()` is decl'd
+
+1559575338
+scientes
+I hate fighting with the assembly syntax
+
+1559575354
+scientes
+there isn't even a clear conversion from llvm-ir, which i can get out of clang
+
+1559575393
+halosghost
+isn't there an llvm tool to take ir and convert to asm?
+
+1559575413
+scientes
+i'm talking about inline zig asm
+
+1559575431
+scientes
+
+
+1559575432
+halosghost
+ahh
+
+1559575446
+scientes
+llvm-ir also has a asm command
+
+1559575452
+scientes
+but its not clear how to convert the opposite way
+
+1559575460
+scientes
+and I can never get the syntax just right
+
+1559575492
+halosghost
+sure
+
+1559581466
+donpdonp
+struct Thing { pub fn init() Thing { return Thing {}; } }; using the common pattern of Thing.init(), whats the lifetime of Thing{} ? I thought the lifetime would be the duration of the enclosing funciton which would make the return Thing{} invalid almost immediately?
+
+1559582035
+mikdusan1
+donpdonp: `return Thing{}` makes a copy. but with guaranteed copy-elision it ends up targeting call site storage directly.
+
+1559582098
+donpdonp
+mikdusan1: interesting, thx. i need to look up copy-elision
+
+1559584511
+emekankurumeh[m]
+i kinda wish try took a block, similar to languages like java
+
+1559585152
+mikdusan1
++builtin.Os.iPadOS
+
+1559591130
+DesDeux
+Hello, have a really noobish question: how to install libc on windows so zig can find it?
+
+1559591401
+scientes
+I got hello world working on ppc64el!
+
+1559591968
+gamester
+DesDeux: have you tried passing "--library c", or exe.linkSystemLibrary("c") if you're using build.zig?
+
+1559592100
+DesDeux
+<gamester> Yes and got "Unable to determine libc include path: file not found
+
+1559592100
+DesDeux
+. Unable to link against libc: Unable to find libc installation: file not found"
+
+1559592241
+gamester
+donpdonp: 'return Thing{}' makes a copy, for when that's bad people use create/destroy instead of init/deinit where create returns a pointer. copy elision isn't here yet
+
+1559592268
+gamester
+DesDeux: hmm, I'm not sure then. Hopefully someone else can help
+
+1559592349
+gamester
+donpdonp:
+
+1559593860
+emekankurumeh[m]
+DesDeux do you have mingw-w64 or visual studio installed?
+
+1559595970
+scientes
+what was that hack to doing alloca(), I need to advance the stack pointer x bytes
+
+1559595992
+scientes
+cause powerpc64el process startup not only doesn't follow its own spec, but its kinda fed up
+
+1559601112
+marijnfs_
+has someone already played with zeromq with zig? seems the serialisation of zig is a nice match with that
+

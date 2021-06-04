@@ -1,0 +1,3356 @@
+1559001758
+hryx
+Could the usage of tree + arena_allocator be seeing the same problem that daurnimator found here?
+
+1559001768
+andrewrk
+I was just thinking along those lines
+
+1559001799
+hryx
+still weird that it just dies for me even when stepping through. But I'll experiment with that
+
+1559001819
+andrewrk
+c.tree.root_node.decls.push seems to be causing a std.mem.Allocator.alloc which is clobbering c.tree.root_node.decls itself
+
+1559001837
+andrewrk
+it might have to do with the different libcs
+
+1559001843
+andrewrk
+different header files etc
+
+1559001938
+hryx
+that sounds nasty - not sure how I would debug that. should I look at what libc is being used when I do `make install`?
+
+1559001958
+andrewrk
+well we can test the hypothesis pretty easily by swapping out the arena allocator for a large fixed buffer allocator
+
+1559002131
+andrewrk
+hm it's not a simple swap. I'm going to keep looking into it
+
+1559002268
+andrewrk
+hryx, I see it. argh
+
+1559002279
+hryx
+ok, this is very fishy. I ported the tree no-copy "foot-shield" trick from the parser rewrite and rebuilt. now it says SIGSEGV at translate_c.zig:0:33
+
+1559002282
+hryx
+literally in a comment
+
+1559002285
+hryx
+oh??
+
+1559002343
+andrewrk
+yeah essentially we try to "move" arena on lines 174-175. but look, it gets copied in 3 places before that
+
+1559002382
+hryx
+Wheeeeeee
+
+1559002392
+andrewrk
+sorry, totally my fault
+
+1559002443
+hryx
+no no, I'm very grateful for the help debugging
+
+1559002462
+hryx
+in other news, lldb and gdb give me different results. Surprise! That's what I get for trying to be fancy
+
+1559002484
+hryx
+that was probably a DUH move
+
+1559002685
+andrewrk
+hryx, yep that was it. here's my diff:
+
+1559002691
+andrewrk
+I'm going to commit this to master
+
+1559002742
+andrewrk
+hryx, oh, and I found out why I wasn't reproing your case... derp
+
+1559002762
+hryx
+awesome, thanks so much for the debugging help. and TIL don't use LLVM debugging tools when you built with GCC :|
+
+1559002766
+andrewrk
+I put my `foo.c` in the wrong place. what I was looking at in the editor and what I was testing against was different
+
+1559002782
+andrewrk
+I think that might have been the wrong lesson to learn
+
+1559002783
+hryx
+d'oh
+
+1559002793
+andrewrk
+considering my mistake :)
+
+1559002812
+hryx
+someday zig will be perfect but humans will always do funny things
+
+1559002818
+hryx
+:>
+
+1559003207
+daurnimator
+hryx: andrewrk: I actually already reported that issue >.<
+
+1559003232
+andrewrk
+daurnimator, ah, thanks
+
+1559003370
+daurnimator
+mikdusan: e.g. you use unsigned integer wraparound when you subtract head from tail in a circular buffer
+
+1559003443
+mikdusan
+aye.
+
+1559003509
+daurnimator
+mq32: comptime protobuf support would be awesome
+
+1559003523
+daurnimator
+mq32: the cool thing is: it could
+
+1559003717
+mikdusan
+i've been treating ArenaAllocator internals as opaque and assuming once init'd it cannot be copied; i guess was being overly cautious
+
+1559003861
+andrewrk
+mikdusan, that's a good approach generally. it would have prevented this bug
+
+1559003908
+daurnimator
+scientes: I think you can force float calculations with a @fence(.Monotonic)
+
+1559003920
+scientes
+daurnimator, yeah i figured that out
+
+1559003939
+scientes
+i don't think that way works
+
+1559003946
+scientes
+cause it could still be constant propagation
+
+1559003952
+scientes
+but similar with inline asm
+
+1559003961
+scientes
+but not any actual asm, so its cross-platform
+
+1559004117
+daurnimator
+andrewrk: congrats on merging that PR
+
+1559004126
+andrewrk
+thanks for the comments on it
+
+1559004136
+daurnimator
+okay and now I'm back to the present (from reading IRC history)
+
+1559004175
+daurnimator
+I'll make an issue from the comment about selfExeDir
+
+1559004487
+daurnimator
+andrewrk:
+
+1559004535
+andrewrk
+daurnimator, see
+
+1559004548
+andrewrk
+looks like you already opened an issue for it
+
+1559004560
+daurnimator
+andrewrk: already ahead of you on that one :P
+
+1559004596
+daurnimator
+andrewrk: I put inotify into a different category: it's really a linux-only API. whereas e.g. nanosleep is at least implementable everywhere.
+
+1559004728
+hryx
+mikdusan: I finally found the place where that recursion was happening. No more stack overflow, and we get some translated C. I'm elated. thank you & plz tune in next time to Stevie's personal code diary
+
+1559004746
+andrewrk
+if that was a podcast I would listen to it
+
+1559004773
+hryx
+coming soon to a ipod near you
+
+1559004784
+mikdusan
+hryx: did it have something to do with `inline` ?
+
+1559004816
+hryx
+nope, in this case I was not getting the expr->subExpr() at a point where recursion was possible
+
+1559004822
+hryx
+so it was just spinning in circles
+
+1559004831
+mikdusan
+well what else is a cpu going to do
+
+1559004849
+hryx
+great point
+
+1559004958
+daurnimator
+andrewrk: I've been considering streaming more
+
+1559004972
+daurnimator
+if you'd rather tune into "daurnimator's personal code diary"
+
+1559004975
+daurnimator
+:P
+
+1559004984
+mikdusan
+in case anyone cares, zig seems to build and run tests successfully for me w/ Visual Studio 16 2019, Windows 10.
+
+1559004998
+andrewrk
+thanks mikdusan
+
+1559005023
+mikdusan
+i have some notes on how to prep Windows 10 for msys2, ssh login, authorized keys, the usual. they're just a list of things to install. anyone need some help just ping.
+
+1559005033
+andrewrk
+yeah zig's test suite passes everything but there maybe some compile errors lurking in the untested areas of the std lib. I expect to get a few reports when people update their code to use latest master
+
+1559005626
+daurnimator
+andrewrk: I'm really happy about the new mmap signature. it's been bugging me since I started with zig
+
+1559005636
+andrewrk
+I was thinking of you
+
+1559005665
+andrewrk
+it's in jeopardy with
+
+1559005702
+daurnimator
+andrewrk: see my most recent comment there :)
+
+1559005723
+daurnimator
+os.minimum_page_size // would be 4096 in most cases
+
+1559005741
+andrewrk
+that might be a nice solution
+
+1559005762
+andrewrk
+we could solve it even simpler: /// this is the minimum page size
+
+1559005790
+daurnimator
+I would put it in the name. otherwise someone is bound to make assumptions
+
+1559005800
+andrewrk
+true
+
+1559006035
+daurnimator
+interesting.... why does raise() on linux use the raw gettid()?
+
+1559006047
+mikdusan
+chart here for os page sizes:
+
+1559006146
+daurnimator
+mikdusan: only thing on there with a non 4096 minimum is UltraSPARC Architecture 2007 with an 8k minimum page size
+
+1559006713
+scientes
+do we have any code that makes heavy, performance-critical use of the arena allocator?
+
+1559006762
+daurnimator
+scientes: I don't think we have anything performance critical yet...
+
+1559006783
+scientes
+cause i have an experimental idea that could make the arena allocator screaming fast
+
+1559006790
+daurnimator
+scientes: explain....
+
+1559006799
+scientes
+you just make it a second stack
+
+1559006803
+scientes
+with its own stack pointer
+
+1559006825
+scientes
+i had proposed this as a language thing, but it doesn't need to be
+
+1559006831
+daurnimator
+scientes: huh? the whole point of ArenaAllocator is you get to provide the parent allocator
+
+1559006880
+scientes
+yeah you can do that, you just have to register the arenaallocators in a global
+
+1559006900
+scientes
+so that the allocator itsself is just a stack pointer
+
+1559006916
+daurnimator
+scientes: could you explain further how this would work?
+
+1559006930
+scientes
+and if you want to avoid stack overflow you need a SIGSEGV handler, the way java does it
+
+1559006969
+scientes
+daurnimator, well it would be pretty good without any changes to the language.
+
+1559006981
+daurnimator
+scientes: I don't see how this could ever work with the current interface of providing your own allocator
+
+1559006992
+scientes
+yeah you just have a registration system
+
+1559006999
+daurnimator
+??
+
+1559007002
+scientes
+with a global registry of arena allocators
+
+1559007008
+daurnimator
+that already sounds bad
+
+1559007023
+scientes
+its not differn't from the way virtual memory already works
+
+1559007034
+daurnimator
+often you use an arena allocator because you don't want to deal with any potential locking required to touch the global allocator
+
+1559007069
+scientes
+you can use a lockless hash table
+
+1559007094
+scientes
+yeah it would probably be a differn't ArenaAllocatorStack
+
+1559007095
+scientes
+or something
+
+1559007103
+daurnimator
+I think I'd need to see a prototype; I don't fully understand how this would work
+
+1559007125
+scientes
+it would be very similar to creating a stack for a new thread
+
+1559007141
+scientes
+but you could still pass them around, and a thread can switch
+
+1559007181
+scientes
+anyways, without a use for it, it is hard to sell
+
+1559007187
+daurnimator
+andrewrk: I saw you just closed #2539 what did you think of
+
+1559007194
+scientes
+I think it would be useful in the compiler, but its not ready yet
+
+1559007242
+scientes
+the point is that malloc wouldn't just be cheap, it would be free
+
+1559007273
+andrewrk
+daurnimator, I hadn't considered writing the doc generator completely in userland
+
+1559007289
+andrewrk
+holy crap is this what it feels like to get incepted?
+
+1559007317
+andrewrk
+a reflection-based doc generator
+
+1559007333
+scientes
+^^^
+
+1559007348
+daurnimator
+yeah... what else were you going to do?
+
+1559007352
+emekankurumeh[m]
+i thought writing it in zig was the plan from the beginning
+
+1559007355
+daurnimator
+why would you
+
+1559007364
+andrewrk
+well yeah, write it in the self-hosted compiler
+
+1559007368
+andrewrk
+this is a different idea entirely
+
+1559007371
+mikdusan
+i thought something along lines of grabbing ast...
+
+1559007413
+scientes
+no, comptime should be able to introspect itsself
+
+1559007416
+daurnimator
+andrewrk: I saw this door open as soon as you starting moving 'zen'/'translate-c' to zig.
+
+1559007417
+emekankurumeh[m]
+as a separate program?
+
+1559007479
+scientes
+>
+
+1559007479
+scientes
+<andrewrk> a reflection-based doc generator
+
+1559007547
+scientes
+eventually this becomes the ability to call LLVM at comptime, on the program's AST
+
+1559007568
+andrewrk
+emekankurumeh[m], you could do it entirely in userland if reflection capabilities were improved. it would just be `zig run doc.zig --pkg-begin target the_thing_to_document.zig --pkg-end`
+
+1559007607
+andrewrk
+doc.zig does @typeInfo(@import("target"))
+
+1559007636
+hryx
+well hot dog. so wait, does this mean the doc generator crawls types instead of the ast.Tree?
+
+1559007638
+scientes
+you have to be careful with those imports, as the @import("root") idea was flawed, as it introduces a circular dependancy
+
+1559007649
+andrewrk
+scientes, zig doesn't have any circular dependency problems
+
+1559007654
+daurnimator
+hryx: that's what I'm suggesting, yes.
+
+1559007661
+hryx
+that's W.I.L.D.
+
+1559007667
+andrewrk
+scientes, everything can use everything and it all works fine
+
+1559007671
+scientes
+andrewrk, so it is OK to have root.std ?
+
+1559007674
+andrewrk
+yes
+
+1559007700
+hryx
+humor me for a minute, what would be the benefit(s) of this reflection-based approach over the AST-based approach?
+
+1559007703
+andrewrk
+I do wonder though, would people start abusing doc comments putting more metadata in them? of course they would. people love that shit
+
+1559007707
+hryx
+less direct integration with the compiler?
+
+1559007708
+daurnimator
+notably you could even do things like @compileLog(std.meta.docs(Mystruct.method))
+
+1559007713
+andrewrk
+but it would be worth it to get std lib docs, at least for now
+
+1559007745
+andrewrk
+that is notable indeed
+
+1559007796
+andrewrk
+it doesn't even need any comptime bugs to be fixed really, it's just simple reflection
+
+1559007797
+scientes
+well then @import() has to become more first-class than it is in the compiler
+
+1559007804
+daurnimator
+really useful for the eventual REPL
+
+1559007806
+scientes
+cause it currently isn't lazy
+
+1559007820
+andrewrk
+scientes, what do you mean?
+
+1559007839
+scientes
+builtin and std are implicitely added to the table of every program
+
+1559007846
+scientes
+*of every file
+
+1559007852
+daurnimator
+andrewrk: if you add the docComment field to @typeInfo data I'm sure one of us will pick up on the work to crawl the tree and output pretty docs
+
+1559007864
+scientes
+when i tried to do it I had a loop
+
+1559007869
+andrewrk
+scientes, the fact that it's lazy is why we have this:
+
+1559007873
+scientes
+but you are right that it is fixable
+
+1559007886
+andrewrk
+the only thing that gets implicitly added is the mapping of "std" => /some/path/std.zig
+
+1559007887
+scientes
+but the namespace is not lazy
+
+1559007897
+scientes
+its a simple fix
+
+1559007901
+scientes
+i should have realized it
+
+1559007967
+hryx
+daurnimator: could you explain your example of `@compileLog(std.meta.docs(Mystruct.method))`? I'm still trying to grasp the potential of this idea
+
+1559007995
+andrewrk
+hryx, the AST doesn't have any type information but zig's reflection has all the type information
+
+1559007996
+scientes
+andrewrk, that was still enough to be a loop though, as you had bootstrap.zig=>std=>std.zig=>root=>bootstrap.zig
+
+1559008004
+andrewrk
+hryx, that's why this is exciting
+
+1559008009
+daurnimator
+hryx: e.g. debugging in a tricky spot and trying to figure out how to use something? drop that statement in and you can see docs right there as you compile
+
+1559008010
+hryx
+oh crap
+
+1559008019
+hryx
+this is post-analysis
+
+1559008022
+scientes
+andrewrk, it becomes even more exciting when someone adds comptime LLVM bindings
+
+1559008032
+scientes
+i've seen this for a while now
+
+1559008041
+daurnimator
+lol. you guys are loving this idea :P
+
+1559008100
+andrewrk
+scientes, I'm not sure what loop you're referring to  - also root refers to the file with pub main, not bootstrap.zig
+
+1559008113
+andrewrk
+I believe you that there's a bug somewhere
+
+1559008140
+andrewrk
+oh you're talking about the dependency loop compile error
+
+1559008146
+scientes
+no
+
+1559008159
+scientes
+i ran into a loop that i have to understand before import(root) is possible
+
+1559008172
+scientes
+that can be solved by making things lazy
+
+1559008212
+andrewrk
+scientes, what would you do with comptime LLVM bindings?
+
+1559008234
+andrewrk
+that would tie the language to LLVM, something that is purposefully not up to this point
+
+1559008323
+scientes
+you could write /f/ regular expression, and it could be optimized to a memchr('f').
+
+1559008335
+scientes
+there are many things that could be done
+
+1559008506
+scientes
+it would make it much easier to do auto-scaling types
+
+1559008514
+scientes
+like having error be a u8 or u16 or u32
+
+1559009045
+daurnimator
+Has anyone written a nano syntax highlighter?
+
+1559009107
+scientes
+i have a half-ass gedit syntax highlighter
+
+1559009691
+emekankurumeh[m]
+how root.root.root.root is root
+
+1559009822
+emekankurumeh[m]
+nvm it makes sense because it's basically the same thing as @This() in any other struct
+
+1559010047
+daurnimator
+andrewrk: is there a place to file non-zig tasks? e.g. request for a nano syntax highlighter?
+
+1559010069
+daurnimator
+andrewrk: e.g. a ziglang top level github "projects" board?
+
+1559010103
+andrewrk
+I think the best option for that is to discuss it in the community. here, mailing lists, reddit
+
+1559010159
+andrewrk
+you could start an unofficial community projects board
+
+1559010170
+shritesh
+Is assert compiled away in release-fast?
+
+1559010297
+andrewrk
+shritesh, even better: it's an LLVM ir branch that has the `unreachable` instruction in it, which gives a hint to the optimizer (which probably just deletes the branch)
+
+1559010347
+scientes
+daurnimator, the biggest accoumplishment would be language server
+
+1559010357
+daurnimator
+scientes: nano can't use a language server
+
+1559010362
+scientes
+i believe that also provides very accurate syntax highlighting
+
+1559010377
+andrewrk
+shritesh, there is this TODO though:
+
+1559010389
+shritesh
+Gotcha. So it’s probably bad to assert on user inputs to maintain invariants.
+
+1559010398
+daurnimator
+shritesh: not at all
+
+1559010428
+daurnimator
+shritesh: in safe mode, that will give them nice feedback. in fast mode; it will allow zig to make assumptions that user input was valid
+
+1559010487
+andrewrk
+yes, asserting on bad user inputs is a security vulnerability, absolutely do not do it
+
+1559010520
+andrewrk
+asserting on programmer invariants is good
+
+1559010544
+andrewrk
+but if we're talking about adversarial inputs, assert means they win
+
+1559010584
+shritesh
+Thanks.
+
+1559010647
+andrewrk
+daurnimator is correct though, asserts
+
+1559010669
+andrewrk
+I think daurnimator took "user inputs" to mean that the user is another programmer using your API
+
+1559010681
+daurnimator
+^ ah, yes I meant that
+
+1559010691
+andrewrk
+yes in this case assert is perfect
+
+1559010858
+shritesh
+I’m working on Zig’s WASI std. Today the only defined preopened fd type is a dir. But it might be extended in the future and . Going to do more than just assert here.
+
+1559010875
+shritesh
+*and things might break.
+
+1559010889
+andrewrk
+@panic is like asserting but affects all build modes
+
+1559011061
+shritesh
+Does it still generate the trap instruction? I’ve been using unreachable to force traps in WASM.
+
+1559011083
+andrewrk
+it generates a call to the panic handler
+
+1559011093
+daurnimator
+shritesh: remember you can set your own panic function in the root
+
+1559011109
+andrewrk
+you can use @breakpoint() to force a trap, maybe you can update the default panic handler shritesh?
+
+1559011128
+andrewrk
+
+
+1559011170
+shritesh
+Onto it
+
+1559011176
+andrewrk
+alright I'm done for the day. I'll focus on PRs tomorrow. take care everyone
+
+1559011226
+hryx
+byeee
+
+1559011944
+shritesh
+It didn’t generate the main function when I added a breakpoint to WASI’s panic handler. I’ll come back to it later.
+
+1559012639
+emekankurumeh[m]
+gn
+
+1559012861
+scientes
+gn emekankurumeh[m]
+
+1559012900
+emekankurumeh[m]
+i meant good night to andrew
+
+1559012912
+emekankurumeh[m]
+it's about 10:00 pm where I live
+
+1559012929
+scientes
+same
+
+1559012936
+scientes
+is that not late?
+
+1559013350
+emekankurumeh[m]
+in the summers I usually stay up quite late, because I'm out of school
+
+1559025545
+mq32
+mikdusan, on your context for the worst "from-to" for loop, i present you
+
+1559025562
+mq32
+good morning (or whatever is the time appropiate greeting for your timezone)!
+
+1559026367
+daurnimator
+mq32: ha, I love it :P
+
+1559026399
+mq32
+i think that's actually a) expressive and b) well optimized
+
+1559026443
+mq32
+it's based on a "proposal" of mikdusan, but he used []usize{0}**len
+
+1559026598
+daurnimator
+mq32: btw, zig you usually don't put a space before ':'
+
+1559026653
+mq32
+yeah, the formatter does this for me :P
+
+1559034280
+mikdusan
+mq32: love the use of void :)
+
+1559034954
+mq32
+mikdusan: i've had the idea that zero-sized types are zero-overhead by concept
+
+1559034961
+mq32
+and we can do arrays of any types
+
+1559035020
+mikdusan
+another zig positive: `return void;` is a thing
+
+1559035095
+mq32
+mikdusan, yeah, that's nice
+
+1559035101
+mq32
+but i think i found a compiler error... :(
+
+1559035217
+mikdusan
+post your reduction
+
+1559035476
+mq32
+yeah, later, i'm at work right now
+
+1559035585
+FireFox317
+Hi guys! Is there someone here using Arch Linux? I'm building the compiler succesfully, but when trying the tetris example of andrewrk, I get an LLVM error. However, when using the linux binary on the website, I dont get this error.
+
+1559035674
+mikdusan
+no arch linux for me, but have an ubuntu vm. can u pastie error?
+
+1559035684
+FireFox317
+First I thought that this was because I was building the compilter with GCC instead of Clang, but after changing to Clang I still get the error. Btw the tests all pass fine in the compiler using bin/zig build etc
+
+1559035812
+FireFox317
+The error:
+
+1559037564
+mikdusan
+FireFox317: i'm on ubuntu, and tetris builds for me after installing glfw and libepoxy
+
+1559037595
+mikdusan
+your error looks suspiciously like there indeed is an toolchain issue
+
+1559037814
+mikdusan
+first check: llvm 8.0.0? second compiler used to build llvm is compiler you should build zig with.
+
+1559037978
+FireFox317
+Hmm, well actually I didn't build LLVM, I just installed the llvm-libs (runtime libraries) through pacman (Arch package manager)
+
+1559038024
+FireFox317
+The version of LLVM is 8.0.0 yes, but I'm gonna try build LLVM myself and see if that fixes the error
+
+1559038084
+FireFox317
+Or should I try something different?
+
+1559038176
+mikdusan
+i don't know if it will help, let me give you my minimal notes/commands to build custom version of llvm on linux. works for ubuntu.
+
+1559038334
+mikdusan
+
+
+1559038368
+mikdusan
+i don't think the script will run directly. i just cut-n-paste lines into a shell section by section.
+
+1559038464
+FireFox317
+Thanks for the script, I'm gonna try that!
+
+1559038554
+mikdusan
+then after that u can follow zig instructions to build zig. just don't set CC or CXX in your env, or with cmake. let it use the default on archlinux just as you'll do with building llvm+clang.
+
+1559038596
+mikdusan
+even though "clang" executable is built zig doesn't use it. zig.exe is linked against libclang from "llvm+clang"
+
+1559038992
+FireFox317
+Ah I see! So if I understand correctly libclang is used for the c compilation/translation in the zig compiler?
+
+1559038999
+mikdusan
+yup
+
+1559039115
+very-mediocre
+do `const definitions` in structs contribute to struct size, or are they hoisted out?
+
+1559039123
+FireFox317
+Waiting for the compilation of llvm+clang, fortunately I can use 8 cores xD
+
+1559039142
+mikdusan
+defs do not change size of struct and they are lazy-evaluated
+
+1559039152
+very-mediocre
+awesome, thank you
+
+1559039206
+very-mediocre
+function defs take up the size of a pointer i am guessing
+
+1559039222
+very-mediocre
+kind of makes the namespacing use case have side effects if that's the case
+
+1559039379
+very-mediocre
+I find myself wanting to represent some data in a packed struct, but my high-level instinct tempts me to add helper functions to the struct as if it was a class.
+
+1559039411
+mikdusan
+very-mediocre: sure why not? the functions will not change @sizeOf(mystruct)
+
+1559039547
+very-mediocre
+hm, interesting
+
+1559039697
+mikdusan
+there is no OO but functions namespaced in a struct can be invoked `Foo.doit()` . if you had `var foo: Foo = ...` defined... and doit takes as first argument param type Foo,
+
+1559039715
+mikdusan
+then `foo.doit()` works the same as... `Foo.doit(foo)`
+
+1559039746
+very-mediocre
+I'm aware of that, I just wasn't sure if it was taking up struct space :)
+
+1559039757
+mikdusan
+ah ok
+
+1559039767
+very-mediocre
+But yea it shouldn't based on that
+
+1559039788
+very-mediocre
+makes sense, ty
+
+1559042305
+FireFox317
+mikdusan: Unfortuantely it didnt solve the issue. I completely build LLVM+Clang from source using GCC 8.3.0 and after that build zig with the command: cmake .. -DCMAKE_PREFIX_PATH=$HOME/local
+
+1559042320
+FireFox317
+But it still gives me the LLVM error
+
+1559042403
+mikdusan
+llvm installed to $HOME/local ?
+
+1559042562
+FireFox317
+jup using cmake .. -DCMAKE_INSTALL_PREFIX=$HOME/local -DCMAKE_PREFIX_PATH=$HOME/local -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_LIBXML2=OFF
+
+1559042633
+FireFox317
+same for clang
+
+1559042685
+mikdusan
+zig source version is recent? (btw most recent master renames `os.getRandomBytes()` -> `os.getrandom()` so you will get build error from that)
+
+1559042754
+mikdusan
+if you are building zig from git repo, verify `zig version` matches git hash
+
+1559042834
+mikdusan
+that's about all i can think of. to check build/toolchain stuff.
+
+1559043191
+FireFox317
+Jup i pulled the latest version of zig and indeed changed the getRandomBytes function in the source code of the tetris example.
+
+1559043207
+FireFox317
+I'm gonna try setting up a Arch Linux VM and see if I get the same error there
+
+1559043235
+mikdusan
+side question; does the binary download version of zig work for you?
+
+1559043250
+FireFox317
+Yes that one works
+
+1559043360
+mikdusan
+in your arch-linux vm, try to avoid pacman installing llvm, and just bare minimum like gcc/g++, git, cmake, ninja.
+
+1559043374
+mikdusan
+fyi on ubuntu i use gcc 8.3.0 so there should be no issue there
+
+1559043426
+tgschultz
+interesting, I'd have thought the doc generator wouldn't even need to know about the structure of zig code. It's all just comments and signatures, you could get by with a very simple string parser.
+
+1559043443
+FireFox317
+Well, on the VM I'm not gonna try to build the whole LLVM+Clang, because that already took like 1hour and on the VM that's gonna take even longer
+
+1559043456
+mikdusan
+ah.
+
+1559043484
+FireFox317
+Maybe I can see if I can get a smaller zig example that gives the same error
+
+1559043645
+mq32
+mikdusan, andrewrk: imho this code should compile and don't run into infinite recursion:
+
+1559043662
+tgschultz
+also, andrewrk, I think to solution to not shoving metadata in there is to just allow users to arbitrarily shove metadata somewhere else. That would be related to #1099 I suppose. It would also be a way out of certain APIs using expected function names (.format(), .serialize(), .deserialize(), etc), that might collide, instead the metadata for a type could contain that information. However I worry, as I'm sure
+
+1559043662
+tgschultz
+you do, about how unclear code could be with such a system.
+
+1559043856
+mikdusan
+mq32:
+
+1559043944
+mq32
+okay, weird
+
+1559043955
+mq32
+i get a "1000 backtrace branches" thingy
+
+1559043960
+mq32
+version 0.4.0
+
+1559043969
+mq32
+so it looks like i should compile a new compiler?
+
+1559043981
+mikdusan
+can u try downloading binary for ziglang.org ?
+
+1559044040
+mq32
+i'm at work again, used my lunch break to send the report ^^
+
+1559044044
+mq32
+but i'll try later!
+
+1559044149
+mikdusan
+fyi the binaries on ziglang.org are built and posted with CI very quickly, tracking master branch
+
+1559044170
+mq32
+ah, neat
+
+1559044597
+FireFox317
+I made a smaller example that results in the same error:
+
+1559045238
+mikdusan
+FireFox317:
+
+1559045275
+mikdusan
+maybe eyeball the generated cimport.zig (use --verbose-cimport to disclose the path)
+
+1559045461
+FireFox317
+Hmm, well the crash/llvm error happends when the lld command is run (line 11)
+
+1559045520
+mikdusan
+is ldd in your env path
+
+1559045536
+mikdusan
+sorry i meant lld
+
+1559045596
+FireFox317
+Yes, if i run `lld` it shows this : "lld is a generic driver. Invoke ld.lld (Unix), ld64.lld (macOS), lld-link (Windows), wasm-ld (WebAssembly) instead", do you get this same output?
+
+1559045647
+mikdusan
+hmm i don't have good understanding on the possibilities here, but presumably `lld` is by default statically linked into zig
+
+1559045684
+mikdusan
+and i'm wondering now if somehow your zig is actually running an external lld. maybe that's not a possibility. i admit not being certain of possibility here.
+
+1559045743
+mikdusan
+--> option(ZIG_FORCE_EXTERNAL_LLD "If your system has the LLD patches use it instead of the embedded LLD" OFF)
+
+1559045775
+FireFox317
+Should I try to turn that ON?
+
+1559045783
+FireFox317
+and rebuild the compiler
+
+1559045794
+mikdusan
+verify you are NOT building with that by greppin'g your $BUILD_DIR/CMakeCache.txt for ZIG_FORCE
+
+1559045852
+FireFox317
+--> ZIG_FORCE_EXTERNAL_LLD:BOOL=OFF
+
+1559045866
+mikdusan
+that's what i have on ubuntu.
+
+1559045878
+FireFox317
+Hmm, so weird
+
+1559046124
+mikdusan
+i wonder if it is possible the wrong lld includes are being picked up during build of zig. and then linked against embedded lld.
+
+1559046216
+daurnimator
+FireFox317: 1. you can install zig from pacman. 2. you can download binaries from ziglang.org
+
+1559046267
+FireFox317
+daurnimator: yes, i know that. But I would like to work on the compiler itself too
+
+1559046277
+daurnimator
+FireFox317: 3. have a look at the official PKGBUILD for arch
+
+1559046301
+daurnimator
+FireFox317: 4. working on the compiler itself, you should be using the bundled LLVM
+
+1559046380
+daurnimator
+FireFox317: see
+
+1559046427
+FireFox317
+daurnimator: Thanks for the suggestion to look at the PKGBUILD, in there the cmake command adds DZIG_FORCE_EXTERNAL_LLD=ON, I think that is gonna fix my error
+
+1559046454
+daurnimator
+FireFox317: note that in the PKGBUILD we have to patch things out so that we link against system LLVM
+
+1559046479
+daurnimator
+FireFox317: also note that arch's LLVM is stripped. if you're working on the zig compiler you're really going to want full stack traces in LLVM :)
+
+1559046504
+mikdusan
+if that fixes it something still smells - ziglang.org doesn't do that and that bin works
+
+1559046543
+FireFox317
+daurnimator: That was indeed also a think: the stack straces I was getting were just empty
+
+1559046666
+FireFox317
+daurnimator: So I'm guessing you are also on Arch, how did you fix building the compiler then? instead of installing it through pacman
+
+1559046735
+daurnimator
+I just follow the instructions you see below 4. above
+
+1559046755
+daurnimator
+FireFox317: and yes I'm on Arch... Look at the first line of that PKGBUILD :P
+
+1559046914
+FireFox317
+daurnimator: Ahh hehe, nice. but that is still weird. I followed the instructions and completely build llvm+clang from source, but that still doesn't work
+
+1559047164
+FireFox317
+Hmm maybe I should also build LLD from source, since it is still using my system LLD libs
+
+1559047221
+daurnimator
+system LLD shouldn't matter; but a mismatched llvm/clang might? are you linking against system clang?
+
+1559047292
+FireFox317
+daurnimator: No, i'm linking against a local llvm/clang that I build from source
+
+1559047747
+ki9a
+hi, I saw a note in the zig tracker for lld/llvm for MH_NO_REEXPORTED_DYLIBS
+
+1559047757
+ki9a
+anyone awake that's involved in that part of zig?
+
+1559047766
+ki9a
+(got a potential fix for lld for it)
+
+1559048131
+dch
+I'm doing a FreeBSD port for 0.4.0,looking pretty good so far apart from this error:
+
+1559048202
+FireFox317
+Could it be a problem that the lld on my system is version 8.0.0-1 and llvm-libs is version 8.0.0-2?
+
+1559048242
+dch
+
+
+1559048380
+daurnimator
+dch: FWIW you might want to look at my Arch PKGBUILD too. there's a few things in there that would be useful for any distro packages
+
+1559048426
+dch
+daurnimator: thanks, can you throw me a url to it?
+
+1559048436
+daurnimator
+dch:
+
+1559048481
+mikdusan
+dch: off hand i suspect the ports system has an RPATH policy and is trying to re-write RPATH upon staging. this usually means when creating the exe, you have to tell linker how large space for rpath string to allocate.
+
+1559048630
+dch
+ok, I vaguely know what this means but I'm not really a compiler / c person so this is a bit unclear. Should I ask on the freebsd ports channel for advice?
+
+1559049117
+dch
+daurnimator: I see you remote the zig_cpp parts too
+
+1559049141
+daurnimator
+dch: yep. that has been fixed in master so 0.4.0 is last release that is needed for
+
+1559049292
+dch
+worst thing is having my desktop compile llvm80 for 5 architectures & 2-3 OS versions :-(
+
+1559049300
+dch
+going to heat the whole house today
+
+1559049540
+FireFox317
+mikdusan: The option DZIG_FORCE_EXTERNAL_LLD=ON indeed does not fix the problem. Also by grepping the Makefile that is generated by cmake, it shows it is using the embedded lld.
+
+1559049602
+mikdusan
+sanity check: your shell doesn't have any env vars with prefix CC, CPP, CXX, LD, LIB, ?
+
+1559049685
+mikdusan
+also just because i'm paranoid: nuke zig-cache in your curdir, and ~/.local/share/zig, and let's factor out anything like ccache.
+
+1559049873
+daurnimator
+dch: huh? it takes my laptop about 3-4 minutes
+
+1559049881
+daurnimator
+and it's only a 2 core thing
+
+1559049897
+mikdusan
+u must be joking
+
+1559049934
+fengb
+error: expected type '*linked_list.Node', found '*align(1) linked_list.Node'
+
+1559049941
+dch
+daurnimator: we build a lot more of llvm on FreeBSD, and 5x3 = 15 builds, some running under qemu emulation, so ... thats a lot of time
+
+1559049942
+TheLemonMan
+ki9a, awesome news! Do you have a patch ready?
+
+1559049973
+ki9a
+TheLemonMan: not yet; i seem to have stumbled on another issue with lld that makes me unable to load a dylib I created (unrelated to this)
+
+1559049976
+ki9a
+so I can't test it yet.
+
+1559049977
+fengb
+Is that a real error? Not sure how to strip out the alignment
+
+1559049991
+daurnimator
+fengb: where did you get that pointer from?
+
+1559050019
+ki9a
+But it comes down to     if ((_ctx.outputMachOType() == MH_DYLIB))      flags |= MH_NO_REEXPORTED_DYLIBS;
+
+1559050025
+fengb
+@bytesToSlice([]align(4096)u8)
+
+1559050026
+daurnimator
+fengb: it's saying that the pointer isn't aligned correctly. that might happen if you're e.g. using an intrusive linked list inside of a packed struct
+
+1559050030
+ki9a
+since it never actually seems to create a re-export command
+
+1559050042
+fengb
+Hmm
+
+1559050070
+fengb
+Lemme paste what I'm doing
+
+1559050127
+gamester
+Wow look at the kind of stuff C++ programmers have to do to get performance in debug mode (reimplementing iterators...):
+
+1559050150
+fengb
+
+
+1559050165
+daurnimator
+gamester: EA rewrote the whole C++ stdlib
+
+1559050178
+ki9a
+TheLemonMan:
+
+1559050181
+fengb
+With line 5's version, it works fine
+
+1559050206
+fengb
+I'm trying to cut out the std allocator functions to test how many bytes I can save
+
+1559050239
+fengb
+Tangentially related: function pointers don't inherit method semantics :(
+
+1559050249
+daurnimator
+gamester:
+
+1559050295
+daurnimator
+fengb: "Can't do anything about it..." <-- lies :P
+
+1559050321
+fengb
+I suppose I can toss it into a free node of 4 bytes
+
+1559050346
+daurnimator
+fengb: never call reallocFn directly. use realloc
+
+1559050354
+fengb
+This is for testing
+
+1559050362
+daurnimator
+(or alignedRealloc as you probably want here)
+
+1559050372
+gamester
+daurnimator: yeah, I'm aware. I just didn't expect to see a commit of this sort that's so recent, in Valve's mature networking library.
+
+1559050376
+fengb
+I'm trying to gauge how much overhead the std allocator functions take up
+
+1559050378
+daurnimator
+fengb: alignedRealloc has the @alignCast in it that your code is missing
+
+1559050384
+fengb
+Ah
+
+1559050389
+dch
+time to knock off for the day, if anybody else wants to chime in,
+
+1559050434
+fengb
+I see it, thanks
+
+1559050460
+mikdusan
+dch: if the exe is statically linked, then the issue is: why is something telling CMAKE to muck with RPATH ?
+
+1559050465
+fengb
+I saved 95 bytes! lol
+
+1559050494
+dch
+mikdusan: right. I found in Mk/Uses/cmake.mk that this is set by default, but I don't know yet how to turn that off
+
+1559050514
+daurnimator
+fengb: you mean of executable size?
+
+1559050528
+fengb
+Yeah, trying to shrink my wasm size
+
+1559050543
+daurnimator
+fengb: are you stripping the binary?
+
+1559050552
+fengb
+Yep, I'm down to 3k
+
+1559050569
+fengb
+Just probing to see what I can save
+
+1559050578
+daurnimator
+fengb: made a custom (small) panic function?
+
+1559050587
+fengb
+wasm doesn't have panic
+
+1559050623
+daurnimator
+At least when looking at compiler output locally; 90% of the binary of a small test case is panic related functionality
+
+1559050650
+fengb
+
+
+1559050661
+daurnimator
+fengb: oh, I think wasm builds are quite large as all of compiler_rt is bundled every time.
+
+1559050678
+daurnimator
+fengb: there's an issue around to wasm compiler_rt exports
+
+1559050681
+daurnimator
++fix
+
+1559050764
+fengb
+I'm specifically tuning this allocator to be tiny in bytes
+
+1559050799
+TheLemonMan
+ki9a, I think you should also check if there are any re-exported symbols
+
+1559050820
+TheLemonMan
+ehh, s/symbols/dylibs/
+
+1559050935
+fengb
+One thing I'd like to understand is why mem.set is more efficient than @memset (175 bytes)
+
+1559050937
+FireFox317
+mikdusan: Nop, no weird env vars. Also removing the cache doesn't solve it either. I'm completely lost why it doesn't work
+
+1559050957
+mikdusan
+wish i had arch installed. sorry
+
+1559050973
+FireFox317
+mikdusan: No problem man! Thanks for the help anyway
+
+1559050986
+daurnimator
+FireFox317: can you replicate in a plain container or something?
+
+1559051001
+daurnimator
+FireFox317: it "just works" when I follow the instructions here
+
+1559051075
+FireFox317
+daurnimator: -->
+
+1559051159
+mikdusan
+dch: i'll leave you with this; CMakeCache.txt seems to have things like CMAKE_SKIP_INSTALL_RPATH and CMAKE_SKIP_RPATH . maybe setting =YES for one or both is the ticket.
+
+1559051174
+daurnimator
+FireFox317: what package is glfw3.h in?
+
+1559051217
+FireFox317
+daurnimator: glfw-x11
+
+1559051253
+daurnimator
+thanks..... weird that pkgfile didn't tell me that
+
+1559051278
+daurnimator
+FireFox317: okay yes I get the same error
+
+1559051296
+FireFox317
+Great, finally someone who has the same problem
+
+1559051341
+FireFox317
+So I found this when I was trying to build the tetris example from andrewrk, that is where the error showed up
+
+1559051400
+daurnimator
+FireFox317: I've never even seen an error like that from zig before...
+
+1559051412
+daurnimator
+file a bug I guess...
+
+1559051423
+mikdusan
+and daurnimator apparently the binary from ziglang.org doesn't produce the error
+
+1559051432
+FireFox317
+daurnimator: It is an error from the embedded linker i think
+
+1559051477
+daurnimator
+FWIW with the 0.4.0 release it fails with: lld: error: undefined symbol: glfwSetWindowUserPointer
+
+1559051503
+mikdusan
+probably just means u need to specify --library glfw
+
+1559051507
+daurnimator
+yeah probably
+
+1559051520
+TheLemonMan
+ki9a, hmm, does the dynlib produced by lld contain the MH_NO_REEXPORTED_DYLIBS flag?
+
+1559051538
+daurnimator
+yep. works fine with the 0.4.0 release
+
+1559051569
+FireFox317
+zig build-exe reduction.zig -isystem /usr/include --library c --library-path /usr/lib/x86_64-linux-gnu --library glfw --verbose-cc --verbose-link --verbose-cimport
+
+1559051591
+FireFox317
+daurnimator: But you do get the error with the current master?
+
+1559051594
+daurnimator
+oh wow... I tried with adding `--verbose-ir` and I got a segfault
+
+1559051640
+FireFox317
+And the totally weird thing is that this is only happening on Arch
+
+1559051664
+mikdusan
+daurnimator: i get that segfault with even simplest helloworld.zig on other platforms too
+
+1559051759
+FireFox317
+Ohja, and it does work with the latest binary from the website
+
+1559051803
+daurnimator
+FWIW, this is the segfault I got. not sure if related
+
+1559051902
+TheLemonMan
+yeah, that's a nasty bug in the IR printer and requires a bit of (boring) work to fix
+
+1559051940
+FireFox317
+daurnimator: Jup, I have seen that segfault before, when the stack trace was being printed
+
+1559051965
+daurnimator
+yeah I should test on latest master since the std.os refactor
+
+1559051979
+daurnimator
+but bed. bed. must go to bed..... right after I review my GSoC student's work
+
+1559052265
+dch
+mikdusan: ^5 it lives! thanks. Now to test across the other architectures and see how that pans out
+
+1559052288
+mikdusan
+👍
+
+1559052842
+TheLemonMan
+oh I see, ld64 error message is very misleading
+
+1559052877
+TheLemonMan
+ki9a, the absence of MH_NO_REEXPORTED_DYLIBS means you
+
+1559055613
+TheLemonMan
+ki9a, let me know if
+
+1559055703
+TheLemonMan
+maybe it should only count the LC_REEXPORT_DYLIB commands but I have no idea ATM
+
+1559056159
+ki9a
+TheLemonMan: I had the same idea yes. But really never had a re-export so the first hack I did is to always emit that
+
+1559056166
+ki9a
+I'll try this tomorrow
+
+1559056196
+ki9a
+Thanks this is better
+
+1559056222
+TheLemonMan
+for reference, here's where ld64 chokes
+
+1559056247
+ki9a
+Yeah I have a copy of ld64 locally :)
+
+1559056260
+ki9a
+I'm not impressed with lld though
+
+1559056264
+ki9a
+For Mac.
+
+1559056270
+ki9a
+Love it on other platforms
+
+1559056312
+TheLemonMan
+yeah, the mantainers gave up on it since AAPL decided to focus on ld64
+
+1559056358
+ki9a
+Yep
+
+1559057476
+andrewrk
+fengb, in release builds @memset and std.mem.set should be exactly the same code
+
+1559059197
+andrewrk
+TheLemonMan, have any interest in writing a self-hosted linker? :D
+
+1559059433
+TheLemonMan
+nope, linkers are complex beasts that I don't want to tame (yet) :)
+
+1559059454
+TheLemonMan
+and lld is quite good if you don't mind the spurious mach-o problems
+
+1559059477
+andrewrk
+agreed
+
+1559059484
+TheLemonMan
+maybe we can write a sternly worded letter to Apple and have them switch to ELF
+
+1559059492
+andrewrk
+hahaha
+
+1559059512
+andrewrk
+the need for an incremental linker isn't really needed until the stage2 compiler is done
+
+1559059534
+andrewrk
+but I do predict it will become the bottleneck at some point
+
+1559059572
+TheLemonMan
+yeah, the linking phase has to shovel around a lot of stuff
+
+1559059598
+TheLemonMan
+fuckin' LLVM parallel linking takes a god-awful amount of RAM
+
+1559060417
+ki9a
+How will you guys do incremental linking?
+
+1559060447
+ki9a
+I've been playing with the llcm linkers a bit already and gave up on lto
+
+1559060463
+ki9a
+Way too slow. Thinlto was also impractically slow
+
+1559060488
+ki9a
+So all I can depend on is llds built in features for incremental
+
+1559060626
+ki9a
+(not on Darwin ofc)
+
+1559060909
+TheLemonMan
+annd #2545 has been rebased on top of the huge std refactoring patch
+
+1559060928
+andrewrk
+ki9a, we're gonna have our own linker eventually ¯\_(ツ)_/¯
+
+1559060939
+TheLemonMan
+andrewrk, I had to fix the mprotect signature and fix a compile error there
+
+1559060942
+ki9a
+Ah
+
+1559061021
+ki9a
+I do understand that. I eventually wrote my own debugger too because lldb only caused trouble instead of solving it.
+
+1559061043
+ki9a
+Writing a linker is only annoyingly much work ;)
+
+1559061070
+andrewrk
+much smaller than LLVM though
+
+1559061098
+ki9a
+True
+
+1559061164
+ki9a
+It's the relocations, dwarf and fifteen thousand platform differences that will be annoying.
+
+1559061193
+andrewrk
+still, a nice, easily testable purely functional problem
+
+1559061209
+andrewrk
+and fun to work on, this draws contributors
+
+1559061238
+andrewrk
+everybody secretly hates the "don't reinvent the wheel" rhetoric, and wants and excuse to do it :)
+
+1559061255
+ki9a
+Haha zo true.
+
+1559061267
+ki9a
+I'd write my own codegen if I could beat llvm
+
+1559061392
+TheLemonMan
+llvm codegen is quite fast if you manage to stay in the FastISel path
+
+1559061426
+TheLemonMan
+at least when -O0 is involved, optimized builds are a completely different beast
+
+1559061469
+andrewrk
+TheLemonMan, is zig accidentally leaving the FastISel path in debug builds? LLVM accounts for ~75% of the time spent compiling, for example, the behavioral tests
+
+1559061543
+ki9a
+TheLemonMan: in my compiler most time is spent on llvm codegen even in debug.
+
+1559061633
+andrewrk
+TheLemonMan,
+
+1559061739
+TheLemonMan
+andrewrk, yep, the FastISel is quite simple and doesn't seem to like non-canonic (eg. 8 16 32) integers
+
+1559061771
+andrewrk
+oh! that is very interesting indeed
+
+1559061792
+andrewrk
+so if we emitted only canonical integers to llvm we could stay in FastISel? that's worth exploring
+
+1559061795
+TheLemonMan
+yeah, returning OutOfMemory is a better choice there
+
+1559061825
+andrewrk
+I'll update the doc comment for OutOfMemory on that function
+
+1559061914
+TheLemonMan
+want me to update the PR or do you want to do it yourself post-merge?
+
+1559061916
+andrewrk
+TheLemonMan, other than that I'm ready to press the merge button. thanks for sharing that info about MAP_GROWSDOWN
+
+1559061925
+andrewrk
+I'll take care of it
+
+1559062045
+andrewrk
+merged
+
+1559062747
+tgschultz
+andrewrk, I can get line & column of a source file that crashed the compiler from an AstNode using GDB, but how do I get which file it was?
+
+1559062825
+andrewrk
+tgschultz, ok this got a little more annoying after the "files are structs" thing. (gdb) node.owner.data.structure.root_struct.path[0]
+
+1559062837
+andrewrk
+oops: (gdb) p node.owner.data.structure.root_struct.path[0]
+
+1559062846
+tgschultz
+cool, thanks.
+
+1559062861
+andrewrk
+if you're hitting an assert though you might be able to change it to the new assert thing so that it gives you this info
+
+1559062895
+andrewrk
+depending on where it is in the code
+
+1559062991
+FireFox317
+andrewrk: When I build the compiler on my Arch Linux machine with the current master, I get the LLVM error (shown in pastebin), but if I checkout to the latest release 0.4.0 and then build the compiler, I don't get the error and everthing works fine.
+
+1559063007
+FireFox317
+Do you know any commit that could have broken this? Maybe has something to do with @ptrCast?
+
+1559063038
+tgschultz
+huh, turns out knowing the file and line is suprisingly unhelpful in this case anyway.
+
+1559063047
+andrewrk
+FireFox317, I'll look into this now
+
+1559063191
+FireFox317
+btw: the build command I used is not correct in the pastebin, should be this ` zig build-exe main.zig -isystem /usr/include --library c --library-path /usr/lib --library glfw
+
+1559063230
+andrewrk
+thanks
+
+1559063248
+FireFox317
+And the error only happends on Arch Linux, daurnimator had the same problem, but other users didn't have this erro
+
+1559063504
+tgschultz
+acutally andrewrk, this doesn't appear to be the right file at all. The column it references doesn't exist in the line it references (which is just a closing brace).
+
+1559063549
+andrewrk
+tgschultz, the thing I wrote will give you the path to the file that the ast node is in - I've never seen that be wrong before
+
+1559063604
+andrewrk
+hmm that is strange indeed
+
+1559063761
+tgschultz
+well it's possible I'm doing something wrong, but it's the source_node from ir_resolve_peer_types, has line 1305, col 71, and owner.data.structure.root_struct.path[0] points to compilation.zig, and in my branch that line is empty (its actually the line
+
+1559063892
+andrewrk
+that suggests something is very wrong, if the parser doesn't even have correct line number / source files matching each other
+
+1559064081
+tgschultz
+maybe it's a cache thing. I run the integration tests without rming ./build for a quicker turn around
+
+1559064155
+andrewrk
+in my workflow I never delete cache stuff (unless I'm testing cache stuff)
+
+1559064279
+merlyndmg
+I was trying to debug a linker problem for that ticket I filed (that was already fixed) the other day. I had to repeatedly delete the cache to get the --verbose-link line to actually display. Wondering if there could be some way to get dry run info, even if the results are cached?
+
+1559064383
+merlyndmg
+I could just file a ticket and let you answer there heh
+
+1559064459
+TheLemonMan
+maybe --cache off ?
+
+1559064811
+TheLemonMan
+andrewrk, wrt the use of @hasDecl in linux.zig: doesn't the compiler analyze both the true and false branches anyway?
+
+1559064919
+andrewrk
+TheLemonMan, nope why would it do that?
+
+1559064931
+andrewrk
+@hasDecl returns a comptime bool
+
+1559065023
+TheLemonMan
+oh well, it's still giving me a 'undeclared identifier' error
+
+1559065040
+andrewrk
+on what target?
+
+1559065052
+andrewrk
+I know what's happening
+
+1559065058
+TheLemonMan
+x86_64, I'm rebuilding the compiler
+
+1559065070
+andrewrk
+huh that's weird why don't I get that error?
+
+1559065086
+andrewrk
+but anyway, the "undeclared identifier" error is in pass 1, but it should probably move to pass 2
+
+1559065092
+TheLemonMan
+oh, because I've added another syscall
+
+1559065125
+andrewrk
+that will have the unfortunate side effect of making zig not catch undeclared identifiers for branches not taken, but that's kind of already status quo with every other error
+
+1559065134
+andrewrk
+a more comprehensive solution is needed for this use case
+
+1559065150
+andrewrk
+I do think how it works now is inconsistent though
+
+1559065155
+merlyndmg
+I believe there's a way to skip caching in general, though I was getting problems with it because of including the local dir and not using the system-wide .lib file. Maybe fixing that will make the "dry run" thing unnecessary
+
+1559065170
+merlyndmg
+and there's already a ticket for fixing that
+
+1559065191
+andrewrk
+TheLemonMan, I think it should be a pretty straightforward fix, which I would be happy to do for you today if it's blocking you
+
+1559065237
+TheLemonMan
+that'd be sweet (if it doesn't take you too much time ofc)
+
+1559065246
+andrewrk
+same issue:
+
+1559065268
+andrewrk
+ok let me finish up this thing for FireFox317 and then I'll do that one
+
+1559065282
+tgschultz
+yeah, it wasn't the cache, that was a long shot. More likely I've managed to get the compiler into completely invalid state.
+
+1559065306
+FireFox317
+andrewrk: I found this difference when using --verbose-llvm-ir:
+
+1559065474
+FireFox317
+andrewrk: As you can see on the current master the compiler completely skipped the @ptrCast and just passed in the Tetris pointer. In the 0.4.0 release, is is using `getelementptr` which it should do, i assume.
+
+1559065548
+tgschultz
+..which is supported by the actual problem: trying to access error_set.errors[0] when error_set.errors == null. which means that the error count is > 0, but there aren't any errors in the set? oy. how did I manage that...
+
+1559065626
+andrewrk
+tgschultz, maybe valgrind has some warnings?
+
+1559065681
+tgschultz
+maybe, I didn't make any changes to the cpp source though. somehow did this with just zig source modifications.
+
+1559065727
+andrewrk
+ah
+
+1559065795
+andrewrk
+FireFox317, even more minimal test case:
+
+1559065812
+tgschultz
+I'm pretty sure it's going to have to do with std.event. It's in the self-hosted build and all std tests pass, but event isn't really covered by tests right now.
+
+1559065859
+andrewrk
+after this round of PR merges I'm going into a cave to work on copy elision
+
+1559065990
+FireFox317
+andrewrk: Yes, that indeed gives a similar error. Should I make a issue for this on github?
+
+1559066013
+andrewrk
+feel free to, but I'm about to solve it regardless
+
+1559066072
+mikdusan
+FireFox317: line 7 of your llvm-ir pastie. what is that `i8*` doing at begginning of the line?
+
+1559066166
+FireFox317
+mikdusan: That comes from the error message that LLVM outputs to stderr . So only the first two lines of the master are relevant
+
+1559066194
+mikdusan
+oh output mixing. grr.
+
+1559066203
+FireFox317
+my bad :)
+
+1559066309
+merlyndmg
+I've filed the dry run suggestion ticket. No offense taken if you decide to punt or reject it :) I could easily see it being hard to do or low priority at this time
+
+1559066733
+FireFox317
+andrewrk:
+
+1559068035
+mq32
+mikdusan, my code works with the newest compiler version from the website
+
+1559068128
+TheLemonMan
+andrewrk, requiring mmap length to be a multiple of the page size is too restrictive IMO
+
+1559068157
+TheLemonMan
+having to round the length every time is quite cumbersome
+
+1559068271
+andrewrk
+TheLemonMan, ok let's relax that restriction
+
+1559068291
+mq32
+is it about mmap in zig std?
+
+1559068316
+mq32
+because it would be weird if i want to map files into memory that i have to modify these?
+
+1559068325
+mq32
+(imagine mapping a file less than a page size as read-only)
+
+1559068342
+TheLemonMan
+yeah, that's the use case I was thinking about
+
+1559070454
+TheLemonMan
+andrewrk, 'grats for being accepted by the sponsor initiative :D
+
+1559070476
+andrewrk
+TheLemonMan, I don't think I did - it just let me put a patreon link there
+
+1559070499
+andrewrk
+I hope I get it though... github matching donations would be huge for me
+
+1559070525
+TheLemonMan
+oh, I saw the button with the heart and assumed you did
+
+1559070736
+Frank-Lesser
+hi andrew, I have tested zig-0.4.0+d1b6f29d.tar.xz & e2c22634 compiling the hello_windows.zig - still get the compiler error
+
+1559070813
+Frank-Lesser
+to me it looks like a simple problem of path delimiter ( \ <=> / )
+
+1559070819
+Frank-Lesser
+zig build-exe hello_windows.zig C:\Program Files\Zig\lib\zig\std\os\windows.zig:21:9: error: import of file outside package path: 'windows/bits.zig' pub use @import("windows/bits.zig");
+
+1559071678
+mq32
+quick question: how can i do the following c semantics: "(int)f"
+
+1559071689
+mq32
+so cast a float to an integer and truncating the result?
+
+1559071738
+mikdusan
+
+
+1559071751
+mq32
+> If the integer part of the floating point number cannot fit in the destination type, it invokes safety-checked Undefined Behavior.
+
+1559071859
+mq32
+return @floatToInt(T, std.math.floor(max * value));
+
+1559071868
+mq32
+okay, so i have to manually floor the value
+
+1559071933
+scientes
+mq32, if you are doing anything fancy you just want to use bitcast
+
+1559071943
+scientes
+mq32, and extract the significand and exponent
+
+1559071944
+mq32
+nah, not fancy :D
+
+1559071949
+scientes
+and sign bit
+
+1559071959
+mq32
+just casting a float to integer range and back
+
+1559072045
+tgschultz
+ok, new data: it might be right about the file, but it is still wrong about the line and column number. Other than that I've made no progress in determining what part of error inferrence I managed to break this time.
+
+1559072081
+scientes
+mq32, if you first do floor or ceil, then the significand IS the integer, unless it is too large.
+
+1559072117
+Frank-Lesser
+I have published the Path-Tracer on
+
+1559072179
+Frank-Lesser
+it takes roughly a minute to produce the out.jpgfile ( orig but upside down )
+
+1559072214
+Frank-Lesser
+I didnt test with compiling with latest zig
+
+1559072375
+tgschultz
+andrewrk: file and column number were correct, line number was exactly one less than what it should have been.
+
+1559072398
+mq32
+Frank-Lesser, nice!
+
+1559072420
+Frank-Lesser
+thx will tell it Alexej
+
+1559072470
+Frank-Lesser
+it is just undocumented but it was to get a bit into ZIG
+
+1559072486
+mq32
+i think it would be awesome if zig had some linear algebra library like GLM or similar
+
+1559072533
+Frank-Lesser
+I am mostly under Windows - just the new WinDebug Preview from MS Store is a nice GUI debugger for Zig
+
+1559072567
+emekankurumeh[m]
+windows 10 must be nice...
+
+1559072610
+andrewrk
+mq32, there's some stuff here:
+
+1559072637
+andrewrk
+ooh, I should update that to use vectors
+
+1559072665
+emekankurumeh[m]
+adding operations for vectors shouldn't be too hard right?
+
+1559072676
+andrewrk
+I mean SIMD\
+
+1559072684
+emekankurumeh[m]
+i might work on that issue if i have some time
+
+1559072744
+scientes
+emekankurumeh[m], many llvm operations just work on vectors
+
+1559072809
+emekankurumeh[m]
+so you don't have to emit a specific llvm "function" for each type?
+
+1559072812
+emekankurumeh[m]
+or does zig already take care of that?
+
+1559072838
+scientes
+it does
+
+1559072852
+scientes
+oh wait, you need my patch
+
+1559072898
+emekankurumeh[m]
+for what?
+
+1559072912
+scientes
+to gen the names of the vector functions right
+
+1559072917
+scientes
+when emiting the llvm functions
+
+1559072922
+andrewrk
+we need test coverage too
+
+1559072928
+scientes
+yes
+
+1559072946
+andrewrk
+and safety checks are a fun puzzle for vectors
+
+1559072961
+scientes
+and branching that works with vectors
+
+1559072969
+andrewrk
+ah yes I remember you bringing that up
+
+1559074140
+tgschultz
+I can't even figure out what error set inference is breaking on. I made some progress by removing the error inference and letting it spam "expected x got y" because at least then it would report the actual error set mismatches and I could fix them, but even after dealing with that it still crashes trying to infer the error
+
+1559074178
+tgschultz
+and if I explicitly make it 'anyerror' it still crashes trying to infer the error. I have no idea what that's about.
+
+1559074252
+andrewrk
+that sounds really annoying
+
+1559074274
+donpdonp
+for(toot_hashmap.iterator()) |toot| { => error: expected array type, found 'std.hash_map.Iterator' :(
+
+1559074298
+donpdonp
+is that more of a while() thing?
+
+1559074320
+andrewrk
+FireFox317, your issue is fixed in master. thanks for the report
+
+1559074361
+donpdonp
+ah -> while(iterator.next()) |entry| {}
+
+1559074369
+FireFox317
+andrewrk: Thank you for fixing it!
+
+1559074410
+andrewrk
+donpdonp, while and if are nearly identical syntactically
+
+1559074446
+andrewrk
+the only difference is a hidden "goto the condition" branch at the end of the while body
+
+1559074464
+andrewrk
+well and the optional continue expression
+
+1559074549
+tgschultz
+it's more paralyzing than annoying. I can't eve brute force my way out of it. My next step is to just replace every errorset in the source tree with anyerror I guess
+
+1559074565
+andrewrk
+:(
+
+1559074574
+andrewrk
+what is this for?
+
+1559074667
+andrewrk
+I mean what are you working on?
+
+1559074695
+tgschultz
+I wasn't serious about that last part, it would defeat the purpose. This is the last of the interface reform exploration, the one in which interfaces do not use dynamic error sets.
+
+1559074761
+tgschultz
+Which may be dead in the water anyway because it would rely on @errSetCast, but it makes every other use of streams a lot nicer.
+
+1559074798
+mq32
+i did a thing in zig!
+
+1559074806
+andrewrk
+ooh
+
+1559074816
+mq32
+doesn't work fully yet, but basics seem to run :)
+
+1559074834
+andrewrk
+what OS?
+
+1559074838
+mq32
+arch linux
+
+1559074855
+mq32
+no window stuff used, this is just a PGM file outputted :)
+
+1559074878
+andrewrk
+cool. have the stack traces etc been working for you? debugging been nice?
+
+1559074894
+mq32
+did not debug much, except for some compileLog stuff
+
+1559074901
+andrewrk
+ah so you have some comptime code
+
+1559074909
+mq32
+ah and one time warn()
+
+1559074920
+mq32
+i prefer reading my code again to debugging
+
+1559074927
+mq32
+it's more often faster to find the errors
+
+1559074935
+andrewrk
+you haven't hit a single crash that dumped a stack trace? that's impressive
+
+1559074959
+mq32
+yeah, unless you count the compiler bug in :D
+
+1559074965
+mq32
+but that didn't make a stack trace
+
+1559074973
+andrewrk
+haha sorry bout that
+
+1559074977
+mq32
+haha no thing
+
+1559074983
+mq32
+but one thing!
+
+1559074988
+mq32
+the error messages are helpful!
+
+1559074997
+andrewrk
+ah the compile errors? good
+
+1559075002
+mq32
+yeah, that's important
+
+1559075020
+andrewrk
+part of that is just not having fancy language features
+
+1559075023
+andrewrk
+e.g. function overloading
+
+1559075028
+TheLemonMan
+the debugging experience with gdb/lldb is quite nice
+
+1559075045
+mq32
+i miss function overloading already :P
+
+1559075107
+mq32
+i assume you don't like exposing static members by simple .syntax on an instance of a struct, @andrewrk?
+
+1559075112
+mq32
+example:
+
+1559075122
+mq32
+struct Bitmap { const width = 320; };
+
+1559075126
+mq32
+var bmp = Bitmap { };
+
+1559075134
+mq32
+warn("width = {}", bmp.width);
+
+1559075149
+andrewrk
+that's ambiguous with fields, which is sort of an unsolved issue for function pointers
+
+1559075198
+andrewrk
+you can do @typeOf(bmp).width
+
+1559075241
+mq32
+ah okay, i can name fields and static members alike
+
+1559075246
+mq32
+yeah, got that already
+
+1559075262
+mq32
+that's okay most of the time
+
+1559075274
+mq32
+@typeOf is one of the most used builtins :D
+
+1559075279
+mq32
+makes refactoring much easier
+
+1559075394
+donpdonp
+i need a list that is kept in sorted order. it looks like building on a linked_list is the way to go
+
+1559075455
+mq32
+andrewrk, is the type "var" undocumented? i can find it used in the manual, but no documentation what it actually does
+
+1559075460
+donpdonp
+hmm maybe not? there is no getAt(index_integer)
+
+1559075465
+mq32
+my assumption is that i can pass "anything" into the function?
+
+1559075590
+andrewrk
+mq32, yeah I think documenting that is TODO. yes it means anything. it's not a type, it's special syntax in a fn def
+
+1559075619
+mq32
+okay, so instead of fn(comptime T : type, value : T) i can do fn(value : var) ?
+
+1559075625
+mq32
+is this the same thing?
+
+1559075712
+andrewrk
+the difference is the value parameter will be implicitly casted to T in the former. in the latter it could be anything
+
+1559075753
+andrewrk
+if the callsite looks like:  `foo(@typeOf(value), value)`  and `foo(value)` respectively, then it's the same
+
+1559075806
+mq32
+okay, thanks :)
+
+1559075816
+mq32
+this should make some code much easier :)
+
+1559075852
+andrewrk
+TheLemonMan, I'm running tests, if they pass then I have that change ready for you regarding undeclared identifiers
+
+1559076229
+TheLemonMan
+noice, I probably have another patch for you too :)
+
+1559076296
+andrewrk
+oh boy this glib versioned symbols one is big
+
+1559076302
+andrewrk
+*glibc
+
+1559076346
+TheLemonMan
+I'm gonna jump to the #1 place in the contributors chart :D
+
+1559076550
+donpdonp
+pub fn listContains(comptime list: std.LinkedList(type), item: type) bool {
+
+1559076570
+donpdonp
+whats the way to say that? i want to accept a list of type T, and a single param of the same type
+
+1559076643
+andrewrk
+comptime T: type, list: std.LinkedList(T), item: T
+
+1559076774
+donpdonp
+awesome. thx. zig's type handling is amazing.
+
+1559077321
+Aransentin
+Writing a little WebGPU demo in Zig+WebAssembly. Pretty fun, but It's a little concerning that you can dump arbitrary old GPU memory (e.g. from other desktop processes)... I can understand why it's still behind a Chrome flag 😃
+
+1559077533
+andrewrk
+TheLemonMan, how enthusiastic would you be about rewriting the scripts from 2509 in zig?
+
+1559077581
+andrewrk
+I'm pretty sure the std lib has APIs for everything you're doing in that python code
+
+1559077669
+TheLemonMan
+you must really hate python, heh
+
+1559077680
+TheLemonMan
+I'd say that's a nice contributor-friendly task
+
+1559077732
+andrewrk
+fair
+
+1559077747
+shritesh
+Aransentin: I couldn’t even find any docs for WebGPU last time I looked into it.
+
+1559077782
+andrewrk
+TheLemonMan, it's clear to me that we need to do versioned glibc, as you've demonstrated, but I'm sad that it's causing O(N) file size that we have to ship
+
+1559077859
+Aransentin
+shritesh: There's no docs, no. Just looking at the "hello world" demo and then the IDL is pretty much enough to grasp what's going on though.
+
+1559077882
+andrewrk
+also it looks like you did x86_64 and aarch64, but we'd have to ship even more files to match all the targets from `zig targets`
+
+1559077893
+TheLemonMan
+well, the map files are quite small, the huge part is just the stubs + versioning infos
+
+1559077947
+andrewrk
+yeah. I wonder if we could ship the .abilist files instead
+
+1559077980
+shritesh
+Aransentin: Ah. It’s not even listed in caniuse yet.
+
+1559078066
+andrewrk
+ugh these .abilist files are pretty big too and there is a unique set per arch
+
+1559078070
+TheLemonMan
+the abilist files are not understood by the linker and you still need some pre-processing to "pin" a version
+
+1559078090
+andrewrk
+right, if we shipped .abilist files then the compiler would need to have the functionality that currently exists in the scripts
+
+1559078124
+andrewrk
+if it was desired to choose a particular glibc version as part of the target, such a strategy would make sense
+
+1559078194
+Aransentin
+shritesh: Yeah, it's not even fully specced - e.g. they haven't decided on what shader language to use (Chrome takes Spir-V for now)
+
+1559078527
+shritesh
+Looking at how unsupported WebGL2 is, I’d assume it’s gonna take a while
+
+1559078646
+Aransentin
+WebGL2 is only unsupported on macOS, no? Since apple already supports WebGPU it might actually be more supported than WebGL2 soon...
+
+1559078674
+donpdonp
+pub fn listSortedInsert(comptime T: type, list: std.LinkedList(T), item: T) void { list.append(item) => error: expected type '*std.linked_list.LinkedList ... found '*const std.linked_list.LinkedList...' (with the arrow pointing to 'l' in list.append
+
+1559078716
+andrewrk
+expected * found *const
+
+1559078760
+donpdonp
+yeah im just not sure what that means. the call is listSortedInsert(myType, myList, myItem) where myList is a std.LinkedList(myType)
+
+1559078770
+donpdonp
+ie its not a pointer to begin with, just a plain list
+
+1559078799
+shritesh
+WebGL2 is behind a feature flag on all Apple platforms and they renamed their “WebGPU” spec to “WebMetal” (again, behind a feature flag). It’s a mess.
+
+1559078801
+donpdonp
+ive tried changing the call signature to *const LinkedList but then it leads me down another path of errors.
+
+1559078809
+andrewrk
+donpdonp, your list is const but to append it needs to update the len property of the list, so the list cannot be const
+
+1559078843
+gamester
+donpdonp: "list: *std.LinkedList(T)"
+
+1559078902
+donpdonp
+what I dont get is why isnt the error at the callsite where it should say listSortedInsert(myType, myList, myItem) => error looking for *LinkedList and given LinkedList
+
+1559078996
+donpdonp
+the callsite is really saying listSortedInsert(type, struct.list, item) where struct { list: std.LinkedListmyType }
+
+1559079029
+donpdonp
+is struct.list a const variable in this case? would it need to be struct { list: *std.LinkedList(myType) }
+
+1559079032
+andrewrk
+donpdonp, then your struct is const but needs to be mutable because struct.list.len needs to get updated
+
+1559079060
+donpdonp
+ah
+
+1559079067
+andrewrk
+it depends on how you want memory to be laid out. the null hypothesis is no pointers
+
+1559079077
+donpdonp
+pub const TootList = std.LinkedList(TootType); struct { list: TootList }
+
+1559079081
+andrewrk
+but if you have to make a pointer to make something work, so be it
+
+1559079099
+donpdonp
+i think i see now.
+
+1559079122
+andrewrk
+just change your variable from `const` to `var` which has type struct { list: TootList }
+
+1559079169
+gamester
+uhmm as far as I can see the function accepts the std.LinkedList by value, but you have to change it to *std.LinkedList to be able to operate on the linked list in the function
+
+1559079175
+donpdonp
+okay tried that. => Assertion failed. This is a bug in the Zig compiler.
+
+1559079180
+donpdonp
+heh.
+
+1559079206
+andrewrk
+gimme dat stack trace
+
+1559079216
+donpdonp
+how do i get the stact trace?
+
+1559079223
+donpdonp
+stack
+
+1559079234
+andrewrk
+wait for it to print the stack trace rather than pressing ctrl+C
+
+1559079242
+gamester
+listSortedInsert(comptime T: type, list: *std.LinkedList(T), item: T) void { list.append(item)
+
+1559079243
+andrewrk
+
+
+1559079318
+donpdonp
+
+
+1559079334
+donpdonp
+its just a bunch of addresses, also this is zig HEAD from 2019-05-20
+
+1559079360
+andrewrk
+damn
+
+1559079432
+donpdonp
+does my zig need to be built differently to get a useful stack trace?
+
+1559079466
+TheLemonMan
+nope
+
+1559079493
+TheLemonMan
+that's just because the binary is PIE (iirc)
+
+1559079677
+andrewrk
+I thought it was because that's a release build and zig's dwarf parsing isn't that sophisticated yet
+
+1559079750
+TheLemonMan
+you must be really lucky to have such a long stack trace if that were the case :P
+
+1559079757
+TheLemonMan
+the frame pointer is intact
+
+1559079784
+TheLemonMan
+it's just the binary that's loaded at 0x559254xxxxxx
+
+1559079794
+andrewrk
+why is that a problem?
+
+1559079804
+andrewrk
+is std.process.getBaseAddress() wrong?
+
+1559079817
+TheLemonMan
+and the DWARF parser uses the ELF file from disk where no relocation has been made
+
+1559079844
+TheLemonMan
+so it's as if it was loaded at zero address
+
+1559079854
+andrewrk
+hmm I thought I took that into account
+
+1559079864
+gamester
+donpdonp: the function signature: "listSortedInsert(comptime T: type, list: *std.LinkedList(T), item: T) void", the callsite: "listSortedInsert(type, &struct.list, item)", where struct has to be non-const.
+
+1559079908
+TheLemonMan
+it's quite easy to fix, just run dl_iterate_phdr and pick the base address from the first entry
+
+1559079931
+TheLemonMan
+that's why I implemented it, I never got around to implement the other debugging niceties I had in mind
+
+1559079985
+andrewrk
+TheLemonMan, is dl_iterate_phdr even necessary? I thought the phdr from the aux vector could be used
+
+1559080003
+TheLemonMan
+yeah, but you want it anyway
+
+1559080019
+andrewrk
+yeah sure
+
+1559080023
+TheLemonMan
+if you look at the stack trace you'll see that the last address is always different from the other ones
+
+1559080038
+TheLemonMan
+that's because __libc_start_main comes from libc.so.6
+
+1559080060
+andrewrk
+TheLemonMan, I'm going to come back to 2509, I'll look at your other PRs now
+
+1559080072
+TheLemonMan
+and you actually have to (lazily) load all the debug infos from all the loaded libs to have complete stack traces
+
+1559080091
+andrewrk
+ah right good point
+
+1559080221
+gamester
+donpdonp: Anything passed in by value is const, but as an optimization the list is passed by *const instead. That initial error is simply saying that you're trying to modify a const list. The only way to modify the list inside the function is to pass it via a pointer explicitly.
+
+1559080342
+donpdonp
+gamester: yeah im working down that path. if func(myStruct) is a *const, then func(&myStruct) as * is ... interesting.
+
+1559080387
+donpdonp
+gamester: that works. thx.
+
+1559080403
+gamester
+donpdonp: I think the *const is just an internal detail that's leaking through the error message. The type via @typeOf is probably not *const
+
+1559080540
+gamester
+Just to correct myself here: "but as an optimization the list is passed by *const instead" - I think structs are just passed by default via *const. An optimization would be making small structs pass by value instead, which I don't think is done yet.
+
+1559080639
+mq32
+andrewrk, i resolved my problem with static member vs. field:
+
+1559080655
+mq32
+struct Static { fn get_width(_:Static) usize { return 10; } };
+
+1559080685
+andrewrk
+why is this better than const width = 10; ?
+
+1559080727
+mq32
+i can call it as member function for each static and runtime fields
+
+1559080735
+mq32
+
+
+1559080763
+mq32
+so i can write routines which work for each compiletime known bitmap sizes and runtime known bitmap sizes
+
+1559080777
+mq32
+(compile time known bitmaps don't need memory management except for stack)
+
+1559080796
+andrewrk
+ok this seems fine to me because you are trying to match a dynamic interface
+
+1559080806
+mq32
+yeah
+
+1559080807
+andrewrk
+carry on then :)
+
+1559080814
+mq32
+otherwise i would use "const bla = 10"
+
+1559080840
+emekankurumeh[m]
+where does zig handle whitespace in the parser?
+
+1559080858
+emekankurumeh[m]
+the self-hosted one
+
+1559080901
+scientes
+thats probably mostly the tokenizer
+
+1559081979
+andrewrk
+TheLemonMan, ok the undeclared identifier thing is pushed
+
+1559082298
+TheLemonMan
+awesome.bat
+
+1559082551
+shritesh
+So WASI’s rights/capability system for working with files is so convoluted that even Rust’s stdlib calls the reference C function and calls it a day.
+
+1559082832
+andrewrk
+shritesh, it's starting to sound to me like zig project should get involved in the WASI specification
+
+1559082845
+andrewrk
+you would be a great ambassador tbh
+
+1559082866
+andrewrk
+
+
+1559082894
+andrewrk
+one thing we could do is just make shit up, and have a more capable interpreter than e.g. wasmer
+
+1559082907
+andrewrk
+people would use zig's interpreter because it was more useful and could do more stuff and the spec was reasonable
+
+1559082931
+andrewrk
+the official WASI spec would then at least take zig's WASI spec proposals seriously, and once they solved e.g. networking/file systems, then we could change to meet the official spec
+
+1559082970
+andrewrk
+compatibility / stability doesn't matter because it's not even specc'd yet and not useful for any real purposes yet
+
+1559083014
+andrewrk
+isn't crane station part of the rust project? why do they get to specify everything? :)
+
+1559083078
+shritesh
+Yeah. It’s just so hyped right now and all three runtimes are based on the same codebase
+
+1559083116
+shritesh
+There is literally one reference sdk
+
+1559083118
+andrewrk
+I think there's room for an experimental wasi interpreter that has a much more capable spec
+
+1559083127
+andrewrk
+people would use it as a point of reference for sure
+
+1559083182
+andrewrk
+to quote La Bamba: Yo no soy marinero / Yo no soy marinero, soy capitán
+
+1559083190
+shritesh
+As for the spec, the last meeting notes seem to indicate that they’ll just provide versioning and similar capabilities and everything else that’s useful will be decided later
+
+1559083232
+shritesh
+I like what warmer is doing in this regard: they literally implement syscalls
+
+1559083241
+shritesh
+Wasmer *
+
+1559083294
+scientes
+> First, it's a usable libc.
+
+1559083358
+scientes
+lots of hype for asm.js, rinse wash and repeat
+
+1559083467
+shritesh
+I’ve been learning and trying out simple problems first to get there. I do web/app stuff so this is all new to me.
+
+1559083513
+scientes
+why cant you just call a FFI?
+
+1559083542
+shritesh
+scientes: You need an execution environment first. It’s not elf
+
+1559083565
+shritesh
+The memory model is different, it’s a virtual ISA
+
+1559083590
+scientes
+yeah but this already doesn't have the whole js sandbox
+
+1559083602
+scientes
+so why not make it elf, but with a webasm interpreter?
+
+1559083639
+scientes
+the C functions do not require a specific memory model
+
+1559083660
+shritesh
+The wasm interpreter is exactly what I’m working on
+
+1559083683
+scientes
+ok, but i see no need for all this libc stuff, you can just use an existing libc via a ffi
+
+1559083695
+scientes
+or the zig libc
+
+1559083701
+shritesh
+WASI is just a “standardized” interface that’s POSIX-like on top of that
+
+1559083743
+scientes
+but why can't you just target C ABI compat, and then document the limitations
+
+1559083764
+shritesh
+Well, the reference sdk is literally a fork of musl with a capability system and everyone uses it
+
+1559083777
+scientes
+oh ok, so this is what everyone is already doing
+
+1559083786
+shritesh
+Yes. And that’s the problem
+
+1559083819
+scientes
+well the best GUI is going to be a web browser
+
+1559083820
+shritesh
+There is one implementation and C/Rust have the benefit of using it directly
+
+1559083840
+shritesh
+It’s not for GUI, it’s for servers and such
+
+1559083847
+wrl
+best GUI for wasm specifically?
+
+1559083853
+scientes
+so this is side-stepping nodejs
+
+1559083915
+scientes
+yeah zig certainly has a shot here
+
+1559083945
+scientes
+i'm not terribly interested, but I'll grab my popcorn
+
+1559083958
+shritesh
+Exactly
+
+1559084019
+scientes
+I guess I can even get some of my stuff to work with webasm SIMD
+
+1559084056
+shritesh
+LLVM already has support for the SIMD  proposals
+
+1559084069
+shritesh
+So I’d assume yes
+
+1559084075
+scientes
+well there is a big opening for cross-platform SIMD
+
+1559084090
+scientes
+I want to work on a zig-libmvec
+
+1559084101
+scientes
+cause I was just paid to do ppc work on libmvec
+
+1559084109
+scientes
+but its the wrong way
+
+1559084113
+scientes
+and arm is doing the same
+
+1559084149
+scientes
+anyways, I should stop vapor-wareing, i thought i wasn't going to talk about my idea...
+
+1559084182
+shritesh
+Same.
+
+1559085915
+fengb
+Here's a case where std.mem.copy is more efficient than @memcpy:
+
+1559085962
+fengb
+Changing the length changes the discrepancy. Sometimes @memcpy is better, but most of my testing shows the opposite
+
+1559086057
+fengb
+It's all within ±30 bytes per call in wasm output, but it adds up after a few layers — say in std.mem.Allocator
+

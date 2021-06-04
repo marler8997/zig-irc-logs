@@ -1,0 +1,232 @@
+1552090520
+tiehuis
+ganderzz: you are returning a stack local variable 'buffer' from that clean function. I would suggest instead taking a slice of bytes as a parameter which the function can write to
+
+1552090827
+schme245
+how do I allocate a struct on the heap?
+
+1552090865
+andrewrk
+schme245, you need an allocator
+
+1552090904
+schme245
+and then `allocator.create`?
+
+1552090925
+andrewrk
+the best place to get one depends on what kind of application you are making. if you're linking libc, you probably want std.heap.c_allocator. if you're making a command line application, I recommend the example set by std/special/build_runner.zig. if you're making a library, you should probably accept an allocator as an argument
+
+1552090966
+andrewrk
+allocator.create/destroy is for a single-item pointer; allocator.alloc/free is for slices
+
+1552090997
+schme245
+gotcha, I'm familiar with allocators but I've only been using them with slices so far, thanks
+
+1552097106
+mikdusan
+given struct ‘Foo’ that has field ‘code: [10]u8,’ how to get the size of ‘code’? i can hardcode a const def in the struct, but is there something convenient like @sizeOf(Foo.code)?
+
+1552097123
+andrewrk
+code.len
+
+1552097152
+andrewrk
+that's if you have an instance
+
+1552097156
+mikdusan
+i need it while initilizing the struct
+
+1552097193
+mikdusan
+so: .code = []u8{0} ** __SIZE_OF(Foo field code)
+
+1552097286
+andrewrk
+I recommend a def, but if you don't want to do that you can use @sizeOf(std.meta.fieldInfo(Foo, "code").field_type)
+
+1552097365
+mikdusan
+👍
+
+1552105287
+ganderzz
+tiehuis: Shoot, I'll look into that. Thanks!
+
+1552112331
+andrewrk
+alright that merge should fix the CI of master branch
+
+1552112527
+mikdusan
+re: last commit comment; I honestly read “ziglang/caching” as “ziglang ka-ching!”
+
+1552112934
+andrewrk
+zig build has full caching now
+
+1552112947
+andrewrk
+well, at least for zig objects, libraries, and executables
+
+1552115012
+emekankurumeh[m]
+nice!
+
+1552119260
+emekankurumeh[m]
+andrewrk builds on mingw are broken, i'm getting linker errors about undefined references to symbols from z3.
+
+1552123439
+emekankurumeh[m]
+nevermind, i fixed it.
+
+1552123503
+emekankurumeh[m]
+andrewrk: does windows even have the concept of dynamic linkers?
+
+1552124110
+dewf
+do you mean something other than linking against or runtime loading a DLL?
+
+1552142803
+andrewrk
+emekankurumeh[m], maybe in the context of mingw/cygwin? I'm not sure
+
+1552147529
+kristate_
+andrewrk: did you see the man page for macos re: mtime?
+
+1552147561
+kristate_
+andrewrk: Variants which make use of the newer struc- tures have their symbols suffixed with $INODE64.  These $INODE64 suf- fixes are automatically appended by the compiler tool-chain and should not be used directly.
+
+1552147642
+kristate_
+I will take a look at the new caching implementation,
+
+1552148561
+andrewrk
+we're already doing the inode64 thing in os.cpp
+
+1552148567
+andrewrk
+it happens automatically in C
+
+1552148751
+kristate_
+yeah, this is stage1
+
+1552148804
+kristate_
+did some tests, seems like HFS partitions are rounding to nearest second -- APFS is working
+
+1552148819
+mikdusan
+andrewrk: re: recent commit, macos HFS+ has a mtime resolution of only 1 second. the newer APFS apparently has 1 ns resolution
+
+1552148832
+kristate_
+andrewrk: shouldn't we check hashes if mtime is the same?
+
+1552148873
+andrewrk
+kristate_, the whole point of mtime is to avoid the cost of hashing the file
+
+1552148889
+kristate_
+andrewrk: right -- if mtime is the same, then we could revert to hasing
+
+1552148893
+kristate_
+hashing
+
+1552149009
+andrewrk
+that doesn't avoid the cost of hashing the file on cache hit
+
+1552149091
+kristate_
+andrewrk: ah, to clarify, we could do it only if tv_nsec was 0
+
+1552149112
+andrewrk
+that's an interesting idea
+
+1552149192
+kristate_
+do you want to write the patch or should I? :-)
+
+1552149440
+andrewrk
+I want to consider it more before a patch
+
+1552149459
+andrewrk
+it wouldn't be strictly an improvement - there are pros and cons
+
+1552149486
+kristate_
+andrewrk: I think it is an improvement where it comes to correctness.
+
+1552149523
+kristate_
+sure, we have a speed penalty, but right now as it stands, the caching sub-system is incorrect on macos for HFS partitions
+
+1552149535
+andrewrk
+yes exactly, and it is worse in terms of performance for the use case where source files will be modified by users
+
+1552149552
+andrewrk
+even nanoseconds is technically incorrect
+
+1552149723
+andrewrk
+"strictly an improvement" means it is categorically better in all use cases
+
+1552149750
+andrewrk
+when something is strictly an improvement, a patch is always welcome. otherwise, sometimes, more deliberation is required
+
+1552149757
+kristate_
+andrewrk: well, in that case we should remove mtime.
+
+1552149863
+kristate_
+Also, I am wondering what your list of pros/cons are?
+
+1552151830
+emekankurumeh[m]
+andrewrk, I don't think so. I've never heard of a dynamic linker for mingw.
+
+1552154252
+Akuli
+how do i loop over a HashMap so that i destroy each keyvalue pair in the loop? the hash function must not be called on destroyed keys
+
+1552154318
+Akuli
+i'm thinking of:  while (hm.iterator.next()) |kv| { _ = try hm.remove(kv.key); destroy the keyvalue pair; }
+
+1552154329
+Akuli
+but that seems to be quite inefficient, looking at the implementation of remove()
+
+1552171103
+andrewrk
+I think I can make the caching perfect, even when the file system only has resolution down to seconds, without giving up skipping the expensive hash in the common cases
+
+1552171883
+andrewrk
+after fstating a file and collecting its mtime, also look at the clock time, rounded down to the same resolution as the mtime. if they match, this file is too "fresh" and the mtime cannot be relied on - a future write could have the same mtime. it will have to be hashed next time as well as this time.
+
+1552175370
+emekankurumeh[m]
+i don't know if it's zig's fault or lld's fault but lld is segfault whenever zig tries to link executables.
+

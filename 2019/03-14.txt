@@ -1,0 +1,632 @@
+1552525378
+diltsman
+Why is this escaping me?  Where is compiler-rt in the LLVM/Clang source tree?
+
+1552525397
+tbodt
+compiler-rt is in a different git repo from llvm/clang
+
+1552525400
+tbodt
+if that helps
+
+1552525465
+diltsman
+I'm pretty sure that it is part of the source code when you download and build Clang.
+
+1552529540
+andrewrk
+diltsman,
+
+1552529557
+andrewrk
+tbodt, they moved to a git monorepo
+
+1552532110
+tbodt
+did not kow
+
+1552532112
+tbodt
+*know
+
+1552533385
+vegecode
+Hello, quick question. I have a table of function pointers that go at address 0 on a microcontroller. This table is the interrupt vectors.
+
+1552533430
+vegecode
+I'm trying to provide a default definition for each vector, which should be a function pointer to a common default handler that loops endlessly
+
+1552533457
+vegecode
+I would like for the user to be able to simply write their own function with the same name and have it take precedence over the default
+
+1552533572
+vegecode
+I see that compiler-rt.zig uses the @export function to create a symbol in the table with weak linkage, but I can't create the array unless I have each function defined in the file. In that case, my @export function appears to be making a copy in the table with the same name but with ".0" appended. Any ideas?
+
+1552533967
+vegecode
+Also, when I make my over-ride function, I get the error: exported symbol collision
+
+1552534000
+vegecode
+it says the other symbol is in the @export but I have weak linkage selected so ?
+
+1552534571
+vegecode
+A compile time weak attribute on functions would be nice. I wanted functionality similar to when you use a pragma to declare an interrupt like so:
+
+1552534602
+vegecode
+__interrupt[NMI_INTERRUPT] void myNMIFunction(void), etc.
+
+1552534617
+vegecode
+There's no dealing with imports, the compiler just does what needs to be done.
+
+1552534732
+vegecode
+Now the user will have to go to the startup code where the table is, locate the appropriate position, import their function into the startup code file, and stick it into the array.
+
+1552534751
+vegecode
+That's not a huge burden or anything, but the standard way is pretty easy in comparison.
+
+1552534757
+vegecode
+standard meaning the C way
+
+1552534759
+emekankurumeh[m]
+tangentially related:
+
+1552534893
+andrewrk
+vegecode, I definitely want to address this. I'm about to go to bed - would you mind filing an issue?
+
+1552534955
+vegecode
+Sure thing. I will file one tomorrow. Thanks.
+
+1552576457
+andrewrk
+tgschultz, what's the expected behavior for std.meta.fields for `anyerror`? I'm in the middle of fixing
+
+1552579322
+tgschultz
+that's a good question andrewrk. It can't very well be a an array of every possible usize can it...
+
+1552579334
+andrewrk
+I made it a compile error for now
+
+1552579361
+andrewrk
+
+
+1552579626
+tgschultz
+so TypeInfo.ErrorSet.errors is now `?[]Error`? That was going to be something I'd suggest. I really can't think of a better way off hand.
+
+1552579735
+andrewrk
+yes
+
+1552579946
+tgschultz
+ok, looking at it I think meta.fields shouldn't even be enumerating errors like that, but that's something we can work out later.
+
+1552580029
+andrewrk
+ok
+
+1552580191
+tgschultz
+for one I think I'm using that behavior in a meta function I added for the interface PR: std.meta.isErrSubset, which verifies that one errorset is a subset of another for pre-type-erasure checking.
+
+1552580645
+andrewrk
+that sounds like something that is caught up in the bigger design question of how to deal with error sets and interfaces at the same time
+
+1552580665
+andrewrk
+I think the language (as opposed to userland) might want to get involved in that
+
+1552580727
+andrewrk
+it would be a real shame to generate multiple versions of functions if the only thing different is the error set, since under the hood it's all just the same integer type
+
+1552580764
+andrewrk
+if the userland code does reflection on the error set though, then that would make this not possible, since the logic could change depending on the error set type
+
+1552581485
+mikdusan
+given `const items = []i32 { 4, 5, 3, 4, 0 };`      is this sugar supposed to work?   `for (items) |*value| {}`   gives me `expected type '*i32', found '*const i32’`
+
+1552581996
+tgschultz
+you don't need the *value, just |value| for const.
+
+1552582070
+tgschultz
+|*value| means "I intend to mutate this". Just like it does with function calls: fn(a: MyStruct) vs fn(a: *MyStruct).
+
+1552584729
+mikdusan
+this did the trick for me. sliced it. i need as ref because my items are heavy —> for (items[0..]) |*ref| {}
+
+1552585141
+andrewrk
+mikdusan, it's a ref either way
+
+1552585147
+andrewrk
+same as function parameters
+
+1552585168
+andrewrk
+well it's not guaranteed to be a ref. zig is allowed to do it either way depending what's more efficient
+
+1552585287
+tgschultz
+wait, you were able to slice a const and the slice members weren't considered const?
+
+1552585416
+andrewrk
+without the * they look like function parameters - immutable but could secretly be const references
+
+1552585532
+andrewrk
+at least after no-copy semantics changes, doing * in a for/switch for performance reasons will be an anti pattern - it actually would reduce the optimizer's options
+
+1552586097
+tgschultz
+yeah, but correct me if I'm wrong here: `const items = []i32 { .. };``items[0] = 10; //error` `(items[0..])[0] = 10; //also error`? so `for (items[0..]) |*ref|` should result in the same error as `for(items) |*ref|`?
+
+1552586422
+andrewrk
+tgschultz, in your example, the for loops are identical, the type of ref in both cases is *const i32
+
+1552586463
+andrewrk
+you can't get a mutable pointer/slice from a const pointer/slice
+
+1552586476
+andrewrk
+without going through something like @ptrToInt and back
+
+1552586477
+Akuli
+why to use a const pointer to i32, in any case? how would that be different from just an i32?
+
+1552586523
+Akuli
+on a 64-bit system, the const pointer takes up more space on the stack as the i32?
+
+1552586529
+Akuli
+s/as/than/
+
+1552586610
+andrewrk
+if you wanted to be guaranteed to get the address of the element in the array
+
+1552586635
+Akuli
+then why not just:  for (array) |val, i| { ... }
+
+1552586642
+Akuli
+hmm that takes up more stack space again
+
+1552586649
+andrewrk
+it's not really about stack space
+
+1552586654
+Akuli
+4 bytes more, lel
+
+1552586666
+andrewrk
+the main use case for |*value| is as tgschultz said - when you want to mutate it
+
+1552586673
+Akuli
+but if it's a const pointer
+
+1552586684
+andrewrk
+right. you probably want |value| instead in that case
+
+1552586688
+Akuli
+:D ok
+
+1552587925
+Akuli
+zig doesn't find a library that is in /lib (NOT /usr/lib), is this intended?
+
+1552587966
+andrewrk
+is that a directory it should look in?
+
+1552587973
+Akuli
+curses is installed there
+
+1552587976
+andrewrk
+what distro is that?
+
+1552587983
+Akuli
+devuan, based on debian
+
+1552588020
+andrewrk
+are you interested in making a PR adding that dir?
+
+1552588033
+Akuli
+not right now, maybe later
+
+1552588034
+Akuli
+
+
+1552588104
+andrewrk
+I think it would be reasonable to look in /lib/<triple> for linkSystemLibrary
+
+1552588160
+Akuli
+hmm actually its in /lib/x86_64-linux-gnu
+
+1552588170
+Akuli
+let me pull request this thing
+
+1552588192
+Akuli
+what does line 365 do?  if (is_nixos) return;
+
+1552588201
+Akuli
+does "nixos" mean "unix-like operating system"?
+
+1552588240
+andrewrk
+ah I see how that could be confusing. nixos is a distro that is handled separately because it has environment variables that explicitly list the lib dirs
+
+1552588253
+Akuli
+ok
+
+1552588587
+andrewrk
+Akuli, try to figure out what the order should be too. I'm sure it's defined somewhere
+
+1552588598
+andrewrk
+e.g. should it be before or after /usr/lib in the search paths
+
+1552588740
+Akuli
+from my ld(1): "The linker uses the following search paths to locate required shared libraries: ... 7. The default directories, normally /lib and /usr/lib."
+
+1552588745
+Akuli
+very useful
+
+1552588773
+andrewrk
+maybe if you compile with -v or something it will print the linker command line
+
+1552588800
+Akuli
+this prints some stuff:  $ ld --verbose | grep SEARCH_DIR
+
+1552588821
+andrewrk
+that's probably the answer
+
+1552588836
+andrewrk
+can I see what that is for devuan?
+
+1552588843
+Akuli
+SEARCH_DIR("=/usr/local/lib/x86_64-linux-gnu"); SEARCH_DIR("=/lib/x86_64-linux-gnu"); SEARCH_DIR("=/usr/lib/x86_64-linux-gnu"); SEARCH_DIR("=/usr/local/lib64"); SEARCH_DIR("=/lib64"); SEARCH_DIR("=/usr/lib64"); SEARCH_DIR("=/usr/local/lib"); SEARCH_DIR("=/lib"); SEARCH_DIR("=/usr/lib"); SEARCH_DIR("=/usr/x86_64-linux-gnu/lib64"); SEARCH_DIR("=/usr/x86_64-linux-gnu/lib");
+
+1552588877
+Akuli
+i would guess that /usr/local is first because that's where stuff installed from source go by default
+
+1552588907
+Akuli
+and people would probably want to prefer that over whatever is in apt, if they have compiled the lib from source
+
+1552588926
+andrewrk
+yeah. weird though that /usr/lib/x86_64-linux-gnu is before /usr/local/lib
+
+1552588935
+tgschultz
+andrewrk, that's what I thought, so I'm confused how merely slicing items in mikdusan's example solved their problem.
+
+1552588936
+Akuli
+:D
+
+1552589022
+andrewrk
+Akuli, ugh, that's so messy. I'm tempted to try to get away with only adding /lib/<triple>
+
+1552589031
+Akuli
+same
+
+1552589161
+andrewrk
+tgschultz, I just tried your example and I got all the expected errors
+
+1552589256
+tgschultz
+well that's good, at least it isn't a bug
+
+1552589332
+Akuli
+
+
+1552589336
+Akuli
+wow pull request 2065
+
+1552589342
+Akuli
+that's a lot of pull requests done in the past
+
+1552589493
+andrewrk
+thanks Akuli - merged
+
+1552589739
+mikdusan
+next time i’ll read the docs about pass-by-value parameters. i made grief for myself assuming a problem existed that Zig makes go away.
+
+1552589917
+andrewrk
+after no-copy semantics work is done, this will be true: "Zig does no memory copying on your behalf. You can see where memory copying happens by looking for the assignment operator (`=`)."
+
+1552590951
+Akuli
+how do i check if a c pointer is null, and return an error if it is?
+
+1552591016
+andrewrk
+if (ptr == c.NULL) return error.Foo;
+
+1552591020
+tgschultz
+`if(c_pointer == null) return error.MyError;` or `const x = c_pointer orelse return error.MyError;`
+
+1552591029
+tgschultz
+oh c.NULL
+
+1552591031
+tgschultz
+right
+
+1552591045
+tgschultz
+I suppose that means my second example doesn't work either.
+
+1552591053
+andrewrk
+tgschultz, your examples will work if
+
+1552591069
+andrewrk
+which I think is probably a good idea to do
+
+1552591098
+DutchGh0st
+how do you pointer arithmatic on a pointer to a Zero Sized Type?
+
+1552591108
+DutchGh0st
+like [*] void for example
+
+1552591114
+andrewrk
+DutchGh0st, you can't, such pointers don't have an associated address
+
+1552591117
+tgschultz
+I would agree. At least I can't think of a good reason not to do it.
+
+1552591136
+DutchGh0st
+so how do you Iterate over a [N]void array then?
+
+1552591151
+DutchGh0st
+how does the compiler do it? xD
+
+1552591171
+tgschultz
+`for(array) |empty, i|` should work, no?
+
+1552591180
+DutchGh0st
+it does
+
+1552591215
+tgschultz
+as I recal that was Hejsil's clever way of implementing for over ranges.
+
+1552591216
+andrewrk
+I guess pointer arithmetic for [*]void could just all be no-ops
+
+1552591221
+DutchGh0st
+mh, so you can't convert the [*]void to [*]u8, ?
+
+1552591247
+andrewrk
+correct. perhaps you intended instead to use @OpaqueType ?
+
+1552591248
+tgschultz
+if you're intending to do that, you probably want [*]c_void or [*]OpaqueType()?
+
+1552591283
+andrewrk
+tgschultz, I wonder if we should rename c_void to `anyopaque`
+
+1552591286
+DutchGh0st
+I checked how Rust handles ZST's on their Iterators for slice's, they convert the pointer to bytes, add the length of the slice, and on each iteration, decrement the end ptr , untill it equals the start ptr again
+
+1552591343
+andrewrk
+I think daurnimator pointed out some issues related to this
+
+1552591355
+tgschultz
+andrewrk, I wouldn't be opposed to it.
+
+1552591385
+andrewrk
+I'll open a proposal
+
+1552591401
+andrewrk
+I can't remember any non-C use cases off the top of my head but I remember there are some
+
+1552591418
+DutchGh0st
+well, guess my ArrayVec can't support zst's then
+
+1552591422
+DutchGh0st
+okey :3
+
+1552591440
+andrewrk
+tgschultz, wow:
+
+1552591506
+andrewrk
+DutchGh0st, I think pointer arithmetic on [*]void can work, it will just all be no-ops
+
+1552591533
+andrewrk
+can you file an issue?
+
+1552591599
+DutchGh0st
+me?..
+
+1552591743
+tgschultz
+well, I guess that isn't a very new idea.
+
+1552592060
+Akuli
+
+
+1552592285
+DutchGh0st
+how do you get the offset of 2 [*] T's ?
+
+1552592991
+andrewrk
+you mean if they're in an array next to each other? @sizeOf
+
+1552593120
+DutchGh0st
+noo
+
+1552593128
+DutchGh0st
+but I have 2 [*] T's
+
+1552593142
+DutchGh0st
+and I want to turn it into a []T, which should be possible
+
+1552593431
+andrewrk
+that would only make sense if they were in an array next to each other
+
+1552593649
+DutchGh0st
+
+
+1552594612
+DutchGh0st
+anyway, here's quite some implementation of an arrayvec, let me know what you think of it! :)
+
+1552594821
+jjido
+iter.next() returns a pointer?
+
+1552594851
+DutchGh0st
+yeah
+
+1552594905
+DutchGh0st
+I still have to write the draining Iterator, which would return the `owned` items
+
+1552595004
+DutchGh0st
+notice that build_iter() is trying to return a type who's next method either returns *const .., or *..., its pointless to write 2 exactly the same structs where only the mutability is different
+
+1552597000
+andrewrk
+stream starting
+
+1552601967
+vramana
+error: expected type '[]u8', found '[5]u8'add_symbol("tests", 0);
+
+1552602023
+vramana
+error: expected type '[]u8', found '[5]u8'
+
+1552602024
+vramana
+add_symbol("tests", 0);
+
+1552602024
+vramana
+This is the error I am getting pass a string to a function. How can I fix this?
+
+1552602343
+vramana
+chaning function signature from []u8 to []const u8 seems to have fixed the error.
+
+1552606453
+andrewrk
+vramana, string literals are stored in read-only static memory
+
+1552606526
+vramana
+andrewrk:  Okay. Thanks!
+
+1552606548
+andrewrk
+GeneralPurposeDebugAllocator is coming along. I think it's going to be pretty useful
+
+1552606855
+vramana
+andrewrk:  I have been following zig for sometime. I wanted to learn how to write parsers for quite sometime. I was thinking of doing it in C++. But remembered that Zig is an alternative. So, I am trying it out today. I wish standard library functions are bit more discoverable with some documentation but it's just a minor annoyance.
+

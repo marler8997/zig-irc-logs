@@ -1,0 +1,848 @@
+1573088904
+daurnimator
+mikdusan: btw, new recommendation would be std.fifo instead of std.Buffer
+
+1573095791
+scientes
+are slices guaranteed to be aligned?
+
+1573096454
+scientes
+ummm, godbolt.org broke?
+
+1573096459
+scientes
+it just says "no output file" for me
+
+1573097344
+mikdusan
+daurnimator: hmm... `readableSliceMut() / readableSlice()` vs. crypto, mem, array_list, buffer, all have `toSlice() / toSliceConst()`
+
+1573097344
+mikdusan
+do we instead want `readableSlice() / readableSliceConst()` for consistency?
+
+1573097379
+scientes
+hmmmmmm, why isn't alloc's alignment parameter comptime?
+
+1573097404
+scientes
+this is preventing the pointer from getting an alignment annotation
+
+1573097646
+scientes
+i don't think run-time alignment is useful
+
+1573097670
+scientes
+because alignment is mostly to improve codegen
+
+1573097813
+tgschultz
+Because it is an interface, I think. Comptime parameters can't really work with runtime-known function pointers.
+
+1573097860
+scientes
+well malloc() generally switches on the size
+
+1573097885
+scientes
+and interfaces in zig are entirely comptime
+
+1573097914
+scientes
+tgschultz, my problem is that I want pointers made with directallocator to get annotated with a 4096 alignment
+
+1573097917
+tgschultz
+...no they aren't?
+
+1573097951
+tgschultz
+Allocator is a struct of two runtime function pointers last I checked.
+
+1573097967
+scientes
+yeah but its all static
+
+1573097971
+scientes
+llvm can optimize it
+
+1573098004
+tgschultz
+maybe, but the language doesn't treat it like that.
+
+1573098020
+andrewrk
+pointers do get alignment annotations if you go through the std.mem.Allocator interface
+
+1573098031
+scientes
+I just think annotation diretallocator results with aligned(4096) would be nice
+
+1573098044
+scientes
+and we already have comptime alignment on the other functions
+
+1573098137
+tgschultz
+andrewrk, how does that work?
+
+1573098214
+scientes
+127        @memset(byte_slice.ptr, undefined, byte_slice.len);
+
+1573098221
+scientes
+this isn't getting optimized out in --release-fast
+
+1573098270
+scientes
+guess that is a llvm bug
+
+1573098273
+andrewrk
+tgschultz, have a look at std.mem.Allocator.alignedAlloc
+
+1573098286
+tgschultz
+Oh, right!
+
+1573098308
+tgschultz
+I'd forgotten completely about those functions
+
+1573098321
+scientes
+andrewrk, yeah, but why can't it put that when you use alloc() from directallocator
+
+1573098327
+scientes
+as it knows it is 4096 or the page size
+
+1573098334
+andrewrk
+scientes, in theory that should actually give more information to the optimizer. but if llvm can't deal with it, let's omit it in release fast mode
+
+1573098365
+andrewrk
+scientes, you mean when you call the function pointer that has to match the non-aligned Allocator interface API?
+
+1573098395
+scientes
+I could do it with @alignCast() but alignment is a run-time value, not comptime
+
+1573098429
+scientes
+also we kind of need two @alignCast()s--one that only bumbs the alignment up, and one that sets it definitively
+
+1573098452
+scientes
+but really it should jsut go up, and to set it definitely you need to use @ptrCast() IMHO
+
+1573098480
+scientes
+because if it wasn't right, they you already have UB
+
+1573098499
+andrewrk
+even @ptrCast won't bump it down
+
+1573098521
+scientes
+oh, that is @intToPtr() then
+
+1573098858
+scientes
+call void @llvm.memset.p0i8.i64(i8* align 1 %byte_slice.sroa.0.0.copyload.i, i8 -86, i64 1073741824, i1 false) #3, !dbg !1234, !noalias !1225
+
+1573098864
+scientes
+-86 is 0xaa
+
+1573098870
+scientes
+so our release-fast is messed up
+
+1573099499
+daurnimator
+mikdusan: .readableSliceMut() is essentially internal: it's so you can "unget"
+
+1573099755
+daurnimator
+mikdusan: the Mut suffix came from andrew
+
+1573099829
+daurnimator
+mikdusan:
+
+1573113017
+mq32
+thanks andrewrk and LemonBoy for fixing all those bugs :)
+
+1573118886
+muffindrake
+It seems to be possible to currently use something like 'array = {};' in code - does that simply zero-initialize the given object, or is there some other thing that does?
+
+1573118910
+muffindrake
+It's not mentioned in the documentation, if I'm not mistaken, but it will compile.
+
+1573122691
+dantix
+muffindrake: It will not compile as you've described. You can use `const all_zero = [_]u16{0} ** 10;` where `10` is array length or `undefined` if you are okay with uninitialized memory.
+
+1573122844
+muffindrake
+Then what does {} mean if you assign it to a variable? Because doing that actually compiles at the moment.
+
+1573122872
+dantix
+It is `void`
+
+1573123027
+muffindrake
+Is that meaningful in some way?
+
+1573123082
+dantix
+There are some examples -
+
+1573123219
+muffindrake
+I see, thank you.
+
+1573137071
+mq32
+zig has ruined my c# skills. i always forget that you need to add the position of args in the format string instead of just writing "{}"
+
+1573140379
+mq32
+andrewrk: is it possible to create an arm freestanding COFF/PE file with zig?
+
+1573140879
+scientes
+mq32, there was work on that
+
+1573140887
+scientes
+or at least interest'
+
+1573140891
+scientes
+but why not just do a freestanding arm ELF?
+
+1573140895
+scientes
+uboot can boot that
+
+1573140933
+scientes
+ELF has a little problem in the linker in that debug sections must be linked, but other than that, ELF kinda won
+
+1573141201
+mq32
+scientes, because windows requires PE ;)
+
+1573141216
+scientes
+so are you talking about a statically linked windows executable?
+
+1573141225
+scientes
+that isn't freestanding
+
+1573141367
+mq32
+no
+
+1573141387
+scientes
+hmm i'm confused
+
+1573141388
+mq32
+i talk about a dynamically linked windows PE file with no dependencies at all (not even kernel32.dll or something)
+
+1573141396
+mq32
+i have a Windows CE device at my hands
+
+1573141401
+scientes
+yeah but it still makes kernel calls
+
+1573141406
+scientes
+without kernel32.dll
+
+1573141409
+mq32
+it will?
+
+1573141413
+mq32
+why?
+
+1573141416
+scientes
+otherwise it can't do anything
+
+1573141422
+mq32
+yes
+
+1573141428
+scientes
+
+
+1573141429
+mq32
+i don't want an "executable", but a "library"
+
+1573141431
+mq32
+i can load with C#
+
+1573141435
+mq32
+to run code with
+
+1573141435
+scientes
+ohhhh
+
+1573141443
+mq32
+and i think about porting an application of mine to Windows CE
+
+1573141455
+scientes
+that still isn't freestanding
+
+1573141457
+scientes
+its a dll
+
+1573141458
+mq32
+and before rewriting it in C#, i would rewrite it in zig, as i wanted to port it to zig anyways
+
+1573141464
+mq32
+hm, okay
+
+1573141491
+mq32
+this is gonna be interesting
+
+1573141539
+mq32
+so what would that target be called then? :D
+
+1573141559
+scientes
+I don't know enought about windows to tell you
+
+1573141681
+mq32
+hmmmm
+
+1573141696
+fengb
+Isn't that just a dynamic library?
+
+1573141697
+fengb
+"-dynamic                     create a shared library (.so; .dll; .dylib)"
+
+1573141707
+mq32
+but the root question is still valid: can i output PE for "any" target?
+
+1573141722
+scientes
+it works for linux
+
+1573141725
+mq32
+fengb: not the "dynamic libarry" is the problem but the format of it
+
+1573141777
+fengb
+Oh Windows arm...
+
+1573141973
+mq32
+[felix@ing05-linux src]$ zig build-lib -dynamic -target thumbv7-windows main.zig
+
+1573141973
+mq32
+LLVM ERROR: target does not implement codeview register mapping
+
+1573141976
+mq32
+hm. sad
+
+1573142066
+mq32
+okay, so some issue on Github/Rust says that it works with thumbv7a-windows ... but zig doesn't support that arch
+
+1573142139
+fengb
+Windows arm is listed as tier 3 support
+
+1573142144
+scientes
+mq32,   arm-windows-gnu
+
+1573142156
+scientes
+^thats what you want
+
+1573142165
+scientes
+thats thumbv7a
+
+1573142192
+scientes
+thumb
+
+1573142198
+scientes
+v7
+
+1573142216
+scientes
+thumbv7-windows-gnu
+
+1573142221
+mq32
+hm, same error
+
+1573142224
+scientes
+ahhh
+
+1573142225
+mq32
+(register mapping)
+
+1573142227
+scientes
+thats my problem
+
+1573142287
+mq32
+fengb: i'm totally okay with tier 3
+
+1573142329
+fengb
+Oh it's a pretty deep error I see. I'll let the experts talk >_>
+
+1573142449
+mq32
+scientes: I'm willing to put some time into this, could you help me out a bit later?
+
+1573142478
+scientes
+I just know nothing about windows
+
+1573142486
+scientes
+I'm been Linux only for years
+
+1573142620
+mq32
+yeah, me too, but you have worked with the compiler internals already...
+
+1573142629
+mq32
+but i first have to dig some time into the error message
+
+1573142632
+scientes
+I also added arm64
+
+1573142636
+mq32
+there's probably a solution anywhere out there
+
+1573142651
+mq32
+so i can find the windows specific bits
+
+1573142825
+mq32
+okay. first finding: windows CE uses the same calling conventions as linux/generic ARM
+
+1573144695
+dimenus
+is there any way to get the name/location of the calling function?
+
+1573144713
+scientes
+dimenus, yes, that is how stack trace works
+
+1573144753
+euantor
+Anybody got any ideas on this comment? It seems Zig is looking for VCRuntime on Windows:
+
+1573144779
+mq32
+dimenus: @returnAddress + debug info
+
+1573144833
+mikdusan
+euantor: if i remember correct, due to a compiler upgrade, 0.5.0 release on windows introduced a new runtime .dll requirement,
+
+1573144854
+mikdusan
+and sometime thereafter, the windows master builds were enhanced to drastically reduce .dll requirements
+
+1573144904
+mikdusan
+long story short, if a recent master build is used that should solve the issue
+
+1573144905
+tgschultz
+see #3391, but should have been fixed in #3467
+
+1573144919
+euantor
+Right, I'll need to update the Chocolatey package then and work out what exact dependencies it has. The commenter claims to have VC redist installed so I'll need to set up a clean windows environment to test
+
+1573144946
+euantor
+The chocolatey packages currently only have released versions, as it takes a while for reviews to complete so maintianing master builds would be a pain
+
+1573145097
+mikdusan
+euantor: commenter claims up to 2017 redistributable installed. vcruntime140_1.dll is a '2019 thing
+
+1573145555
+euantor
+Ah, will reply again recommending 2019 and add it as a dependency
+
+1573157242
+shakesoda
+does zig have a way to do lambda functions/closures
+
+1573157487
+shakesoda
+oh, looks like #1717 is about this
+
+1573157996
+leeward
+If I have a function that wants to take an array of 2 bytes as input and never change them, what should the type of the argument be? I'd also like to be able to pass slices of a bigger array in.
+
+1573158083
+fengb
+[]const u8 ?
+
+1573158085
+tgschultz
+if you want to take slices, then []const u8
+
+1573158120
+leeward
+I'd like to communicate in the interface that it expects exactly 2 bytes. Is that just not a thing I can do?
+
+1573158133
+tgschultz
+[2]u8
+
+1573158165
+leeward
+But not `[2] const u8`
+
+1573158182
+tgschultz
+no, slices do not have comptime known length
+
+1573158199
+tgschultz
+you could say *const [2]u8
+
+1573158234
+leeward
+I guess the issue is where I raise the error, right?
+
+1573158242
+tgschultz
+I'm not sure if any simple slicing syntax will work though...
+
+1573158253
+fengb
+[2]u8 implies const already. It's Zig's fancy pass ref by const value
+
+1573158254
+leeward
+I can have it take []const u8, but the function now returns !whatever
+
+1573158264
+leeward
+Ohhh, ok
+
+1573158294
+fengb
+It's the same as declaring "const foo: [2]u8". You won't be able to edit the data
+
+1573158318
+leeward
+I think I might submit a suggestion then: s/error: const qualifier invalid on array type/error: const qualifier superfluous on array type/
+
+1573158321
+fengb
+Equivalent to*. Obviously not the same :P
+
+1573158330
+fengb
+tgschultz: can Zig downcast larger arrays to fit into 2 bytes?
+
+1573158356
+tgschultz
+I'm not sure, but I doubt it
+
+1573158479
+tgschultz
+I mean, array[0..N] should be able to cast to *const [N]u8 if N is a comptime constant, but I'm not sure the compiler does that.
+
+1573158552
+fengb
+`error: expected type '[2]u8', found '[3]u8'` :(
+
+1573158589
+tgschultz
+That isn't surprising, but try what I posted above.
+
+1573158618
+tgschultz
+because downcasting an array to a smaller array would be hidden behavior anyway
+
+1573159326
+andrewrk
+fengb, I was thinking to change @sliceToBytes and @bytesToSlice to be more powerful
+
+1573159334
+andrewrk
+@toBytes and @fromBytes
+
+1573159387
+andrewrk
+hmm maybe @ptrToBytes and @valueToBytes
+
+1573159436
+tgschultz
+just moving mem.as/fromBytes into builtins?
+
+1573159436
+andrewrk
+no it has to operate on a pointer. always a pointer. ok so it accepts a pointer, but the point is that it would return *[N]u8 if the len was comptime known
+
+1573159454
+andrewrk
+oh right. this can be std lib
+
+1573159463
+andrewrk
+does this already exist?
+
+1573159498
+tgschultz
+pretty sure it was added by Hejsil and I in the meta pr (though it is part of mem).
+
+1573159499
+andrewrk
+oh nice tgschultz I forgot you did this
+
+1573159567
+mq32
+do we have a thing like @sizeOf that has bits size?
+
+1573159629
+tgschultz
+Not really, because it would only really work for primitives given the complexities of what you mean when you'd use it on a struct, and for primitives it is simple math.
+
+1573159676
+andrewrk
+I think it will become meaningfully once 3133 is done
+
+1573159729
+andrewrk
+it basically tells you how much space the type fills up in a packed struct if you leave it unaligned
+
+1573159750
+mq32
+right now i have this error:  error: array of 'Entry' not allowed in packed struct due to padding bits
+
+1573159770
+andrewrk
+mq32, yes this is what #3133 is addressing - let you put any type in a packed struct
+
+1573159797
+leeward
+Is there a way to cast a `[]const u8` to `[2]u8`?
+
+1573159841
+mq32
+andrewrk, ah oka
+
+1573159844
+mq32
+have to read that up
+
+1573159851
+andrewrk
+leeward, after
+
+1573159896
+andrewrk
+I'm missing `const` in there but you get the idea
+
+1573159949
+mq32
+3133 will probably also fix the bug with invalid sizeOf?
+
+1573160018
+mq32
+huh... haven't i reported this?
+
+1573160049
+leeward
+andrewrk: Excellent, that's what I was looking for.
+
+1573160272
+mq32
+ah, it wasn't a new issue...
+
+1573160272
+mq32
+
+
+1573164876
+marijnfs_
+is there a nice binary serialization library for zig?
+
+1573165043
+waleee-cl
+I guess you could half-ass it by using C's fopen/fwrite if nothing else
+
+1573165098
+scientes
+I don't tihnk that is what he is asking
+
+1573165105
+THFKA4
+someone was working on integrating protos
+
+1573165106
+andrewrk
+I don't think that addresses marijnfs's use case. zig std lib has clear facilities for writing files. this question is about some kind of reflection-based system
+
+1573165492
+FireFox317
+Someone in here with uart experience? I'm trying andrewrk's clashos bootloader, but I'm having a weird issue which only happens with real hardware and not in qemu. When I'm sending a new image over uart after two null bytes have been send, the raspberry only receives null bytes afterwards.
+
+1573165509
+FireFox317
+I tried using different usb to uart bridges, but that didn't help
+
+1573165522
+andrewrk
+something to do with baud rate maybe?
+
+1573165533
+andrewrk
+I'm a total beginner at bare metal coding
+
+1573165564
+andrewrk
+FireFox317, oh, have you tried #osdev? it's a helpful channel
+
+1573165584
+FireFox317
+Nope I haven't thanks for the suggestions
+
+1573165678
+FireFox317
+I'm getting close to the usb keyboard support in clashos btw, but Its super annoying when i constantly have to switch sd cards between the rpi and my pc. Thats why I'm trying the bootloader, but no success yet
+
+1573165837
+andrewrk
+does the bootloader work for you in qemu?
+
+1573165940
+FireFox317
+Jup it does
+
+1573165985
+FireFox317
+I also tried a much lower baudrate, but exactly the same problem
+
+1573165987
+FireFox317
+So weird
+
+1573166043
+marijnfs_
+c++ has a nice serialization library called Cereal
+
+1573166046
+marijnfs_
+something like that would be nice
+
+1573166055
+marijnfs_
+with all the introspection it might be possible
+
+1573166461
+andrewrk
+FireFox317, hmm ok. if I were working on this right now, trying to get the bootloader working on real hardware would be my top priority
+
+1573167313
+FireFox317
+andrewrk: I went back to this commit a804d7d, before markfirmware's framebuffer stuff, just so you know
+
+1573167560
+andrewrk
+good to know
+
+1573167697
+mq32
+FireFox317: how do you connect to your uart?
+
+1573167723
+mq32
+because you may need to change your tt settings
+
+1573167897
+FireFox317
+Well using a bus pirate actually
+
+1573167918
+FireFox317
+Setting that into transparant bridge mode
+
+1573169476
+Snektron
+every time i see how c++ allocators work i get reminded how nice those of Zig work
+
+1573169791
+shakesoda
+every time i see how pretty much anything in c++ works i run for my life
+
+1573169974
+Snektron
+oh, come on, enable_if is not so hard ;)
+
+1573170272
+fengb
+I’m always impressed that not having a default allocator exposes so many nice benefits
+
+1573171192
+mq32
+true dat, fengb
+

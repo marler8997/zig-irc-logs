@@ -1,0 +1,792 @@
+1555984958
+daurnimator
+donpdonp: re: `@ptrCast(*c_void,0)` you probably wanted `@intToPtr(*c_void, 0)`
+
+1555984975
+daurnimator
+though in your circumstance, `null` was more correct.
+
+1555985038
+daurnimator
+note that in C, the 0 pointer/null is really... weird. NULL isn't always the 0 pointer; but 0 as a pointer is NULL.
+
+1555985059
+daurnimator
+On platforms where 0 is a valid address to read/write from, things get weird
+
+1555985075
+daurnimator
+zig has `allowzero` for such places.
+
+1555985679
+hryx
+tyler569: I fixed the new bug on stage2-recursive-parser. It was dumb.
+
+1555985735
+hryx
+you'll still need to add a trivial test above the `allowzero` one to reproduce the memory leak. Actually maybe I should just commit that while this branch is in progress
+
+1555985825
+tyler569
+cool cool, thanks for letting me know!
+
+1555985878
+hryx
+fo sho! Also I just pushed the test thing, no need for a manual change now :>
+
+1555985968
+tyler569
+sweet
+
+1555988402
+hryx
+`zig version` on homebrew install prints "0.4.0+" -- I assume the dangling plus sign is unintentional?
+
+1555988638
+fengb_
+I think that's a bug. It's appended with a git sha for a nightly, but I think it should be missing on the release
+
+1555988655
+fengb_
+It's just "0.4.0" on the Linux release
+
+1555988745
+hryx
+would it be an issue with the zig repo or with the homebrew formula?
+
+1555988852
+tyler569
+anyone know why zig just uses (verion)-(hash) ?  git describe gives you (version)-(commits since tag)-(hash), which I've always found more useful because you can immidiately see an ordering between builds
+
+1555988916
+tyler569
+for my project for example: `v0.3.15-2-ge74207c` is 2 commits after tag v0.3.15, and hash e742...
+
+1555988963
+tyler569
+(I could make a proposal, just seeing if anyone knows if there's motivation behind the way it's done)
+
+1555989343
+hryx
+hm, not sure
+
+1555989346
+fengb_
+So the official release build shows "0.4.0" under Mac
+
+1555989402
+fengb_
+So my guess is Homebrew... but we should probably verify by building the source bundle
+
+1555993995
+hryx
+When would one want to use a bare union instead of a tagged union?
+
+1555994133
+dewf
+if you have the same data and want to be able to access it different ways depending on the need at the time
+
+1555994136
+dewf
+like maybe you'
+
+1555994137
+dewf
+er
+
+1555994151
+dewf
+like maybe you've got a 32-bit value but occasionally want to access individual bytes
+
+1555994163
+dewf
+without doing bit shifting and stuff
+
+1555994210
+dewf
+I think I saw something the other day where somebody was using that instead of casting, because (according to the comment) their compiler would complain when they tried a direct cast between the types
+
+1555994254
+daurnimator
+dewf: are you looking for @bitCast?
+
+1555994295
+dewf
+? I was responding to hryx
+
+1555994316
+daurnimator
+hryx: 1. compat with existing programs/libraries/formats. 2. to keep memory usage small (e.g. if you need to fit in a register/cache line/etc.)
+
+1555994350
+hryx
+ah, because the tag takes up more bits?
+
+1555994382
+hryx
+dewf: that's a useful trick in C, but isn't that an illegal use of unions in zig?
+
+1555994501
+tyler569
+looks like it's legal for packed and extern unions
+
+1555994533
+hryx
+surprise!
+
+1555994558
+hryx
+everyone has worked together to educate me. thanks~
+
+1555994686
+daurnimator
+hryx: yes. for certain patterns you may want to store the tag elsewhere. e.g. if you wanted to store a `[64]{ foo: T1, bar: T2 }` then you might want a single 64bit value containing all the types
+
+1555994692
+tyler569
+oop, maybe not!  the doc implies it's legal but doing it in debug mode is an error
+
+1555994693
+tyler569
+huh
+
+1555994738
+tyler569
+actually, that's a compile error.  impressive semantic analysis
+
+1555998169
+hryx
+I see tagged unions can be used in a switch statement (cool) -- can they also be used with `if`?
+
+1555998192
+hryx
+seems ok if not, just do a switch with one normal prong and one else. Just curious for convenience though
+
+1555998234
+tyler569
+what would be the test for though?
+
+1555998242
+tyler569
+the test be for *
+
+1555998244
+hryx
+oh sorry, the tag
+
+1555998255
+hryx
+To see which field is currently active
+
+1555998280
+tyler569
+oh you mean like if (union_whatever.this_field) {}
+
+1555998285
+tyler569
+that would be cool
+
+1555998290
+hryx
+yep, ^
+
+1555998308
+tyler569
+I'm finding some odd things with this allocator stuff btw
+
+1555998322
+hryx
+I'm on the edge of my seat tyler569 :O
+
+1555998329
+daurnimator
+tyler569: hryx: I don't think the would work well if `this_field` was an optional type
+
+1555998329
+tyler569
+like, it looks like that 4k is leaked on the first run too, nothing ever deallocates it there either
+
+1555998370
+hryx
+tyler569: does every test case in master parser_test.zig allocate > 4k?
+
+1555998386
+hryx
+not sure if that's related
+
+1555998389
+tyler569
+additionally, any sense why it's allocating 4k? the Node.Root type is ~100 bytes and everything seems to just want to grab "enough for the comptime T"
+
+1555998406
+tyler569
+not as far as I can tell, let me paste what I whipped up
+
+1555998470
+hryx
+Ah I was wondering about why 4k as well. I assumed it's one of those allocators that overallocates for a pool of things, but, now that you mention it that don't seen right
+
+1555998496
+tyler569
+the pool seems to be the 100M fixed buffer in parser_test.zig
+
+1555998516
+daurnimator
+tyler569: try out PR #2338 to find it :)
+
+1555998526
+tyler569
+that's wrapped in a fixedbbufferallocator, then an arenaalocator, then the failingallocator
+
+1555998584
+tyler569
+
+
+1555998588
+hryx
+daurnimator: yeah that actually might come in handy about now -- I was manually printing stuff in the allocator earlier
+
+1555998607
+hryx
+whoa
+
+1555998621
+hryx
+0->4096 and then 0->8 ?
+
+1555998645
+tyler569
+that's just the second allocation, but notice how it never frees the 4096 in the succesful run
+
+1555998663
+tyler569
+"size of node root" is the start of each run
+
+1555998712
+hryx
+huh. is it significant that it's at a different address from all the others?
+
+1555998739
+tyler569
+the 4096 is line 44 `arena.create(Node.Root)` incidenally
+
+1555998757
+tyler569
+I think it's just a different address because it was never freed, so everything after it is farther along
+
+1555998783
+tyler569
+then the second allocation is just expanded and shrunk inplace a few times
+
+1555998856
+hryx
+oh shoot hang on a sec. gonna try something based on what you just said
+
+1555998977
+tyler569
+and here's a random thought, isn't the point of fixedbuffer/arena allocators that they don't do anything on free, they just bump a pointer until you reset them?  - how would arena.deinit() be able to mark the allocations freed in that case?
+
+1555999003
+tyler569
+(am checking, but wanted to muse first)
+
+1555999858
+hryx
+Nope, idea didn't work
+
+1556000055
+hryx
+if it's the first allocation that fails maybe we can just dump a trace in `reallocFn` to see who's calling it
+
+1556000112
+tyler569
+the 4k one?
+
+1556000142
+tyler569
+I did that, it's the allocate on line 44 or parse2, the create(Node.Root)
+
+1556000150
+tyler569
+of*
+
+1556000181
+hryx
+oh I see
+
+1556000194
+hryx
+I think one of the allocations isn't going through the FailingAllocator
+
+1556000205
+hryx
+maybe
+
+1556000254
+tyler569
+hmm
+
+1556000273
+tyler569
+everything I printed above is definitely, those are in realloc and shrink of FailingAllocator
+
+1556000295
+tyler569
+(the debug prints)
+
+1556000303
+hryx
+ah, I see
+
+1556000349
+tyler569
+I'm so confused by this tower of allocators though
+
+1556000370
+tyler569
+[]u8 <- FixedBuffer <- Failing <- Arena I think ?
+
+1556000384
+tyler569
+the Arena being inside the test
+
+1556000475
+hryx
+Yep, that's the right order
+
+1556000823
+tyler569
+added some annotations to the bein/enf of all of these allocation functions, I wonder if backtraces use Arenas a little bit XD :
+
+1556000836
+tyler569
+(it just spams that for every line of the backtrace)
+
+1556000921
+hryx
+whoa haha
+
+1556001094
+tyler569
+interesting development, there are things that hit the Arena without hitting the FailingAllocator and things thet hit the FailingAllocator without hitting the Arena
+
+1556001099
+tyler569
+if I'm reading this right
+
+1556001142
+hryx
+ah yes, as for the second one: the failing allocator is used for more than just the parsing itself. in parser_test.zig you can see it used to render the reformatted source for comparison
+
+1556001165
+hryx
+but Arena without FailingAllocator, not sure about that one
+
+1556001220
+tyler569
+might just be noise because I can't differentiate what's hitting the function, but it's pretty consistent.  Imma poke at it
+
+1556001319
+hryx
+dope. I might be a little too close to it to see anything right now, so I'm gonna clear my head by knocking out some TODOs and the come back to it later
+
+1556001346
+tyler569
+sounds good, I'll let you know if I find anything when I come up for air
+
+1556004855
+tyler569
+Test 2/121 parser_test.temporary trivial example...OK
+
+1556004859
+tyler569
+How's you like that
+
+1556004865
+tyler569
+How'd*
+
+1556005073
+hryx
+tyler569: WAT
+
+1556005100
+tyler569
+yeah I think I found it
+
+1556005252
+hryx
+amazing. I can't wait to see
+
+1556005276
+tyler569
+yup, just writing up a commit to send your way now
+
+1556006073
+tyler569
+
+
+1556006197
+tyler569
+kept seeing multiple different addresses for the Arena at .alloc() and .deinit() and then it clicked
+
+1556006253
+hryx
+you absolute legend
+
+1556006266
+hryx
+that incorrect TODO to remove the field was my mistake
+
+1556006286
+tyler569
+anytime! this was a really fun debug
+
+1556006342
+hryx
+Awesome! I am really really grateful, this will make the rest of the parser changes quicker & more fun too :>
+
+1556006444
+tyler569
+glad I could help
+
+1556006463
+tyler569
+def. excited for the zig parser in zig!
+
+1556006499
+hryx
+~ damn straight ~
+
+1556006565
+wilsonk|2
+how does a struct reference a field inside itself to initilaze another field?  I thought I could use @This() to do that
+
+1556006591
+daurnimator
+wilsonk|2: reference how? (got an example?)
+
+1556006616
+wilsonk|2
+like using a field to initialize the value of a second field
+
+1556006645
+wilsonk|2
+so struct {  .a = 5, .b = .a, };
+
+1556006680
+hryx
+I believe there is a GitHub issue related to that wilsonk|2
+
+1556006680
+daurnimator
+I think the main thing would be: const a = t; return mystruct { .a = a, .b = a }
+
+1556006723
+daurnimator
+usually you'd have a `mystruct.init(a: mytype)` that does such things for you
+
+1556006808
+wilsonk|2
+ok, I can cobble something like that together...just wasn't sure if there was an elegant way to reference a field inside the struct while initializing it
+
+1556006969
+hryx
+wilsonk|2: ah, I was mistaking your question for this one:
+
+1556007043
+wilsonk|2
+yeah, similar enough. I got it figured out. Thanks hryx
+
+1556026343
+forgot-password
+What's the best way to profile cache characteristics of Zig programs right now?
+
+1556026461
+daurnimator
+forgot-password: as with any language..... perf
+
+1556026558
+companion_cube
+for cache characteristics, maybe cachegrind?
+
+1556026674
+forgot-password
+companion_cube: That's what I'm using, but I was wondering whether there are any better alternatives.
+
+1556026726
+daurnimator
+forgot-password: perf uses your cpu's hardware counters. valgrind is essentially a passthrough-cpu emulator
+
+1556026726
+forgot-password
+Not that I know anything about it, so I have no reason to not like it. As I said, I was just wondering ^^
+
+1556026752
+forgot-password
+daurnimator: Thanks, I'll check it out :)
+
+1556026769
+forgot-password
+I assume that's also the reason why cachegrind slows down the program by as much as it does, isn't it?
+
+1556026863
+daurnimator
+yep
+
+1556026958
+daurnimator
+forgot-password: run this: perf stat -M Load_Miss_Real_Latency echo this can be any program
+
+1556026961
+companion_cube
+how can I have perf display cache misses, though?
+
+1556026987
+daurnimator
+companion_cube: see `perf list` for all the different stats you can get.
+
+1556027002
+companion_cube
+ohhhh nice
+
+1556027019
+companion_cube
+I've only ever used `perf record` and `perf report` (with a bit of flamegraph ♥)
+
+1556027291
+daurnimator
+companion_cube: you can use those too..
+
+1556027426
+daurnimator
+(as in, when you `perf record`, pass -e and the hardware counters you want to sample too)
+
+1556027619
+companion_cube
+neat.
+
+1556027676
+forgot-password
+Do you know about antyhing that works well on MacOS? Since perf is not available there.
+
+1556027688
+bgiannan
+was about to ask that
+
+1556027769
+forgot-password
+bgiannan: I played around with Instruments, but I couldn't get anything useful out of it.
+
+1556027789
+forgot-password
+Instruments being the default profiling tool
+
+1556027794
+daurnimator
+on osx everything is hidden behind dtrace somewhere :P
+
+1556027804
+daurnimator
+Instruments is probably just a wrapper around dtrace? :P
+
+1556027839
+forgot-password
+Well it's rather a collection of different profiling tools that one in itself
+
+1556027868
+forgot-password
+Or can you use dtrace to measure network I/O, etc?
+
+1556027875
+daurnimator
+According to
+
+1556028070
+forgot-password
+It complains about System Integrity Protection being enabled. But to disable that I'd have to boot into recovery mode.
+
+1556028103
+forgot-password
+Gotta get some work done anyways. Thank you daurnimator I'll try it out later today
+
+1556035360
+donpdonp
+im including a .h that has typedef enum status_t { thing = 0xFFFFFFFF } and zig says error: integer value 4294967295 cannot be implicitly casted to type 'c_int'
+
+1556035386
+donpdonp
+is there a way to say enum values should be c_uint?
+
+1556037624
+donpdonp
+i see that C is somewhat ambiguous around the type of enum members.
+
+1556037680
+donpdonp
+here's a different problem, curl.h import creates pub const CURLoption = extern enum { CURLOPT_URL = 10002 }, but when I try to call a c.method(c.CURLoption(c.CURLOPT_URL)) I get error: expected type '.cimport:8:11.CURLoption', found 'comptime_int'
+
+1556037714
+donpdonp
+it seems the compiler is being too smart and substituting a comptime_int, which is great, except the signature doesnt match anymore :(
+
+1556038744
+donpdonp
+ah found the way out, c.CURLoption.CURLOPT_URL works. (I'm updating zig 0.3 code)
+
+1556039644
+TheLemonMan
+andrewrk, why doesn't @shlWithOverflow return an optional type?
+
+1556041545
+bketelsen
+the new wapm.io package manager works beautifully with zig, I'm happy to report
+
+1556041548
+bketelsen
+
+
+1556041769
+donpdonp
+bketelsen: oh thx for mentioning wapm. ive been looking for that
+
+1556041922
+companion_cube
+interesting
+
+1556042069
+bketelsen
+"universal"(ish) binaries?  Game on.
+
+1556042208
+companion_cube
+(otoh their website looks like shit on firefox)
+
+1556042523
+ysgard
+I'm trying to get Andrew's little SDL example to work, but it's failing on a puzzling build error
+
+1556042527
+ysgard
+
+
+1556042570
+ysgard
+error: expected optional type, found '[*c].cimport:1:11.struct_SDL_RWops'
+
+1556042570
+ysgard
+const rw = c.SDL_RWFromConstMem(
+
+1556042590
+ysgard
+Not sure where the optional type is coming from
+
+1556042652
+ysgard
+Checking up the SDL definition of the C function, it appears to take a const void* and int as args:
+
+1556042662
+ysgard
+so the zig code seems sound
+
+1556042896
+emekankurumeh[m]
+i couldn't get the code in the repo to work so i had to remove all the optional pointers then it would compile
+
+1556042915
+gamester
+ysgard: If I were to guess, when the code was written cimport translated the C header file to make SDL_RWFromConstMem return an optional pointer, but after C pointer types were added ([*c]) cimport now makes SDL_RWFromConstMem return a c pointer. The "orelse" code expects an optional type, but that does not currently work with c pointers:
+
+1556042954
+gamester
+So instead of orelse, check if SDL_RWFromConstMem returns 0
+
+1556042956
+ysgard
+Ah, I see - so between 0.3 and 0.4 there was a change in how C headers get imported
+
+1556043009
+ysgard
+gamester: Thank you!
+
+1556043016
+emekankurumeh[m]
+though that's going to change soon
+
+1556043064
+ysgard
+I'm very new to Zig - is there a way to see how Zig interprets a C header file?
+
+1556043067
+TheLemonMan
+hmm, is there a way to declare a struct and zero-fill it?
+
+1556043174
+daurnimator
+ysgard: zig translate-c
+
+1556043190
+ysgard
+daurnimator: Thanks you :)
+
+1556043298
+ysgard
+TheLemonMan:  Maybe `std.mem.set(u8, &struct_var, 0);`
+
+1556043312
+ysgard
+Though I'm not sure how mem.set knows the size of the memory to set
+
+1556043406
+tgschultz
+mem.set expects a slice: std.mem.set(u8, std.mem.asBytes(&thing), 0);
+
+1556043419
+emekankurumeh[m]
+you can pass --verbose-cimport to zig
+
+1556043496
+gamester
+ysgard: cimport leaves a file somewhere in zig-cache called cimport.zig
+
+1556043499
+tgschultz
+there's also mem.secureZero(T, []T);
+
+1556043584
+ysgard
+Thanks again gamester and emekankurumeh!
+
+1556043930
+TheLemonMan
+hmm, is any of you using osx?
+
+1556043977
+mikdusan
+yup
+
+1556044073
+TheLemonMan
+cool, I'd love an hand in understanding why #2318 fails only on osx with an obscure error message
+
+1556045102
+mikdusan
+running zig build test; or i could run the individual test but not sure how to exactly duplicate `macosx-x86_64-Debug-bare` for the failing test
+
+1556045187
+mikdusan
+if i just run the test native, it passes: `zig --override-std-dir . test event.zig`
+
+1556045381
+TheLemonMan
+I guess that's it and the test's not crashing, nice
+
+1556045668
+mikdusan
+TheLemonMan:
+
+1556046669
+TheLemonMan
+meh, stupid heisenbugs
+

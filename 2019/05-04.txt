@@ -1,0 +1,512 @@
+1556928373
+tgschultz
+I heard you like PackedIntSlices, so I gave you the ability to slice PackedIntSlices, then I gave you the ability to cast PackedIntSlices to PackedIntSlices of different bit widths. I have no idea if that'll ever be useful.
+
+1556929832
+tgschultz
+local CI is running, will make a PR if/when it completes.
+
+1556930276
+tgschultz
+are there any big endian systems in our CI? I ask because there's one half of one test I couldn't verify was correct, though I'm fairly confident it is.
+
+1556930475
+scientes
+I'm getting a ppc64 system up and running right now
+
+1556930485
+scientes
+tgschultz, but no, its just amd64 right now
+
+1556930493
+scientes
+and ppc moved to little-endian because of issues
+
+1556930508
+scientes
+just like arm started supporting unalignemed memory access because of issues
+
+1556933765
+daurnimator
+Re: earlier memory trait interface discussion
+
+1556933773
+daurnimator
+I'm starting planning on my general purpose allocator
+
+1556933807
+daurnimator
+I'm finding myself wanting to know what size pages the parent allocator gives....
+
+1556933827
+daurnimator
+If I hard code the assumption that there's only one page size per platform.... that would be wrong
+
+1556934068
+tgschultz
+Why would you wrap another allocator instead of what DirectAllocator does, which is use each system's allocator directly? If you care about specifics like that, it seems like that's what you actually want, otherwise you'll just be making whatever allocator you're wrapping do it instead.
+
+1556934085
+daurnimator
+tgschultz: because I'm trying to code a pooling allocator... that's the whole point
+
+1556934100
+tgschultz
+can you define pooling in this context?
+
+1556934124
+daurnimator
+It's pretty common to want to derive one allocator from another: in a way that you can then alloc
+
+1556934147
+daurnimator
+- common in video games to have a per level allocator, that then has a per frame allocator
+
+1556934166
+daurnimator
+- useful in http servers to have a per-request pool
+
+1556934183
+daurnimator
+it's sort of a step up from an "arena" allocator; that can have individual allocations freed.
+
+1556934233
+tgschultz
+ok, but by wrapping another allocator you're really saying "I don't want to know the details", that's kinda the definition of abstraction.
+
+1556934258
+daurnimator
+tgschultz: not exactly
+
+1556934313
+daurnimator
+tgschultz: it would work whether the parent allocator has feature X or not; for some traits, it just gets more expensive/requires extra processing. For other traits, it's a safety feature you miss out on.
+
+1556934349
+tgschultz
+I think what I'd do, is have whoever is using the allocator just tell it what the parent allocator's page size is. If they want to use huge pages they can pass an allocator that uses huge pages and tell your allocator that it uses X sized pages.
+
+1556934365
+daurnimator
+how would a user even know?
+
+1556934390
+tgschultz
+they're the one passing the parent allocator, presumably they know what it does
+
+1556934410
+daurnimator
+and what if the directallocator e.g. used 4k pages for small allocations; 2MB for larger allocations; and 1GB for certain other ones?
+
+1556934467
+daurnimator
+for most allocators, it's an implementation detail what the page size is
+
+1556934514
+tgschultz
+right, so if you care about that then you need to bypass the abstraction
+
+1556934544
+daurnimator
+>.<
+
+1556934568
+tgschultz
+Let me ask you this: if I were to tell your allocator the parent uses 2MB pages, what do you do with that information?
+
+1556934634
+daurnimator
+tgschultz: then I know that trying to mprotect() a guard page after an 16K allocation won't work
+
+1556934662
+tgschultz
+ok, but if you're calling mprotect you've already bypassed the abstraction
+
+1556934684
+daurnimator
+==> if I knew you did 4K pages, then for a 16K allocation, I might ask for 16+2*4=24K, and mprotect a guard page on either side.
+
+1556934695
+daurnimator
+tgschultz: why/how is that passing the abstraction?
+
+1556934711
+tgschultz
+because that is literally abstracted away by DirectAllocator!
+
+1556934736
+daurnimator
+and I'm saying it shouldn't be! ==> page size should be a part of the Allocator interface!
+
+1556934920
+tgschultz
+I disagree, because the whole point of DirectAllocator is to abstract away implementation details like this. Windows doesn't have mprotect, you'll have to call VirtualProtect instead, so you're already switching on OS. Why not just use VirtualAlloc/mmap directly instead of hiding the implementation details behind DirectAllocator and then trying to recover them?
+
+1556934960
+daurnimator
+because then it wouldn't be a stacking allocator
+
+1556935058
+tgschultz
+Alright, I'm going to pass you FixedBufferAllocator. Now you need to know the page size, and that mprotect doesn't exist for it, and possibly that it also won't actually free.
+
+1556935059
+tgschultz
+I tihnk we're just going to have to agree to disagree on the right way to do this.
+
+1556935069
+daurnimator
+why wouldn't mprotect exist for it??
+
+1556935078
+daurnimator
+mprotect/VirtualProtect exist at the OS level
+
+1556935111
+tgschultz
+what if it is less than a page in size?
+
+1556935132
+tgschultz
+or only occupies part of a page at the beginning or end?
+
+1556935146
+tgschultz
+now you're mprotecting data that doesn't belong to the allocator.
+
+1556935163
+daurnimator
+huh?
+
+1556935203
+daurnimator
+the stacking allocator allocates a page on either size. if the allocation it is fulfilling isn't page sized, then the extra space is padded with undefined
+
+1556935217
+daurnimator
+the idea is to stop people from e.g. accidently running off the end of an array
+
+1556935287
+tgschultz
+unless I'm mistaken, mprotect has page size granularity. If I pass you a FixedBufferAllocator wrapped around an arbitrary amount of bytes on the stack, there will be parts of its page that don't belong to it. If you're saying "you must pass at least 3 pages of memory, aligned on a page boundary" then again I have to ask what the point of allowing stacking on top of arbitrary allocators is.
+
+1556935297
+daurnimator
+`std.mem.len(someptr)` ==> oops theres no null pointer ==> keeps going over undefined, potentially triggering valgrind immediately, but then eventually hits a guard page and the process gets terminated
+
+1556935328
+daurnimator
+s/null pointer/null character/
+
+1556935410
+tgschultz
+Like I said, I think we have to agree to disagree on this one
+
+1556935452
+daurnimator
+on a different allocator topic
+
+1556935468
+daurnimator
+I had the realisation that the Allocator interface is missing an important operation:
+
+1556935476
+daurnimator
+reallocInPlace
+
+1556935512
+daurnimator
+which is: try and grow the current allocation; but don't bother if you can't.
+
+1556935550
+daurnimator
+andrewrk: ^
+
+1556936947
+daurnimator
+our existing linkedlist is more of a classic tail queue
+
+1556936980
+daurnimator
+IIRC, "list": can be operated on without the "head". "queue" operations are on the head.
+
+1556937546
+emekankurumeh[m]
+with the coroutine rewrite the type erase from promises will no longer be a thing, correct?
+
+1556937596
+emekankurumeh[m]
+so how would one abstract over coroutines, for example, for a task scheduler?
+
+1556938941
+daurnimator
+emekankurumeh[m]: maybe there's something in here for you?
+
+1556942672
+daurnimator
+what is child_process's .llnode element for? doesn't seem to be accessed anywhere
+
+1556946328
+emekankurumeh[m]
+zig is occasionally freezing up on me
+
+1556946328
+emekankurumeh[m]
+the process just stops and task manger reports no cpu usage
+
+1556946425
+daurnimator
+emekankurumeh[m]: what does strace say?
+
+1556947271
+emekankurumeh[m]
+
+
+1556947718
+emekankurumeh[m]
+occasionally strace won't print anything either
+
+1556948124
+daurnimator
+follow forks?
+
+1556948135
+emekankurumeh[m]
+i'm on windows
+
+1556948139
+daurnimator
+oh
+
+1556948155
+daurnimator
+I'm amazed strace even exists on windows :P
+
+1556948188
+daurnimator
+on windows I think you need to use process explorer? or possibly windbg
+
+1556948194
+daurnimator
+it's been a while since I've even tries
+
+1556948196
+daurnimator
+*tried
+
+1556949122
+emekankurumeh[m]
+the bug disappears when i try to use gdb :/
+
+1556949341
+emekankurumeh[m]
+unrelated. but is this code doing what i think it is?
+
+1556953166
+emekankurumeh[m]
+edit: can anyone explain to me why ContinuationStealing1 is so much faster than all the rest?
+
+1556953458
+emekankurumeh[m]
+whoops, nevermind it seems doing it in a single thread is much faster than all the rest
+
+1556953536
+emekankurumeh[m]
+but still, why does ContinuationStealing1 run with only 2 threads even though i spawn 4 extras ones?
+
+1556954760
+daurnimator
+how do I get the exact size of something?
+
+1556954845
+daurnimator
+(not the amount of space it takes up in an array: which is what @sizeOf returns; but the actual number of bytes used to store a single instance)
+
+1556955790
+daurnimator
+also, how do you initialise an array of pointers to 0?
+
+1556955827
+daurnimator
+`*MyType{null} ** len` fails with error: type '*MyType' does not support array initialization
+
+1556964298
+tane
+howdy
+
+1556964316
+tane
+whoever put work into zig, it's awesome, thanks :)
+
+1556965405
+daurnimator
+tane: andrewrk can take credit for most of it
+
+1556966475
+rivten
+hello everybody :) quick question : yesterday I wrote some code that loads a dynamic library. By using the dynamic_library.zig std, I was able to dynamically load code on windows ! But the same code on my linux machine fails... From what I could trace, linux.mmap returns MAP_FAILED. Should I file a github issue or something ? i guess the mmap function should at least check for fail or not
+
+1556989511
+rivten
+hello again :) so after some time investigating about loading code dynamically on linux (which worked fine on win32), I discovered that indeed the load_dynamic_library test is disable on linux because it doesn't work (I'll investigate if I'm brave enough). In the meantime, since I'd like to advance on my project, I thought about just calling dlopen and dlsym on Linux. Is this possible to call them right now in zig even though there is
+
+1556989512
+rivten
+g/zig/issues/2294 ? Or should I need to explicitely @cImport the linux header file and link with something on linux if I'd like to call these functions ? Thanks a lot :)
+
+1556990722
+dembones
+I've been busy for the past month, so I'm catching up on commits, and am seeing Ben Noordhuis contributing. He's one of the libuv maintainers. I'm curious if that means there's a port of libuv to Zig in the works. Anyone know?
+
+1556990930
+dembones
+btw, all y'all contributing, wow, that's a ton of commits!
+
+1556993882
+andrewrk
+rivten, yes, you can link libc and use dlopen/dlsym
+
+1556993918
+andrewrk
+that goes for just about anything in libc
+
+1556993961
+rivten
+@andrewrk yep that's why i'm trying right :) recreating the LinuxDynLib example with dlopen is a fairly good exercice in Zig :p
+
+1556993978
+rivten
+thanks for the help !
+
+1556994184
+andrewrk
+no problem
+
+1556994269
+dembones
+I finally read 0.3.0 release notes on concurrency, and it dawns on me that functionality provided by libuv is not needed. I was asking mainly because I really like the async I/O model that libuv facilitates; and it's dawning on me that this should be possible natively in zig, but I will need to play w it to understand.
+
+1556994586
+andrewrk
+dembones, big focus of this release cycle is re-doing how coroutines work
+
+1556994598
+andrewrk
+it's recommended to avoid that problem domain for another ~5 months
+
+1556994644
+andrewrk
+but yes, once that work is complete, event-based I/O will be part of the std lib without anything like libuv needed
+
+1556994708
+dembones_
+ok. that is nice to know
+
+1556994819
+andrewrk
+you mentioned 0.3.0 release notes... you might want to now read the 0.4.0 release notes :)
+
+1556995028
+dembones
+LOL, yep. I did when they came out, but prob absorbed only a fraction
+
+1556995082
+rivten
+also, is there a way to see the @cImport files so see the Zig types that are expected when using the functions for example ?
+
+1556995120
+andrewrk
+rivten, --verbose-cimport
+
+1556995163
+rivten
+nice ! did not know that. Thanks a lot
+
+1556995173
+andrewrk
+no problem
+
+1556995194
+andrewrk
+documentation is incomplete, so part of the point of this chat room is to make up for the difference
+
+1556995213
+andrewrk
+you'll find nobody saying "RTFM" in here :)
+
+1556995255
+dembones
+indeed, I've appreciated the kind treatment of n00bs first hand
+
+1556995267
+rivten
+okok thanks :) I'm pretty new to zig, I have been able to figure out a few things on my own (compiler error were pretty great though), but now that I'm getting into weird territory (loading .so files and all that) I'm lost :p
+
+1556995468
+dembones
+rivten, how new are you to calling dlopen in C?
+
+1556995583
+rivten
+not full expert, I've seen code doing that and understands it. I was able to also reload code and switch DLL at runtime on windows with Zig. But that's mostly it ^^
+
+1556995979
+rivten
+finally got it working !!! feels so great ahah. Thanks everyone :)
+
+1556996049
+dembones
+nice!
+
+1556996094
+dembones
+I was in the process of porting
+
+1557000152
+rivten
+well dembones, I can give you the sample code I ended up with for the dlopen if you're interested :) I load a library that output sound and renders to a buffer, and I can modify that code, recompile it to a dll and have it change at runtime. All with Zig
+
+1557003051
+emekankurumeh[m]
+
+
+1557005604
+squeek502
+is there a way to print the name of the function that a function pointer points to?
+
+1557012975
+andrewrk
+squeek502, yes if you're willing to use debug info
+
+1557012985
+andrewrk
+it would be a bit of a hack
+
+1557012989
+andrewrk
+what are you trying to do?
+
+1557013046
+squeek502
+not a big deal, was trying to write a benchmark function that takes a function pointer and then prints the results along with the name of the function
+
+1557013392
+dembones
+There's a few ways to get at the symbol table in the ELF. When I link to glibc, I use backtrace/backtrace_symbols.
+
+1557013451
+dembones
+There's probably a way to do it on PE (windows) executables too, but I wouldn't know.
+
+1557013488
+squeek502
+yeah if it takes that much effort then its not worth it, just writing a temporary benchmarking program
+
+1557013639
+andrewrk
+there's some profiling integrations with llvm that I haven't looked into yet
+
+1557013693
+andrewrk
+I believe this would make zig programs emit compatible output as the -fprofile-* flags of clang
+

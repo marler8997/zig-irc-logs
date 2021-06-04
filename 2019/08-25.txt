@@ -1,0 +1,1468 @@
+1566720872
+bgiannan
+Here's 2 attempt at OOP-like patterns:
+
+1566720884
+bgiannan
+and
+
+1566720910
+bgiannan
+first is with tagged union, and second with packed structs
+
+1566720916
+daurnimator
+tgschultz: ^ thoughts?
+
+1566720919
+bgiannan
+is there an easier way to do this?
+
+1566725372
+daurnimator
+bgiannan: there's usingnamespace
+
+1566725412
+daurnimator
+bgiannan: have your .init take a slice and mem.copy it into the unit name
+
+1566728961
+daurnimator
+Sahnvour: see also #2773
+
+1566729638
+Sahnvour
+daurnimator: thanks
+
+1566742474
+andrewrk
+Sahnvour, the libc zig provides for windows is fully operational for: i386-windows-gnu, x86_64-windows-gnu, aarch64-windows-gnu, arm-windows-gnu
+
+1566742526
+daurnimator
+andrewrk: you skipped doing a stream this last week?
+
+1566742526
+andrewrk
+the build artifacts produced with this ABI are binary-compatible with the MSVC ABI
+
+1566742572
+andrewrk
+that's right. need to finish up #3115 and catch up on bugs
+
+1566742896
+daurnimator
+andrewrk: with 3115; can struct fields be bit aligned?
+
+1566742919
+daurnimator
+andrewrk: and also, what is interaction between packed struct, bit fields and child struct alignment?
+
+1566743002
+andrewrk
+daurnimator, not yet, but it's a prerequisite to doing that. I don't understand the second question
+
+1566743109
+daurnimator
+andrewrk: e.g. I have a packed struct with a child field with alignment 16: `A = packed struct { x: align(16) u64 }`. Now I put it in another one: `B = packed struct { y: u4, a: A }`
+
+1566743143
+daurnimator
+I guess that would be an error of "trying to put struct with alignment A inside of packed struct with alignment 1:4"?
+
+1566743181
+daurnimator
+better wording: "trying to put struct A with alignment 16 inside of packed struct at alignment 1:4"
+
+1566743286
+andrewrk
+it will be allowed to do that, and the packed struct would gain the alignment 16
+
+1566743331
+andrewrk
+packed structs are going to become more powerful and useful
+
+1566743336
+daurnimator
+andrewrk: but wouldn't the packed struct need to be placed at 4 bits
+
+1566743430
+andrewrk
+@sizeOf(B) would be 32
+
+1566743443
+andrewrk
+there would be 15 bytes of padding after y
+
+1566743455
+daurnimator
+its a packed struct; there shouldn't be any padding
+
+1566743580
+andrewrk
+oh that's right. it means to ignore the alignment requirements. but @sizeOf(A) would be 16. so @sizeOf(B) would be 17
+
+1566743648
+daurnimator
+andrewrk: sounds dangerous: it should error instead of ignoring IMO...
+
+1566743690
+andrewrk
+actually, it can ignore the padding after the last field. so it would be 9 bytes. this is consistent with integers in packed structs
+
+1566743715
+andrewrk
+there's no danger, the alignment as part of pointer types makes everything safe
+
+1566743813
+daurnimator
+andrewrk: howso? e.g. imagine I define an impossible struct: when does it error? `C = packed struct { x: align(16) u8 }` `D = packed struct { c1: C, c2: C }`
+
+1566745432
+andrewrk
+daurnimator, non-explicit field alignment in the second packed struct is ignored. so you end up with c1 and c2 both 1 byte, each 1-byte aligned
+
+1566745470
+andrewrk
+and if you take the pointer to c1, you get `*align(1) C` which the compiler knows is under-aligned
+
+1566745593
+daurnimator
+andrewrk: what if I try and just instantiate a D on the stack? ignoring the alignment requirements of c2 seems dangerous...
+
+1566745781
+andrewrk
+it works fine. try to come up with an example that is problematic and you will be thwarted by the alignment as part of the pointer property
+
+1566745814
+andrewrk
+this is the same thing as integers in status quo packed structs
+
+1566745950
+Tetralux
+Just so I'm clear, does that mean that `packed struct { x: align(16) i32; }` and then `.x` gives you `align(X) i32` instead of `align(16) i32` ?
+
+1566746019
+andrewrk
+I've yet to hook this up in #3115 but explicitly specifying an alignment in a packed struct will be respected; ABI alignment of the type will be ignored
+
+1566746054
+Tetralux
+Ah okay - I thought about this a bit when implementing the parsing/rendering and that does seem like what you want.
+
+1566746094
+Tetralux
+If multiple fields are aligned in a non-packed struct, then padding is inserted?
+
+1566746099
+andrewrk
+you will be able to match an extern struct with a packed struct by doing `x: X align(@alignOf(X))` for every field
+
+1566746143
+Tetralux
+What happens if the struct is non-packed?
+
+1566746162
+daurnimator
+huh... `zig run --cache off --verbose-ir an_empty_main_function.zig` fails for me on master
+
+1566746175
+andrewrk
+non-packed, non-extern structs have no defined in-memory layout. the fields can be in any order and there may be extra. however it is guaranteed that pointers to fields will be ABI aligned
+
+1566746198
+daurnimator
+known issue with --verbose-ir? ^^
+
+1566746208
+Tetralux
+Does that mean that pointers to fields in the struct will be aligned as per the field declaration?
+
+1566746231
+andrewrk
+that's right
+
+1566746255
+andrewrk
+daurnimator, sounds like an easy fix, probably trying to print something that can be null
+
+1566746294
+Tetralux
+Okay, and in packed structs, the only difference is that default alignment is 1, so any field you mark aligned, will get a pointer that is aligned
+
+1566746319
+Tetralux
+.. just as it does in non-packed?
+
+1566746367
+Tetralux
+I feel like there should be a doc entry about this if there isn't already. xD
+
+1566746496
+daurnimator
+andrewrk: seems to be the assert in render_const_val_ptr failing
+
+1566746555
+daurnimator
+It's getting passed a ZigTypeIdFn instead of a ZigTypeIdPointer
+
+1566746575
+andrewrk
+Tetralux, agreed. years ago this stuff seemed mysterious to me but now it's crystal clear. So, it's a good time to write docs on it
+
+1566746841
+Tetralux
+andrewrk: Sounds good to me :)
+
+1566747046
+daurnimator
+working around that assert I get another one in ir.cpp buf_write_value_bytes hitting the ContainerLayoutAuto branch
+
+1566747091
+daurnimator
+would be great if someone could look at getting --verbose-ir working again though
+
+1566747137
+andrewrk
+I use it constantly, but only on small files, which have an overridden panic function
+
+1566747150
+andrewrk
+otherwise it's too much output
+
+1566747153
+daurnimator
+I tried overriding panic and had the same issues...
+
+1566747196
+andrewrk
+
+
+1566747250
+daurnimator
+andrewrk: that fails with same issue for me
+
+1566747322
+andrewrk
+I'll check it in a bit. all 4 of my zig clones have wip stuff in them
+
+1566747353
+daurnimator
+:P
+
+1566747365
+Tetralux
+I'm rebuilding fresh rn, but I'll check once done just for giggles
+
+1566747393
+daurnimator
+andrewrk: oh. it works with build-obj. build-exe and run fail for me.
+
+1566747437
+andrewrk
+build-exe drags in a lot of the std lib
+
+1566747472
+andrewrk
+--verbose-ir is intended for debugging minimal test cases
+
+1566747724
+daurnimator
+yeah I was trying to debug/figure out #2850..... now I have that working with build-obj. But turns out I can't read LLVM IR :P
+
+1566747778
+andrewrk
+LLVM IR? or zig ir?
+
+1566747827
+andrewrk
+zig ir is admittedly arcane
+
+1566747830
+daurnimator
+oh, zig ir
+
+1566747869
+andrewrk
+at least with llvm ir you have
+
+1566747880
+andrewrk
+zig ir is defined by the functions ir_analyze_instruction_foo
+
+1566748188
+daurnimator
+okay fun.... maybe this is an LLVM bug rather than a zig bug? I see a `%17 = zext i10 %16 to i64, !dbg !1420` in there.... my working theory for the bug was that that sort of zext was missing in there
+
+1566748310
+daurnimator
+==> the result of a zext on an i10 is ending up as 65535. which is above the max of 1023 you would expect
+
+1566748412
+andrewrk
+is this an optimized build or no?
+
+1566748425
+daurnimator
+optimized build of.... ?
+
+1566748438
+daurnimator
+(the test case? zig? llvm?)
+
+1566748450
+andrewrk
+do you observe the problematic runtime behavior without --release-fast?
+
+1566748473
+daurnimator
+Yes. I have not used --release-fast at all
+
+1566748837
+Tetralux
+Hmmm. When building Zig, the "unable to find lib directory" error; where does the lib directory come from?
+
+1566749157
+bgiannan
+daurnimator, what does usingnamespace do? the only mention of it is in the grammar section
+
+1566749202
+daurnimator
+bgiannan: it's undocumented as we don't really want people using it.... what is does is essentially add another struct to the current struct
+
+1566749240
+Tetralux
+Behaviorally, it pulls symbols into the current namespace, from the given namespace.
+
+1566749320
+andrewrk
+Tetralux, it's relative to the zig executable
+
+1566749385
+Tetralux
+Hmmm. It seems like the build step doesn't copy zig.exe to bin\zig
+
+1566749444
+andrewrk
+the build instructions say to do `make install`
+
+1566749477
+Tetralux
+On Windows? xD
+
+1566749486
+andrewrk
+or on windows, `msbuild -p:Configuration=Release INSTALL.proj`
+
+1566749501
+andrewrk
+
+
+1566749503
+Tetralux
+Oh - the Wiki says INSTALL.vcxproj
+
+1566749654
+Tetralux
+But yeah - followed that wiki page.
+
+1566749666
+Tetralux
+Doesn't appear to produce lib or copy to bin.
+
+1566749680
+Sahnvour
+yeah about that, if the purpose is only to build zig, I'd advise you generate a ninja project, not msbuild Tetralux
+
+1566749709
+Tetralux
+I tried that before. Didn't seem to work.
+
+1566749742
+Tetralux
+I would like to keep my options open as to what I can do, and I'm not sure what ninja makes it hard to do
+
+1566749750
+Tetralux
+But I'd rather avoid msbuild if I can.
+
+1566749767
+Sahnvour
+`ninja install` is all it takes once cmake generated the build files
+
+1566749779
+Tetralux
+Let me try ninja again
+
+1566749920
+Tetralux
+"Generator Ninja does not support platform specification x64"
+
+1566750474
+Sahnvour
+iirc ninja always builds x64 on windows
+
+1566750481
+bgiannan
+daurnimator, "we don't really want people using it": so not really safe for me if it's removed or transformed in th efuture?
+
+1566750499
+Sahnvour
+Tetralux: so it's only the flag that is unsupported, otherwise it's fine
+
+1566750511
+Tetralux
+Tried that already
+
+1566750519
+Tetralux
+Removed all reference of x64 from the cmake invocation
+
+1566750521
+Tetralux
+Still no
+
+1566750553
+daurnimator
+bgiannan: we tried to remove it but it was just too necessary for certain things. If it ever did get removed I think would be merged with whatever the solution to
+
+1566750574
+FireFox317
+Is a variable declared as a top level decleration suppose to be comptime known or not?
+
+1566750588
+Tetralux
+I don't think so?
+
+1566750603
+Tetralux
+It's a global.
+
+1566750611
+Tetralux
+Unless I'm totally misunderstanding you somehow xD
+
+1566750632
+FireFox317
+I.e. `var foo: SomeStruct = undefined` as a top level decleration
+
+1566750648
+FireFox317
+Yes that is what I mean, it should not be comptime known right?
+
+1566750659
+Tetralux
+No.
+
+1566750680
+Tetralux
+Sahnvour: Also, I got further. I forgot to wipe the content of the build dir first xD
+
+1566750688
+Tetralux
+But it still then emits loads of C++ errors.
+
+1566750771
+FireFox317
+Okay, because i'm working on a bug, and if i change the declaration to `var foo: *SomeStruct` it thinks its not comptime, which is correct. But `var foo: SomeStruct` isn't comptime known according to zig master
+
+1566750807
+Tetralux
+Maybe you have to explicitly mark that as comptime.
+
+1566750818
+daurnimator
+bgiannan: see
+
+1566750828
+Tetralux
+Sahnvour: I think it's trying to use my mingw64 c++ compiler rather than clang or something maybe.
+
+1566750837
+Tetralux
+But I'm not sure how I'd override that.
+
+1566750866
+andrewrk
+FireFox317, the ConstExprVal sees it as ConstValSpecialStatic, but a pointer to it will have ConstPtrMutRuntimeKnown
+
+1566750905
+andrewrk
+the pointer itself is comptime known, although the address itself is not known until link time, but the memory it points to is runtime known
+
+1566751353
+Tetralux
+Sahnvour: Okay - I figured it out. -DCMAKE_CXX_COMPILER=full/path/to/clang/using/forward/slashes -DCMAKE_C_COMPILER=full/path/to/clang/using/forward/slashes
+
+1566751365
+Tetralux
+I'm amused however that use of backslashes is fine with msbuild
+
+1566751369
+Tetralux
+and make
+
+1566751512
+FireFox317
+thanks andrewrk
+
+1566751536
+mikdusan
+daurnimator: i think you're right - llvm zext on sub 8-bit sizes is suspect
+
+1566751667
+daurnimator
+mikdusan: oh? where do you even look to find the implementation of that sort of thing?
+
+1566751694
+Tetralux
+Sahnvour: Also debug build still fails for some reason. xD
+
+1566751915
+mikdusan
+daurnimator: i suppose llvm upstream. I noticed that zext is operating on i10 as if it were i16 so whatever memory is there, in your reduction it's 0xffff, that's what it ops on. instead of 0x3ff
+
+1566751955
+daurnimator
+mikdusan: I don't know my way around LLVM at all. greping around I found
+
+1566752082
+daurnimator
+mikdusan: otherwise I guess it falls to the target specific code? i.e.
+
+1566752445
+andrewrk
+a small llvm ir test case that repros the problem would go a long way toward getting this fixed
+
+1566752450
+mikdusan
+another hint: x86_64 ends up as `movzwl` Move Zero-Extended Word to Long, without regard to our i10 size
+
+1566752474
+mikdusan
+andrew:
+
+1566752487
+andrewrk
+ah thanks. I hadn't checked the issue yet
+
+1566752507
+andrewrk
+i10 is represented by llvm as an i16
+
+1566752531
+mikdusan
+well that explains it
+
+1566752565
+andrewrk
+so at the zext instruction, the unused bits of the 2 bytes are assumed to be zeroes
+
+1566752599
+daurnimator
+why are they assumed to be zeroes?
+
+1566752601
+mikdusan
+assumed by who? llvm or zig?
+
+1566752654
+andrewrk
+if you ask llvm what the "store size" of i10 is, the answer is 2
+
+1566752673
+mikdusan
+i don't think llvm assumes it's zero. it just takes whatever value happens to be there and performs zext i16
+
+1566752731
+andrewrk
+I agree
+
+1566752750
+andrewrk
+but I believe the result is undefined if the unused bits are not zero
+
+1566752758
+mikdusan
+does this mean zig will have to explicitly mask?
+
+1566752789
+andrewrk
+this code does a pointer reinterpretation and then does not correctly set the bits of the reinterpreted memory
+
+1566752812
+andrewrk
+that means the value of the i10 is undefined
+
+1566752833
+FireFox317
+andrewrk: I found a fix for #3046, however maybe it is not the correct way to solve the issue. Do you want me to make a PR?
+
+1566752846
+andrewrk
+FireFox317, sure, that will at least help, and then I can see if I can try to improve it
+
+1566752853
+andrewrk
+thanks for looking into it
+
+1566752911
+andrewrk
+setting all bits of an integer to 1 produces a well-defined value only when the integer is byte-aligned
+
+1566752966
+andrewrk
+zig would be allowed to, for example, use the extra bit from a u15 to indicate that the integer is undefined
+
+1566753066
+daurnimator
+interesting. if I change to a `packed struct { x: u10, y: u6 }` then the LLVM IR contains a truncation: `%9 = trunc i16 %8 to i10`  `%10 = zext i10 %9 to i64`
+
+1566753069
+mikdusan
+assuming re-interpration was corrected to only change i10 bits, then `= undefined` or random stack value of remaining 6 bits is still there for zext to use
+
+1566753233
+daurnimator
+workaround? `packed struct { x: u10, y: u0 }` adds in a trunc....
+
+1566753240
+daurnimator
+/bed
+
+1566753265
+andrewrk
+good night daurnimator
+
+1566753287
+mikdusan
+andrewrk: ok if I add some of your comments from IRC to the issue?
+
+1566753301
+andrewrk
+mikdusan, yes
+
+1566753322
+andrewrk
+I think I could probably try to make it a bit clearer though
+
+1566753369
+andrewrk
+ultimately, the thing that is happening here is that u10 has a "bit pattern" that is not being respected by the pointer reinterpretation
+
+1566754497
+curtisf
+what would be the best way to test that a simple allocator is correct? I wanted one to replace the fixed buffer allocator that can actually reclaim memory, but not confident I haven't made many mistakes. The allocator interface is a bit complicated, so hoping there's something I could reuse
+
+1566754645
+andrewrk
+curtisf, there are some tests in std/heap.zig that work on the allocator interface itself
+
+1566754680
+andrewrk
+it would be neat if someone made a zig project that was a comprehensive allocator test suite and benchmark suite. maybe there is an existing C codebase that could be adapted
+
+1566754712
+andrewrk
+you might also be able to repurpose some of these tests:
+
+1566754726
+andrewrk
+and
+
+1566755743
+mikdusan
+basic question: are non-power-2 integer type POINTERS actually useful? they seem to be incompatible with hardware and as soon as we use them it's a ub-fest
+
+1566755795
+mikdusan
+(non 8-bit multiple)
+
+1566757307
+FireFox317
+andrewrk: I added an extra check (ptr_val->data.x_ptr.mut != ConstPtrMutRuntimeVar) that was missing in ir_analyze_struct_field_ptr. I saw the same pattern in for example ir_analyze_unwrap_err_code. I'm pretty sure that solves the issue, but it causes a segfault when building the compiler
+
+1566757796
+FireFox317
+I'm gonna make a PR of it anyways, so that you can later have a look at it
+
+1566757893
+Sahnvour
+Tetralux: I thought you used msvc, did you succeed to do what you wanted in the end ?
+
+1566757976
+Tetralux
+Sahnvour: It did build in the end yeah. In order to make it work, I had to use clang since using MSVC means having to run vcvars.bat with the arch, which was x64 - which is what was causing Ninja to try to do x64 - which Cmake refused to allow.
+
+1566757999
+Tetralux
+It worked, and runs fine so far though.
+
+1566758010
+Tetralux
+I had to use clang-cl.
+
+1566758021
+Sahnvour
+I don't understand your prblem with x64
+
+1566758036
+Tetralux
+I don't either.
+
+1566758062
+Tetralux
+Cmake just told me that Ninja didn't support that.
+
+1566758087
+Tetralux
+When I removed the reference to x64, it worked - I just had to use abspaths to clang-cl.
+
+1566758109
+Tetralux
+(.. and hence specify CMAKE_CXX_COMPILER and CMAKE_C_COMPILER.
+
+1566758115
+Tetralux
+But it worked in the end.
+
+1566758829
+Tetralux
+curtisf: That reminds me that I actually toyed with a RingAllocator a couple of weeks ago.
+
+1566758878
+Sahnvour
+yes that's what I was saying: ninja only does x64, so cmake doesn't support the x64 flag when generating ninja, it is implied
+
+1566758931
+Tetralux
+Sahnvour: Without pointing it clang explicitly, it could not compile the LLVM stuff because it was trying to use my mingw64 installation.
+
+1566759911
+Sahnvour
+makes sense
+
+1566761893
+Tetralux
+What's the story with logging in Zig?
+
+1566763564
+fengb
+Would a network socket write have the same interface as the current file write?
+
+1566764146
+mikdusan
+current interface doesn't indicate nbytes actually written
+
+1566764164
+mikdusan
+*file interface
+
+1566764380
+fengb
+I'll code to current file interface and fix it later >_>
+
+1566771900
+andrewrk
+mikdusan, it always writes all of them
+
+1566772000
+andrewrk
+I do think that std.os.write should change to return how many bytes actually written
+
+1566772016
+Tetralux
+I thought it wasn't a gaurentee?
+
+1566772069
+andrewrk
+Tetralux, re: logging:
+
+1566772133
+fengb
+I’m fiddling with encoding / serialization and it seems like the async can be hidden behind fs.write
+
+1566772215
+andrewrk
+yep. I'm in the middle of that same fiddling (except with fs.read) and I'm guessing you're going to run into the same issues that I have (which I'm working on solving)
+
+1566772311
+fengb
+Ah okay. I had some raw async generators but ended up migrating towards fs magic
+
+1566772366
+fengb
+So this seems like a natural abstraction point
+
+1566772367
+andrewrk
+rest assured I don't consider the async/await proof of concept complete yet. I'm working up to a meaningful demo
+
+1566772390
+andrewrk
+as a side effect, we're going to get safe recursion
+
+1566772407
+andrewrk
+it's time
+
+1566772411
+fengb
+Sure, I think semantically this makes a lot of sense. It’s also feels a bit odd that we get async for “free”
+
+1566772433
+andrewrk
+can you elaborate?
+
+1566772438
+fengb
+I mean, it’s great that it happens. It’s also feels foreign
+
+1566772461
+andrewrk
+you mean that you can use `async` with any function?
+
+1566772477
+fengb
+The fact that I’m codifying to fs interfaces synchronously means that having async network will magically get me async
+
+1566772506
+andrewrk
+ah yes. I think it will work though! the only downside will be around function pointers. I'll push some code to a branch and show you
+
+1566772513
+fengb
+Yeah. It’s great, but it’s also foreign compared to all the other envs I worked with
+
+1566772546
+fengb
+Where async requires special logic
+
+1566772596
+andrewrk
+fengb,
+
+1566772606
+andrewrk
+have a look at the new InStream
+
+1566772679
+andrewrk
+so the downside here is that function pointers (aka virtual dispatch aka interfaces) have a globally hard coded stack size for when it has to call the function pointer
+
+1566772720
+andrewrk
+...but it is safety checked, and if you ever hit the limit, you can just bump it globally
+
+1566772786
+andrewrk
+and the thing that is actually quite elegant here, is that the stack size applies to both blocking and async. for async it's the function frame; for blocking it's yet to be implemented but function pointers will be annotated with stack size which works a lot like pointer align
+
+1566772818
+andrewrk
+so most code can be agnostic; but the seams are leaky around function pointers
+
+1566772919
+fengb
+Ah I see
+
+1566772949
+fengb
+I’ve actually been using comptime duck typed read/write
+
+1566772993
+andrewrk
+that has the advantage of avoiding the function pointer thing
+
+1566773005
+andrewrk
+as well as issues with error sets
+
+1566773021
+Tetralux
+You mean like `fn f(writer: var) { writer.write(buf); }` ?
+
+1566773029
+mikdusan
+when std.io.is_async -> `try self.read(buf);` is that equiv to `try await async self.read(buf);` ?
+
+1566773041
+andrewrk
+mikdusan, yes
+
+1566773072
+Tetralux
+I still haven't really got my head around how to use async fns properly.
+
+1566773152
+fengb
+Would it be helpful having a couple of []u8 based streams in std? I’ve been building some really dumb ones for testing purposes
+
+1566773255
+fengb
+Fixed buffer and ArrayList
+
+1566773278
+Tetralux
+I'm in two minds about that.
+
+1566773289
+Tetralux
+The positive being able to make a stream from a buffer...
+
+1566773291
+Tetralux
+Which is good.
+
+1566773304
+Tetralux
+But if it's not efficient, I ain't interested.
+
+1566773331
+Tetralux
+I've been thinking about that exact thing with regards to my CBOR encoder.
+
+1566773348
+fengb
+My duck typed version is very efficient. Not sure if it’s behind a function pointer though
+
+1566773384
+Tetralux
+What I kinda want is a Writer interface which works on anything that has a .write([]u8) and a .writeByte(u8) fn.
+
+1566773399
+Tetralux
+But it has to avoid a fn ptr.
+
+1566773418
+Tetralux
+It must be a static call; inlined if possible.
+
+1566773428
+Tetralux
+#ZeroCostAbstraction.
+
+1566773442
+Tetralux
+I originally just passed an ArrayList to it. xD
+
+1566773456
+Tetralux
+But I want to be able to easily make streaming work.
+
+1566773537
+Tetralux
+Like - I want to write an encoder that works on fixed buffers and streams man xD
+
+1566773547
+andrewrk
+fengb, when I've been saying function pointer, I mean "runtime-known function pointer". So if you're using duck typing, you're probably not using that
+
+1566773578
+fengb
+
+
+1566773583
+fengb
+Yeah I'm not
+
+1566773605
+fengb
+I'm curious if we can generalize duck typing into an interface construct
+
+1566773616
+andrewrk
+I believe there is an open proposal for that
+
+1566773663
+fengb
+Tetralux: here's my progression from top level async generator => async context with recursion => writer "interface"
+
+1566773717
+fengb
+Async disappeared from the stack entirely and pushed directly onto whatever the writer does. It feels really good that this could just work™
+
+1566773824
+mikdusan
+Tetralux: as I understand it the only way to #ZeroCostAbstraction is through comptime functions which then pushes the cost to code-size
+
+1566773824
+Tetralux
+fengb: I'd have to see it to judge it reasonably.
+
+1566773846
+Tetralux
+mikdusan: Both is possible.
+
+1566773857
+mikdusan
+i'd like to see that ;)
+
+1566773914
+Tetralux
+In 99% of programs, code size is less important than speed.
+
+1566773935
+Tetralux
+1MB is okay for a game, for example.
+
+1566774019
+mikdusan
+right, it's still a trade-off nonetheless
+
+1566774020
+fengb
+Codesize might actually be better for comptime style. A lot of the "generic" usecases end up having a usecase of 1 and comptime could compress that better than function pointers
+
+1566774035
+Tetralux
++1.
+
+1566774228
+presiden
++1
+
+1566774316
+fengb
+It’d be super magical if our interface could optimize for either usecase seamlessly.
+
+1566774347
+andrewrk
+I'm holding out for that
+
+1566774366
+Tetralux
+How do you envision it being able to do that?
+
+1566774375
+andrewrk
+I don't want to settle for anything less until it's proven that it's not possible
+
+1566774390
+Tetralux
+Wait
+
+1566774395
+Tetralux
+Just for clarity
+
+1566774431
+Tetralux
+We want "Interfaces that can, with identical Zig code, optimize for speed or code size?"
+
+1566774442
+Tetralux
+Is that what we're talking about here?
+
+1566774449
+andrewrk
+for virtual dispatch or static dispatch
+
+1566774452
+mikdusan
+i think we're talking about runtime vs comptime magic
+
+1566774518
+andrewrk
+interfaces that express intent precisely; such that they work seamlessly at comptime or runtime, and --release-fast or --release-small could do the appropriate codegen
+
+1566774597
+mikdusan
+maybe oversimplified; the way i see it is static dispatch multiplies each call site body codesize, and runtime dispatch multiplies each call site call-time
+
+1566774630
+Tetralux
+Hmmm.
+
+1566774633
+mikdusan
+hooking into --release-fast / --release-small is a splendid idea. and for many other things too i bet.
+
+1566774709
+companion_cube
+I heard swift has an interesting solution to the generics bloat problem
+
+1566774731
+companion_cube
+like a dictionary-passing technique that also carries sizeof() info
+
+1566774797
+Tetralux
+It's worth noting that there is maybe some tricks you could do.
+
+1566774808
+Tetralux
+Much like how CBOR does negative integers.
+
+1566774826
+presiden
+
+
+1566774852
+presiden
+witness table for swift, dict passing for haskell/ocaml
+
+1566774863
+Tetralux
+Positive and negative integers are designed such that a negative number is -1, minus a positive number.
+
+1566774874
+Tetralux
+This means that to get the positive value to encode, from the negative number,
+
+1566774876
+Tetralux
+you can do
+
+1566774890
+Tetralux
+... basically you can use XOR.
+
+1566774934
+Tetralux
+var sign = signof(value); sign ^= value;
+
+1566774949
+Tetralux
+This removes the sign, and computes the appropriate value in either case.
+
+1566774959
+Tetralux
+.. meaning you take the same codepath for both.
+
+1566775000
+Tetralux
+The point being, there may be ways for Zig to also do that kind of thing with interface dispatch.
+
+1566775009
+Tetralux
+Just something to bear in mind.
+
+1566775151
+companion_cube
+also Zig has dependent types, the potential for bloat is big
+
+1566775168
+Tetralux
+Dependant meaning what?
+
+1566775280
+companion_cube
+types depending on values
+
+1566775291
+companion_cube
+(comptime values, that is)
+
+1566775551
+Tetralux
+Can you provide an example of what you actually mean?
+
+1566775602
+fengb
+ArrayList
+
+1566775631
+Tetralux
+If you mean the T in ArrayList(T), then you mean generics xD
+
+1566775690
+shachaf
+I wouldn't call depending on comptime values "dependent types".
+
+1566775704
+shachaf
+(And I don't think a language like Zig should have dependent types.)
+
+1566776029
+companion_cube
+Tetralux: ArrayOfLen(T, 32) could be a thing
+
+1566776044
+companion_cube
+shachaf: how is it not dependent types?
+
+1566776055
+companion_cube
+if you can generate a type based on a comptime value
+
+1566776088
+companion_cube
+(it's useful, you can do stuff like B-trees parametrized over their branching factor, or skiplists, or whatever)
+
+1566776178
+shachaf
+Dependent types are usually types that depend on runtime values.
+
+1566776200
+shachaf
+"compiletime" things are a lot more like type-level things.
+
+1566776217
+Tetralux
+To me, things are generic if they depend on types or values.
+
+1566776229
+Tetralux
+... i.e: be it the '32' or the T.
+
+1566776267
+Tetralux
+Both are generic parameters.
+
+1566776276
+Tetralux
+But that's not the important part
+
+1566776298
+companion_cube
+shachaf: wait, what
+
+1566776334
+companion_cube
+dependent types are just types depending on values, at compile time (at run time it doesn't make much sense)
+
+1566776368
+Tetralux
+'Dependant type' is a type theory thing, isn't it... xD
+
+1566776374
+companion_cube
+yes
+
+1566776385
+companion_cube
+(in my book it's a good thing :p)
+
+1566776399
+Tetralux
+God I hate type theory xD
+
+1566776426
+Tetralux
+"Generic over values" seems less buzzwordy to me.
+
+1566776431
+companion_cube
+why? a lot of modern improvements to languages come from there
+
+1566776432
+shachaf
+With dependent types you can have e.g. index : Array n a -> Fin n -> a, where n is only known at runtime.
+
+1566776436
+Tetralux
+Or rather, "over
+
+1566776441
+companion_cube
+shachaf: then you need a forall
+
+1566776598
+Tetralux
+Going back to the interface thing for a minute, the simple case isn't necessarily too hard; if a fn takes a Writer, the compiler would know they both could be passed to a write([]u8) function and might not even need to do any extra work for that.
+
+1566776690
+Tetralux
+Like, if the call is not inlined, does the caller even need to know how write works?
+
+1566776704
+Tetralux
+If not... just cast *Writer to *T and pass it?
+
+1566776741
+Tetralux
+I have a feel I'm being stupid right now but you get my point xD
+
+1566776805
+mikdusan
+how can
+
+1566776852
+fengb
+I think the goal is the compiler decides the passing style
+
+1566776878
+mikdusan
+oh in the context of "magic" . gotcha
+
+1566776913
+fengb
+Similar to how the compiler decides whether to pass args by value or reference
+
+1566776980
+Tetralux
+I think I'm just being stupid and thinking of static dispatch when I'm trying to visualise a way to minimize code bloat for interfaces.
+
+1566777002
+Tetralux
+It's been like 30C here for the past week and I've been sweating like a madman the entire time.
+
+1566777006
+Tetralux
+It's draining, I'm sorry XD
+
+1566777018
+fengb
+I like the concept but it also sounds really complicated
+
+1566777035
+shachaf
+Eliminating arbitrary indirect jumps seems good for many reasons, including bounding stack space.
+
+1566777048
+Tetralux
+fengb: Not necessarily complicated.
+
+1566777053
+Tetralux
+It depends on a few things.
+
+1566777071
+Tetralux
+But the short version is that, Zig member fns are not in the struct at all, right?
+
+1566777075
+Tetralux
+Structs are just POD.
+
+1566777075
+fengb
+Right now, I just used comptime duck typing because it’s easier to write, but it makes dynamic dispatch a little wonky
+
+1566777096
+Tetralux
+Basically I'd like it to stay that way.
+
+1566777110
+companion_cube
+is zig going to get closer and closer to rust? :p
+
+1566777114
+companion_cube
+(except for the lifetime thing)
+
+1566777132
+Tetralux
+OH GOD YES NEVER MENTION THE LIFETIME THING IN MY PRESENCE AGAIN
+
+1566777167
+mikdusan
+i admit it would be neat; say we have runtime interfaces all spelled out for uber uring I/O; compiler determines hello.exe only uses filesystem random file access and static'ifys the calls.
+
+1566777225
+fengb
+I don’t think this is conceptually complicated
+
+1566777232
+fengb
+... so not like Rust :troll:
+
+1566777242
+mikdusan
+:_:
+
+1566777247
+fengb
+But I have no idea how this could be captured semantically
+
+1566777250
+companion_cube
+how is rust conceptually complicated, on the generics side?
+
+1566777263
+Tetralux
+<<<<><>><<<>>><<<<<<><<><>>
+
+1566777276
+companion_cube
+that's syntax
+
+1566777284
+Tetralux
+Iterator<Chain<Zip<Reverse<T>, InOrder<U>>>>
+
+1566777291
+fengb
+Zig doesn’t even have real genetics. It just managed to use comptime to build it almost seamlessly
+
+1566777326
+companion_cube
+Tetralux: `impl Iterator` ;)
+
+1566777336
+Tetralux
+companion_cube, Yes. Also that.
+
+1566777343
+companion_cube
+comptime is a seriously complicated concept though
+
+1566777353
+Tetralux
+I don't really see why.
+
+1566777369
+Tetralux
+More complicated in power than in concept, perhaps.
+
+1566777375
+companion_cube
+you need a full comptime interpreter, plus mandatory dead code elimination
+
+1566777386
+companion_cube
+it also has very far reaching consequences
+
+1566777396
+Tetralux
+Mandatory dead code elimination?
+
+1566777419
+companion_cube
+for comptime if/for/while
+
+1566777422
+shachaf
+At least you can use the same language for comptime and runtime, instead of using two different languages.
+
+1566777441
+mikdusan
+yeah using a 2nd lang doesn't simplify things imo
+
+1566777441
+companion_cube
+yeah, but it's know to be super tricky
+
+1566777443
+Tetralux
+companion_cube: I still don't see why that needs dead code elim.
+
+1566777449
+shachaf
+comptime if seems much simpler than dead code elimination.
+
+1566777461
+shachaf
+(I mean, given that you have comptime evaluation.)
+
+1566777469
+companion_cube
+well it's a form of dead code elimination, but yeah, it works
+
+1566777533
+companion_cube
+also sounds to me like Zig doesn't yet have an answer to all the problems, in the absence of Drop
+
+1566777547
+shachaf
+You don't need to detect whether code is dead or not -- it's not an optimization, it's just following instructions.
+
+1566777595
+companion_cube
+"just" if you have an symbolic interpreter for untyped code
+
+1566777597
+companion_cube
+not that easy
+

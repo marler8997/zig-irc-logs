@@ -1,0 +1,424 @@
+1568254185
+stratact
+Is it normal for the event.channel.test to hang for several minutes?
+
+1568258225
+mikdusan
+stratact: was able to duplicate
+
+1568258264
+mikdusan
+not sure what's happening. seems to be in a loop on system.kevent()
+
+1568263749
+stratact
+Would be useful to have them upstream, so I can use them for deinitialization lists of thousands of nodes
+
+1568272099
+bgiannan
+a struct can have a field of its own type?
+
+1568272103
+bgiannan
+cant*
+
+1568272600
+shachaf
+Presumably it can have it as a pointer, but not inline?
+
+1568272620
+shachaf
+"depends on itself" is maybe a slightly confusing message.
+
+1568282405
+HelloThere54321
+I am trying to use inline assembly to read the GDT using the sgdt instruction. My current attempt is: table = asm volatile ("sgdt %[tab]" : [tab] "=m" (-> GDT_PTR_struct));
+
+1568282543
+FireFox317
+HelloThere54321: Yes that is possible. Did you have a look at the docs?
+
+1568282658
+HelloThere54321
+i have, but im not sure what the 2nd part of the '[tab] "=m" (-> GDT_PTR_struct)' should ne as the sgdt instruction needs a memory location no a register
+
+1568282720
+samtebbs
+HelloThere54321: What does it compile to?
+
+1568282746
+HelloThere54321
+the example doesn't compile
+
+1568282870
+HelloThere54321
+thats the thing, im not sure Zig supports "=m" option so was wondering if there was another way
+
+1568283459
+FireFox317
+I think that we support the memory option, but your syntax doesn't look right to me. You are missing some colons at the end.
+
+1568283465
+samtebbs
+HelloThere54321: It should support it since it's part of the llvm specs
+
+1568283477
+samtebbs
+I'm getting a segfault when using that above so it must be a bug
+
+1568283609
+FireFox317
+You are using sgdt, which is for storing the gdb and when you want to read the gdt you want to use lgdt.
+
+1568283667
+samtebbs
+FireFox317: lgdt is used for telling the CPU where the gdt is
+
+1568283745
+FireFox317
+Then the inline assembly syntax works like this: asm volatile ("some assembly" : outputs : inputs : clobbers ). If you for example don't use any inputs you can keep them empty, but you still need to put the collons there.
+
+1568283746
+samtebbs
+sgdt copies the previously loaded gdt into the operand
+
+1568283761
+FireFox317
+samtebbs: Ah yes, that is correct my bad
+
+1568283770
+samtebbs
+FireFox317: No problem :)
+
+1568283787
+samtebbs
+I'd personally like the names to be swapped
+
+1568283790
+samtebbs
+That makes more sense
+
+1568284042
+samtebbs
+A workaround for now would be to link with an external assembly routine
+
+1568284374
+FireFox317
+HelloThere54321: This works: asm volatile ("sgdt %[tab]" : : [tab] "m"(x) : "memory"); You need a variable x in which the result will be stored
+
+1568284422
+FireFox317
+I didnt check the generated assembly, but it compiles :)
+
+1568285170
+HelloThere54321
+ill try
+
+1568285829
+Sahnvour
+HelloThere54321: note that inline asm support is still not complete and you may encounter bugs and/or limitations pretty quickly
+
+1568286161
+HelloThere54321
+i have var p = u48(0); asm volatile ("sgdt %[mem]" : : [mem] "m" (p) : "memory" ); Bur p is still 0
+
+1568286239
+FireFox317
+Maybe you want to pass in the address of p: &p
+
+1568286251
+FireFox317
+[mem] "m" (&p)
+
+1568286351
+HelloThere54321
+it gave some kind of result, but not what i was expecting
+
+1568287077
+FireFox317
+With some help of google, this gives the correct result i think: asm volatile ("sgdt %[tab]" : [tab] "=m"(x) : : "memory");
+
+1568287169
+HelloThere54321
+:O
+
+1568287175
+HelloThere54321
+it worked, thank you
+
+1568287194
+HelloThere54321
+is there a good website to learn this inline assembly
+
+1568287236
+FireFox317
+No problem! If you have any more question, feel free to ask
+
+1568288142
+FireFox317
+And actually in this case i think you can remove the "memory" clobber, because the memory is not being changed.
+
+1568288220
+FireFox317
+And then the extra colons can be removed as well XD: `asm volatile ("sgdt %[mem]" : [mem] "=m"(x));`
+
+1568295230
+samtebbs
+Does anyone have much experience with linker scripts? I'd like to add a start and end symbol around each debug info section
+
+1568295271
+samtebbs
+I've tried doing this for each debug info section but the executable ends up having duplicates of each section
+
+1568295274
+samtebbs
+.debug.info ALIGN(4K) : AT (ADDR(.debug.info) - KERNEL_ADDR_OFFSET) {
+
+1568295277
+samtebbs
+DEBUG_INFO_START = .;
+
+1568295279
+samtebbs
+*(.debug.info)
+
+1568295282
+samtebbs
+DEBUG_INFO_END = .;
+
+1568295284
+samtebbs
+}
+
+1568295855
+FireFox317
+samtebbs: I'm not sure if the ADDR(.debug.info) makes sense, because AT specifies where it should be placed and thus that determines the ADDR.
+
+1568295993
+samtebbs
+FireFox317: Well it seems to have a pre-defined address before evaluating the AT part
+
+1568296027
+samtebbs
+That is needed since my kernel is in the higher half
+
+1568296212
+FireFox317
+Ah yeah, nvm that is the load address indeed. Seems weird why it would make a duplicate of the section
+
+1568296234
+donaldallen
+What is the correct way to define a null pointer to pass to a C routine. Sqlite, for example, takes null pointers in many arguments of its C API. Suppose the (C) type of the parameter that can be null is 'const char **pzTail'. What is the correct way to define a null pointer to pass to this?
+
+1568296302
+samtebbs
+FireFox317: it is weird indeed. I hope there's a way to stop it from being duplicated elsewhere
+
+1568296357
+samtebbs
+donaldallen: All C pointers are translated are optionals in Zig's eyes, so passing `null` should work
+
+1568296357
+FireFox317
+samtebbs: Maybe when you define the symbols outside the section it works?
+
+1568296422
+donaldallen
+samtebbs: Thanks -- I will give it a try.
+
+1568296519
+samtebbs
+FireFox317: Still duplicated unfortunately :/
+
+1568296794
+FireFox317
+Hmm, comparing the result with other binaries, it is the ALLOC option in debug.info that is present in your binary and not in others
+
+1568296888
+samtebbs
+Wait I might be dumb
+
+1568296901
+samtebbs
+The second set of debug sections all have underscores instead of dots...
+
+1568296948
+samtebbs
+Yep, that was it :facepalm:
+
+1568296950
+samtebbs
+Thanks :D
+
+1568296965
+samtebbs
+Memo to self, look at the section names properly next time
+
+1568296977
+FireFox317
+Hahah yup, I also see it right now XD
+
+1568297008
+samtebbs
+Other than them being ALLOC, other telling sign is that they are empty xD
+
+1568297216
+donaldallen
+samtebbs: extern is 'extern fn sqlite3_prepare_v2(db: *c_void, zSql: [*]const u8, nByte:c_int, ppStmt:**c_void, pzTail:**const u8) c_int;'. Call is 'sqlite3_prepare_v2(db, sql, -1, &result, null)'. Compiler complains: expected type '**const u8', found '(null)'.
+
+1568297555
+donaldallen
+samtebbs: I suppose I could lie to the compiler and define that parameter as a c_int in the extern. But given the stress on interoperability with C in zig, I'm guessing there's a less kludgy way to do this, a proper way.
+
+1568297955
+TheLemonMan
+donaldallen, you need a C pointer, normal pointers are non-nullable
+
+1568298163
+gonz_
+Which should be said, is more *proper*.
+
+1568298489
+donaldallen
+TheLemonMan: extern now 'extern fn sqlite3_prepare_v2(db: *c_void, zSql: [*]const u8, nByte:c_int, ppStmt:**c_void, pzTail:[*c]*const u8) c_int;'. Call the same. Compiler complains about the call: expected type '[*c]*const u8', found '(null)'.
+
+1568298694
+TheLemonMan
+uh, worksforme
+
+1568298805
+donaldallen
+TheLemonMan: Are you using 0.4.0?
+
+1568298857
+TheLemonMan
+nope, I only run master
+
+1568298894
+fengb
+Don't use 0.4.0. It's ancient
+
+1568298942
+donaldallen
+That's probably the issue. I installed 0.4.0 with the Arch package system. I'll give the latest from github a try. Thanks.
+
+1568299115
+TheLemonMan
+smh, isn't Arch supposed to only provide the latest and greatest version of everything?
+
+1568299137
+daurnimator
+The latest *release*; yes...
+
+1568299207
+TheLemonMan
+const was_that_a_joke = true;
+
+1568299552
+FireFox317
+donaldallen: You can grab the latest master binary from
+
+1568299673
+donaldallen
+FireFox317: Yes, I noticed that before trying to build from the sources on github.
+
+1568299698
+FireFox317
+👍
+
+1568300209
+fengb
+Oh hey I didn't know daurnimator was an Archlinux package maintainer
+
+1568300264
+companion_cube
+there's a zig-git package anyway
+
+1568302710
+samtebbs
+Going back to my debug section debacle, each section almost triples in size when I do my linker script magic...
+
+1568302790
+samtebbs
+Much confusion
+
+1568303832
+fengb
+
+
+1568303926
+samtebbs
+:spinning_thinking_emoji:
+
+1568304427
+kristoff_it
+> gitdab lmao
+
+1568306486
+lunamn
+I see someone found my project :')
+
+1568306500
+donaldallen
+Thanks all for the help earlier. It seems that things have gotten considerably better since 0.4.0. Still problems, though. I'll post an issue on github.
+
+1568318898
+samtebbs
+hey andrewrk, when working on clashos, did you ever find that keeping the debug info in your binary made every section larger?
+
+1568318934
+samtebbs
+I'm running into a weird issue where following what you did in your stacktrace on panic blog makes every section almost 3 times as big
+
+1568319893
+waleee-cl
+Has there been some changes to zig fmt? It insists on removing any space between a struct name and the { for me
+
+1568319971
+waleee-cl
+which doesn't seem to be the preferred format anywhere (in the docs, stdlib &c)
+
+1568327160
+mikdusan
+hmmm i think we could benefit from having a 2 allocator "interfaces". today's interface is really about following 1:1 correlation between an alloc() and a free()
+
+1568327211
+mikdusan
+and the other being an alloc() only; ie: the free() is not in a 1:1 relationship
+
+1568327289
+mikdusan
+so then i can express in code that the code will not allow the latter statement: `const p = allocator.alloc(); defer allocator.free(p);`
+
+1568327533
+fengb
+There’s a proposal to make shrinkage optional
+
+1568327539
+fengb
+shrinkFn
+
+1568328526
+mikdusan
+yes for the implementation I suppose it goes from 2 fn down to 1 fn. but also strike destroy()
+
+1568328625
+mikdusan
+and strike free()
+
+1568328707
+mikdusan
+right now i am using a simple naming convention; have a struct that has 2 properties. one is named `heap` to be used 1-alloc,1-free; and other is named `arena` (needs better name) for alloc-only and code never calls arena.free()
+
+1568328754
+mikdusan
+pool is probably more generic than arena.
+
+1568332633
+stratact
+Actually is it safe to use a different allocator to free another allocator's allocation?
+
+1568332651
+scientes
+stratact, no
+
