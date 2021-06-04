@@ -1,0 +1,544 @@
+1600301579
+nikki93
+is there a way to do something like an indirect goto in zig -- if you're implementing dispatch for a bytecode vm for example?
+
+1600304012
+fengb
+
+
+1600304168
+nikki93
+thanks!
+
+1600307091
+mkchan
+let's say i have a List generic type with size and i've instantiated 2 derived types: List(i32, 5), List(u64, 6). Now obviously the size 5 and 6 respectively are known at compile but if i create pub consts to store them, i can't access them as members. i don't want to store them as data members
+
+1600307161
+mkchan
+storing them as data members does work, however. so these are values tied to the derived type not the objects. equivalent would be c++'s template class static constexpr members
+
+1600307261
+mkchan
+do i have to do reflection hackery to get them?
+
+1600307321
+andrewrk
+you're sorta asking about how to do stuff in terms of types but it might be more valuable to think in terms of data
+
+1600307368
+andrewrk
+I read your question but I don't know how to help, I don't really understand what you're trying to do
+
+1600307426
+mkchan
+let me give an example:
+
+1600307436
+mkchan
+but i never need that information at runtime, so i would rather it be tied to the type
+
+1600307443
+andrewrk
+I see
+
+1600307542
+andrewrk
+oh I think you just want [@TypeOf(self.layers[layer_index]).layer_size]
+
+1600307581
+andrewrk
+at least it compiles if I do that on line 39
+
+1600307587
+mkchan
+yes, that compiles. Great
+
+1600307613
+mkchan
+ok that's not even inconvenient! thanks a lot
+
+1600307622
+andrewrk
+looking back at the question, now it makes sense. sometimes these simple concepts can be hard to explain, heh
+
+1600307652
+andrewrk
+fyi we call that "declaration" vs "field"
+
+1600307678
+andrewrk
+e.g. @hasDecl and @hasField
+
+1600307680
+mkchan
+yeah, i suppose i'm not familiar with the jargon so i try to explain my concept
+
+1600307687
+andrewrk
+fair enough :)
+
+1600307973
+mkchan
+
+
+1600308473
+andrewrk
+hmm do some processors have matrix instructions?
+
+1600308526
+andrewrk
+ah SpexGuy has a detailed writeup on this
+
+1600308530
+mkchan
+at least GPUs do
+
+1600308570
+andrewrk
+that's relevant; it's at least planned to have a SPIR-V backend for zig
+
+1600313620
+keegans
+andrewrk: back with some sanitizer support that I think will be more useful than the last time around:
+
+1600313718
+andrewrk
+keegans, neat, I'll take a look thanks! btw are you aware of
+
+1600313782
+keegans
+yeah, I had seen that mentioned in the issue but had envisioned something that was more tightly integrated with Zig
+
+1600313790
+andrewrk
+gotcha
+
+1600346876
+Snektron
+<andrewrk "hmm do some processors have matr"> Theres a recent intel extension actually
+
+1600347090
+Snektron
+
+
+1600350773
+fgenesis
+hOI
+
+1600368085
+marler8997
+pixelherodev, coincidentally, that bug I created is actually helping me experiement with a feature where we don't use an ELF interpreter
+
+1600368111
+marler8997
+if you come up with a fix, how would I get back to the current behavior?  I tried removing the .interp section after the fact but that doesn't seem to work
+
+1600368122
+marler8997
+I wonder if we would need an option to explicitly disable the interpreter?
+
+1600368130
+pixelherodev
+Probably
+
+1600368153
+pixelherodev
+For what you want, we can just have addSharedLibrary set dynamic = true - or even just error out if it's false
+
+1600368258
+marler8997
+is_dynamic seems to only apply to libraries, not exes
+
+1600368330
+andrewrk
+it does apply to exes but there is some logic
+
+1600368350
+andrewrk
+which actually is getting reworked a bit in #6250
+
+1600368384
+andrewrk
+in summary: we try to make things as static as possible, unless -dynamic is selected
+
+1600368429
+marler8997
+andrewk, since your here, after thinking on it the solution I've thought of is just to move Zig's "find linker logic" into the runtime executable
+
+1600368449
+marler8997
+then reinvoke yourself with that linker
+
+1600368752
+nikki93
+is it possible to reuse zig's comptime evaluation code for ... runtime evaluation of zig within my program
+
+1600368759
+nikki93
+like as a way of scripting or such
+
+1600368766
+nikki93
+or does that not make sense
+
+1600368825
+bfredl
+why not?
+
+1600368847
+bfredl
+std.zig will be the entire compiler right, when stage2 is "ready"
+
+1600368938
+pixelherodev
+Not quite.
+
+1600368947
+pixelherodev
+stage2 isn't part of stdlib.
+
+1600369051
+andrewrk
+marler8997, interesting! I like where this is going
+
+1600369063
+andrewrk
+that's a really cool idea
+
+1600369086
+marler8997
+it's really simple once you think about it, just find the linker at runtime instead of link time...
+
+1600369089
+nikki93
+is the zig comptime evaluator component for the released versions of zig written in zig or in c++
+
+1600369098
+andrewrk
+that would even do the appropriate libc startup right? I think you may have just solved static binaries for linux video games
+
+1600369115
+pixelherodev
+I wouldn't be so sure
+
+1600369117
+marler8997
+so long as our logic to find the linker doesn't use libc :)
+
+1600369120
+pixelherodev
+Finding the linker is only one of the issues there
+
+1600369127
+marler8997
+which I think it does currently, so that would need to be fixed
+
+1600369137
+andrewrk
+I don't think it does
+
+1600369149
+andrewrk
+no it doesn't, I tested it
+
+1600369155
+pixelherodev
+marler8997: try replacing linkLibrary with
+
+1600369163
+pixelherodev
+It's really really straightforward logic
+
+1600369180
+marler8997
+basically, each exe functionally acts as its own dyanmic linker, of course, they aren't full blown linkers, they just find the real linker and call execve again
+
+1600369185
+pixelherodev
+LibExeObjStep.make passes `-dynamic` if is_dynamic is set, so it just sets that on anything which is linked against a dynamic library
+
+1600369188
+andrewrk
+nikki93, c++
+
+1600369226
+pixelherodev
+The other thing it should probably check is what's linking against a shared library
+
+1600369232
+pixelherodev
+If it's a static library, it should probably panic
+
+1600369235
+andrewrk
+bfredl, std.zig only has some stuff; most self-hosted compiler code will not be shipped in std
+
+1600369264
+nikki93
+oh got it. do you think in the first body of work toward self-hosting you'll make some amt of zig eval easily available for programs to use at runtime?
+
+1600369283
+andrewrk
+no that's out of scope
+
+1600369318
+pixelherodev
+and I'm not convinced zig would be a good scripting lang anyways.
+
+1600369327
+nikki93
+hehe yeah
+
+1600369372
+andrewrk
+marler8997, if you do a proof of concept that does an opengl triangle window and provide a static linux binary that works on Ubuntu, Alpine, and NixOS, that would be big news
+
+1600369376
+marler8997
+pixelherodev, no dice
+
+1600369384
+andrewrk
+opengl hello world triangle (or vulkan, whatever)
+
+1600369387
+bfredl
+or some lang built on top of it
+
+1600369395
+bfredl
+lola, something maybe
+
+1600369408
+marler8997
+andrewrk, I'll see what I can come up with:
+
+1600369422
+marler8997
+I'll experiment with it there
+
+1600369434
+pixelherodev
+marler8997: what's the issue?
+
+1600369452
+pixelherodev
+... I should probably test it locally but I'm technically kinda busy now but I couldn't resist tweaking ZBS some more :P
+
+1600369481
+marler8997
+exe still doesn't have an interpreter
+
+1600369512
+andrewrk
+marler8997, I'm excited about this, feel free to ping me with updates :)
+
+1600369533
+marler8997
+cool, I've been thinking about this problem for years...will be cool if we actually come up with something
+
+1600369540
+andrewrk
+hell yeah
+
+1600369551
+andrewrk
+I think the /usr/bin/env trick is quite reliable
+
+1600369562
+andrewrk
+it's basically a symlink to the real system dynamic linker
+
+1600369595
+marler8997
+yeah that was clever
+
+1600380101
+jjsullivan
+andrewrk, I'm trying to get the zig toolchain cross-compiled in void linux's repos. I think your bootstrap script had most of the info needed to do it, but I'm running into some linker trouble. Do you think you'd know something about this?
+
+1600380183
+jjsullivan
+also, does the host `zig` compile stage0 in your script as well? For now I could only get it to work with cross-gcc, cmake complained zig didn't know about a `-march=armv8a` option
+
+1600380197
+andrewrk
+looks like it's missing some linker args like -ldl and it's missing the cmake option to disable libxml
+
+1600380219
+andrewrk
+
+
+1600380276
+andrewrk
+hmm I think zig cc doesn't recognize -march yet?
+
+1600380295
+andrewrk
+it's redundant with -target and -mcpu
+
+1600380303
+andrewrk
+(should be done though, that's a missing feature)
+
+1600380368
+jjsullivan
+ah okay, I'll give changing the linker/llvm opts a try. Idk if I can disable the XML stuff though, not sure if other packages depend on that. Can it be turned off from zig's cmake?
+
+1600380395
+jjsullivan
+also cmake did report supported `-march` options, idk if that was a bug or not
+
+1600380517
+andrewrk
+zig has no dependency on the xml stuff and really nothing to do with it
+
+1600380554
+andrewrk
+I think if you run `llvm-config --system-libs` or something like that it might spit out all the missing libs
+
+1600380581
+andrewrk
+for me it prints `-lz -lrt -ldl -lpthread -lm` for your config it will probably include -lxml
+
+1600380644
+jjsullivan
+yeah, I think void's packing llvm10 in it's entirety, I get a blank line on my box
+
+1600380683
+andrewrk
+anyway point being that dependency comes from LLVM so it's kind of a question for the llvm project how to properly link in their dependency
+
+1600380705
+jjsullivan
+it seems unlikely that anyone depends on llvm's libxml specifically, but you never know  :^)
+
+1600380720
+andrewrk
+it sounds like a packaging mishap if `llvm-config --system-libs` doesn't resolve this for you
+
+1600380761
+andrewrk
+I'm not super pleased at how much weird dependencies llvm has
+
+1600380773
+andrewrk
+IMO compiler backends should strive for no dependencies
+
+1600380794
+jjsullivan
+yeah, this will make the review more complicated by defauly
+
+1600380799
+andrewrk
+even c++ is a pretty heavy weight dependency :-/
+
+1600380799
+jjsullivan
+**default
+
+1600380814
+jjsullivan
+but at least we know what's causing the problem
+
+1600380970
+jjsullivan
+time to build llvm10 for the 5th time :^)
+
+1600381256
+andrewrk
+godspeed
+
+1600381267
+andrewrk
+and then you'll get to figure it out all over again with llvm11 coming out in a few days!
+
+1600381541
+mkchan
+Is there a feature in zig where I give the compiler a program that's sort of metaprogrammed with inline whiles and such and it spits out the "unrolled" code
+
+1600381659
+mkchan
+Unrolled zig code that is, not llvm ir or asm
+
+1600381742
+jjsullivan
+andrewrk idontfeelsogood
+
+1600381777
+andrewrk
+mkchan, that feature does not exist
+
+1600381810
+andrewrk
+you could look at the output LLVM IR or machine code
+
+1600381851
+andrewrk
+or zig ir
+
+1600381875
+andrewrk
+it's done at the zig ir level though, it's not done at the source level
+
+1600381930
+mkchan
+I was thinking it might help debugging
+
+1600381955
+mkchan
+But thanks, I usually stick some comptime asserts though like you had suggested earlier
+
+1600382662
+nikki93
+is there something tricky about storing pointers as values in an `AutoHashMap`? i'm trying to understand why they use a `usize`-valued `AutoHashMap` here and then do `@intToPtr` everywhere --
+
+1600382887
+squeek502
+andrewrk, my fs.rename PR accidentally introduced a compile error:
+
+1600382910
+andrewrk
+nikki93, the API is pretty nice, I don't think there is anything tricky about it. If I had to guess I'd say they are trying to avoid binary bloat
+
+1600382928
+andrewrk
+squeek502, ah, thanks for the followup!
+
+1600382945
+nikki93
+@andrewrk binary bloat due to different codegen per value type?
+
+1600382968
+nikki93
+(just clarifying)
+
+1600382969
+andrewrk
+right, that would be my guess without looking too closely
+
+1600382977
+nikki93
+i see
+
+1600382995
+andrewrk
+that's potentially something the hash map impl could do itself
+
+1600383028
+andrewrk
+or maybe even the compiler 🤔
+
+1600383067
+nikki93
+that'd be cool. i guess the impl could just shell out to another impl that just uses the size of the elems right?
+
+1600383068
+andrewrk
+auto bloat reduction from generic instantiations is something I want to look into
+
+1600383074
+andrewrk
+right
+

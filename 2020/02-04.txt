@@ -1,0 +1,1060 @@
+1580784194
+fengb
+How much memory can the compiler use?
+
+1580784321
+Snektron
+All probably
+
+1580784526
+daurnimator
+fengb: our rule is that the compiler can't use more than 4GB when compiling the test suite
+
+1580784568
+fengb
+So my silly 500 KB compile lookup is nothing :P
+
+1580784949
+Snektron
+daurnimator, but is there an explicit memory usage bound in general
+
+1580785064
+fengb
+Oh yeah that's due to Azure falling over at ~4.5GB
+
+1580785908
+daurnimator
+fengb: also the desire to run on a 32bit machine
+
+1580786193
+seoushi
+./src/ecs.zig:144:17: error: expected 2 arguments, found 1
+
+1580786193
+seoushi
+warn("hi\n");
+
+1580786200
+seoushi
+not sure what I'm doing wrong here
+
+1580786214
+seoushi
+warn is consted as std.debug.warn at the top
+
+1580786214
+BaroqueLarouche
+warn("hi\n", .{});
+
+1580786231
+BaroqueLarouche
+there is no longer var args in the language
+
+1580786249
+seoushi
+oh ok
+
+1580786283
+seoushi
+I was confused because i had that earlier and it worked and it was in some other code as well but I guess that code doesn't have a path to it so it isn't compiled
+
+1580786855
+fengb
+`isFinite(std.math.nan(f32)) => false`
+
+1580786859
+fengb
+Can I rely on this?
+
+1580790686
+seoushi
+does zig have closures? looking to do something like this:  fn(something : usize) fn(usize) usize { return fn (num : usize) usize { return num + something;  }; }
+
+1580791571
+fengb
+
+
+1580791597
+fengb
+There's a way to fake closures with comptime args
+
+1580791697
+metaleap
+fengb: how to? so far i did the old "keep context struct to pass to fn ptr that requires such a ctx arg"
+
+1580791756
+fengb
+Yeah that's probably the "correct" way atm but that's not really closures :P
+
+1580791782
+seoushi
+thanks. that isn't quite gonna work for me I think. What I want to do is have an ArrayList(MultipleTypes). So my idea was to create a wrapper for Multiple types so I can use a *void to the data and then "generic functions" to do something to that data
+
+1580791785
+metaleap
+yeah just manual keeping of "an environment"
+
+1580791790
+fengb
+I'm not sure we can make them work well since any non-trivial closure has implicit allocations
+
+1580791850
+fengb
+Are the types known at compile time? You can use a union and switch on the tag
+
+1580791875
+seoushi
+It's easy enough to create the items via comptime and throw them into the array list but then I no longer know the type so I can't really cast it back to edit the data
+
+1580791894
+metaleap
+fengb "There's a way to fake closures with comptime args" gimme the 5-second coarse description of what you have in mind, i'll try to piece the puzzle together from there , muchos thxos
+
+1580791957
+seoushi
+hmm. they are known at compile type but the interface I have doesn't quite work that way. I set it up so you register a type for each item. I could potentially make it a union but I expect in some case there will be a hundred different types
+
+1580792040
+metaleap
+seoushi: either tagged-union or with wrapper struct `Wrap(T)` that exposes a non-field member-decl `pub const TheType: type = T` for latter comptime extraction via `@TypeOf(my_wrap).TheType`
+
+1580792107
+metaleap
+(if thats possible to carry along in your design, not always applicable)
+
+1580792138
+seoushi
+Yeah if I can save the type off and use it again to reconstruct the type then that would work for me
+
+1580792158
+seoushi
+let me mock something up...
+
+1580792220
+fengb
+It's not pretty...
+
+1580792226
+fengb
+And it only works with comptime args
+
+1580792230
+metaleap
+fengb merci
+
+1580792261
+metaleap
+ahh neat heh
+
+1580792271
+fengb
+comptime is the only time when we can "make" allocations happen like this
+
+1580792295
+fengb
+Otherwise there needs to be a pointer to the data somewhere
+
+1580792369
+fengb
+Also the "create struct / create method / return function" pattern exists as a workaround because we don't have anon functions yet:
+
+1580792370
+metaleap
+so thats like instantiating/cloning the struct+func per unique comptime arg value, rarely needed but yeah a possibility when it is =)
+
+1580792397
+seoushi
+
+
+1580792400
+seoushi
+something like this
+
+1580792420
+metaleap
+no i said "non-field member decl" in the wrapper struct
+
+1580792427
+fengb
+Daurnimator had a less contrived example but I don't remember it heh
+
+1580792454
+metaleap
+but otherwise yeah
+
+1580792492
+metaleap
+a `type`-typed field might even work and be turned into a non-field struct member decl but wouldnt expect it at least
+
+1580792526
+fengb
+doSomething doesn't have access into the struct. It needs a reference, like self variable
+
+1580792980
+metaleap
+also if all you later get at runtime is that arraylist of usize "pointers", you really need to have a sound reason why your generic/comptime func decides to ptrcast it to
+
+1580793034
+metaleap
+somewhere somehow some association tag must always be carried along for usize-to-ptr-of-X
+
+1580793163
+metaleap
+seoushi: here's how I'm currently doing it, see call sites at L68 or L77 using a custom/fully-userland "env-capture" struct type called here Ctx:
+
+1580793164
+metaleap
+
+
+1580793225
+metaleap
+then the fn-ptr gets put into the equivalent of ArrayList(usize), actually a struct with that fn_ptr and pointer-to-copy-of-ctx and some extra info, here:
+
+1580793227
+seoushi
+thanks I'll take a look at that
+
+1580793259
+fengb
+You can also do the old school way of sharing a blob of memory via union casting
+
+1580793342
+metaleap
+so ptr-of-byte-array to ptr-of-TUnion?
+
+1580793359
+metaleap
+(or vice versa)
+
+1580793374
+fengb
+Yeah, make sure first chunk has the type id embedded
+
+1580793381
+seoushi
+so before reading that other stuff. I tried doing this
+
+1580793390
+fengb
+So union { A, B, C } all overlap with the identifying data
+
+1580793442
+fengb
+comptime var data = Wrapper{} is trying to define a comptime struct
+
+1580793450
+metaleap
+fengb old school is best school
+
+1580793464
+fengb
+But `var intValue = try allocator.create(u32);` is a runtime only construct
+
+1580793486
+seoushi
+yeah. without that comptime there I get a differnt error tho
+
+1580793488
+seoushi
+error: cannot store runtime value in type 'type'
+
+1580793506
+metaleap
+seoushi your struct type can have fields, these "belong to any this-struct's instance" so to speak. but it can also have other members: fns or consts. these belong to the struct type
+
+1580793516
+fengb
+Oh, types are comptime only by definition
+
+1580793529
+fengb
+You need some other data structure to store the type. We usually use enums for that
+
+1580793559
+fengb
+
+
+1580793635
+daurnimator
+fengb: I had an example of what now?
+
+1580793685
+fengb
+Faking closures with comptime args
+
+1580793717
+fengb
+I'm pretty sure you showed something that wasn't silly looking
+
+1580793738
+daurnimator
+I'm not sure what you're referring to...
+
+1580793791
+fengb
+I'm going crazy then!
+
+1580793804
+seoushi
+So to give a better picture of what I'm trying to do. I'm working on creating an entity component system. User will register components. So this question came into play because I wanted an array of Pool(multi types). enum do work but I would like to be able to define sets of components you can use seperately. Say a set of components that are for 2d rendering and another for 2d physics etc and I don't really want to have all
+
+1580793804
+seoushi
+of those at once because depending on the possible components it will allocate a pool per component type
+
+1580794020
+seoushi
+I think my best way at this point is that I need to just make a pool type based on raw bytes instead of an ArrayList(componentType) then I won't need to do the casting. That is what I did in my C version atleast
+
+1580826320
+betawaffle
+how do i decide between `@import("builtin")` and `std.builtin`?
+
+1580826484
+mq32
+betawaffle: always use std.builtin, as it contains a usingnamespace on @import("builtin")
+
+1580826499
+mq32
+also the std-file defines all the types
+
+1580828874
+fengb
+Word of god uses @import("builtin")
+
+1580829036
+mq32
+oh
+
+1580829044
+mq32
+they are both cyclic usingnamespace now
+
+1580829049
+mq32
+crazy that this is even possible :D
+
+1580829085
+fengb
+Not really. Zig is pretty lazy and namespaces can reference each other without problems
+
+1580829086
+betawaffle
+what's the point of having both ways of doing it?
+
+1580829100
+betawaffle
+is one going to go away at some point?
+
+1580829172
+fengb
+Unless you do stupid things like me:
+
+1580829227
+fengb
+I'm not sure which direction we're going
+
+1580829245
+companion_cube
+when's the next stream, btw?
+
+1580830719
+pixelherodev
+Did Zig end up applying as an org for GSoC?
+
+1580830896
+SyrupThinker
+Interested in that aswell
+
+1580831109
+SyrupThinker
+pixelherodev:
+
+1580831153
+pixelherodev
+There's a ziglang mailing list? How did I miss that? :)
+
+1580831183
+SyrupThinker
+Me neither, a friend just told me because I read out loud
+
+1580831224
+SyrupThinker
+Grammar, meant I missed it aswell
+
+1580831267
+pixelherodev
+I'm guessing a self-hosted LLVM backend is just
+
+1580835291
+mq32
+oof
+
+1580835301
+mq32
+gen_h isn't much tested, right?
+
+1580835342
+mq32
+`text_screen: [18][24]u8` gets translated to `uint8_t text_screen[18]`
+
+1580837093
+seoushi
+found a compiler bug when trying out another possible solution to store type information.
+
+1580837114
+seoushi
+I'm guess that is just doesn't like the type in the arraylist
+
+1580837873
+seoushi
+Guess I'll just fall back to an enum after all. Not quite what I wanted but it's easier to reason about.
+
+1580837957
+fengb
+I think the entity system would work well with traits/interfaces
+
+1580837980
+companion_cube
+still no docs on interfaces? :D
+
+1580838026
+seoushi
+Yeah I'm kinda going down that path. Basically I define a few functions that are required in a struct since I use @field to access them.
+
+1580838060
+fengb
+Allocator is the standard pattern style
+
+1580838093
+seoushi
+I haven't looked at that code yet. I'll take a look and see how it's done
+
+1580838191
+fengb
+There’s also this long standing issue:
+
+1580838421
+seoushi
+ah ok. so interfaces are just assignable function fields. I was going that way at first and might go back to it if this experiment doesn't work.
+
+1580838437
+companion_cube
+c o m p t i m e v t a b l e
+
+1580839358
+pixelherodev
+`%s/substr_match(\"\(.*\)\")/\=join(["substr_match(.{\"",submatch(1),"\"})"], "")/g` that's got to be the single longest vim command I've ever used :P
+
+1580839419
+pixelherodev
+Refactored a function so that it takes a tuple of N strings instead of a single string and checks if
+
+1580839430
+companion_cube
+that's when you want to use /gc
+
+1580839648
+pixelherodev
+nah, I'm confident enough that this would only match the intended scenarios
+
+1580839721
+fengb
+Hallmark of a dev: replace a boring task with a much more interesting one that takes longer
+
+1580839757
+pixelherodev
+... okay so uh, what does `/home/noam/Documents/Development/osjw/ziggirat/src/parsers/llvm-9.zig:255:39: error: use of undefined value here causes undefined behavior
+
+1580839760
+pixelherodev
+` mean?
+
+1580839763
+pixelherodev
+Whoops
+
+1580839772
+pixelherodev
+Just meant to paste the error message. Meh, whateves
+
+1580839781
+companion_cube
+
+
+1580839814
+pixelherodev
+Yeah but now I know how to do it in the future
+
+1580839817
+pixelherodev
+So it adds up
+
+1580839824
+companion_cube
+actually:
+
+1580839872
+pixelherodev
+Hmm. `substr_match(.{magic_identifier})` gives that undefined value error despite that being defined...
+
+1580840458
+mq32
+huh
+
+1580840463
+mq32
+destination type '[2560]u16' has size 5120 but source type '[5120:0]u8' has size 5121
+
+1580840474
+mq32
+embedFile will now spill an extra nul byte at the end?
+
+1580840499
+fengb
+Just chop it off :P
+
+1580840547
+mq32
+will not work, because then i'll lose array property
+
+1580840570
+mq32
+which i will then not be able to bitcast into my target type :D
+
+1580840893
+fengb
+`@bitCast([2560]u16, @ptrCast(*[5120]u8, &src).*)`
+
+1580840906
+fengb
+This is fine 🙃
+
+1580840960
+mq32
+exactly this :D
+
+1580840997
+fengb
+Actually... there's a @bytesToSlice
+
+1580841060
+mq32
+doesn't work, as it's runtime only
+
+1580841069
+mq32
+was my fist try
+
+1580841122
+fengb
+Hmm
+
+1580841177
+fengb
+
+
+1580841179
+ky0ko
+so, i'm trying to compile zig on alpine linux and i'm getting undefined references to various functions such as clang::driver::createDriverOptTable() when it goes to link the binary
+
+1580841188
+ky0ko
+does anyone have any troubleshooting ideas
+
+1580841207
+companion_cube
+I thought discord already had some rust
+
+1580841238
+fengb
+I think this was a targeted rewrite, mostly to get rid of the rogue GC
+
+1580841303
+fengb
+ky0ko: I'm not familiar with Alpine, but maybe you can glean some ideas from the Docker build?
+
+1580841501
+ky0ko
+hmm, it looks like its building llvm/clang from scratch instead of using the distro's packaged llvm9?
+
+1580841552
+SyrupThinker
+A friend of mine successfully compiled with Alpine today :/
+
+1580841567
+SyrupThinker
+But he also had trouble at first
+
+1580841580
+fengb
+Hmm, I know they need to use the same compiler to be properly linked
+
+1580841604
+companion_cube
+fengb: interesting post, thanks for sharing
+
+1580841606
+SyrupThinker
+It worked for him compilin zig statically
+
+1580841689
+ky0ko
+giving that a shot
+
+1580841879
+ky0ko
+hmm. well now i get different undefined references
+
+1580842355
+metaleap
+anyone got the new pkg-deps from #4343 working with multiple-libs + 1-exe? this super-minimized repro won't build the exe from proj3, with proj2 "not finding" proj1 (but build the libs alone without exe, no probs)
+
+1580842367
+metaleap
+
+
+1580842414
+ky0ko
+redid the build and now it links, but then there's a segfault in the step after
+
+1580842575
+ky0ko
+make[2]:
+
+1580842666
+pixelherodev
+So apparently my inline while loop wasn't sufficiently comptime
+
+1580842671
+pixelherodev
+Seems to work now with `inline for (tuplearg) |s|`
+
+1580843700
+metaleap
+comptime inline comptime while (comptime cond)  :P
+
+1580843949
+pixelherodev
+Yes. Brilliant solution.
+
+1580846266
+fengb
+
+
+1580846280
+companion_cube
+seems like we've been reading the same stuff
+
+1580846292
+fengb
+:P
+
+1580846298
+companion_cube
+interesting how people eventually come to "we need knobs in the GC"
+
+1580846395
+fengb
+I'm curious if you could expose GC lifetimes to the user without making it complicated
+
+1580846408
+fengb
+But at that point it's basically a bunch of fancy arenas >_>
+
+1580846424
+companion_cube
+I think there was a variant of ML with "regions"
+
+1580846453
+novaskell
+MLTon
+
+1580846527
+companion_cube
+
+
+1580846528
+companion_cube
+TIL
+
+1580846535
+companion_cube
+ah, wait, no
+
+1580846537
+companion_cube
+it doesn't do that
+
+1580846545
+andrewrk
+ky0ko, I'm guessing the clang library on alpine has been patched in a way that is incompatible with zig
+
+1580846564
+novaskell
+though region inference is usually nice it (from the paper I read) still needs a GC for smaller heap objects. Mercury also comes with it as an experimental compile grade
+
+1580846567
+companion_cube
+maybe I should give another try to SML…
+
+1580846575
+andrewrk
+you can try a source build. the tarballs on ziglang.org/download for linux are actually built on alpine
+
+1580846592
+andrewrk
+(but with llvm/clang from source)
+
+1580846600
+companion_cube
+(I'd like decent IDE support though)
+
+1580847246
+ky0ko
+andrewrk, alpine does
+
+1580847499
+andrewrk
+ky0ko, the file that has the error is copy-pasted from upstream clang into zig's source tree
+
+1580849240
+pixelherodev
+Wait, Zig doesn't work on Alpine yet? Whelp, guess I'll wait a bit longer before switching over
+
+1580849457
+andrewrk
+unclear. the downloads work on alpine and building from source works on alpine
+
+1580849479
+andrewrk
+ky0ko's bug is not confirmed yet
+
+1580849514
+ky0ko
+could it be possible that the issue is from alpine's packaged llvm/clang being 9.0.1
+
+1580849531
+ky0ko
+(i am attempting a from-source build right now, fyi)
+
+1580849559
+pixelherodev
+I'm using 9.0.1 I think...
+
+1580849570
+pixelherodev
+Yeah
+
+1580849616
+andrewrk
+ky0ko, yes. one thing to try would be upgrading those 3 files in zig's source tree to 9.0.1. if that is backwards compatible with 9.0.0 then it's a good solution. otherwise we have a bit of a tricky situation to solve
+
+1580849746
+ky0ko
+i've used alpine's own packaged 0.5.0 on alpine, but not current master, and that's what i'm trying to do
+
+1580849747
+pixelherodev
+Good to know
+
+1580849811
+pixelherodev
+0.6 is meant for april, right?
+
+1580849823
+novaskell
+0.5.0+ab46713fa works somewhat (not tested as much as I'd like)
+
+1580849837
+pixelherodev
+Could we do a 0.5.1 before that so distros can get a bit closer?
+
+1580849921
+andrewrk
+april 13:
+
+1580849937
+andrewrk
+which reminds me, I need to do some triaging and postpone some issues & bugs
+
+1580849986
+pixelherodev
+Regarding GSoC: I'm guessing a self-hosted LLVM backend is just
+
+1580849993
+pixelherodev
+(since I didn't get a response earlier)
+
+1580850112
+pixelherodev
+Also, is zasm supposed to take Zig code and produce a raw binary?
+
+1580850131
+andrewrk
+zasm is just me learning how to write an assembler and deal with all the binary formats
+
+1580850142
+BaroqueLarouche
+pixelherodev: I just added installRaw("filename.ext") to the Zig Builder
+
+1580850154
+pixelherodev
+Ah
+
+1580850220
+pixelherodev
+So would a self-hosted backend of some sort - whether self-hosted LLVM or using the self-hosted parser `zig fmt` uses - be in scope as a GSoC project?
+
+1580850226
+mq32
+BaroqueLarouche, this sounds great!
+
+1580850252
+BaroqueLarouche
+
+
+1580850309
+metaleap
+can anyone tell me how people keep multiple side-by-side libs in their "zig projects dir", cross-importing each other, and make it work when it comes to a final executable?! addPackage and addPackagePath keep failing me for the dumbest plainest dummy multi-project repro setup.
+
+1580850375
+BaroqueLarouche
+metaleap: maybe this is what you are looking for ?
+
+1580850395
+andrewrk
+pixelherodev, yes I think so
+
+1580850415
+andrewrk
+it might not be mergeable verbatim, but would certainly benefit the zig project
+
+1580850440
+andrewrk
+BaroqueLarouche, thanks for that PR :) I'm happy that we can stop depending on llvm-objcopy
+
+1580850462
+BaroqueLarouche
+andrewrk: no problems, I'll work a bit on my GBA project and then submit more PR
+
+1580850463
+metaleap
+BaroqueLarouche well see the issue posted earlier, linked at bottom likely, that references it. sadly the very nice feature doesnt make my stupid dumb trivial most-basal utterly-simpleton repro-repo build.
+
+1580850495
+metaleap
+hence i was wondering.. how were people doing it before the feature
+
+1580850511
+BaroqueLarouche
+andrewrk: like the issue linked here:
+
+1580850540
+BaroqueLarouche
+but I would also like to work on an issue not related to my GBA project
+
+1580850543
+metaleap
+i would troubleshoot it myself since it's zig stuff not c stuff but the trouble is, the full command it stitches together with nested --pkg-begin/ends looks just absolute correct
+
+1580850852
+andrewrk
+BaroqueLarouche, if you want to solve that one, I would recommend to do this one first:
+
+1580850878
+andrewrk
+next
+
+1580850916
+BaroqueLarouche
+noting those issues
+
+1580851563
+metaleap
+so here's my game-plan. instead of subfolders every of my zig libs has all its src files at the same root level as the build.zig. file names with dot-sep'd-segments indicate would-be-dir-paths. next, lib2 depending on lib1 will have its all its sources as symlinks inside its dir. so it goes for lib3 relying on both, and exe projs relying on all 3 for not just indirect but direct uses of those. this must be how everyone else is doing it? or nobody
+
+1580851563
+metaleap
+maintains multiple libs? still trying to diagnose annoyingly-totally-fine-looking `--pkg-begin/end`s
+
+1580851819
+andrewrk
+metaleap, did you see that you can explicitly set the root package path in build.zig? you could set all your libs to have the same package path as the dir that has build.zig
+
+1580851840
+Snektron
+Oh man, that doesn't sound like the best way to handle libraries
+
+1580851902
+metaleap
+andrewrk thx but i did not see that, tho i've ingested langref in full many times. how do i achieve this in short? dont fully grasp it tbh
+
+1580851968
+andrewrk
+setMainPkgPath
+
+1580851969
+metaleap
+Snektron: you dont say :P i'm aching to learn the better one
+
+1580851973
+metaleap
+thx will dig
+
+1580852004
+andrewrk
+Snektron, it'll be fine. we're slowly transitioning to zig package manager. it will be sloppy for a little while, and then it will be clear how to organize
+
+1580852061
+Snektron
+Iirc the package thing was fine
+
+1580852084
+Snektron
+But symlinking every source file seems like a good way to lose structure
+
+1580852090
+Snektron
+And using dots instead of folders
+
+1580852096
+metaleap
+andrewrk: i found it. no doc/comments so question: is this setting the "root" from which all relative paths specified will be resolved?
+
+1580852119
+metaleap
+oh wait its a cli arg so maybe i find it under zig help
+
+1580852128
+andrewrk
+metaleap, no, it's just what files are allowed to be used with @import
+
+1580852175
+andrewrk
+it does affect compile errors I believe, when it says that a type name is a.b.YourType, "a" and "b" will be directories from the main pkg path
+
+1580852223
+ky0ko
+the from-source build, with llvm 9.0.0, did
+
+1580852376
+metaleap
+andrewrk "--main-pkg-path   set the directory of the root package". so you have lib1/build.zig , lib2/build.zig, lib3/build.zig, prog1/build.zig. any of the libs have to import by name any of the others. and the prog all of them. whats "the directory of the root package" when i go zig build any one of them individually and the pkg-names will always resolve?
+
+1580852424
+andrewrk
+multiple build.zig files isn't really supported yet, but that's
+
+1580852515
+andrewrk
+there is no idiomatic way to do this yet. just get it working. it will be clear how to organize your project in a few months as the package manager starts to come along
+
+1580852516
+metaleap
+ok. just mycodes/prog1/build.zig then. do i set main-pkg-path to the top-dir containing all the lib1 / lib2 / lib3 / prog1 / prog2 etc dirs side by side?
+
+1580852552
+metaleap
+nobody ever had to do such a thing in the last ~2 years?  :D
+
+1580852560
+andrewrk
+hejsil and dbandstra have example projects you can look at for this
+
+1580852566
+andrewrk
+
+
+1580852574
+metaleap
+thx every pointer helps
+
+1580852799
+mq32
+metaleap: @intToPtr(*const u8, 0xFF00FF);
+
+1580852802
+mq32
+take this!
+
+1580852808
+BaroqueLarouche
+haha
+
+1580852838
+metaleap
+teehee
+
+1580852929
+metaleap
+found 13 code samples , yay
+
+1580854399
+metaleap
+yay finally got it. no named pkgs anymore but at least now can cross-import across dirs / side-by-side repos without symlinks lol. plz dont kill setMainPkgPath kthx  ^·°
+
+1580854714
+andrewrk
+hmmm, dynamic_library test failing in the llvm10 branch
+
+1580856125
+dimenus
+I hate c/c#'s behavior with switch/break
+
+1580856134
+dimenus
+it's a compilation error to fall through to the next case, but then they still require 'break' anyway
+
+1580856168
+mq32
+dimenus, in C# you can chose to `goto label foo;`
+
+1580856174
+mq32
+for manual, very controlled fallthrough
+
+1580856202
+dimenus
+i don't want fallthrough, i'm just annoyed that it still requires break even though there is no fallthrough
+
+1580856236
+dimenus
+zig's behavior is much better :)
+
+1580856240
+mq32
+but that's the point ;)
+
+1580856246
+mq32
+c# allows both fallthrough AND break
+
+1580856248
+mq32
+which zig doesn't
+
+1580856281
+dimenus
+wait, it allows fallthrough without the goto?
+
+1580856295
+mq32
+no, you are required to use the goto
+
+1580856304
+mq32
+but it's a thing about clarity ;)
+
+1580856310
+mq32
+a switch prong either gotos or breaks
+
+1580860245
+frmdstryr
+Is there anything like python's range() ?
+
+1580860262
+frmdstryr
+for (0..10) |i| { ...}
+

@@ -1,0 +1,2796 @@
+1592438943
+andrewrk
+BaroqueLarouche, I have Tracy running, now to see if I can get client integrations working with zig code
+
+1592438976
+BaroqueLarouche
+andrewrk:  Keep me updated! I intent to use it in the future with Zig code
+
+1592438993
+ifreund
+that would be super cool, i would also appreciate a ping if you get it working
+
+1592439011
+andrewrk
+you got it 👍
+
+1592439166
+pixelherodev
+Same
+
+1592439169
+pixelherodev
+:)
+
+1592454680
+Zannzen
+does Zig try to auto-vectorize through llvm or do you have to explicitly use @Vector to get simd?
+
+1592454690
+Zannzen
+(in release-fast I guess?)
+
+1592454719
+daurnimator
+Zannzen: yes. though the autovectorizor sort of sucks
+
+1592454722
+andrewrk
+yes we have auto-vectorization via the llvm backend
+
+1592454740
+andrewrk
+it's easier for the optimizer to de-vectorize than auto-vectorize
+
+1592454783
+Zannzen
+yeah, definitely was a tricky thing in c++ when you
+
+1592454808
+Zannzen
+but in general I'd rather hold off on saying "this uses simd" until I need to / have profiled code
+
+1592454820
+Zannzen
+so getting auto-vectorization is a nice plus :)
+
+1592454857
+Zannzen
+thanks
+
+1592455333
+andrewrk
+np. the idea of having SIMD types is that it lets you express your code in a readable, portable way, that also happens to be easier to optimize
+
+1592455344
+andrewrk
+case in point:
+
+1592459112
+scientes
+Zannzen, the simd can be devectorized
+
+1592459131
+scientes
+and auto-vectorizing code can be horrible, as is the main reason people avoid -O3 on gcc
+
+1592459180
+scientes
+but now we are getting predicated SIMD instructions, and the current syntax is not very amenable to that
+
+1592459219
+scientes
+I was brain-storming that you could have a compound predicated type, that has a bunch of special rules
+
+1592459303
+scientes
+1. you cannot specify this type in a type signature. 2. it implicitly casts BOTH to non-predicated, and a vector of bools. 3. only one side of an arithmatic can be predicated (or neither).
+
+1592459324
+scientes
+and then you generate this type by doing: a #= a > b;
+
+1592459355
+scientes
+the benifit of this set of rules is that if() is still a clear branch, and you still can have vector.any(), vector.all(), vector.none()
+
+1592459366
+scientes
+you generate those clear branches
+
+1592459418
+scientes
+**by doing a #> b
+
+1592459438
+scientes
+which is super-confusing new syntax, but vector predication just works like that
+
+1592459483
+scientes
+so a #> b would result in a now being a compound predicated type, composed of a and a vector of bools of the result of a > b
+
+1592459557
+scientes
+"a #> b;"
+
+1592459635
+pixelherodev
+Predicated vectors? Ooh
+
+1592459654
+scientes
+pixelherodev, and they are essential for correct code because of things like divide by zero
+
+1592459685
+scientes
+so that proposal allows us to keep using all are existing operators
+
+1592459697
+scientes
+*our
+
+1592461283
+daurnimator
+andrewrk: disregard my comment.... I re-read the whole issue
+
+1592461482
+andrewrk
+np
+
+1592461625
+daurnimator
+andrewrk: the returned struct... if I passed that to another function that only
+
+1592461695
+andrewrk
+this would not be semantically guaranteed. deleting fields from structs is an optimization that llvm does not have the capability of but the zig language allows
+
+1592461844
+daurnimator
+seems bad for incremental compilation then
+
+1592461863
+daurnimator
+if I only used .function_name, and I insert a couple of lines above.... you don't need to go recomputing anything
+
+1592461910
+andrewrk
+already every decl in a file has a tiny piece of info that has to get updated when any line changes in the file, because of debug info
+
+1592461925
+andrewrk
+as long as it does not mean regenerating the
+
+1592467951
+ifreund
+hmm, do we already have a way to get the name of the current package?
+
+1592467960
+ifreund
+if not we should probably add that to @src()
+
+1592474056
+mq32
+andrewrk, you are an evil man. I now miss expression-switch in pretty much every language that doesn't have it
+
+1592474690
+scientes
+mq32, yeah some of the chaining properties of zig are really nice
+
+1592474792
+ifreund
+i love orelse and catch
+
+1592474946
+mq32
+using switch-expressions is just so convenient to convert enumerations to display text
+
+1592474971
+mq32
+label.Text = switch(state) { 1 => "Hello", 2 => "Bye", else => "???" };
+
+1592475012
+afontain_
+that's basically a regular switch?
+
+1592475023
+afontain_
+ah, no, you get it into a variable in the end
+
+1592475024
+afontain_
+nevermind
+
+1592475151
+ifreund
+love loops as expressions too, helps when searching for something that needs a default if not found especially
+
+1592475158
+mq32
+yep
+
+1592475168
+mq32
+even fi not
+
+1592475182
+mq32
+var foo = for(items) |bla| { … } else return error.ItemNotFound;
+
+1592475182
+mq32
+<3
+
+1592475190
+ifreund
+yeah exactly
+
+1592475290
+scientes
+ifreund, orelse with optionals is especiilly slick
+
+1592475297
+scientes
+for short-circuiting
+
+1592475322
+ifreund
+yup
+
+1592475338
+scientes
+<mq32> var foo = for(items) |bla| { … } else return error.ItemNotFound;
+
+1592475342
+scientes
+woah, didn't know you could do that
+
+1592475353
+scientes
+and are optional slices represented with null pointers?
+
+1592475362
+scientes
+in the slice.ptr
+
+1592475366
+mq32
+not sure, probably yes
+
+1592475367
+ifreund
+i thinkg there's an open issue for that
+
+1592475375
+ifreund
+iirc they aren't currently
+
+1592475765
+scientes
+there is also an issue to allow optionals on integers without costing a bit, but generally think that is a bad idea, and you should just use ?u63 et cetera
+
+1592475843
+scientes
+we could also add a one's complement signed representation because that has a single unused value, but think that violates the "one obvious way to do things"
+
+1592475845
+ifreund
+I agree, if the extra bits matter to you encode it in the type
+
+1592475847
+scientes
+and has limited value
+
+1592475876
+scientes
+because INT_MIN is already a very funny value
+
+1592475883
+ifreund
+yeah that seems to be a lot of complexity for little gain
+
+1592475887
+scientes
+but the compatibility cost of expropiating it is not worth it
+
+1592475936
+scientes
+and we probably don't have ?u63 optimized yet anyways
+
+1592475990
+scientes
+that said, we could do it with floats
+
+1592475994
+scientes
+by using the NaN space
+
+1592476014
+daurnimator
+mq32: how do you return from a for loop?
+
+1592476021
+daurnimator
+with `break`?
+
+1592476021
+ifreund
+daurnimator: break
+
+1592476028
+Zannzen
+scientes `?u63` is currently 16 bytes optionals aren't currently optimized (other than nullptr) to use padding
+
+1592476069
+frett27
+hi, finally get rid of memory leak due to leveldb cache configuration (very large default configuration), for my project
+
+1592476079
+daurnimator
+there's also a proposal (reliant on int ranges?) that would allow stuffing in optionals elsewhere
+
+1592476084
+frett27
+works like a charme !
+
+1592476088
+scientes
+Zannzen, yeah, we already have to handle signed/unsigned (as llvm doesn't do that) so it is quite straight-forward
+
+1592476102
+scientes
+daurnimator, but we are saying int ranges is a bad idea
+
+1592476112
+daurnimator
+--> `?@Int(.{min=1, max=255})` -> can be 1 byte
+
+1592476116
+daurnimator
+scientes: why/where?
+
+1592476123
+scientes
+right now
+
+1592476147
+scientes
+daurnimator, it would only make sense for enums
+
+1592476160
+scientes
+to have the optional packed in like that
+
+1592476166
+scientes
+and you could do it for floats
+
+1592476167
+Zannzen
+scientes until you're dealing with a bit that moves within a struct depending on the layout :)
+
+1592476167
+daurnimator
+why?
+
+1592476177
+Zannzen
+but it's hopefully on the roadmap for ?T
+
+1592476206
+scientes
+as Donald Knuth says "premature optimization is the root of all evil."
+
+1592476244
+scientes
+and us zig people are not skilled compiler optimization writers
+
+1592476246
+daurnimator
+its not always about premature optimization; but modeling existing data layouts
+
+1592476263
+scientes
+daurnimator, then you write an adapter
+
+1592476275
+daurnimator
+?
+
+1592476292
+scientes
+will Zig have native EDIBIC and ones-complement signed number support?
+
+1592476373
+mq32
+scientes: EBCDIC is a user-space problem
+
+1592476385
+scientes
+mq32, not in languages with native unicode handling
+
+1592476387
+mq32
+ones-complement must be a different type than twos-complement
+
+1592476398
+mq32
+scientes: huh?
+
+1592476406
+mq32
+zig files are defined to be utf-8 encoded
+
+1592476419
+scientes
+mq32, we avoid EDCBIC being a problem by not having unicode as part of the zig language
+
+1592476428
+scientes
+sure source files are utf-8, but we just use []const u8
+
+1592476441
+mq32
+errm
+
+1592476444
+mq32
+it's a user space problem
+
+1592476449
+mq32
+zig does not have a string type ;)
+
+1592476450
+scientes
+only because we avoided it
+
+1592476457
+scientes
+look at ruby and the mess of SHIFT_JIS
+
+1592476464
+mq32
+ruby has a native string type
+
+1592476471
+mq32
+→ encoding is a language problem
+
+1592476481
+mq32
+no native string type → no encoding problems on language level
+
+1592476499
+scientes
+mq32, what i am saying is that ranged integer types creates far more problem than it solves
+
+1592476502
+scientes
+it is premature optimization
+
+1592476515
+mq32
+huh?
+
+1592476527
+mq32
+ranged integers are not an optimization
+
+1592476531
+mq32
+it's a type
+
+1592476535
+daurnimator
+its not mainly an optimization though... its a usability and correctness thing
+
+1592476542
+daurnimator
++ data modelling
+
+1592476547
+mq32
+and something like "putting values out of range as optional markers" is an optimization
+
+1592476555
+mq32
+ranged integers are wonderful for data modeling
+
+1592476567
+mq32
+i have a state machine atm
+
+1592476569
+mq32
+has 14 stages
+
+1592476575
+scientes
+mq32, yeah just use an enum
+
+1592476577
+scientes
+we already have that
+
+1592476578
+mq32
+why should i use a type that could have more values? ;)
+
+1592476593
+mq32
+(i know, bad example, but still
+
+1592476609
+mq32
+const BCDDigit = @Int(.{ .min = 0, .max = 9 });
+
+1592476615
+mq32
+const BCDNum = []BCDDigit;
+
+1592476689
+mq32
+scientes: enums are
+
+1592476693
+daurnimator
+e.g. I wonder if we can get to the point where if you have a `*[100]T` -> indexing with larger than a `@Int(.{ .min = 0, .max = 100})` would be a compile time error
+
+1592476702
+daurnimator
+uh, .max = 99
+
+1592476860
+mq32
+scientes: are you shawn ladden? :D
+
+1592476863
+scientes
+yes
+
+1592476894
+mq32
+i think you're missing the bigger point
+
+1592476911
+scientes
+mq32, ...........
+
+1592476924
+mq32
+ranged integers re not at all an optimization
+
+1592476936
+mq32
+otherwise you could call "u8" and "u16" also optimizations on a 32 bit machine
+
+1592476942
+scientes
+they are
+
+1592476943
+mq32
+because those are ranged integers as well
+
+1592476959
+mq32
+s everything except "bignum" is an optimization?
+
+1592476966
+scientes
+you are getting trapped in abstractions that you don't get what their purpose is
+
+1592476972
+mq32
+but wait? how do i implement bignum?
+
+1592476984
+mq32
+their purpose is to model the data i want to process
+
+1592476999
+scientes
+yes, but modeling of data is a language problem
+
+1592477012
+scientes
+so you should read up on regular languages, and finite state automata
+
+1592477017
+mq32
+if i want to store the number of bottles in a beer crate, i need an integer ranged  from 0 to 6
+
+1592477030
+scientes
+that is a finite-state-machine problem
+
+1592477038
+mq32
+regular languages (as well as FSA) are not able to compute
+
+1592477041
+daurnimator
+mq32: small crate ;)
+
+1592477045
+mq32
+daurnimator: yeah, true :D
+
+1592477046
+mq32
+still
+
+1592477133
+mq32
+or in general: any non-type 0 language is not able to compute things in general
+
+1592477146
+mq32
+type 3 for example can only recognize a very restricted type of numbers
+
+1592477179
+mq32
+Finite State Automatons are equivalent to Type 3 languages (or REGEX)
+
+1592477188
+scientes
+mq32, type 1 out of 4
+
+1592477197
+mq32
+so i really don't understand what you want to tell me with those
+
+1592477443
+gonz_
+What's the minimal set of things you need to install to be able to compile Zig & C code with Zig?
+
+1592477481
+gonz_
+I'm curious as to what you could throw together minimally for someone in order for them to have complete access to Zig as a productive tool (that may include compiling C code).
+
+1592477495
+mq32
+hm
+
+1592477499
+gonz_
+(On Windows)
+
+1592477502
+scientes
+gonz_, with the download binaries are statically linked
+
+1592477512
+mq32
+pretty much all in the lib folder except for probably the compiler_rt
+
+1592477513
+gonz_
+You need libc
+
+1592477514
+scientes
+so they don't need anything besides a text editor
+
+1592477532
+mq32
+gonz_: no, that's an arbitrary restriction we should resolve :D
+
+1592477533
+scientes
+gonz_, they also need a computer
+
+1592477551
+scientes
+gonz_, and they do not need libc, zig is a native cross compiler
+
+1592477597
+scientes
+and more so than llvm/clang (which is also a native cross compiler at the low level) as it comes with all the headers for supported targets
+
+1592477615
+gonz_
+How so? If you uninstall MSVC and remove your native_libc file from the Zig AppData you can't compile stuff anymore
+
+1592477640
+mq32
+gonz_: atm that's a arbitrary restriction in zig we should remove
+
+1592477642
+scientes
+well I don't know much about zig, but I know that the linux zig can compile windows binaries that run in wine
+
+1592477648
+scientes
+*much about windows
+
+1592477660
+scientes
+and wine is the only way I run windows
+
+1592477668
+gonz_
+mq32: Right, fair enough.
+
+1592477669
+mq32
+we should provide a minimal C environment that provides the minimum std headers
+
+1592477681
+mq32
+(afaik that's stdarg, stdint, stddef)
+
+1592477711
+gonz_
+I'm mostly testing this out because I want to see how one would approach having people install it if they want to learn. Obviously you want as streamlined a process as possible.
+
+1592477722
+gonz_
+Certainly you don't want to tell them to install VS
+
+1592477723
+mq32
+well
+
+1592477731
+mq32
+"download the tarball/zip file and go"
+
+1592477733
+daurnimator
+gonz_: should be fine to not have VS in the first place
+
+1592477735
+mq32
+should be enough
+
+1592477742
+mq32
+yeah, you don't need VS at all
+
+1592477751
+mq32
+the tarball/zip file is enough
+
+1592477761
+gonz_
+With stuff that needs libc?
+
+1592477762
+scientes
+maybe they should run a real OS...........(sorry)
+
+1592477777
+alexnask
+gonz_ It should work without msvc if you compile for the gnu abi
+
+1592477819
+mq32
+you don't need MSVC at all (tested on win7, win10)
+
+1592477820
+alexnask
+I havent tested it but not having a native libc shouldnt matter in that case
+
+1592477921
+gonz_
+`zig build -Dtarget=native-native-gnu` still works, yeah. Why is this not being used by default when MSVC isn't available, though? This isn't the pit of success we would like in that case.
+
+1592477978
+gonz_
+Or is this possibly something that's cached much deeper?
+
+1592478000
+gonz_
+I would've thought that removing the `native_libc` file would've dealt with previous settings.
+
+1592478059
+daurnimator
+there was talk of changing the native target to gnu
+
+1592478087
+gonz_
+Right, I know, but some level of automatic fallback would be an idea regardless of ones position on that.
+
+1592478118
+gonz_
+I personally think depending first on stuff shipped with Zig is most reasonable, but even without that it'd be good to have it as a fallback.
+
+1592478215
+daurnimator
+gonz_: I think higher importance was placed on avoiding "works on my machine" problems; which fallbacks like you're suggesting tend to lead to
+
+1592478232
+gonz_
+Right, that's probably true.
+
+1592478302
+mq32
+but then it would be even better to have "gnu" as the default target instead of MSVC
+
+1592478864
+gonz_
+For the time being you can sort of get around this by having the following in your build file, maybe in a template
+
+1592478864
+gonz_
+
+
+1592478888
+gonz_
+If you have learners use a template repository with this already in it they'll never even bump into the issue
+
+1592478894
+gonz_
+... probably...?
+
+1592479072
+gonz_
+GitHub's new Classroom thing relies heavily on template repositories, so this would fit in that.
+
+1592480476
+gonz_
+scientes: About your comment on "real OSs" before. You might be kidding, but I don't think people realize how less useful Zig would be if people ignored Windows as a platform in the future.
+
+1592480520
+mq32
+yep
+
+1592480535
+mq32
+people of the BSD community already complained that we only support stable releases
+
+1592480640
+daurnimator
+mq32: they expect us to work on random commits of mainline freebsd?
+
+1592480646
+daurnimator
+how on earth.... ?
+
+1592480730
+mq32
+^^
+
+1592480745
+mq32
+i don't thikn it was 100% serious
+
+1592480835
+scientes
+daurnimator, if they bother to run the CI I don't see why that would be a problem
+
+1592480860
+scientes
+it is only a problem with LLVM/clang as we are so tightly integrated
+
+1592480931
+gonz_
+I don't see how one would even suggest using Zig for even utilities at game studios, for example, if the story on Windows would match some peoples' attitudes.
+
+1592481061
+ifreund
+^
+
+1592481085
+ifreund
+i mean I'm likely never going to use it on windows myself, but windows support is important
+
+1592481220
+gonz_
+With that said, the story is much better than most fringe languages and overall I'm not dissatisfied.
+
+1592481299
+gonz_
+The broader community is a Linux bubble that likes to quip about Windows, but that's the extent of it so far.
+
+1592481619
+gonz_
+I wonder what the stats on C programmers are like; which platforms they use.
+
+1592481641
+gonz_
+45.8% of Stack Overflow survey respondents use Windows, 27.5% OSX, 26.6% Linux. Certainly the numbers skew towards Linux more than that when it comes to C programmers.
+
+1592481656
+gonz_
+But C++ programmers who don't even like C++ are probably a different story.
+
+1592481676
+gonz_
+And a good portion of those people probably would love Zig.
+
+1592481723
+mq32
+gonz_: true
+
+1592481735
+mq32
+a lot of C programmers don't program
+
+1592481745
+mq32
+embedded world today is still pretty much 100% C
+
+1592481757
+mq32
+and those people care more about their tools than the compiler toolchain
+
+1592481774
+gonz_
+Right, that makes a lot of sense too.
+
+1592481776
+mq32
+like "does that flasher with parallel port still work on windows 10" (the answer is: no, you need to use windows XP or 2000)
+
+1592481803
+mq32
+<= hopes that the bluepill arrives soon
+
+1592484800
+ask6155
+hey, I'm still confused about error handling
+
+1592484813
+ask6155
+assuming args is an argiterator
+
+1592484843
+ask6155
+var arg = if (args.next(alloc)) |result| {
+
+1592484843
+ask6155
+} else |err| {
+
+1592484843
+ask6155
+};
+
+1592484843
+ask6155
+warn("there is an error: {}", .{@errorName(err)});
+
+1592484843
+ask6155
+result;
+
+1592484862
+ask6155
+gives error:  expected error union type, found '?std.process.NextError![]u8'
+
+1592484896
+gonz_
+Right, the thing you unpack from `next` is actually a `![]u8`
+
+1592484902
+gonz_
+So you can `try` it
+
+1592484942
+gonz_
+
+
+1592484993
+gonz_
+The `var binary_path = ...` there is actually `var binary_path = try (maybe_binary_path.?)`, in a sense.
+
+1592485014
+gonz_
+So `try result` in your case should yield the `[]u8` you're looking for.
+
+1592485033
+gonz_
+You'll also need to make sure that you don't have a block not returning anything.
+
+1592485071
+gonz_
+In your `if` your first block will be a `void` block, so it matches the second. If you want to return from blocks you can `break` results from them.
+
+1592485268
+gonz_
+Here you can see one example of a named block:
+
+1592485315
+gonz_
+`if` is also an expression, so you can use it without blocks: `const x = if (something) true_result else false_result`
+
+1592490469
+ask6155
+Hey if argiterator is currently at ./program and there are no  arguments then args.skip should return false right? (BTW gonz_ thanks for the help)
+
+1592490584
+gonz_
+Yes, `false` should indicate that we reached the end, as far as I can tell.
+
+1592490704
+ask6155
+so if I check args.skip() to be true and then give the program no args  none of the code should run right?
+
+1592490752
+gonz_
+Right, because we haven't skipped anything. But there will always be the first argument.
+
+1592490773
+gonz_
+So it would have to be skip() -> true, skip -> false if there were no additional arguments.
+
+1592490777
+gonz_
+If I understand correctly.
+
+1592490830
+ask6155
+but if there are no args then skip should fail because it is at the end
+
+1592490860
+gonz_
+The first arg on most OSs should be the binary we're running, no?
+
+1592490873
+ask6155
+yes I'm trying to skip it
+
+1592490903
+blinghound
+Hi all. I've managed to compile sqlite3 into my zig app, but now I'm getting Illegal instruction errors when running sqlite3_exec()
+
+1592490914
+gonz_
+Ah, I think I misunderstood your question before. `skip()` will return `true` because it skipped an argument (the first).
+
+1592490936
+blinghound
+I'm passing in a *sqlite3 connection, and a [*c]const u8 string containing the sql source
+
+1592490937
+gonz_
+Then you'll get `null` from `next()` if there were no arguments after.
+
+1592490963
+ask6155
+okay, but that is still weird
+
+1592491030
+ifreund
+blinghound: zig enables clang's UBSan by default, which is likely the cause
+
+1592491031
+gonz_
+`skip()` returns `true` if it skipped an argument, so it will guaranteed do it for the first one. Then you'll check for `null` for the argument after to see if there were any.
+
+1592491042
+ifreund
+sounds like there's some UB in sqlite3
+
+1592491057
+gonz_
+blinghound: Do you have a source example?
+
+1592491066
+gonz_
+I have some sqlite3 code running that's fine
+
+1592491073
+gonz_
+
+
+1592491094
+blinghound
+thanks for the quick response guys
+
+1592491097
+gonz_
+It's by no means covering a lot of the API, though.
+
+1592491116
+blinghound
+@gonz_ I'll read through your source and report back in a few mins
+
+1592491398
+ask6155
+wait... if I skip then I on arg1 but I can't access it because next gives arg2 but if I don't skip then it is at ./program
+
+1592491426
+ask6155
+so .next() .next()?
+
+1592491526
+gonz_
+For the most part I've just done `_ = arg_iterator.next(allocator);` when I've wanted to skip the binary name.
+
+1592491539
+gonz_
+Because I honestly didn't know about `skip`
+
+1592491582
+ask6155
+okay thanks
+
+1592491587
+gonz_
+But skipping once would have the same effect, without the allocation, and skip()->next() should be the same as `_ = next(); value = next()`
+
+1592491598
+blinghound
+@gonz_
+
+1592491673
+blinghound
+@gonz_ I'm not passing in the address for an error_message just to eliminate other potential issues
+
+1592491686
+gonz_
+I'm gonna play around with it to see what's up
+
+1592491729
+ifreund
+you might want to try passing -fno-sanitize=undefined
+
+1592491869
+blinghound
+@ifreund that worked!
+
+1592491884
+blinghound
+is there any documentation related to this?
+
+1592491899
+blinghound
+thanks a bunch
+
+1592491901
+ifreund
+
+
+1592491904
+ifreund
+no problem
+
+1592491917
+blinghound
+you beautiful person
+
+1592491964
+gonz_
+This runs fine here, yeah
+
+1592491974
+gonz_
+Probably because it's already disabled, maybe.
+
+1592491978
+ifreund
+part of the reason zig enables UBSan by default is to hopefully reduce the amount of UB floating around in the ecosystem
+
+1592492024
+gonz_
+blinghound: I would probably define the string as a normal slice and just pass `slice.ptr` to whatever needs it, by the way.
+
+1592492035
+gonz_
+In the general case
+
+1592492081
+ifreund
+uh, if it expects something null terminated that's probably not the best idea (I didn't look at the code)
+
+1592492087
+gonz_
+Alternatively in this case a comptime string, even, though I realize this might not be representative.
+
+1592492101
+gonz_
+String literals should be null terminated since a long time now, no?
+
+1592492121
+ifreund
+yes, but a slice isn't
+
+1592492130
+ifreund
+string literals are [*:0]u8
+
+1592492143
+ifreund
+which coerces to a slice if that's what you use to store it
+
+1592492153
+blinghound
+@gonz_ I'm still getting to grips with Zig's slice/arrays/c pointers, would I declare a slice as "var stmt: []const u8 = ..."?
+
+1592492159
+gonz_
+Right, but in this case it's just a matter of removing the type signature and letting nature do its thing
+
+1592492176
+ifreund
+blinghound: by the way, there's no need to use [*c] in your code, it should generally only be used explicitly by translate-c
+
+1592492203
+ifreund
+i would do `var stmt: [*:0]u8 = ....`
+
+1592492219
+ifreund
+if you're interfacing with C, C will almost certainly expect a null terminator
+
+1592492277
+gonz_
+blinghound: `const statement = "..."; [...] `...exec(connection, statement, ...)` will do it in this case.
+
+1592492296
+ifreund
+i was assuming it was var for a reason :D
+
+1592492363
+blinghound
+@gonz_ gotcha! What would you declare the error_message pointer as before passing it to sqlite3_exec?
+
+1592492416
+blinghound
+it expects the type [*c][*c]u8
+
+1592492420
+blinghound
+but is there a better way?
+
+1592492466
+ifreund
+i'd expect it to be var error_message: [*:0]u8; sql_thing(&error_message);
+
+1592492558
+gonz_
+My error handling in the toy example is based only on return ints and basic `error` unions with a pointer that I myself fill in with more detail about the errors.
+
+1592492585
+gonz_
+So this:
+
+1592492609
+gonz_
+This being because Zig doesn't yet have payloads in error unions
+
+1592492610
+blinghound
+perfect, thanks. I had to declare and initialize it like 'var errmsg: ?[*:0]u8 = undefined;'
+
+1592492612
+blinghound
+but it works
+
+1592492634
+ifreund
+ah yeah right, could be null cause C :D
+
+1592492637
+gonz_
+The question mark is because Zig knows that it can also be null
+
+1592492653
+blinghound
+@gonz_ that's a idea, I'll probably end up implementing something like that too
+
+1592492659
+blinghound
+*a good
+
+1592492680
+gonz_
+I wouldn't look too hard at this code, it's just something I threw up for when I inevitably need sqlite with Zig
+
+1592492693
+gonz_
+Which should be any day now, or has been "any day now" for some time.
+
+1592492770
+blinghound
+I'm in the same boat, I'm translating a huge C++ project into zig that needs sqlite
+
+1592493152
+scientes
+gonz_,
+
+1592493216
+gonz_
+scientes: Why am I looking at this?
+
+1592493230
+scientes
+gonz_, thats an enum with data, i.e. error with data
+
+1592493251
+scientes
+I guess zig already has that with tagged unions however
+
+1592493260
+ifreund
+was about to say
+
+1592493270
+gonz_
+Right, but we want a separate construct (because it's nice to special case error enums) with data.
+
+1592493279
+scientes
+they just don't have such an efficient data structure for it
+
+1592493287
+scientes
+i.e. compiler lowering
+
+1592493290
+gonz_
+I've dealt with errors in f.e. Haskell with "just ADTs" and it's not particularly nice.
+
+1592493314
+gonz_
+Having a special error type that is reasoned about separately is one of the major wins for me with Zig.
+
+1592493370
+scientes
+syntactic sugar for the default case
+
+1592493375
+gonz_
+In Haskell you'd end up defining a special error type that unifies all your errors and if you want precision you'll have to define one for each function based on the particular errors it can return.
+
+1592493409
+gonz_
+Meanwhile we get this transparently via inferred error unions in Zig
+
+1592493463
+gonz_
+When I do need errors to carry data I think having a pointer to a data structure to fill in is an acceptable solution for now.
+
+1592493501
+gonz_
+Especially because the inferred error sets buys me not having to create these ad-hoc error unions that I'd have to create in Haskell (or Rust)
+
+1592493557
+gonz_
+It's basically a meme in all of these languages that you end up returning `Either String ValueYouWant`, i.e "You'll get a string representing the error or the value you wanted"
+
+1592493594
+gonz_
+The string you get isn't useful for inspection, so you change it to an actual error type. But now when this is used elsewhere, that function is going to have to wrap up that error type in its own error type, because it might have specified its own actual error type.
+
+1592493675
+gonz_
+Funnily enough Haskell actually has subtyping (which could solve this, in a sense), but only for exception types
+
+1592493691
+gonz_
+Those aren't used in normal APIs and exceptions for the most part are discouraged.
+
+1592494185
+fengb
+gonz_: you're the first Haskeller to say positive things about special error types :P
+
+1592494192
+fengb
+first I've seen*
+
+1592494277
+gonz_
+I'd bet. I'm not sure I think most Haskell features are a net positive in the end in general, so I guess that's why. I like it fine in terms of status quo but I think I'd be happier and more productive with something smaller and less involved in general.
+
+1592494304
+gonz_
+Hence me being here. I think these two have self-reinforced eachother. I'm here because I want something simpler and I want something simpler because I'm here.
+
+1592494346
+fengb
+Many people (including Haskell and Rust) seem to think that result types are better than builtins for optionals / errors
+
+1592494359
+fengb
+Generic result types*
+
+1592494379
+gonz_
+There are other ways of managing them in Haskell but they're considerably more involved and again don't intrinsically give you much.
+
+1592494395
+fengb
+With optionals... it's mostly just syntax sugar although I prefer Zig's way
+
+1592494409
+ask6155
+Hey, what's the equivalent for atoi() in zig?
+
+1592494414
+gonz_
+And people are constantly experimenting with even more type astronaut stuff to manage them.
+
+1592494418
+fengb
+Errors on the other hand, having "free" mixing of types and stack traces is far more useful than being generic
+
+1592494431
+gonz_
++1
+
+1592494448
+gonz_
+ask6155: `fmt` has `parse{Int,Float}` functions, etc.
+
+1592494467
+gonz_
+`const i = try fmt.parseInt(u32, slice);`
+
+1592494813
+ifreund
+man i wish we had #1717 already
+
+1592494825
+ifreund
+it would save me a lot of typing right now
+
+1592494855
+gonz_
+Lots of `usingnamespace` to mix in into a module?
+
+1592494875
+ask6155
+Hey, how do I improve (try) to improve the documentation?
+
+1592494892
+ifreund
+nah, this c library takes a struct full of function pointers
+
+1592494899
+ifreund
+many of which I want to be noop functions
+
+1592494905
+gonz_
+Ah
+
+1592494910
+ifreund
+1717 would let me do all of those in line
+
+1592494936
+ifreund
+ask6155: the language reference is generated from a html.in file in the main repo
+
+1592494940
+ifreund
+so you can just open a PR
+
+1592494952
+ifreund
+this file:
+
+1592494976
+ask6155
+is there a documentation styling guide?
+
+1592494980
+ifreund
+i don't know how the std docs work, though more/better doc comments certainly wouldn't hirt
+
+1592494983
+gonz_
+ask6155: The individual function blurbs are in the actual source, with `///` preceding the lines.
+
+1592494985
+ifreund
+not that I know of
+
+1592495067
+gonz_
+`
+
+1592495081
+gonz_
+I think the stdlib browser might still not be updated.
+
+1592495503
+ifreund
+nope, it's quite out of date
+
+1592495513
+ifreund
+i just grep in my local clone of the zig repo
+
+1592495574
+gonz_
+I'll probably do the same at some point, but I've stopped having to jump into the docs for a lot of things since I started using zls
+
+1592495598
+ifreund
+yeah zls is awesome
+
+1592495620
+ifreund
+most of the time it just takes me right to the source in the std so I can just read the code
+
+1592495632
+gonz_
+It's actually strange how good the tooling has become in such a short time
+
+1592495697
+ifreund
+speaks to good language design imo, and also a great community
+
+1592495702
+gonz_
+Indicative of how good it is to start off with a modern mindset, perhaps. I know many old languages that can't provide the same experience, some even if you want to pay for it.
+
+1592495710
+ifreund
+simplicity and consistency go a long way
+
+1592495742
+ifreund
+C++ for example is incredibly difficult to parse
+
+1592495773
+ifreund
+with zig parsing is simple, and
+
+1592495795
+gonz_
+Yeah, there's a lot that goes into this being a much more tractable problem than in many languages.
+
+1592495815
+gonz_
+With some very real payoff
+
+1592495817
+ifreund
+what's most impressive is how good zls is at supporting comptime-known stuff
+
+1592495846
+scientes
+ifreund,
+
+1592495937
+ifreund
+scientes: neat, though things have gotten more complex since 98
+
+1592495953
+ifreund
+still though that's less code than I expected
+
+1592495974
+scientes
+ifreund, its because re2c is a pretty slict regexp compiler
+
+1592495979
+scientes
+*slick
+
+1592495995
+ifreund
+yeah looking a little deeper now
+
+1592496002
+ifreund
+I didn't know this existed
+
+1592496011
+scientes
+I was looking at tokenizing zig with it
+
+1592496029
+scientes
+cause out current tokenizer is annoyingly non-regular
+
+1592497709
+leeward
+any zls folks around? a45939f8abe3354ad70c10f17558cace623b9e4a seems to have broken things.
+
+1592498012
+ifreund
+don't see alexnask here, probably best to just open an issue
+
+1592498035
+ifreund
+i think they tend to hang out more on the discord
+
+1592498055
+leeward
+Right, there's a discord.
+
+1592498104
+ifreund
+it's quite active, though very memey at times. and its discord :(
+
+1592498134
+leeward
+Yeah, being Discord tends to make things a certain way.
+
+1592498175
+gonz_
+It's certainly its own kind of atmosphere
+
+1592498697
+gonz_
+I like the idea of having disparate communities around a language, though, I have to say.
+
+1592498722
+leeward
+Monoculture is bad.
+
+1592498726
+gonz_
+I never had
+
+1592498764
+BaroqueLarouche
+wish we had a native Matrix room
+
+1592498766
+ifreund
+yeah i'm all for decentralization
+
+1592498767
+gonz_
+Nothing official or anything about it
+
+1592498812
+ifreund
+i never found a matrix client I liked, so I mostly stick to irc
+
+1592498839
+ifreund
+still logged in on matrix though cause I'm too lazy to set up a proper irc bouncer
+
+1592498846
+ifreund
+ifreund[m] is always listening
+
+1592498871
+BaroqueLarouche
+I use Riot aka the "official" one
+
+1592498896
+ifreund
+yeah, it's the one that works the best, but it falls far short of weechat imo
+
+1592498940
+ifreund
+i realize that my taste in chat clients is likely not very representative though
+
+1592498949
+leeward
+xchat is making me less a fan as time goes on.
+
+1592498980
+ifreund
+i have issues with weechat too, mainly that the config is a mess
+
+1592498992
+ifreund
+haven't had time to check out irssi or anything else though
+
+1592499007
+leeward
+My xchat problems are more...its text control doesn't seem to work correctly.
+
+1592499035
+leeward
+Maybe I'll make an irc client in Zig that's way worse than any of the other ones out there.
+
+1592499065
+ifreund
+i've actually been considering writing a minimal one as well, partially to play around with async
+
+1592499076
+ifreund
+i have too many projects already though
+
+1592499081
+BaroqueLarouche
+make a Matrix client instead, IRC needs to fade away IMO
+
+1592499087
+ifreund
+no way
+
+1592499096
+ifreund
+matrix is way too complex of a protocol
+
+1592499112
+fengb
+xmpp 🙃
+
+1592499120
+gonz_
+I used to use a bridge for Matrix -> weechat way back when
+
+1592499131
+ifreund
+it has its use case as a bridge, but I'd never choose it over irc out of choice
+
+1592499139
+gonz_
+Actually, it may have gone through bitlbee? I don't remember now.
+
+1592499165
+ifreund
+lol at that sentance I just wrote :D
+
+1592499299
+gonz_
+Client stuff for Matrix didn't use to be so complicated, I have this repo from when I was playing around with it:
+
+1592499353
+gonz_
+It's not very complete, though, but it used to be a tractable problem in that it can be done piecemeal.
+
+1592499591
+gonz_
+Funny how it's just 5 years ago and I have almost no recollection of writing this code.
+
+1592499610
+gonz_
+I would have as easy of a time changing this code as everyone else :D
+
+1592499709
+fengb
+5 years ago? I can’t figure out what my code did from a week ago
+
+1592499837
+gonz_
+Heh, yeah, you're not alone. There've been files I'm like "Ugh, I feel bad reading this, who wrote it?" and `git blame` says it's me :D
+
+1592500387
+gonz_
+> i have too many projects already though
+
+1592500391
+gonz_
+it me
+
+1592500410
+gonz_
+s/projects/unfinished projects
+
+1592500428
+gonz_
+But I feel like this is the nature of experimentation and exploration
+
+1592508697
+leeward
+Well, got zls up and running on Emacs...time to see what all this newfangled lsp stuff is about.
+
+1592508817
+alexnask
+Let me know how it goes. Someone reported hover stopped working after a save with lsp-mode a few days ago
+
+1592508821
+alexnask
+But I couldnt repro
+
+1592509092
+leeward
+Oh, actually, since you're here:
+
+1592509102
+leeward
+It looks like master isn't building.
+
+1592509136
+ifreund
+did you update your zig in the past few days?
+
+1592509141
+leeward
+./src/main.zig:63:39: error: TODO: type coercion of anon struct literal to struct
+
+1592509145
+leeward
+Yeah, I just updated it.
+
+1592509148
+leeward
+Did they fall out of sync?
+
+1592509169
+leeward
+Though...I'll try updating Zig again.
+
+1592509172
+ifreund
+no, i think you need to update again, that type coercion was implemented
+
+1592509203
+alexnask
+Yes that was implemented a couple of days ago
+
+1592509209
+leeward
+Hmm, something weird happens with my source control sometimes and it thinks Zig is up to date but it's not.
+
+1592509258
+leeward
+Looks like that's what's going on here.
+
+1592509295
+ifreund
+git fetch upstream && git reset --hard upstream/master
+
+1592509298
+leeward
+I guess this is the bleeding part of the bleeding edge.
+
+1592509320
+alexnask
+lol
+
+1592509326
+leeward
+ifreund: That would be fine if I weren't weird, but I am. I use mercurial to talk to github.
+
+1592509333
+ifreund
+ah
+
+1592509538
+leeward
+alexnask: You mentioned in your talk that Microsoft made the LSP spec intentionally hard to understand, but I don't get it. Don't they want people to implement servers for different languages? I can see why they would want clients to be hard to implement, but why even make a public protocol if it's going to be intentionally obtuse?
+
+1592509599
+alexnask
+Intentionally hard was probably not the best way to say this (also it was mostly in jest)
+
+1592509602
+alexnask
+There are some decisions
+
+1592509616
+alexnask
+That most server writers opposed
+
+1592509625
+ifreund
+cough, UTF-16
+
+1592509625
+alexnask
+E.g. utf16 offsets
+
+1592509632
+leeward
+
+
+1592509635
+alexnask
+That are very Microsoft-y
+
+1592509704
+leeward
+Ah. They do have their idioms.
+
+1592509761
+leeward
+Up to date Zig and it looks like zls is working nicely.
+
+1592510038
+fengb
+Isnt OOXML technically OSS?
+
+1592510064
+alexnask
+Semantic tokens were fun to impelent, especially seeing all the white text progressively getting highlighted as I did it :P
+
+1592510081
+alexnask
+Too bad I have to go back to struggling to get cImport support now
+
+1592510095
+alexnask
+implement*
+
+1592510213
+shcv
+I'm trying to build zig, but am running into an issue where it can't find "lld/Common/Driver.h" - it seems that my system (gentoo) installation of LLVM v10 and LLD doesn't include that file... would just downloading the source work? Or am I missing something?
+
+1592510466
+ifreund
+shcv: did you install the development headers for lld? they're split on some distros but don't know about gentoo
+
+1592510568
+leeward
+pixelherodev runs gentoo, if he's around
+
+1592510589
+pixelherodev
+wow, that was perfect timing lol
+
+1592510592
+leeward
+:)
+
+1592510592
+pixelherodev
+just woke up :P
+
+1592510605
+pixelherodev
+it's currently 16:00 lol
+
+1592510636
+alexnask
+Hi ^.^
+
+1592510683
+leeward
+Seems like you're...somewhere in oceania today.
+
+1592510719
+pixelherodev
+I need a sane sleep schedule lol
+
+1592510736
+alexnask
+Sane sleep schedules are for the weak
+
+1592510736
+pixelherodev
+shcv: LLVM 10 is a freaking mess
+
+1592510757
+pixelherodev
+I had to patch the ebuilds to change to build system to get it in a state Zig would link against
+
+1592510764
+pixelherodev
+Wasn't an issue with LLVM 9 :(
+
+1592511373
+shcv
+hmm
+
+1592511570
+shcv
+pixelherodev: would you mind sharing your patched ebuilds?
+
+1592511612
+pixelherodev
+that depends on if I still have them :P
+
+1592511622
+pixelherodev
+I haven't updated LLVM or Clang in months
+
+1592511633
+pixelherodev
+It's entirely possible I accidentally overwrote the patches
+
+1592511643
+pixelherodev
+It was about turning BUILD_SHARED_LIBS on or something like that
+
+1592511754
+leeward
+I just have the 1 patch for Zig that links LLVMPolly to get it to build.
+
+1592511778
+leeward
+We're still saying that's an LLVM bug, right?
+
+1592511816
+ifreund
+no patches needed on void, it just works :)
+
+1592511822
+pixelherodev
+Any issue with linking LLVM is 99% likely to be an LLVM bug
+
+1592511834
+pixelherodev
+ifreund: that's probably because Void ignored LLVM's stupid build decisions
+
+1592511845
+ifreund
+yup i'd believe so
+
+1592511854
+ifreund
+dude who packages it knows what he's doing
+
+1592511989
+ifreund
+he also wrote this monstrosity:
+
+1592512046
+pixelherodev
+?
+
+1592512070
+pixelherodev
+Oh wow
+
+1592512074
+pixelherodev
+Someone trying to make C++ usable
+
+1592512076
+pixelherodev
+lol
+
+1592512080
+pixelherodev
+Good luck with that
+
+1592512101
+ifreund
+yeah, honestly it's looks better than the std, but still would rather use zig
+
+1592512303
+fengb
+Just use boost amirite
+
+1592512317
+nerthus
+why does documentation/master/ say Zig Version 0.5.0? (changing it to 0.6.0 in the url displays the right version)
+
+1592512328
+leeward
+The problem with (modern) C++ is not that it's missing features. C++ contains several perfectly usable languages.
+
+1592512347
+pixelherodev
+lol, yes
+
+1592512348
+pixelherodev
+Exactly
+
+1592512355
+pixelherodev
+It's lacking in lacking
+
+1592512359
+leeward
+nerthus: bugs is why. Replace "master" with "0.6.0" to get the right documentation.
+
+1592512363
+leeward
+pixelherodev: Well stated.
+
+1592512367
+rooke
+I kind of enjoy using c++... just not other peoples c++
+
+1592512393
+fengb
+C++: a centipede made by nailing legs to a dog
+
+1592512441
+leeward
+I feel like there's a market for "sane C++" that just picks a subset and makes a linter or something.
+
+1592512447
+pixelherodev
+rooke: yes, but the problem is, "C++" generally
+
+1592512456
+leeward
+Of course, that becomes intractable because of the grammar...
+
+1592512457
+pixelherodev
+Plenty of people
+
+1592512464
+pixelherodev
+Problem is, then you have to deal with other people's code
+
+1592512467
+pixelherodev
+Or other people touching your code
+
+1592512470
+leeward
+It's like Perl, but with 10 times the footguns.
+
+1592512477
+pixelherodev
+Exactly
+
+1592512582
+rooke
+leeward: the couple of pals I know who went on to code c++ professionally... thats basically what their work does, restricts the language to some tractable subset
+
+1592512595
+rooke
+problem is... every company chose a different subset ;_;
+
+1592512670
+leeward
+rooke: Wow, I haven't seen an employer actually enforce a particular subset successfully.
+
+1592512721
+rooke
+leeward: I don't know how successful the enforcement was to be fair, only it was attempted :x
+
+1592512825
+leeward
+Well, MISRA C++ came out in 2008, so it doesn't incorporate C++0xb or later features.
+
+1592512881
+leeward
+The real problem is libraries. If you want to use a C++ library that doesn't expose its interface with "extern C" then you have to use all the C++ language features the library uses.
+
+1592512890
+leeward
+Heck, `new` throws.
+
+1592512902
+pixelherodev
+Not necessarily
+
+1592512906
+pixelherodev
+Depends on the platform
+
+1592512914
+pixelherodev
+and you can compile libstdc++ to not use exceptions
+
+1592512917
+pixelherodev
+It'll abort() instead ;)
+
+1592512937
+BaroqueLarouche
+When you do C++ with -fno-exceptions and -fno-rtti, it can get hard finding libraries that doesn't use either of those
+
+1592512956
+leeward
+pixelherodev: So much better.
+
+1592512961
+pixelherodev
+Oryol is a good graphics library that works with those both disabled
+
+1592512967
+pixelherodev
+Designed with that intent in mind
+
+1592512977
+pixelherodev
+It's also being replaced with C :)
+
+1592512984
+pixelherodev
+(Internally, with a C++ API wrapper)
+
+1592513007
+rooke
+
+
+1592513022
+pixelherodev
+yeah
+
+1592513028
+pixelherodev
+I think I have a few patches in it :P
+
+1592513048
+leeward
+Fun fact: if you call a C++ function from a C function called from a C++ function, and the innermost one throws an exception, it's altually legal in many states to shoot anyone named Stroustrup.
+
+1592513057
+rooke
+Man its got a decent spread of languages going on
+
+1592513061
+pixelherodev
+Hey, don't blame him
+
+1592513071
+pixelherodev
+leeward: he's only responsible in that he abdicated control of the language
+
+1592513086
+pixelherodev
+Blame the committee
+
+1592513090
+pixelherodev
+Proof that democracy fails
+
+1592513092
+rooke
+His book "a tour of c++" presents a very pretty version of c++ to be fair
+
+1592513106
+leeward
+pixelherodev: Can't hang a committee.
+
+1592513126
+pixelherodev
+We can certainly *try*.
+
+1592513129
+rooke
+or at least it felt pretty to me when I read it
+
+1592513152
+leeward
+rooke: I've read it, and tend to agree, but it presents a mostly-sane subset.
+
+1592513170
+gonz_
+Bjalf Starsoup is guilty
+
+1592513174
+gonz_
+make no mistake about it :D
+
+1592513254
+leeward
+But "The C++ Programming Language" can be compared to K&R just by looking at the two in profile.
+
+1592513287
+leeward
+4th edition (2013) 1376 pages
+
+1592513342
+leeward
+I left my copy of K&R in the office; no handy page count.
+
+1592513394
+rooke
+272 pages according to amazon
+
+1592513395
+leeward
+Amazon says 272 pages for 2nd edition
+
+1592513402
+leeward
+So close.
+
+1592513433
+rooke
+Only the third most popular c book on amazon?
+
+1592513438
+leeward
+So...you could drop 1,000 pages from Stroustrup and it'd still be bigger than K&R.
+
+1592513463
+leeward
+It's pretty old. I don't think it covers C99.
+
+1592513488
+leeward
+Yeah, 2nd edition was 1988
+
+1592513603
+rooke
+A tour of c++ is bout the same length: 256
+
+1592513704
+rooke
+Back to zig: when writing tests for a library which requires an allocator, is there much reason to use anything beyond the arena allocator?
+
+1592513749
+BaroqueLarouche
+you should the testing allocator it will do a basic sanity check for alloc/free count
+
+1592513749
+leeward
+Yeah, but K&R is a tutorial with exercises and Tour is a table of contents.
+
+1592513776
+leeward
+rooke: If I expect it to be used with -lc, I usually use c_allocator.
+
+1592513782
+leeward
+Oh, right! There's a testing allocator!
+
+1592513793
+leeward
+There's also FailAllocator3.
+
+1592513803
+leeward
+s/FailAllocator3/FailAllocator
+
+1592513815
+rooke
+Oh I didn't know about the testing allocator
+
+1592513817
+leeward
+Of course, it wraps a real allocator.
+
+1592513891
+BaroqueLarouche
+note that currently the testing allocator doesn't allocate a huge buffer so if you ever ran out of memory you can do the following:
+
+1592513910
+andrewrk
+Q: would it be an interesting live stream topic to do pull request merges? sort of show the thought process and merge process?
+
+1592513921
+pixelherodev
+A: yeah?
+
+1592513932
+ifreund
+I'd watch
+
+1592513933
+rooke
+I'd watch
+
+1592513936
+BaroqueLarouche
+why not!
+
+1592513939
+pixelherodev
+I am a watch
+
+1592513984
+rooke
+BaroqueLarouche: thanks, gonna save this just in case :)
+
+1592514032
+BaroqueLarouche
+and now my watch begins
+
+1592514060
+alexnask
+I'd watch
+
+1592514239
+leeward
+rooke: in case you haven't seen it:
+
+1592514763
+andrewrk
+cool. I'm hoping to get to a point here in the next couple hours where I can start streaming
+
+1592515367
+fengb
+PogChamp
+
+1592515577
+ifreund
+andrewrk: just saw that @src() got merged, do you think this should replace the enum literal passed to std.log?
+
+1592515623
+ifreund
+doesn't look like there's going to be a way to get the location of the calling function, so we'd have to do something like:
+
+1592515641
+andrewrk
+ifreund, I'm thinking log should not use @src()
+
+1592515649
+ifreund
+std.log.err(@src(), "shit happened", .{});
+
+1592515673
+ifreund
+fwiw i'm quite happy with the enum literal myself
+
+1592515699
+ifreund
+it allows totally customizable scope and for the implementor of root.log to filter easily
+
+1592516034
+andrewrk
+I'm determined to get your log PR merged today
+
+1592516100
+mq32
+std.log wil be a thing then? neat!
+
+1592516114
+ifreund
+\o/ maybe i should start working on docs
+
+1592516133
+ifreund
+er, std.log already has docs, i mean updating std.debug.warn docs
+
+1592516157
+ifreund
+that is if you think the rename to std.debug.print is worthwhile
+
+1592516258
+mq32
+i think it's a good idea to have std.debug.print only print in .Debug
+
+1592516273
+leeward
+Would std.debug.print still write to stderr?
+
+1592516314
+mq32
+i would say so
+
+1592516322
+ifreund
+yeah
+
+1592516339
+ifreund
+oh i forgot this depends on #5203 with the current implementation
+
+1592516357
+ifreund
+though i could s/@Type(.EnumLiteral)/@TypeOf(.foobar)/g to fix that
+
+1592516488
+fengb
+We should have `std.out` and `std.err` :P
+
+1592516514
+leeward
+hah, nice
+
+1592516598
+mq32
+fengb: System.out.println("Hello, World!", .{});
+
+1592516599
+leeward
+in std: `pub const out = io.getStdOut().outStream();`
+
+1592516613
+leeward
+then you could std.out.print()
+
+1592516666
+fengb
+Actually since it can't fail now... that's perfect :P
+
+1592516681
+fengb
+Wait... can it run at comptime? Probably not :/
+
+1592516711
+leeward
+Time to check
+
+1592516886
+fengb
+Windows and BYOS block it :(
+
+1592516901
+leeward
+Fails on Linux.
+
+1592516948
+leeward
+Though...so does std.debug.warn
+
+1592517023
+leeward
+Sounds like it doesn't have to run at comptime.
+
+1592517190
+andrewrk
+heh, found undefined behavior in libbacktrace (used by Tracy)
+
+1592517213
+pixelherodev
+Oof, I've used that too
+
+1592517215
+pixelherodev
+What's wrong with it?
+
+1592517234
+pixelherodev
+fengb: BYOS can work with getStdOut.
+
+1592517238
+pixelherodev
+Source:
+
+1592517741
+leeward
+fengb:
+
+1592517783
+fengb
+A PR disguised as a proposal 🤔
+
+1592517791
+fengb
+Oh you're nmichaels?
+
+1592517856
+andrewrk
+BaroqueLarouche, it's working!!
+
+1592517862
+leeward
+That is me.
+
+1592517875
+leeward
+Maybe it's a proposal disguised as a PR!
+
+1592517879
+BaroqueLarouche
+@andrewrk: woot!
+
+1592517905
+leeward
+Freenode wants registered nicks, and I had this one registered.
+
+1592518090
+ifreund
+hype! i want to run river under tracy
+
+1592518225
+tdeo
+leeward: does that work on windows? i was under the impression getStdIn is not a comptime function there
+
+1592518254
+andrewrk
+a little teaser:
+
+1592518259
+tdeo
+i thought it was GetStdHandle(STD_INPUT_HANDLE); but apparently it's a bit more complicated and does some inline assembly
+
+1592518263
+tdeo
+in zig
+
+1592518661
+gonz_
+andrewrk:
+
+1592518670
+gonz_
+opa
+
+1592518678
+gonz_
+Disregard :D
+
+1592519568
+leeward
+tdeo: We'll find out when CI gets to it, I guess.
+
+1592519779
+alexnask
+\zig\build-release\lib\zig\std\os\windows.zig:1179:20: error: unable to evaluate constant expression
+
+1592519830
+alexnask
+Also if you make it a function please use writer and reader inStream and outStream are going to be removed
+
+1592519839
+alexnask
+:p
+
+1592520056
+pixelherodev
+Ooh
+
+1592520060
+pixelherodev
+Teaser looks :)
+
+1592520078
+dimenus
+picked up a Pinebook Pro, yay to Zig arm development
+
+1592520097
+ifreund
+nice!
+
+1592520153
+dimenus
+first impressions are that it's a pretty nice little package for 200 dollars
+
+1592520170
+pixelherodev
+Nice :(
+
+1592520176
+pixelherodev
+Anyone know when they're back in stock?
+
+1592520182
+dimenus
+screen / keyboard are very good - trackpad is not the best but also not awful
+
+1592520185
+dimenus
+negative
+
+1592520314
+dimenus
+pixelherodev: when did you try to order one?
+
+1592520332
+pixelherodev
+Originally, weeks ago
+
+1592520342
+pixelherodev
+Bank thought it was fraud, so I had to take care of that, and then they were out of stock
+
+1592520346
+pixelherodev
+:(
+
+1592520350
+pixelherodev
+Tried again nearly daily for a bit now
+
+1592520496
+dimenus
+sorry :(
+
+1592520507
+ifreund
+ugh, spend a while debugging protocol errors, just realized i passed the wrong interface to libwayland
+
+1592520534
+ifreund
+can't wait for a zig implementation with better type saftey
+
+1592520838
+ifreund
+also, 0xaa for undefined was such a good idea
+
+1592520863
+andrewrk
+ifreund, if you haven't already worked valgrind into your toolset, it would be the next level up
+
+1592520874
+andrewrk
+zig+valgrind can detect when you branch on an undefined value
+
+1592520883
+ifreund
+oh yeah, i'm using valgrind
+
+1592520936
+ifreund
+right now I'm working on a side project attempting some werid hacky wayland things
+
+1592521022
+andrewrk
+alright, I'm gonna start the live stream in 30 min from now
+
+1592521038
+andrewrk
+self-hosted status update + demo, Tracy integration demo, merging pull requests
+
+1592521074
+ifreund
+i will be there
+
+1592521244
+pixelherodev
+Valgrind can detect that for C too, no?
+
+1592521260
+pixelherodev
+"conditional jump or move depends on uninitialized value"
+
+1592521265
+pixelherodev
+Pretty sure I fixed seven of those last night lol
+
+1592521341
+andrewrk
+yeah but you can't reassign something to undefined in C
+
+1592521478
+mq32
+<andrewrk> alright, I'm gonna start the live stream in 30 min from now
+
+1592521483
+mq32
+damn, i have to sleep
+
+1592521490
+mq32
+will watch the stream recording tomorrow
+
+1592521501
+andrewrk
+it's incredible how much more intuitive this kind of profiling is for getting an understanding of how the code performs
+
+1592521529
+andrewrk
+the bottom-up thing is nice to understand things a certain way, but there's just no comparison to understanding from a top down level what's going on
+
+1592521593
+via
+dimenus: i'm writing to you on a pinebook pro of my own! there's literally dozens of us
+
+1592521672
+andrewrk
+I have one too :D
+
+1592521743
+via
+what are you running on it?
+
+1592521769
+ifreund
+mq32: it's only 1am :D
+
+1592521785
+dimenus
+via: he runs NixOS on his daily
+
+1592521836
+via
+cool. i'm running alpine on here, though i think i'm gonna go back to something like debian
+
+1592521882
+dimenus
+i'm just using stock Manjaro
+
+1592521884
+fengb
+Anyone have a pinephone?
+
+1592521906
+ifreund
+i've been eyeing the postmarketos community edition dropping soon
+
+1592521920
+andrewrk
+via, I haven't changed the default debian thing
+
+1592521937
+dimenus
+do you guys have the v1 then?
+
+1592521948
+dimenus
+i was under the impression that all of them come with Manjaro now
+
+1592521959
+andrewrk
+fengb, I got a pine phone but wasn't impressed with it. the wifi hardware doesn't even have 5G support. the software is not ready yet either. I gave it to rich felker
+
+1592522016
+gonz_
+That's disappointing. I wanted a Pinephone but these hipster devices are likely hard to get by in Bulgaria.
+
+1592522017
+via
+dimenus: came with manjaro, rebuilt u-boot and put alpine on it
+
+1592522024
+fengb
+That was the dev edition right? I’ve heard that postmarket has gotten pretty decent... although no 5G is still a problem
+
+1592522228
+andrewrk
+I ordered a librem5 but it doesn't ship until august, which in 2020 is like 10 years from now
+
+1592522630
+dimenus
+andrewrk: isn't the software situation on the librem even worse?
+
+1592522885
+dimenus
+hmmm, in theory the Mali gpu supports Vulkan
+
+1592524781
+dimenus
+pixelherodev: i can't vouch for them obviously but there's a couple people selling their unopened pbps on /r/pine64official
+

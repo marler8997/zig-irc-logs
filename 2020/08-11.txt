@@ -1,0 +1,1696 @@
+1597106354
+fraktor
+Is there a set of design documents that talks about the future plans for polymorphism?  I'm mostly thinking about traits/interfaces/whatever.
+
+1597106421
+fengb
+#130
+
+1597106724
+fraktor
+How likely is the `@implement` syntax to be adopted? It seems like a pretty cool and Zigish idea.
+
+1597107206
+pixelherodev
+andrewrk: have time to discuss the issues you brought up on 6009?
+
+1597107212
+pixelherodev
+6007*
+
+1597107214
+andrewrk
+yes
+
+1597107240
+pixelherodev
+I think the best example is double-referencing an arg
+
+1597107244
+andrewrk
+fraktor, at this point, language-supported polymorphism is looking unlikely
+
+1597107257
+pixelherodev
+If we have an intCast in the IR which casts an arg to BLAH, and we reference the intCast twice, it'll reference the arg twice
+
+1597107260
+andrewrk
+however restrictions on @Type are being relaxed
+
+1597107270
+pixelherodev
+Since args are implemented as indices, this will end up using the wrong index on the second access
+
+1597107308
+pixelherodev
+Hence what I brought up after - intCasting correctly from function scope, storing the value as an anon (`const SIZE ANONNAME = blah`) and mapping the inst to the ANONNAME
+
+1597107324
+pixelherodev
+That way, future references to the intcase reference the casted value instead of referencing the casted values again
+
+1597107354
+andrewrk
+I'm not following at all. the C backend should be able to do exactly the same thing that codegen.zig does except emit .c instead of machine code. we don't have this problem in codegen.zig
+
+1597107393
+pixelherodev
+Hmm, that's a good point; I'll have to take another look at how codegen.zig handles it
+
+1597107406
+pixelherodev
+It could be that I misunderstood the ZIR
+
+1597107421
+pixelherodev
+IR*
+
+1597107425
+pixelherodev
+Not ZIR, it's the processed IR
+
+1597108963
+pixelherodev
+andrewrk: is there a convenient IR dumper, or only a ZIR dumper?
+
+1597108975
+pixelherodev
+... I need to stop asking questions I can answer by popping open the source again
+
+1597116216
+sqwishy
+hi, am I doing something wrong if I cImport but get '.cimport:7:15.struct_iphdr' does not support field access
+
+1597116296
+andrewrk
+open up that .zig file and see what struct_iphdr looks like. my guess is it's an opaque type
+
+1597116310
+andrewrk
+if you use --verbose-cimport it should print the path to it
+
+1597116356
+sqwishy
+oh cool; it is, "has bitfield" :<
+
+1597116446
+sqwishy
+Yeah there's some malarky with the C definition having to do with endianness or something. It's weird. If there's no easy way to deal with this in cImport I can probably define the type in zig easily enough.
+
+1597117650
+daurnimator
+sqwishy: alternatively, you could add bitfield support :)
+
+1597117711
+sqwishy
+I saw the issue for that on github; looks complicated
+
+1597117825
+daurnimator
+you're not wrong
+
+1597130728
+andrewrk
+daurnimator, xor list doesn't apply to the stage2 use cases because the other prev/next pointers are not available when we need to access them
+
+1597133340
+daurnimator
+andrewrk: dang
+
+1597137616
+danyspin97
+more support for zig:
+
+1597137678
+ikskuh
+danyspin97: cool!
+
+1597151141
+pixelherodev
+Huh
+
+1597151149
+pixelherodev
+andrewrk: turns out intCast isn't actually supported by codegen.zig yet
+
+1597151158
+pixelherodev
+(not if the value's actually used, anyways)
+
+1597152066
+pixelherodev
+Ha!
+
+1597152070
+pixelherodev
+My solution
+
+1597152078
+pixelherodev
+(inst_table)
+
+1597152090
+pixelherodev
+It maps *Inst to MCValue, I need to map it to []u8
+
+1597154307
+pixelherodev
+Is there a way to say `this function only returns [infer error type]`?
+
+1597154312
+pixelherodev
+Currently using `anyerror` as the return type
+
+1597154386
+pixelherodev
+I have a function that returns !T1 which in some paths returns a function which was returning !void (except that function is *always an error*, so !void is inaccurate)
+
+1597155528
+pixelherodev
+Woot, fixed up
+
+1597155673
+pixelherodev
+
+
+1597155759
+pixelherodev
+Whoa! Since when did memory leaks in tests show stack traces for the allocations?! That's awesome!
+
+1597155789
+fengb
+since the general purpose allocator was merged
+
+1597155842
+pixelherodev
+Niiiiice
+
+1597155860
+pixelherodev
+Well, fixed that (I hadn't implemented the inst_map cleanup yet), will push soonish
+
+1597155868
+pixelherodev
+"All 1 tests passed" woot
+
+1597163718
+cren
+Hi, I can't get Zig to send data using the sockets from ikskuh's zig-network library
+
+1597163824
+Nypsie[m]
+Could you perhaps show the source?
+
+1597163912
+cren
+of course, just give me a second to put it in a pastebin
+
+1597164108
+cren
+
+
+1597164167
+cren
+I might be missing a step.
+
+1597164182
+cren
+the message seems to get sent but nothing is received
+
+1597164265
+Nypsie[m]
+It's because you're providing it an empty buffer
+
+1597164277
+Nypsie[m]
+client.receive() will read until the buffer is full
+
+1597164330
+cren
+is that the string recv_data ?
+
+1597164350
+Nypsie[m]
+Yes, sorry
+
+1597164374
+cren
+what should I be doing? a string like "     "?
+
+1597164386
+cren
+oh wait
+
+1597164390
+cren
+I have to allocate don't I
+
+1597164425
+Nypsie[m]
+That, or some hard coded length that you re-use
+
+1597164428
+Nypsie[m]
+W/e fits your use case
+
+1597164443
+cren
+Do you think you could provide a quick example?
+
+1597164454
+Nypsie[m]
+For testing purposes you could just do var recv_data: [100]u8 = undefined, and provide that to client.receive()
+
+1597164505
+cren
+is there no way around using `undefined` here? it feels dangerous
+
+1597164562
+Nypsie[m]
+You could fill it with zeroes
+
+1597164576
+Nypsie[m]
+var recv_data = [_]u8{0}*100
+
+1597164619
+leeward
+undefined isn't dangerous; it's extra safe. If you try to read from something undefined that hasn't been written to, your program will crash (in safe build modes).
+
+1597164627
+Nypsie[m]
+[_]u8{0}**100  I ment
+
+1597164642
+Nypsie[m]
+Agreed with Leeward
+
+1597164667
+Nypsie[m]
+Also, client.receive() returns the length that was read, you could use that to get a slice with the exact length
+
+1597164669
+cren
+leeward: oh, that's true. I'm just working off a vague fear of `null` that I've picked up from blog posts
+
+1597164695
+pixelherodev
+NULL isn't scary
+
+1597164709
+leeward
+Also not an issue in Zig. Optionals have to be unpacked before they can be used, so null has to be handled.
+
+1597164716
+shakesoda
+the things that make null scary are things zig is designed to avoid anyways
+
+1597164718
+leeward
+Though I don't think nulls are relevant here.
+
+1597164738
+pixelherodev
+All the "Blah is bad" posts boil down to "Blah is bad if you don't know how to use it properly so people shouldn't use it because we can't expect them to learn to make these decisions on a case-by-case basis"
+
+1597164776
+shakesoda
+pixelherodev: and poor enforcement by languages/compilers
+
+1597164803
+leeward
+To be fair, it's true that we can't expect people to learn to use dangerous features carefully. Decades of vulnerabilities back that up. That's why modern languages don't have those features.
+
+1597164805
+shakesoda
+although, to be sure, quite a few things actually are bad
+
+1597164822
+pixelherodev
+leeward: a lot of people will say that about, say, pointers
+
+1597164828
+pixelherodev
+It's not that we can't expect people to learn them
+
+1597164837
+pixelherodev
+It's that we actively expect them not to and then tell them to work on codebases using them
+
+1597164845
+cren
+it's things like
+
+1597164882
+shakesoda
+if you want to be afraid of something, be afraid of needless complexity
+
+1597164897
+pixelherodev
+I dislike that claim there intensely. The existence of NULL didn't cause those bugs, people not knowing what they were doing did
+
+1597164898
+leeward
+Things that are easy to misuse will be misused. It's a fact of humanity.
+
+1597164907
+pixelherodev
+Everything's easy to misuse if you never learn how to use it
+
+1597164914
+shakesoda
+and in the face of it do not cower, cut it down
+
+1597164915
+leeward
+People don't know what they're doing.
+
+1597164918
+leeward
+Programmers are incompetent.
+
+1597164930
+leeward
+These are fundamental principles of computer science.
+
+1597164944
+pixelherodev
+The solution to incompetence is education, not dumbing down language
+
+1597164956
+shakesoda
+preventing footguns isn't inherently dumbing down
+
+1597164962
+shakesoda
+zig does a lot of footgun prevention
+
+1597165033
+leeward
+I think you're making an assumption that all those vulnerabilities exist because people didn't know how to use things. That's not true. Very skilled, experienced programmers have written huge numbers of vulnerabilities not out of lack of education but by just making mistakes.
+
+1597165067
+shakesoda
+and sometimes (fairly often) they aren't even mistakes at the time of writing
+
+1597165082
+shakesoda
+but, for example, they become mistakes when an assumption is violated from a later change
+
+1597165145
+leeward
+Zig's philosophy is heavily anti-footgun. If education could fix C, we wouldn't need Zig.
+
+1597165165
+fengb
+I feel like the null fear is overblown. Auto nulling is bad and null algebra is pretty bad, but having nulls is kind of a given
+
+1597165191
+leeward
+To be fair, this was really about uninitialized values.
+
+1597165196
+fengb
+Oh
+
+1597165206
+leeward
+It just got associated with nulls.
+
+1597165221
+leeward
+And then the diversion into billion dollar mistakes.
+
+1597165234
+fengb
+I've seen crazy workarounds in SQL due to "avoiding" nulls, just for them to pop back up because of a left join
+
+1597165237
+shakesoda
+the fear was that undefined could be null, but it has to be handled in any case that this could be a problem
+
+1597165252
+Nypsie[m]
+cren: Btw, let me know if you got it working or not. Happy to help further if needed.
+
+1597165255
+fengb
+Because that's what the data is... missing >_>
+
+1597165270
+companion_cube
+leeward: also with null being a "valid" value of far too many types
+
+1597165303
+cren
+Nypsie[m]: thanks
+
+1597165304
+leeward
+companion_cube: Yeah, I think that's the real issue for nulls.
+
+1597165325
+companion_cube
+(and yeah, uninitialized values, ugh)
+
+1597165326
+leeward
+Conflating "nothing here" with a specific value, and handling them the same.
+
+1597165331
+fengb
+I think with modern type theory, optional style nulls are great
+
+1597165345
+cren
+Since we were talking about education: I started trying to learn C and Zig in parallel and gave up with C because I couldn't find resources for C that compared with those available for Zig
+
+1597165349
+leeward
+Yeah, the Maybe monad pretty much solved the null problem.
+
+1597165350
+fengb
+Or nothings or whatever you want to rename them :P
+
+1597165350
+shakesoda
+optionals are nice
+
+1597165370
+fengb
+You can't find resources for C?
+
+1597165373
+shakesoda
+cren: you're one of the mythical new programmers that didn't come from many years of C!?
+
+1597165378
+leeward
+cren: That is very surprising.
+
+1597165380
+cren
+afraid so
+
+1597165391
+cren
+I
+
+1597165401
+cren
+C is famous for being hard, so I needed an authoritative source.
+
+1597165401
+leeward
+Ooh! Cren! Can you read this and tell me what you think?
+
+1597165401
+shakesoda
+trust no one
+
+1597165411
+fengb
+The funniest thing is... I always say Zig is hard to learn without a C background because all the resources imply some C understanding
+
+1597165416
+fengb
+Maybe I'm wrong :P
+
+1597165422
+shakesoda
+the trick to all programming is to avoid oop designs
+
+1597165431
+shakesoda
+which are synonymous with needless complexity and shit performance
+
+1597165437
+Nypsie[m]
+Never did any C either.
+
+1597165448
+leeward
+I spent a summer working through K&R many years ago. I think it qualifies as authoritative, but 2nd edition only goes through C89.
+
+1597165451
+fengb
+Disagree with both points. Sometimes OOP is necessary
+
+1597165454
+danyspin97
+shakesoda: i like oop
+
+1597165461
+shakesoda
+fengb: it isn't
+
+1597165463
+cren
+I read K&R, up to a point. But even the new edition is an old book. How can I trust that the K&R examples show best practices for avoiding C's (in)famous plethora of footguns?
+
+1597165467
+fengb
+Our allocators are OOP, for better or worse
+
+1597165482
+danyspin97
+you can take a complicate problem and structure it nicely using OOP
+
+1597165485
+shakesoda
+make sure to color any learning on the subject with the sheer scope of the harm of oop
+
+1597165494
+shakesoda
+danyspin97: "nicely"
+
+1597165495
+leeward
+cren: You can't.
+
+1597165500
+shakesoda
+adding tons of parts is not a nice structure.
+
+1597165507
+fengb
+That's not OOP though
+
+1597165513
+Nypsie[m]
+danyspin97: Same can be said about its opposite: It can introduce complexity for a simple problem
+
+1597165515
+fengb
+OOP is dynamic dispatch polymorphism
+
+1597165520
+cren
+There were some more modern books but I couldn't find any that seemed to be widely regarded as both "correct" and "modern".
+
+1597165521
+fengb
+You can add all that other shit if you want
+
+1597165529
+fengb
+But that's not what makes OOP useful
+
+1597165530
+cren
+leeward: it was intended as a rhetorical question
+
+1597165530
+danyspin97
+Nypsie[m]: that's why it's up to the programmer to choose the right tool
+
+1597165544
+leeward
+cren: I know, but it had an answer :P
+
+1597165548
+shakesoda
+fengb: i definitely mean the java-branded oop. such designs are really, really prone to excess complexity (especially hierarchical), cache thrashing, just plain being unclear and nasty
+
+1597165560
+fengb
+Oh yeah, inheritance is a crock
+
+1597165560
+shakesoda
+these sorts of horrors
+
+1597165571
+companion_cube
+fengb: why not say "dynamic dispatch" and let "OOP" to the java people?
+
+1597165574
+companion_cube
+it's less confusing
+
+1597165586
+fengb
+Because... people reinvent OOP all the time and pretend it isn't?
+
+1597165589
+fengb
+And it's kinda dumb
+
+1597165592
+leeward
+Time for everyone to agree on what they mean by OOP: Smalltalk? Java? C++? Anything with encapsulation?
+
+1597165608
+shakesoda
+i haven't got fundamental problems with dynamic dispatch itself. it's the java kind that leaves me crusading in irc channels against such evils
+
+1597165616
+companion_cube
+fengb: but then it's not OOP
+
+1597165619
+fengb
+Erlang/Elixir agrees with message passing OOP
+
+1597165628
+cren
+In Zig you can attach methods to a struct, right? That's effectively OOP in my book
+
+1597165631
+companion_cube
+so "OOP" is just a meaningless term.
+
+1597165632
+leeward
+fengb: I <3 Erlang.
+
+1597165641
+companion_cube
+cren: they're statically dispatched I believe
+
+1597165655
+shakesoda
+cren: it's not, that's just a tool you've got for encapsulation
+
+1597165660
+fengb
+It really isn't. But people who hate OOP will throw away all of it
+
+1597165663
+cren
+so it's dynamic dispatch that y'all don't like about OOP?
+
+1597165675
+companion_cube
+no, it's everything except dynamic dispatch :p
+
+1597165676
+leeward
+I don't like the overloading.
+
+1597165696
+leeward
+Encapsulation is the best. Dynamic dispatch can be useful.
+
+1597165701
+fengb
+Alan Kay invented the term object-oriented, and he meant Smalltalk message passing or Erlang actors
+
+1597165709
+shakesoda
+nah, it's inheritance, overloading, tendency to break problems into meaninglessly small parts that can't be understood as a whole anymore, that kind of stuff.
+
+1597165718
+shakesoda
+and just plain designing out the very possibility of performance
+
+1597165734
+shakesoda
+the frequency with which people do this when you let them design their "nice" object models is nearly 100%
+
+1597165736
+companion_cube
+fengb: so it it's typechecked, it's not OOP? 🙃
+
+1597165763
+fengb
+I'd consider pattern matching dispatch to not be OOP yeah
+
+1597165775
+alehander92
+even if dynamic?
+
+1597165776
+leeward
+Erlang does pattern matching.
+
+1597165783
+fengb
+I've tried modelling that style of static dispatch in OOP and it's pretty bad
+
+1597165784
+alehander92
+you can generate dynamic dispatch
+
+1597165788
+alehander92
+from pattern matching i think
+
+1597165789
+companion_cube
+it can be dynamic yet typechecked
+
+1597165808
+companion_cube
+(and yes, pattern matching is just a different thing, totally unrelated)
+
+1597165826
+fengb
+I mean... if you're talking about defined traits and stuff... that's still OOP
+
+1597165836
+fengb
+Or Go style interfaces
+
+1597165840
+shakesoda
+in general code should be as static, direct and simple as it can possibly be. sometimes directness isn't very practical for some reason or other and you end up with a fengb argument
+
+1597165843
+alehander92
+isn't oop about
+
+1597165844
+leeward
+I think what most people mean when they say they don't like OOP is inheritance.
+
+1597165845
+fengb
+But not `interface{}`
+
+1597165846
+alehander92
+open vs closed
+
+1597165858
+shakesoda
+no
+
+1597165862
+alehander92
+because if not, it seems to me one can just generate dynamic dispatch for adt-s
+
+1597165886
+companion_cube
+fengb: what if I'm talking about dynamic dispatch, statically typed, without a "this" ? :p
+
+1597165902
+alehander92
+but if it's open: it seems harder, because outside types
+
+1597165913
+alehander92
+can't be easily accounted for in `case` blocks
+
+1597165921
+alehander92
+the expr problem etc
+
+1597165922
+fengb
+I sorta feel like if it's open, it has to be dynamic and OOP in some capacity
+
+1597165931
+alehander92
+yeah
+
+1597165945
+alehander92
+but maybe you can just have a table of pointers
+
+1597165946
+fengb
+Which is why I consider it useful. But I do prefer if it was closed and static
+
+1597165954
+alehander92
+which .. is it really oop
+
+1597165968
+fengb
+Manual vtables in C is considered OOP yeah
+
+1597165979
+shakesoda
+leeward: inheritance is
+
+1597165992
+fengb
+Inheritance is dumb. No arguments there
+
+1597165992
+shakesoda
+i have to deal with
+
+1597166005
+companion_cube
+fengb: so, ok, it's literally "dynamic dispatch == oop" :p
+
+1597166028
+shakesoda
+you'll note that none of these things correlate with fengb's argument about oop being dynamic dispatch
+
+1597166073
+shakesoda
+the only issue i take with dynamic dispatch is that it's usually
+
+1597166076
+leeward
+shakesoda: Yeah, I figured your problems ran deeper. The performance issue isn't something most people run into, but most people don't actually care how fast their code runs.
+
+1597166093
+shakesoda
+leeward: people not caring about how fast their code runs happens to be why everything runs so insanely bad
+
+1597166139
+shakesoda
+leeward: in their defense, it's a complex subject and things like caches are largely hidden and unintuitive
+
+1597166146
+leeward
+Correct, Performant, Soon. Pick 2. Most businesses don't need performant.
+
+1597166182
+shakesoda
+leeward: and then i have to come in and save their butts when it's too slow to even ship >:(
+
+1597166186
+leeward
+In the few places I've worked where performant was a requirement, we sacrificed a lot of soon.
+
+1597166215
+shakesoda
+most of the things you can do for performance cost you practically nothing if you don't screw it up when you start
+
+1597166258
+shakesoda
+it's... really frequent that you can smell-test the worst offenders in any given design from a really early stage
+
+1597166293
+fengb
+Here's my goto example of OOP:
+
+1597166295
+shakesoda
+the hidden mutable state stuff can be pretty sinister too, to this same effect
+
+1597166303
+leeward
+It's also really frequent that the worst offenders are complete surprises only revealed by profilers. I do tend to work with above average engineers though.
+
+1597166309
+fengb
+You have pages, which has routing, rendering, state transitions
+
+1597166323
+fengb
+But it's stuck in Elm, so you have to do wire all of that in manually without help
+
+1597166325
+shakesoda
+leeward: yes, that very much happens too
+
+1597166349
+companion_cube
+fengb: but it's Elm?! it does't have dynamic dispatch? :D
+
+1597166352
+fengb
+If there was "proper" OO support here, you can create separate Page objects and dynamically dispatch the sub pieces
+
+1597166361
+fengb
+Yeah it's an OO architecture with terrible boilerplate
+
+1597166365
+leeward
+My criterion for whether or not someone knows how to make software run fast in an interview is whether or not they mention profilers.
+
+1597166370
+fengb
+Which is why I like using it as an example :P
+
+1597166402
+fengb
+Adding a new page involves traversing reams of additional static dispatch through the entire codebase
+
+1597166412
+shakesoda
+leeward: and the weight given is directly proportional to how soon the profiler is mentioned!
+
+1597166461
+fengb
+It's hard to explain... but in my mind, it's binding of central "methods" into a larger "object"
+
+1597166476
+fengb
+And that "object" must adhere to these contracts or the other subsystems don't work
+
+1597166477
+leeward
+shakesoda: Yep. Though the timer gets paused while they talk about algorithmic complexity.
+
+1597166478
+shakesoda
+how can we make this faster? -> first sentence should be "hit it with the profiler and find out what's going wrong" for "strong hire" :D
+
+1597166505
+leeward
+shakesoda: Exactly.
+
+1597166523
+leeward
+The algorithmic complexity thing is just because they misunderstood the question.
+
+1597166552
+fengb
+Like for example, the file API in Unix is kind of object-oriented. You have a "filepath" and you can talk to it with standard syscalls, but the internals are completely opaque and could go through the network or sshfs or whatever
+
+1597166572
+companion_cube
+fengb: if it's all static dispatch, it's not OOP :D
+
+1597166584
+fengb
+Or Zig allocators must adhere to alloc/resize calls
+
+1597166591
+fengb
+But those aren't static dispatch
+
+1597166598
+companion_cube
+(in Elm)
+
+1597166606
+fengb
+Yeah, Elm just makes it really hard
+
+1597166618
+fengb
+But the architecture is actually OO.  It's just poorly done because it doesn't have real OO
+
+1597166640
+fengb
+You have pages with routes / updates / rendering. But you can't extract those into smaller blobs
+
+1597166653
+shakesoda
+leeward: yeah. theoretical performance vs real performance. not the same, and often misleading
+
+1597166718
+pixelherodev
+Anyone who says "toss more hardware at it" gets shot, I assume?
+
+1597166724
+shakesoda
+yes.
+
+1597166751
+leeward
+"Toss more hardware at it" has been the best solution for "it kinda runs slow" for several decades.
+
+1597166761
+shakesoda
+incidentally, everything runs horribly.
+
+1597166764
+companion_cube
+fengb: imho you just describe 99.999% of programs as OOP then
+
+1597166776
+companion_cube
+as soon as there's a smidge of abstraction or interface, bam! :D
+
+1597166787
+leeward
+Doesn't help when the EEs say we can't have the budget for more than 512 words of RAM.
+
+1597166806
+fengb
+Well, OOP is in a lot of places yes. It's also in too many places yes. But it's a useful tool
+
+1597166816
+fengb
+However... I haven't used OOP in Zig other than allocators
+
+1597166859
+leeward
+I don't think OOP is the problem. 80% of everything is crap, and some things heavily use OOP principles and aren't crap. It's just a tool that gets misused a lot because it's the first thing people learn.
+
+1597166886
+fengb
+ECS in gaming is an example of composition-based OO over classical inheritance-based OO
+
+1597166897
+shakesoda
+ecs is applied data oriented programming
+
+1597166907
+shakesoda
+this is not an incompatible statement
+
+1597166914
+fengb
+I was gonna say :P
+
+1597166950
+fengb
+Anyway, I do agree inheritance is crap
+
+1597166958
+shakesoda
+inheritance is not just crap, it is
+
+1597166974
+shakesoda
+one of the true evils
+
+1597166975
+fengb
+So if you're saying OOP = inheritance, I'll disagree with your word choices but agree with your conception :P
+
+1597167014
+shakesoda
+the model of oop i'm against is the java ideas with all the principles and the inheritance, yes
+
+1597167021
+companion_cube
+but your definition of OOP is roughly as useful as saying "functional = there are anonymous functions" :)
+
+1597167058
+fengb
+? Bags of objects with well defined behaviors that are swappable via interfaces is a pretty "classical" view
+
+1597167081
+companion_cube
+it's just too far reaching, is what I mean
+
+1597167120
+fengb
+Sure? Other than ignoring inheritance, that's sorta the definition of OO
+
+1597167134
+shakesoda
+i'm pretty sure the definition i'm using is more in line with what someone would actually interpret oop as
+
+1597167138
+shakesoda
+not the dynamic dispatch
+
+1597167165
+companion_cube
+fengb: it means that roughly 100% of languages can do OOP :D
+
+1597167165
+fengb
+Even in Java circles, it's well known that inheritance is crap now
+
+1597167173
+fengb
+Yes, most languages can
+
+1597167176
+companion_cube
+(and 95% can do functional, just exclude C and that's it)
+
+1597167190
+fengb
+Object-oriented C isn't that uncommon, like GTK or Linux
+
+1597167196
+companion_cube
+I prefer definition that are a bit stronger…
+
+1597167252
+shakesoda
+fengb: it's also not uncommon that it is almost completely inappropriate when used :(
+
+1597167270
+shakesoda
+where inappropriate means "far from the simplest or most effective, and seemingly done for ideological reasons only"
+
+1597167278
+fengb
+Languages don't completely determine the architectural styles
+
+1597167286
+fengb
+OO languages begats a lot of OO and FP languages does FP. But that doesn't mean you can't do FP style in OO languages
+
+1597167303
+shakesoda
+they don't completely determine the style but they do set the tone for the ecosystem
+
+1597167312
+fengb
+Yes this I agree
+
+1597167327
+fengb
+And one of the biggest failures of OO
+
+1597167379
+leeward
+Standard libraries that provide OO-style things do tend to lead to OO-style code that uses them.
+
+1597167384
+shakesoda
+most of my complaints stem directly from cases where it's a tool reached for by default
+
+1597167391
+shakesoda
+instead of by need
+
+1597167413
+companion_cube
+ok, makes sense I guess
+
+1597167421
+companion_cube
+so you can write non OOP c++, and all that
+
+1597167431
+companion_cube
+(and rust without &dyn is also not OOP ;))
+
+1597167434
+fengb
+I do wish Zig allowed more FP style stuff :(
+
+1597167468
+shakesoda
+i mostly want function expressions/1717
+
+1597167474
+shakesoda
+not much else
+
+1597167487
+fengb
+I want that too yes. I can live without map/filter/reduce but I still wish I had them
+
+1597167488
+companion_cube
+maybe it's a point systems
+
+1597167498
+shakesoda
+i think mentioning 1717 is probably a third of my messages here by volume by now
+
+1597167498
+fengb
+Zig is unabashedly imperative though
+
+1597167499
+companion_cube
+FP is when you have a lot of: closures, anonymous functions, immutable data
+
+1597167507
+pixelherodev
+Hmm, when 1717 gets in it might be worth having `fmt` detect the old style
+
+1597167511
+pixelherodev
+`struct {fn func()}.func` :P
+
+1597167523
+shakesoda
+fengb: i really, absolutely hate the approach rust takes with those things
+
+1597167534
+shakesoda
+dunno if that's an average for fp style, but it's cryptic
+
+1597167556
+shakesoda
+long chains of "wtf does this even..."
+
+1597167561
+fengb
+I don't like Rust syntax. There's a million symbols and I don't understand any of them
+
+1597167581
+shakesoda
+yeah, i have that problem too, and also an excess of complexity just kinda everywhere
+
+1597167627
+shakesoda
+pros: well it's better designed than c++... so that's nice. cons: what does it MEAN
+
+1597167651
+companion_cube
+fengb: there's & and * :D
+
+1597167652
+fengb
+shakesoda: C++ is busy making itself better by adding even more features you want!
+
+1597167670
+companion_cube
+shakesoda: it's the opposite, arguably
+
+1597167673
+shakesoda
+fengb: every time c++ adds a feature i supposedly want i resolve further to become a goat farmer in the mountains
+
+1597167685
+companion_cube
+seeing `.map(….).filter(…).collect()` is very clear, at first glance
+
+1597167708
+companion_cube
+(like, the control flow is clear)
+
+1597167722
+shakesoda
+companion_cube: it's not even remotely clear in my experience, especially when these things grow as they seemingly always do
+
+1597167745
+shakesoda
+companion_cube: like, the abstract/simple case is clear, and it quickly gets pretty hairy when i see them in the wild
+
+1597167770
+pixelherodev
+Yeah, I've been convinced that function chaining is bad
+
+1597167789
+fengb
+Function chaining works well in a FP language with the pipe operator
+
+1597167799
+shakesoda
+function chaining is definitely a dangerous path to go down for clarity
+
+1597167809
+fengb
+Or something that transmutes into an equivalent, like Haskell's do syntax
+
+1597167833
+shakesoda
+there are sometimes cases where it's a reasonable approach, but in rust i just see function chaining everywhere :(
+
+1597167858
+pixelherodev
+One of the only ones I've liked was struct initialization in C
+
+1597167880
+leeward
+companion_cube: I think anonymous functions are a symptom of FP, but not a requirement. FP is when you have immutable data and functions as values.
+
+1597167887
+shakesoda
+that's just a workaround for the language being deficient
+
+1597167906
+shakesoda
+really not a fan of builder pattern type nonsense
+
+1597167948
+fengb
+I wouldn't even consider immutable to be a hard requirement. I'd consider side-effect free as a stronger goal
+
+1597167955
+shakesoda
+heh, "symptom of FP"
+
+1597167972
+leeward
+Yeah, side effects are the big thing.
+
+1597167987
+leeward
+Data mutation just tends to be the most common side effect.
+
+1597167989
+shakesoda
+i really like a lot of FP-isms, short of actually liking FP
+
+1597167999
+fengb
+There's a few cases where mutating the end result is easier, but jumping through immutable hoops can be tough
+
+1597168010
+fengb
+Yeah I'm in the same boat
+
+1597168022
+pixelherodev
+I think that's the case for most programming philosophies
+
+1597168031
+pixelherodev
+Some great ideas, some less so
+
+1597168047
+companion_cube
+builder pattern kind of sucks, yeah
+
+1597168072
+companion_cube
+leeward: if you have functions as values, it's almost unthinkable to not have closures and anonymous functions, I think
+
+1597168089
+fengb
+Zig is there! 🙃
+
+1597168104
+shakesoda
+fp by its very nature of being about the transformation of data has the right idea when you want simple and direct approaches to a solution
+
+1597168114
+leeward
+companion_cube: True, but only almost. Python didn't have lambdas to start with, and neither did Erlang.
+
+1597168122
+shakesoda
+and being side effect free to the maximum extent possible is
+
+1597168135
+shakesoda
+but then most actual fp languages might as well be actually encrypted. argh.
+
+1597168143
+companion_cube
+yeah I wouldn't call python good for FP
+
+1597168153
+companion_cube
+it has the features, but in a terribly broken way
+
+1597168170
+leeward
+It's certainly not designed explicitly for it, but you can do it if you want.
+
+1597168176
+leeward
+Erlang is less ambiguous though.
+
+1597168183
+leeward
+Variables are immutable by default.
+
+1597168190
+companion_cube
+in python you need to guard against all the stupidly broken scoping
+
+1597168201
+companion_cube
+it annoys me that it's so broken
+
+1597168209
+fengb
+Erlang didn't have lambdas?
+
+1597168238
+companion_cube
+it definitely does
+
+1597168242
+companion_cube
+Erlang is good for FP
+
+1597168299
+companion_cube
+(a requirement of being good for FP is also to be expression based, and python fails spectacularly at that)
+
+1597168301
+leeward
+Erlang does have lambdas, but it didn't start that way.
+
+1597168326
+leeward
+And for a long time funs (what Erlang calls lambdas) were horribly slow so they were mostly not used.
+
+1597168450
+leeward
+And I'll happily grant that Python is not a great choice for FP. I was just trying to provide an example of a language with functions as values but not anonymous functions, and (very) old versions of Python qualify.
+
+1597168483
+fengb
+Yeah I learned proper FP in Python fwiw
+
+1597168495
+fengb
+I "learned" FP in Scheme in college, but that wasn't real FP
+
+1597168512
+fengb
+Manually unrolling iteration into recursion! -_-
+
+1597168519
+companion_cube
+that's proper FP :p
+
+1597168531
+companion_cube
+(also, recursion is not a subset of iteration)
+
+1597168536
+fengb
+That's missing forest for the tress
+
+1597168541
+fengb
+I didn't use map/filter/reduce
+
+1597168549
+companion_cube
+ah? even though they're much better in scheme?
+
+1597168563
+fengb
+I didn't learn it
+
+1597168573
+fengb
+Just because you use an FP language doesn't mean you get FP :P
+
+1597168583
+companion_cube
+right, if it's only the basics
+
+1597168641
+leeward
+fengb: Isn't manually turning iteration into tail recursion like chapter 1 of SICP?
+
+1597168668
+fengb
+Sure? We got into advanced stuff like continuation passing style
+
+1597168677
+fengb
+But the class missed real FP completely
+
+1597168683
+fengb
+And I was super annoyed once I learned it in Python
+
+1597168687
+companion_cube
+well you need to understand recursion
+
+1597168689
+companion_cube
+at some point
+
+1597168692
+fengb
+Like "what was the point of the class?"
+
+1597168717
+leeward
+companion_cube: But first you have to understand recursion.
+
+1597168726
+companion_cube
+exactly
+
+1597178719
+pixelherodev
+Lots of stage2 issues, i see :)
+
+1597178765
+leeward
+Sounds like a good sign.
+
+1597178770
+andrewrk
+retired the waterfall project, it's all issues now
+
+1597178804
+andrewrk
+might do some stage2 streaming today
+
+1597178824
+pixelherodev
+waterfall?
+
+1597178841
+leeward
+big design up front
+
+1597178841
+andrewrk
+kanban?
+
+1597178846
+pixelherodev
+ahh
+
+1597178847
+andrewrk
+sorry I said the wrong word
+
+1597179815
+leeward
+So, I'm assuming that pixelherodev has no reason to know what waterfall, kanban, or agile are. Am I wrong?
+
+1597179977
+pixelherodev
+s/reason/desire
+
+1597179979
+pixelherodev
+FTFY
+
+1597180010
+leeward
+Yeah, most people don't have desire; it's not optional in many workplaces.
+
+1597180116
+andrewrk
+I was only trying to avoid issue spam in the early stages of self-hosted. Now that the project has lift-off and people are starting to contribute it makes more sense to do issues like normal
+
+1597180156
+andrewrk
+oh man this leak tracking allocator is the shit
+
+1597180169
+andrewrk
+the stage2 development cycle just got a big upgrade
+
+1597180184
+leeward
+Yeah, no sense writing tickets when the number of contributors and users is less than 3.
+
+1597180204
+pixelherodev
+andrewrk: I know, I mentioned that this morning
+
+1597180223
+leeward
+Well, some sense, but only if it stays that way for a long time.
+
+1597180235
+andrewrk
+pixelherodev, I fixed an issue and bumped the default to 8 for test modes
+
+1597180249
+andrewrk
+8 stack frames
+
+1597180296
+pixelherodev
+I'm going to try to finish up that CBE PR tonight
+
+1597180298
+pixelherodev
+It's basically done now
+
+1597180299
+andrewrk
+pixelherodev, just wait until you get a double-free :)
+
+1597180309
+pixelherodev
+andrewrk: Also, I was totally right :D
+
+1597180316
+pixelherodev
+I looked at codegen.zig, per your suggestion
+
+1597180321
+pixelherodev
+It does
+
+1597180334
+pixelherodev
+It's always a great feeling when that happens
+
+1597180372
+andrewrk
+oh good, glad it can be resolved without a bespoke solution to CBE
+
+1597180421
+pixelherodev
+Yep :)
+
+1597180426
+andrewrk
+btw one of the perf issues to investigate (*after* we set up perf testing benchmarks) is to add an untagged union field to ir instructions, so that you can store 1 pointer sized thing per instruction
+
+1597180435
+andrewrk
+this would mean no hash table needed
+
+1597180437
+pixelherodev
+
+
+1597180444
+pixelherodev
+That's what it generates now :)
+
+1597180457
+pixelherodev
+Might need better naming than `__temp_{}`, but it's fine for now
+
+1597180475
+andrewrk
+there will be a lot of instances of anonymous named things
+
+1597180482
+pixelherodev
+Yeps
+
+1597180502
+andrewrk
+consider: `a + b + c + d` will codegen to .c code with 4 statements each with an anonymous name
+
+1597180519
+andrewrk
+err, 3 statements. you get the idea
+
+1597180542
+pixelherodev
+Yep
+
+1597180564
+andrewrk
+nice work
+
+1597180599
+pixelherodev
+Thanks! :)
+
+1597180608
+pixelherodev
+The one thing left to address was the switch you mentioned
+
+1597180613
+pixelherodev
+That shouldn't be more than a few minutes of work
+
+1597180628
+pixelherodev
+I also want to minorly refactor render{Type,Value,etc} to use the Context
+
+1597180628
+andrewrk
+yeah, better to start the code skeleton using the intended API usage, I think
+
+1597180655
+andrewrk
+contributors tend to follow patterns, it's important to set them on the right track in the beginning
+
+1597180694
+leeward
+decidedly
+
+1597180712
+pixelherodev
+to be fully honest... I probably wrote that before noticing zigTagType existed, which is why it used the type directly, whereas other switches used zigTagType (because ZLS told me it existed and it was just obviously the right solution there :P)
+

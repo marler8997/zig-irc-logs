@@ -1,0 +1,280 @@
+1601685346
+nikki93
+is there any way to initialize a big text array with a shorter string? it's ok if the rest is zero-initialized or uninitialized, fine either way. `var text: [256]u8 = "hello, world!";` complains
+
+1601685359
+nikki93
+i just want to have some space to hold user-entered text that defaults to some initial value
+
+1601685439
+nikki93
+would i have to just keep it uninitialized then fill it with the initial value in some init code?
+
+1601685574
+ifreund
+var text = "hello".* ++ [_]u8{undefined} ** (256 - "hello".len);
+
+1601685587
+ifreund
+or something like that
+
+1601685616
+ifreund
+it's comptime, you can do what you want
+
+1601691442
+nikki93
+digging how the 'metaprogramming' in zig involve writing normal forward logic among typeinfo enums and whatnot vs. weird pattern matches
+
+1601691482
+nikki93
+(like; it'll be cool to pattern match on the enums, but i like that it'll be pattern matching in value-space among type info, vs. pattern matching in the type space of teh language or w/e like most generics/templates stuff out there)
+
+1601692463
+fengb
+I don’t think LLVM generates source maps yet
+
+1601692493
+ifreund
+metaprogramming in zig is a breath of fresh air
+
+1601692540
+ifreund
+no need to learn another sub-language, it's all just normal zi
+
+1601692542
+fengb
+Hmm I do remember something about enabling DWARF for wasm though
+
+1601692564
+ifreund
+iirc llvm already does that?
+
+1601692766
+fengb
+
+
+1601695034
+ifreund
+ah yes, I seem to remember this post. it's a mess
+
+1601704344
+moinstar
+any documentation on how packages work in zig .. best practices and guidelines on creating and using them
+
+1601706015
+daurnimator
+moinstar: nope; essentially right now all you have is passing --pkg-begin flag to `build-exe` where you alias a package name to a local path
+
+1601706031
+daurnimator
+moinstar: many people are using git submodules as a stop-gap to facilitate that.
+
+1601706202
+moinstar
+daurnimator, thank you
+
+1601709111
+gonz_
+Well, you have `std.build.Pkg`, no? Together with `exe.addPackage(Pkg{...})`
+
+1601709144
+gonz_
+Before that you had `exe.addPackagePath(...)`
+
+1601709163
+gonz_
+No need to fiddle with command line BS if you have a package depending on some code in a directory.
+
+1601709425
+gonz_
+This commit should illustrate the difference:
+
+1601723904
+fgenesis
+bah. after hackfixing all those weird usize != u64 compile errors, the rpi goes out of ram, swap, and will to live when building zig1.o. guess i'll wait until RAM usage gets fixed
+
+1601723948
+fgenesis
+(note: even zram doesn't help)
+
+1601724032
+mq32
+yeah, linking zig1.o takes roughly 5 to 6 GB ram
+
+1601724063
+fgenesis
+why's this just one giant blob .o though
+
+1601724094
+fgenesis
+it kinda sucks hard to require a 64bit system just to link that one thing
+
+1601724110
+mq32
+because zig is creating a single compile unit
+
+1601724124
+fgenesis
+then that is kinda dumb
+
+1601724143
+mq32
+it's only for now until stage2 is ready
+
+1601724393
+scientes
+well when you switch to multiple compile units you end up with all the LTO issues that C has
+
+1601724773
+fgenesis
+given the choice between actually compiling something and having everything fail? not a hard choice to make really
+
+1601724909
+fgenesis
+that said i do appreciate working with a 486 machine with 8 MB ram every now and then. really gives a perspective and a sense of scale :D
+
+1601725435
+mq32
+stage3 will probably work fine on this machine ;)
+
+1601734760
+earnestly
+scientes: (To be fair, there are no LTO issues with C if you don't use LTO)
+
+1601734902
+scientes
+earnestly, zig claims that "what other's call LTO we do automatically"
+
+1601734942
+earnestly
+Yes, that I think is the problem
+
+1601734950
+earnestly
+In this particular case
+
+1601734999
+earnestly
+LTO appears to be a memory intensive feature so zig must surely recognise the tradeoff, unless it can do it without as much memory usage as C, I don't know
+
+1601737592
+ifreund
+I think the main issue is that the architecture of the stage1 compiler is just very inefficient
+
+1601737858
+Sahnvour
+LTO is expensive because it tries to do optimizations that would be much easier done at compile time if the code wasn't split into multiple translation units (ie object files)
+
+1601740953
+Piraty
+jjsullivan: the current zig template builds stage1, is that right or not?
+
+1601740990
+Piraty
+according to the README
+
+1601740996
+Piraty
+which the template doesn't do
+
+1601741449
+Piraty
+so what you really want to do (I guess) is: do it like the go bootstrap chain, i.e. rename the current template to sth like zig-bootstrap and build the real thing with that in hostmakedepends
+
+1601741475
+Piraty
+also, some folks told me stage2 is not usable as of 0.6, so why bother
+
+1601741779
+Piraty
+I commented here
+
+1601742005
+Piraty
+maybe andrewrk can shed some light ^ (as you participated in the parent issue of that PR)
+
+1601744292
+jjsullivan
+Piraty, you're correct, I got lost in the terminology
+
+1601744315
+Piraty
+many in #xbps did as well :p
+
+1601744350
+Piraty
+you should read up on yesterday's discussion, you were mentioned a few times
+
+1601744393
+ifreund
+yeah we shouldn't try and package stage2 yet, it's definitely not ready in 0.6 and won't be actually usable for 0.7 either
+
+1601744403
+jjsullivan
+i saw that yea, didn't come to the right conclusion
+
+1601744414
+jjsullivan
+well, the template was right anyway
+
+1601744422
+jjsullivan
+me -> say wrong words
+
+1601744423
+jjsullivan
+lol
+
+1601745356
+Piraty
+jjsullivan: so i wonder why upstream didn't want to support crosscompiling stage1 at first but now seems to help you with that
+
+1601745966
+jjsullivan
+Piraty well, the template basically does what the bootstrap package does
+
+1601745980
+jjsullivan
+but i save any eureka moments for when andrewrk sees this stuff
+
+1601745993
+jjsullivan
+im not making a half-baked case again lol
+
+1601746016
+Piraty
+fine with me
+
+1601746028
+Piraty
+we can shift discussion to Void channels if that's disliked here
+
+1601750891
+kristoff_it
+Live with the Zig SHOWTIME preshow, we start in 20mins
+
+1601757363
+marler8997
+having runtime loader problems with the latest zig compiler on NixOS...anyone else see something similar?
+
+1601757623
+marler8997
+I'm linking to openssl (libcrypto.so.1.1 and libssl.so.1.1), it looks like I'm missing a "runpath" in my executable with the latest compiler
+
+1601757656
+marler8997
+Compiler from September 28 (0.6.0+e60939bfa) works
+
+1601758114
+marler8997
+created issue here:
+
+1601769370
+andrewrk
+hello
+
+1601769397
+andrewrk
+thanks for cleaning up my mess while I took a much needed break
+

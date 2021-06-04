@@ -1,0 +1,536 @@
+1606781525
+daurnimator
+andrewrk: how do we make sure the functions in compiler-rt don't get optimized into function calls into compiler-rt?
+
+1606781635
+andrewrk
+there is a backend-specific answer to that question
+
+1606781688
+andrewrk
+for llvm it's nobuiltin. for our own backend we can take whatever strategy we want
+
+1606781715
+daurnimator
+andrewrk: further context, considering #7265, on some targets I imagine e.g. sincos would be a call to hardware for sin and cos. while on others sin and cos might be a call to sincos which is backed by a hardware instruction itself.
+
+1606781738
+daurnimator
+or is that assumption just totally incorrect?
+
+1606781779
+daurnimator
+andrewrk: so we can build the entire compiler-rt object with nobuiltin? or do we need our own function attribute `nobuiltin(true)`?
+
+1606781791
+g-w1
+iirc, at least on x86_64, the libc versions of trig functions are actually faster than the hardware ones for some reason
+
+1606782107
+andrewrk
+tbh I don't think we need to do anything until the problem actually manifests. I'm not worried about being able to solve it if it starts happening
+
+1606782155
+andrewrk
+currently we have a flag in the compiler implementation that is set to true when we are building compiler-rt symbols
+
+1606782714
+daurnimator
+I'm sort of afraid of it coming up only on certain optimization levels with certain cpu feature sets.
+
+1606782764
+andrewrk
+fengb, what's the wasm equivalent command of `readelf -s` but for a wasm object?
+
+1606782818
+daurnimator
+there's a wasm-objdump
+
+1606783014
+ifreund
+wasm2wat can also be useful
+
+1606783017
+andrewrk
+daurnimator, if you copy the memcpy source code from zig's compiler-rt into a separate file and rename the function and run optimizations, it will optimize into a call to memcpy. but within compiler-rt the function's body is preserved
+
+1606783297
+andrewrk
+looks like llvm pays attention to the symbol name
+
+1606783309
+andrewrk
+try renaming "mystery" to "memcpy"
+
+1606783336
+daurnimator
+thats far too magical for my liking >.<
+
+1606783344
+andrewrk
+side note, I wonder why this isn't just jmp memcpy
+
+1606783501
+daurnimator
+looks like its trying to avoid calling with length 0?
+
+1606783781
+andrewrk
+memcpy allows passing 0 tho
+
+1606783858
+daurnimator
+
+
+1606783900
+andrewrk
+heh, the equivalent C code actually does not get optimized into memcpy:
+
+1606784340
+daurnimator
+andrewrk: I'm struggling to get a zig version that optimizes to `__memcpy4`
+
+1606788776
+andrewrk
+huh. LLD lets you pass a shared object as a positional argument for x86_64 but not for aarch64
+
+1606791957
+ky0ko
+is there some trick to getting zig to use frameworks with C headers on macOS? linkSystemLibrary/linkFramework in my build.zig seem to be doing nothing to get it to find the C headers
+
+1606791970
+ky0ko
+i'm just trying to get something to work with SDL2
+
+1606793276
+andrewrk
+you gotta add the framework directory manually
+
+1606793313
+andrewrk
+(as a workaround for now. that's not the intended user experience)
+
+1606795081
+ky0ko
+what do you mean by this? `exe.addFrameworkDir("/Library/Frameworks");` sort of deal?
+
+1606795246
+andrewrk
+yes
+
+1606795253
+andrewrk
+maybe also the include path
+
+1606795747
+ky0ko
+i am doing so, include path as well, to no effect
+
+1606795768
+ky0ko
+with --verbose i can confirm that the compiler is being passed the -I option with the correct path
+
+1606795770
+ky0ko
+the file exists
+
+1606795775
+ky0ko
+but Zig claims not to find it
+
+1606795844
+ky0ko
+scratch that, it probably helps to spell words correctly
+
+1606797305
+andrewrk
+ky0ko, oh, your issue is one of the ones in the 0.7.1 milestone:
+
+1606797308
+andrewrk
+it's a recent regression
+
+1606797323
+andrewrk
+the 0.7.1 milestone issues are my top priority this week
+
+1606797434
+ky0ko1
+no, that appears to be different than what i am experiencing
+
+1606797435
+ky0ko1
+actually currently i have it finding the framework, i just have an unexplained crash happening
+
+1606797573
+andrewrk
+ah
+
+1606797612
+ky0ko
+i also had some issues getting the arm version working (i have an arm mac) but for now i'm just using the x86_64 version
+
+1606797622
+ky0ko
+i assume that's just not ready yet
+
+1606797738
+andrewrk
+kubkon has some work-in-progress code that makes everything Just Work on aarch64-macos but it's not in master branch yet
+
+1606797771
+ky0ko
+okay. i'll just stick to the x86_64 binaries for now and move to that when it's ready
+
+1606818473
+ikskuh
+something broke with asnyc code:
+
+1606818491
+ikskuh
+can someone check out what this means?
+
+1606818496
+ikskuh
+/opt/hostedtoolcache/zig/zig-linux-x86_64-0.7.0+51d7c14ce/x64/lib/zig/std/debug.zig:1752:1: error: function with calling convention 'C' cannot be async
+
+1606818500
+ikskuh
+handleSegfaultLinux crashes
+
+1606818503
+ikskuh
+is this known?
+
+1606818806
+ifreund
+ikskuh: ah, that's due to lemonboy's recent fix for a deadlock there
+
+1606818813
+ifreund
+needs a nosuspend I think
+
+1606818832
+ikskuh
+ah, so we need a fix for the fix :D
+
+1606833463
+cren
+if I make an allocation like this: `const memory = try allocator.alloc(u8, 20);`, have I just done something totally pointless? I can read the allocated memory but it consists of random(ish) values, and I can't write it
+
+1606833740
+novaskell
+You should be able to write as you get slice of `[]u8` back as the slice bound is immutable but the memory it points to isn't
+
+1606833857
+novaskell
+cren:
+
+1606833886
+cren
+ah yes of course slices are pointers. I cannot seem to get that one into my head
+
+1606835028
+cren
+hmmm interestingly I can assign a single character to an element in that array but I can't assign a string of length 1
+
+1606835126
+ikskuh
+> wine client error:10c: read: Invalid Address
+
+1606835130
+ikskuh
+\o/ my code kills wine!
+
+1606835232
+g-w1
+cren: to assign a string, you want to use mem.copy
+
+1606835302
+cren
+I was just making the mistake of using double quotes for characters because I come from Python where characters are just strings of length 1
+
+1606838084
+cren
+using `allocator.create()`, what is returned is a pointer to a single entity. (object?) If I dereference the pointer and declare a const variable to store the result, I then can't mutate the value, right? Unless I dereference again and create a var
+
+1606838503
+ifreund
+if you dereference the pointer returned by create and store the result you are making a copy
+
+1606838545
+ifreund
+you probably just want to store the pointer
+
+1606843728
+ikskuh
+C:\\windows\\system32\\pkg-config.COM
+
+1606843731
+ikskuh
+what is that?
+
+1606843812
+ikskuh
+i think i made zig explode :D
+
+1606844004
+FireFox317
+andrewrk, any opinions on #7271? Should i go for LemonBoys suggestion?
+
+1606844020
+FireFox317
+Defintely a bug that should be solved before 0.7.1 tho
+
+1606846568
+andrewrk
+FireFox317, I don't understand LemonBoy's comment - your change looks correct to me
+
+1606846636
+FireFox317
+andrewrk, Well we are just changing the --name paramater, which means we change the output name of the binary. This in theory does not have to rebuild the complete binary, just to change the name
+
+1606846636
+andrewrk
+ok I think I understand the comment but I still prefer your change
+
+1606846663
+FireFox317
+Sure :thumbsup:
+
+1606846687
+andrewrk
+hmm I think I originally planned @import("builtin") to expose that name but looks like that never happened
+
+1606846692
+andrewrk
+anyway I'd like to merge this
+
+1606846702
+andrewrk
+sorry for breaking the CI yesterday :-/
+
+1606846709
+andrewrk
+incoming fix
+
+1606847602
+FireFox317
+andrewrk, i dont see why the issue/pr have something to do with @import("builtin"). Am I missing something?
+
+1606847646
+FireFox317
+Lets say @import("builtin") reflects the name, then it still should be cached right, or is everything in @import("builtin") cached thus no need to add it to the code?
+
+1606847647
+andrewrk
+if the name was accessible as a comptime value, it would affect the generated zig code
+
+1606847659
+andrewrk
+my comment was a response to lemonboy
+
+1606847677
+FireFox317
+ah okay, and thus cause a rebuild.
+
+1606847680
+FireFox317
+I see
+
+1606847692
+andrewrk
+let me think about it a little bit more real quick
+
+1606847796
+andrewrk
+FireFox317, ok my argument for keeping your patch as-is: that name is common to all zig source and all C source files because it affects the output path
+
+1606847841
+FireFox317
+I thought LemonBoy was suggesting that the name of the .o file in the cache directory should reflect the name of the zig source file, and not be affected by the --name parameter i think.
+
+1606847850
+FireFox317
+Or something like that
+
+1606847862
+FireFox317
+andrewrk, yep true.
+
+1606847869
+andrewrk
+I think the logic to name the .o file in the cache directory is correct as is
+
+1606847882
+andrewrk
+--name changes very rarely. it's ok to have it in the root cache hash
+
+1606847894
+FireFox317
+:thumbsup:
+
+1606847995
+andrewrk
+ok, CI should be green now
+
+1606857573
+mla
+whats a good way to benchmark zig maybe wholesale on a fn-by-fn basis? anything like a sampling profiler like rbspy in zig?
+
+1606857636
+justin_smith
+mla: with a debug build, I'd expect any standard C profiler to give meaningful results
+
+1606857693
+justin_smith
+you will probably need to enable libc linkage as well (which shouldn't be a problem for most apps)
+
+1606857739
+justin_smith
+a popular choice for linux is gprof
+
+1606857826
+mla
+justin_smith: thanks for the tip, ill give gprof a whirl
+
+1606858304
+mla
+hmm i need a gmon.out file , wonder if i can have zig generate that
+
+1606858380
+g-w1
+i know the self-hosted compiler uses tracy, so you could have a look at src/tracy.zig to see how to setup
+
+1606858613
+mla
+i guess for tracy route the whole thing is const tracy = trace(@src()); defer tracy.end(); within the top of each fn
+
+1606858651
+andrewrk
+zig uses standard debug info as well, so the answer to your question is the same as "what's a good way to benchmark C/C++"
+
+1606858672
+andrewrk
+I believe the perf function is a sampling profiler
+
+1606858682
+andrewrk
+s/function/program/
+
+1606858737
+companion_cube
+there could be python-like decorators? :p
+
+1606858857
+mla
+thanks, yeah i think im back to gprof, just need to get the right flag to get gmon.out
+
+1606859640
+mla
+oh neat valgrind is working for me good, first time ever profiling at this level but callgrind seems to be working for my usecase
+
+1606859750
+justin_smith
+mla: gmon.out is a file gprof creates while the program is running (if you've linked gprof)
+
+1606859785
+justin_smith
+mla: cool - yeah valgrind is a standard option too
+
+1606860657
+andrewrk
+alexnask[m], are you around?
+
+1606861093
+ikskuh
+andrewrk: how stable are f16/half in zig? :D
+
+1606861137
+andrewrk
+completely
+
+1606861169
+ikskuh
+wonderful
+
+1606861188
+ikskuh
+let's do openglfoo with that
+
+1606861189
+andrewrk
+there are a bunch of targets where we have f16 tests disabled because of LLVM bugs - but they are bugs
+
+1606861551
+karchnu
+ikskuh: why do you need f16? For computation speed?
+
+1606861664
+justin_smith
+there are gpus that use f16 natively
+
+1606861678
+andrewrk
+with @setFloatMode(.Strict) zig would have to emulate f16 without target support, but with @setFloatMode(.Optimized) zig would be allowed to use f32 or f64 machine instructions for f16 operations if it decided it was faster
+
+1606861723
+ikskuh
+<karchnu> ikskuh: why do you need f16? For computation speed?
+
+1606861727
+ikskuh
+less space
+
+1606861732
+ikskuh
+texture coordinates for UI rendering
+
+1606861762
+ikskuh
+i can make my struct 8 or 16 byte large
+
+1606861923
+andrewrk
+ah I see for in-memory representation
+
+1606861938
+andrewrk
+yeah just be mindful of your float mode when using f16 in computations
+
+1606861964
+andrewrk
+I'm guessing for your use case you will actually upcast it to f32 or f64 for computations
+
+1606861970
+andrewrk
+then downcast to f16 for storage
+
+1606861992
+ikskuh
+i will never upcast it anyways
+
+1606862016
+ikskuh
+only downcast precomputed texture coordinates to pass them to the GPU :)
+
+1606862061
+andrewrk
+I see. Yes I think that should work quite well
+
+1606862322
+ikskuh
+let's put zig to the test then :)
+
+1606862328
+ikskuh
+maybe i can show-off something later
+
+1606866193
+andrewrk
+only 18 issues left in the 0.7.1 milestone...
+
+1606866454
+ikskuh
+\o/
+

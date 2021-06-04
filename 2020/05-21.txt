@@ -1,0 +1,700 @@
+1590019226
+ikskuh
+how does async and foreign callbacks work together?
+
+1590019249
+ikskuh
+i have the situation of "zig calls c calls zig" where the inner zig function does a read/write syscall
+
+1590019263
+ikskuh
+this will not work with evented i/o, correct?
+
+1590019631
+andrewrk
+you can make it work but there will be a seam at the C ABI boundary. async is a calling convention and the C ABI does not support that calling convention
+
+1590019710
+andrewrk
+you could, for example, put something on a queue and then tell the event loop to attend to it
+
+1590019729
+andrewrk
+you can definitely make it work but there will be glue code at the C ABI boundary
+
+1590019767
+ikskuh
+okay, good to know :)
+
+1590019788
+ikskuh
+deferring a write should be doable, but a read?
+
+1590020549
+ikskuh
+huh
+
+1590020567
+ikskuh
+i think i hit a design error
+
+1590020577
+ikskuh
+you cannot create an array of pointers to global vars atm
+
+1590022759
+ikskuh
+andrewrk, i heard you were featured on the new xkcd
+
+1590022759
+ikskuh
+
+
+1590023171
+andrewrk
+lol
+
+1590023234
+ikskuh
+original is here:
+
+1590023237
+pmwhite
+"it's a language that takes C and makes it simpler...and programs aren't allowed to have bugs"
+
+1590025382
+marler8997
+does zig support changing the output format? i.e. elf/coff/raw?
+
+1590025693
+daurnimator
+marler8997: there is a raw output; but only from build.zig. and it's
+
+1590025717
+daurnimator
+
+
+1590026285
+marler8997
+thanks for the direction, I'll see what I can find out
+
+1590031053
+foobles
+made a PR / issue for making ir_assert, src_assert, and ir_assert_gen print the location of the caller on failure
+
+1590031079
+foobles
+the redefined assert() macro does this, as well as zig_assert
+
+1590031093
+foobles
+so it makes sense (and is super handy) do a similar thing with all of those
+
+1590031962
+blueberrypie
+marler8997 look at ZigGBA for an example of raw
+
+1590031999
+marler8997
+blueberrypie: thanks for the tip, will do
+
+1590032005
+blueberrypie
+
+
+1590060835
+cren
+Why do allocators need to be declared `const`? Like `const arena_alloc = std.heap.ArenaAllocator.init(std.heap.page_allocator);`
+
+1590060851
+cren
+I mean the opposite, why can't they be declared `const`
+
+1590060865
+cren
+The above line doesn't work because functions expect a `var`
+
+1590060871
+ikskuh
+because an allocation changes the content of the allocator
+
+1590060942
+cren
+That makes sense. But then how come I can do `const alloc = &arena_alloc.allocator;`
+
+1590060952
+ikskuh
+ah
+
+1590060959
+ikskuh
+that is a const pointer to mutable data
+
+1590060977
+ikskuh
+you may not change the address the pointer stores
+
+1590060984
+ikskuh
+but you may change stuff at the pointers location
+
+1590061001
+alehander92
+i wonder if `const->var` keyword can work
+
+1590061011
+alehander92
+in a hypothetical syntax for a language
+
+1590061052
+ikskuh
+wdym?
+
+1590061056
+cren
+that just sounds like a pain to type alehander92
+
+1590061064
+alehander92
+well, some way to be very explicit about stuff like this
+
+1590061065
+ikskuh
+i don't understand what that should do
+
+1590061073
+ikskuh
+specify the type
+
+1590061082
+ikskuh
+const ptr: *i32 = …;
+
+1590061083
+cren
+ikskuh: I think he means as a way to declare a const pointer to mutable data
+
+1590061086
+ikskuh
+is imho explicit enough
+
+1590061109
+ikskuh
+the point is, alehander92: that "const→var" isn't explicit enough
+
+1590061115
+ikskuh
+because this may get veeeeery long
+
+1590061127
+ikskuh
+const ptr: *const * * const * i32;
+
+1590061158
+alehander92
+yeah, it was just a thought
+
+1590061161
+cren
+is that a const pointer to a pointer to a pointer to a const pointer to i32
+
+1590061175
+ikskuh
+yep
+
+1590061182
+ikskuh
+thank god zig has sane pointer syntax :D
+
+1590061185
+ikskuh
+and not the C way
+
+1590061187
+cren
+why would you ever need to use that
+
+1590061187
+ikskuh
+:D
+
+1590061193
+ikskuh
+because #baddesign
+
+1590061201
+ikskuh
+i had a triple pointer once
+
+1590061212
+ifreund
+i like my pointers to be double const, makes me feel more secure :P
+
+1590061213
+ikskuh
+but double-pointers are quite common
+
+1590061220
+ifreund
+const int const *
+
+1590061227
+ikskuh
+const ptr: *const const i32;
+
+1590061242
+ikskuh
+ifreund: just join the east-const
+
+1590061249
+alehander92
+hm, yeah this kind of syntax is probably better
+
+1590061259
+ikskuh
+
+
+1590061270
+cren
+alehander92: it's a nice idea though
+
+1590061303
+alehander92
+no, i like it
+
+1590061321
+ifreund
+i agree that east const is more consistent within C, but i still hate it
+
+1590061330
+alehander92
+the thing is it makes sense in a language where somehow `const` and `var-ity` are on the same conceptual level
+
+1590061351
+alehander92
+separated from the type somehow
+
+1590061395
+ikskuh
+ifreund: you will hate my code bases then
+
+1590061416
+ikskuh
+alehander92: my proposal was to change pointer-cost and variable-const
+
+1590061466
+alehander92
+hm, not sure if i know enough zig to get that
+
+1590061573
+cren
+back to the original topic, anyway: why do I have to do two separate declarations to get an allocator? why not just `const alloc = &ar_alloc.init()` or something?
+
+1590061576
+ikskuh
+not the actual proposal, but something like
+
+1590061592
+ikskuh
+let ptr: *nonmut Data;
+
+1590061648
+ikskuh
+cren: because that would be a pointer-to-temporary
+
+1590061663
+cren
+what thing is temporary there?
+
+1590061735
+ikskuh
+"ar_alloc.init()"
+
+1590062032
+cren
+ah yeah that make sense
+
+1590062215
+cren
+Why does `pub fn ArrayList` currently return an `AlignedArrayList`, is this because `ArrayList` is just an interface
+
+1590062296
+ifreund
+i assumed it was just to avoid code duplication between the two
+
+1590062302
+ifreund
+an implementation detail really
+
+1590062334
+ikskuh
+yeah
+
+1590062638
+cren
+oh
+
+1590075257
+ikskuh
+huh
+
+1590075269
+ikskuh
+i think i discovered a bug in std.json.Parser…
+
+1590075296
+greenfork
+I want to wrap std.debug.warn function and insert 1 more argument to anonymous struct `fn log(comptime fmt: []const u8, args: var) void`. So I want to pass this argument `.{myarg, args.@"0", ...}` to warn, can I do that?
+
+1590075335
+ikskuh
+.{ myarg } ++ args
+
+1590075355
+ifreund
+++ is magic
+
+1590075378
+greenfork
+wow it works, thanks!
+
+1590075394
+fengb
+C++
+
+1590075395
+fengb
+C with magic
+
+1590075438
+ikskuh
+C++.{magic}
+
+1590079568
+[rg]
+I noticed hello world from the docs has a bug, but I'm sure you guys know too, gonna try to set up a ppa for zig today
+
+1590079578
+[rg]
+in other words if you need help on docs...
+
+1590079637
+cren
+what's wrong with hello world on the docs?
+
+1590079965
+ifreund
+nothing unless i'm missing something
+
+1590079970
+ifreund
+[rg]: what's the bug?
+
+1590079970
+oats
+anybody here used gnu readline with zig? any code samples I could peek at?
+
+1590080327
+[rg]
+ifreund: false alarm? didn't work for me the other day
+
+1590080350
+[rg]
+on a different distro, but still linux
+
+1590080370
+ifreund
+[rg]: hmm, at a guess I'd say you were using 0.5.0 and tried the hello world from 0.6.0
+
+1590080390
+[rg]
+error was file.* on print not allowed, sorry for the ambiguity, don't remeber
+
+1590080399
+[rg]
+ifreund: that's probably it
+
+1590090306
+oats
+Will a defer get run if std.process.exit() is run later in the function?
+
+1590090311
+oats
+(/scope)
+
+1590090330
+ikskuh
+oats: no
+
+1590090342
+oats
+hmm, ok shoulda guessed
+
+1590090854
+fengb
+process.exit is noreturn. No coming back to Zig
+
+1590091049
+alexnask
+If you love a process you will let it go
+
+1590093591
+pixelherodev
+Any numbers on how the latest commits impact the stage2-parser-rewrite perf?
+
+1590095664
+spacehare
+qq: how do I cross-compile multiple zig files?
+
+1590095678
+spacehare
+the build-exe command doesn't seem to accept more than one file at a time.
+
+1590095686
+spacehare
+and the build command doesn't accept the -target flag.
+
+1590095767
+torque
+build-exe should automatically pick up the zig files @import-ed by the main file
+
+1590095778
+torque
+is your goal to output multiple executables as well?
+
+1590095894
+spacehare
+I see.
+
+1590095911
+spacehare
+I basically did `zig build-exe *.zig`, not realizing the main.zig had to be first.
+
+1590096240
+spacehare
+also: how do I cast an integer to a smaller type?
+
+1590096248
+spacehare
+in my case: u64 => usize?
+
+1590096362
+fengb
+@intCast for a runtime safety check
+
+1590096396
+fengb
+@as if you want a compile error if there's type narrowing
+
+1590096404
+spacehare
+thanks!
+
+1590096430
+fengb
+e.g. @as(usize, u64) would fail to compile on 32 bit systems
+
+1590096485
+spacehare
+yeah, I has tried that previously, but since I'm cross compiling for my (32-bit) raspberry pi it wouldn't compile.
+
+1590096514
+fengb
+Ah okay, @intCast is your friend then
+
+1590096519
+afontain_
+oh
+
+1590096525
+afontain_
+that's great
+
+1590096571
+tdeo
+note that it's undefined behaviour to @intCast a number that won't fit like that
+
+1590096586
+tdeo
+you can use @truncate if you want it to just max out
+
+1590096592
+fengb
+Runtime checked illegal behavior*
+
+1590096617
+spacehare
+I don't really care, I don't think the software I'm building would need to fit a larger number in there.
+
+1590096713
+spacehare
+it's not even my software, to make matters worse -_-
+
+1590096793
+fengb
+Gonna ship Zig for someone else?
+
+1590096815
+spacehare
+no, I'm compiling some software I found on sourcehut.
+
+1590096821
+spacehare
+it's a notetaking utility.
+
+1590096832
+dimenus
+is there a quick way to do a byte for byte comparison on a struct in zig?
+
+1590096842
+spacehare
+trouble is, it's author evidently never tred compiling it on 32-bit platforms
+
+1590096850
+spacehare
+s/tred/tried/
+
+1590096878
+dimenus
+i'm doing @ptrCast([*]u8, &foo)[0..@sizeOf(@TypeOf(foo))]
+
+1590096885
+dimenus
+same thing with bar
+
+1590096886
+fengb
+dimenus: you can try `std.mem.asBytes(&foo)`
+
+1590096895
+fengb
+And do mem.eql
+
+1590096905
+dimenus
+of course we already have it
+
+1590096907
+dimenus
+:)
+
+1590096919
+fengb
+But keep in mind that memory for regular structs aren't well defined
+
+1590096931
+fengb
+So padding or safety bytes could affect the result
+
+1590096955
+fengb
+There's also std.meta.eql taht generates the correct field comparison
+
+1590097093
+dimenus
+fengb: wouldn't padding or safety exist on all values of a type though?
+
+1590097099
+dimenus
+i think std.meta.eql is what I want
+
+1590097152
+fengb
+But not all safety will be the same. And padding might just use the old garbage that was never cleared
+
+1590097184
+fengb
+I think it's consistent now, but it's not defined to be
+
+1590097445
+pixelherodev
+spacehare: link me to that? :)
+
+1590097491
+spacehare
+pixelherodev: the note-taking thing?
+
+1590097523
+BaroqueLarouche
+urgh,  packed struc bugs is biting me ☹︎ Mostly with packed struct inside packed struct
+
+1590097545
+pixelherodev
+spacehare: yeah :)
+
+1590097551
+pixelherodev
+BaroqueLarouche: yeah, same :(
+
+1590097553
+spacehare
+pixelherodev: sure
+
+1590097555
+pixelherodev
+Not often, but when it comes up it's annoying
+
+1590097559
+pixelherodev
+spacehare: thanks :)
+
+1590097566
+spacehare
+pixelherodev:
+
+1590097570
+spacehare
+np
+
+1590097592
+spacehare
+It's a zettelkasten note-taking utility.
+
+1590097611
+spacehare
+..and darn, it crashes when cross-compiled -_-
+
+1590097647
+fengb
+Michaël Larouche: that might be exposing a deeper bug
+
+1590097673
+fengb
+
+
+1590097797
+fengb
+I have a feeling they're all the same underlying cause
+
+1590097832
+BaroqueLarouche
+yea me too
+
+1590098400
+pixelherodev
+spacehare: that program doesn't build natively either
+
+1590098404
+pixelherodev
+It's not a cross-compilation failure
+
+1590098408
+pixelherodev
+It's just buggy :(
+
+1590099305
+companion_cube
+
+
+1590100367
+spacehare
+pixelherodev: well, I was able to build it natively
+
+1590100381
+spacehare
+pixelherodev: it needs some patching if you're building it on a 32-bit host :(
+
+1590105495
+dimenus
+i'm having a a lot of fun working with wayland in zig
+

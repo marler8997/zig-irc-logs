@@ -1,0 +1,1104 @@
+1601259848
+tundrax
+Hi. I'm new to zig and was curious about the syntax, particularly leading "dot" notation.
+
+1601259903
+tundrax
+In async tutorial there is a line for switching io mode `pub const io_mode = .evented`. I found `@ifDecl(root.io_mode)` check inside std/io.
+
+1601259929
+tundrax
+As "Feature Highlights" documentation stated "There is no hidden control flow" as a convention, this code above seems unconventional, because it is unclear where `.evented` is coming from. First I thought it was a symbol kind of something.
+
+1601259991
+tundrax
+Should io mode switching be tied to a constant/variable name?
+
+1601260312
+waleee-cl
+is eg. the rust way with a separate async std-lib better?
+
+1601260357
+andrewrk
+nah
+
+1601260392
+tundrax
+I think zig is better in this matter, but the syntax could be something like `std.io.setMode(.evented)` more obvious.
+
+1601260412
+tundrax
+If we can not change io mode throughout the program eg. set only once in main.
+
+1601260423
+andrewrk
+that would not work because it must be set at compile time not at runtime
+
+1601260439
+andrewrk
+the standard library needs to perform conditional compilation based on this value
+
+1601260497
+fgenesis
+so this .evented is probably defined somewhere global
+
+1601260499
+andrewrk
+the pattern of accessing the root source file like this should be used carefully - as you noted it can be surprising
+
+1601260531
+tundrax
+I felt a little confused how constant binding is accessing the `io.Mode` enum value `.evented` in the root scope.
+
+1601260554
+andrewrk
+it's not accessing it
+
+1601260563
+andrewrk
+it's being type coerced elsewhere
+
+1601260588
+andrewrk
+
+
+1601260665
+andrewrk
+the other places this @import("root") pattern is used is for std.log and the default panic handler
+
+1601260708
+tundrax
+Also in the `std/io` code there is `@ifDecl` check for `root.event_loop`, which can cause unexpected behavior if user names one of his variables `event_loop` not wishing to switch io mode.
+
+1601260732
+andrewrk
+you would have to make it `pub` in your root source file (next to main())
+
+1601260738
+andrewrk
+that would hardly be an accident
+
+1601260759
+andrewrk
+plus the type would have to match
+
+1601260764
+andrewrk
+I really don't think that is a concern
+
+1601260775
+fgenesis
+does anything aside from main() and those magic config vars need to be public in the root src? i don't think so
+
+1601260859
+tundrax
+I see. Just starting learning zig, these root declarations were not explained in the documentation.
+
+1601260889
+tundrax
+Thank you for clarifying.
+
+1601261124
+andrewrk
+docs are going to be rough until the language & std lib stabilize
+
+1601261140
+andrewrk
+here is a handy resource:
+
+1601261252
+tundrax
+Right, meanwhile reading stdlib code helps a lot.
+
+1601261834
+pixelherodev
+@import("root") is also used for BYOS layer
+
+1601261837
+pixelherodev
+BYOOS?
+
+1601261838
+pixelherodev
+eh
+
+1601284503
+ifreund
+so, I think I've convinced myself this is not UB:
+
+1601284513
+ifreund
+there's gotta be a better way to do this though
+
+1601294739
+tdeo
+ifreund: what is it trying to do?
+
+1601294747
+tdeo
+handle enums? check for enums and use @TagType
+
+1601294773
+ifreund
+convert from the array of wl_arguments to a struct
+
+1601294803
+tdeo
+what would/would not be UB specifically?
+
+1601294816
+ifreund
+it's the @bitCast() and @ptrCast() on maybe not the active extern union fields that are kind sketchy
+
+1601294820
+ifreund
+but I think they're sound
+
+1601294843
+tdeo
+i think extern unions can be used to reinterpret memory
+
+1601294850
+ifreund
+yeah they can
+
+1601294863
+ifreund
+but it feels like there should be a cleaner way to do this
+
+1601294891
+ifreund
+still though, it's a lot more concise than the C version :)
+
+1601294897
+tdeo
+that's for sure
+
+1601295048
+ifreund
+I guess all that's left for the client bindings is to make the scanner output the code now that I've figured out roughly what it should look like
+
+1601295084
+ifreund
+oh and hope that opaque{} gets merged :D
+
+1601295172
+tdeo
+i think it completely makes sense to use expat, but i'll just mention i have a subset-of-xml parser in pure zig here:
+
+1601295186
+tdeo
+if you want the build script to not depend on c
+
+1601295207
+tdeo
+the parser is not very clean but it's short and works on non-complex xml
+
+1601295243
+ifreund
+hmm, it would be very nice if the scanner was just part of the build.zig instead of an external program
+
+1601295288
+ifreund
+I'll probably stick with the expat impl for now as it already works and was minimally painful, but that's definitely something to consider for the future
+
+1601295301
+tdeo
+yeah
+
+1601313303
+cahoots
+does zig have an incremental linker/binary patcher for mach-o?
+
+1601313336
+ifreund
+cahoots: it's very WIP, but work has been started on it
+
+1601313387
+ifreund
+Elf is the most developed at the momment
+
+1601314053
+m4r35n357
+can't find syntax in docs for specifying an array return value from a function (which creates the array).  new to zig, any pointers?
+
+1601314112
+ifreund
+fn foo() [5]u8 { ... }
+
+1601314136
+ifreund
+this will return an array of 5 u8s by value
+
+1601314205
+ifreund
+if you want to return a pointer to a heap allocated array, you probably want to use a slice: []u8
+
+1601314297
+m4r35n357
+ifreund, I need it to be variable size (size is the parameter to the function), but []f128 and [_]f128 both fail
+
+1601314322
+ifreund
+oh then make it [size]u8
+
+1601314348
+ifreund
+though then the size passed to the function would need to be comptime known
+
+1601314350
+m4r35n357
+error: use of undeclared identifier 'n'
+
+1601314363
+m4r35n357
+no suprise there ;)
+
+1601314399
+m4r35n357
+I am trying to port some existing c code, that mallocs thee array and returns a pointer
+
+1601314412
+ifreund
+you want a slice then
+
+1601314444
+m4r35n357
+so I am looking to make a function that takes the size, and does 'return [_]f128{0} ** n;'
+
+1601314455
+ifreund
+a slice is like a struct { ptr: [*]u8, len: usize };
+
+1601314456
+m4r35n357
+ok i'll look at slices . . .
+
+1601314491
+m4r35n357
+I have used both arrays and structs at various times for this, so I think I can fit in with whatever
+
+1601314496
+ifreund
+you can make a function that returns an array of the right size by value too, but then the size argument of the function must be comptime-known
+
+1601314526
+ifreund
+if you want to create an array with runtime known size, you need to allocate it on the heap
+
+1601314533
+m4r35n357
+that is unfortunately not how it needs to work :(  the size is a command line parameter
+
+1601314553
+m4r35n357
+OK is that what slices do?
+
+1601314575
+ifreund
+slices are just a pointer and a length
+
+1601314583
+ifreund
+they can point to dynamically allocated memory
+
+1601314611
+m4r35n357
+OK cheers I'll investigate . . .
+
+1601314658
+ifreund
+i think you probably want to use std.heap.GeneralPurposeAllocator and call alloc() which will return a slice
+
+1601314804
+m4r35n357
+ifreund, cheers, still investigating . . .
+
+1601315164
+m4r35n357
+hmm can't find that one in the std docs, just Arena... FixedBuffer.. and ThreadSafe...
+
+1601315199
+m4r35n357
+perhaps I am being a bit premature with this . . . but I am so tempted by the 128-bit floats!
+
+1601315257
+m4r35n357
+they must be native, so no MPFR/libquadmath, so I think it must be zig or Fortran
+
+1601315275
+ifreund
+the online std docs aren't up to date unfortuneately
+
+1601315289
+Nypsie[m]
+GeneralPurposeAllocated was introduced after 0.6.0,and since the master docs are a bit broken it doesn't show up there.
+
+1601315314
+m4r35n357
+ah, I "only" have 0.6.0 ;)
+
+1601315359
+ifreund
+on 0.6.0 they easiest way to get started is to just use std.heap.page_allocator
+
+1601315373
+ifreund
+it's not efficient but it works :P
+
+1601315406
+m4r35n357
+working is good ;)
+
+1601315500
+m4r35n357
+hmm, that one isn't there either . . . . :(
+
+1601315511
+Rounin
+Say... Has anyone else tried to compile bzflag v2.4.18 with zig c++? I tried that today, but the game segfaults upon startup
+
+1601315534
+Rounin
+Not that I'm in dire need of a C++ compiler, but it seemed like an interesting thing to try
+
+1601315545
+justin_smith
+m4r35n357: you can check what's in lib/std/heap/
+
+1601315566
+alexnask[m]
+Does it segfault with Illegal instruction Rounin ?
+
+1601315599
+m4r35n357
+justin_smith, I am looking here:
+
+1601315607
+Rounin
+alexnask[m]: Good question... I was just about to run a debugger on it, but I realize I deleted it... I'll build it again and see if I can find out
+
+1601315652
+ifreund
+Rounin: that's likely due to zig enabling UBSan by default
+
+1601315691
+Rounin
+ifreund: Ah... A C++ application that's probably a couple of decades old... I wonder if there might be UB in there, hehe
+
+1601315725
+Rounin
+Sounds like a great feature, though
+
+1601315733
+ifreund
+if you'd like to disable it pass -fno-sanitize=undefined
+
+1601315754
+ifreund
+and yeah, would not be surpried if there's UB there
+
+1601315802
+ifreund
+m4r35n357: Its at the bottom of that page you linked
+
+1601315804
+ifreund
+
+
+1601315827
+ifreund
+though honestly I'd recommend just grepping the std source code, it's surprisingly readable
+
+1601315839
+m4r35n357
+ifreund, ah, excuse me, I didn't see it in plain sight ;)
+
+1601315862
+m4r35n357
+got confused by the formatting . . .
+
+1601315867
+justin_smith
+m4r35n357: yeah, things that exist are missing from the docs, the source itself is better as a resource
+
+1601315914
+justin_smith
+and the docs are hard to read...
+
+1601315927
+m4r35n357
+justin_smith, yep, I think I need to take a few steps back, only been at this for about an hour ;)
+
+1601315942
+m4r35n357
+but I have been doing TDD, so that is good ;)
+
+1601317361
+Rounin
+Hm... It seems to just give "Uknown clang option" when I use the options... Either -fno-sanitize-c or --release-fast
+
+1601317379
+Rounin
+Is there a particular place where options should go so zig will pick them up?
+
+1601317427
+alexnask[m]
+Can you try  -fno-sanitize=undefined ? `zig cc` is literally clang so it uses clang options (we just parse them and add a few of our own)
+
+1601317553
+Rounin
+Ah, yes... Thanks, alexnask[m]
+
+1601318239
+Rounin
+Hmm.... Seems to not have been that... Valgrind first gives a lot of this: ==2357895== Mismatched free() / delete / delete []
+
+1601318249
+Rounin
+Then ==2357895== Invalid read of size 8
+
+1601318249
+Rounin
+==2357895==    at 0x478474: __cxxabiv1::__vmi_class_type_info::has_unambiguous_public_base(__cxxabiv1::__dynamic_cast_info*, void*, int) const (private_typeinfo.cpp:313)
+
+1601318257
+Rounin
+Then ==2357895==  Access not within mapped region at address 0x10
+
+1601318257
+Rounin
+==2357895==    at 0x478474: __cxxabiv1::__vmi_class_type_info::has_unambiguous_public_base(__cxxabiv1::__dynamic_cast_info*, void*, int) const (private_typeinfo.cpp:313)
+
+1601318283
+Rounin
+Perhaps it's something that only works with GCC
+
+1601318348
+ifreund
+might be worth trying clang as well
+
+1601318368
+Rounin
+Yeah, why not eh... Might as well try eliminating some possibilities
+
+1601318471
+Rounin
+I can watch the new video on the self-hosted compiler while I compile
+
+1601318659
+ifreund
+heh
+
+1601318888
+Rounin
+ifreund: It does work with stock clang! Hmm
+
+1601318958
+Rounin
+The complaints from Valgrind are mostly different ones now as well
+
+1601319341
+alexnask[m]
+(the failure on #6441, that is)
+
+1601321338
+andrewrk
+alexnask[m], thanks for looking into this
+
+1601321374
+andrewrk
+maybe valgrind can give us some tips
+
+1601321385
+andrewrk
+alexnask[m], is your native development machine windows?
+
+1601321672
+alexnask[m]
+Yes >.> (Not for long though)
+
+1601322382
+andrewrk
+alexnask[m], oh, I was going to say, that's great, we need more core devs who call windows home
+
+1601322499
+alexnask[m]
+lol
+
+1601331907
+bekwnn
+anyone got any 3d model loading libs they'd recommend?
+
+1601332429
+bekwnn
+(fbx would be best but obj would probably work for a bit as well)
+
+1601333257
+justin_smith
+with this inline if I'm getting a segv because between the if and the lookup "live" becomes null - I'm surely doing this wrong: if (self.root) |live| live.next else null
+
+1601334444
+justin_smith
+maybe this is a better question for the same problem: it surprises me that this second line can be an NPE, is there some other construction that would ensure the value wouldn't be nulled out in another thread? I suspect I'm using pointers wrong here
+
+1601334521
+justin_smith
+is there a way to make "top_item" be a pointer to the same location as self.root, instead of being literally the same pointer, so that a change to self.root in another thread doesn't blow this up?
+
+1601334582
+fengb
+I think the optimizer tried to inline this if you’re getting thread errors
+
+1601334601
+fengb
+Might need an atomic operation?
+
+1601334608
+justin_smith
+I naiively thought that I was doing this already, but this error makes me doubt that
+
+1601334639
+justin_smith
+fengb: cool I looked at atomic ops and didn't find the right one, just being able to force the optimizer not to inline would be great
+
+1601334683
+justin_smith
+like "no really I need a separate pointer and not an inline operation" type annotation
+
+1601335031
+pixelherodev
+I wonder how hard it'd be to redo the C header generation to use the CBE
+
+1601335055
+andrewrk
+btw I don't know if anyone noticed this in the tracy demo of
+
+1601335071
+pixelherodev
+Though I suppose fixing generation of e.g. `struct struct:28:12` would be enough for me lol
+
+1601335131
+andrewrk
+at 2:17 you can see, (1) AST parsing (2) semantic analysis and (3) linking is done one after another, but those 3 things can happen at the same time
+
+1601335253
+pixelherodev
+How much locking would there be?
+
+1601335264
+pixelherodev
+I mean, probably none, now that I think about it
+
+1601335287
+pixelherodev
+Some bits of AST parsing would need to be finished before other pieces of sema could begin, but they simply wouldn't be queued, I assume...
+
+1601335300
+pixelherodev
+Yeah, I think I can see how that'd work
+
+1601335304
+pixelherodev
+That's pretty neat
+
+1601335320
+andrewrk
+there are some contention points
+
+1601335332
+pixelherodev
+Right, but not too many
+
+1601335356
+pixelherodev
+Where is the current .h emission done? I'd look, but i don't want to have to dig through the CLI parsing again :P
+
+1601335384
+justin_smith
+fengb: doing an @atomicLoad in that if fixed it, thanks - I have another more rare race condition now but that one was hitting me on 7/8 of test runs :D
+
+1601335393
+pixelherodev
+Is it self-hosted yet, at the least?
+
+1601335395
+justin_smith
+now to make the next race condition happen more often too..
+
+1601335469
+andrewrk
+pixelherodev, it will fully regress into non existence with the merge of 6250 and will need to be implemented from scratch in self-hosted
+
+1601335481
+pixelherodev
+Ahh okay
+
+1601335486
+pixelherodev
+That'll be my first post-6250 task then
+
+1601335488
+pixelherodev
+Dibs
+
+1601335490
+pixelherodev
+:P
+
+1601335491
+andrewrk
+nice
+
+1601335501
+pixelherodev
+I need it anyways, and I think I can use existing CBE stuff for it
+
+1601335507
+pixelherodev
+And this helps with our prior discussion
+
+1601335516
+andrewrk
+you'll have to take a slightly different strategy because it will have to cooperate with incremental updates, unlike the work on CBE so far
+
+1601335526
+pixelherodev
+If we're using the same logic for headers and CBE, then it'll show whether or not it'll be easy to integrate with the standard pipeline
+
+1601335538
+pixelherodev
+Then we'll just have to make CBE incremental
+
+1601335565
+pixelherodev
+It won't have to actually be used incrementally for normal CBE work, but as long as it's
+
+1601335565
+andrewrk
+ha, sounds fun. ascii art comments ftw
+
+1601335580
+pixelherodev
+Not necessarily
+
+1601335593
+pixelherodev
+One option is to do it incrementally in memory, and rewrite the file on disk
+
+1601335598
+pixelherodev
+That'll be a single buffered write, effectively
+
+1601335611
+pixelherodev
+It could also rewrite only changed portions
+
+1601335618
+andrewrk
+that's fine but keep in mind the goal of low memory footprint
+
+1601335622
+pixelherodev
+Yep
+
+1601335635
+pixelherodev
+It'd probably still be lower than what's needed for the other linkers
+
+1601335648
+pixelherodev
+All it'd really be tracking is position and len
+
+1601335655
+pixelherodev
+That's two usizes per decl
+
+1601335665
+andrewrk
+that's fine
+
+1601335685
+pixelherodev
+The "easy" option is to just rewrite the file from the first changed token onwards
+
+1601335717
+pixelherodev
+I think it's reasonable to expect headers to be small, generally
+
+1601335735
+pixelherodev
+Not small enough to keep them fully in memory, though...
+
+1601335757
+pixelherodev
+It rewriting from the first changed token, it could just fully regenerate them and then do a single flush, I suppose?
+
+1601335775
+pixelherodev
+The much worse option would be to read the file into memory, but at that point we might as well keep it there full time
+
+1601335782
+pixelherodev
+Hmm, one other thing to note is prefixing
+
+1601335791
+pixelherodev
+I'd want to be able to specify a per-package prefix for functions
+
+1601335810
+pixelherodev
+So I don't need to do e.g. `export fn thor_deinit(self: *@This()) void { self.deinit(); }`
+
+1601335839
+pixelherodev
+Hmm, but that'd mean renaming them in the binary, too.
+
+1601336132
+pixelherodev
+So... many... stupid... wrappers.
+
+1601336223
+pixelherodev
+Hmm. Currently, writing Zig code for use with C feels fundamentally different from writing Zig code for use with Zig.
+
+1601336234
+pixelherodev
+Fortunately, that's not an issue in reverse, but still...
+
+1601336267
+justin_smith
+pixelherodev: that's inherent when we have features (eg. namespacing) that C lacks I would thin
+
+1601336270
+justin_smith
+*think
+
+1601336305
+justin_smith
+I'd rather explicitly put prefixes on things I export, rather than remembering implicit prefix rules
+
+1601336310
+lunamn
+also errors, i guess?
+
+1601336363
+justin_smith
+I guess a package level setting for prefix to apply to exported functions (that's opt in), isn't so bad
+
+1601336457
+fengb
+lol ix.io favicon
+
+1601336534
+pixelherodev
+justin_smith: I'm actually thinking struct-level might be good, too
+
+1601336559
+pixelherodev
+e.g. `const a = extern struct { export fn b() void {} }` it'd make sense for b to be exported as `void a_b(void);`
+
+1601336592
+justin_smith
+pixelherodev: yeah, as long as it's configurable and opt in, the fewer special cases the better
+
+1601336619
+justin_smith
+so make packages and structs have the same features, if the features exist, +1
+
+1601336642
+pixelherodev
+For sure
+
+1601336656
+pixelherodev
+That could be a nested struct thing instead of a package one, maybe?
+
+1601336680
+pixelherodev
+The alternative option is to just require each Zig package to have e.g. a exports.zig file defining the wrapper explicitly
+
+1601336716
+justin_smith
+why not make the mapping an optional config, with current behavior if it isn't defined?
+
+1601336734
+justin_smith
+or, equivalently, a default prefix of ""
+
+1601336788
+justin_smith
+in guile scheme, you can provide a function that takes the name of an exported function, and returns the replacement name to use instead, if comp-time string allocations aren't too tricky even that could work
+
+1601336827
+pixelherodev
+what's the correct way to say "c string" in Zig?
+
+1601336839
+pixelherodev
+Neither `[*:0]const u8` or the same with `i8` are making C happy.
+
+1601336841
+companion_cube
+[*:0] const u8 or sth?
+
+1601336847
+companion_cube
+erf
+
+1601336851
+pixelherodev
+That works for Zig side, yeah
+
+1601336857
+justin_smith
+companion_cube: yeah that looks right to me
+
+1601336883
+justin_smith
+pixelherodev: on the c side it's just a pointer to a char, the rest is just user convention with no compiler enforcement
+
+1601336886
+pixelherodev
+but the generated header then produces a func taking `const uint8_t
+
+1601336897
+pixelherodev
+justin_smith: compiler rejects it.
+
+1601336901
+justin_smith
+hmm...
+
+1601336917
+pixelherodev
+`initializing 'const int8_t *' (aka 'const signed char *') with an expression of type 'char [2]' converts between pointers to integer types with different sign`
+
+1601336923
+pixelherodev
+Weirdly, that's the case
+
+1601336933
+pixelherodev
+and not just with Zig, either
+
+1601336935
+companion_cube
+what about the constness?
+
+1601336950
+pixelherodev
+`const uint8_t *a = "h";` <- rejected; `const int8_t *a = "h";`, also rejected
+
+1601336961
+alexnask[m]
+the signedness of char is implementation defined
+
+1601336971
+justin_smith
+pixelherodev: perhaps that's because the signedness of "char" isn't defined, so both are malformed?
+
+1601336979
+justin_smith
+yeah that sounds right
+
+1601336983
+pixelherodev
+I'd think so, except for one thing
+
+1601336992
+pixelherodev
+The uint8_t and int8_t in question are e - ahh wait
+
+1601336999
+pixelherodev
+Yeah, no, that probably makes sense, I think?
+
+1601337012
+alexnask[m]
+What compiler are you using?
+
+1601337012
+pixelherodev
+Ahhh, okay, it doesn't allow
+
+1601337018
+pixelherodev
+alexnask[m]: CCLS (aka libclang) :P
+
+1601337025
+pixelherodev
+Language server lol
+
+1601337050
+pixelherodev
+With GCC, same thing
+
+1601337052
+pixelherodev
+`warning: pointer targets in initialization of 'const uint8_t *' {aka 'const unsigned char *'} from 'char *' differ in signedness`
+
+1601337055
+pixelherodev
+Different message, but same result
+
+1601337062
+pixelherodev
+(for both signednesses)
+
+1601337070
+pixelherodev
+Okay, so I need a way to say "C char" in zig.
+
+1601337116
+justin_smith
+just a hunch, some ugly trick with @bitCast ?
+
+1601337125
+pixelherodev
+There's no c_char type :(
+
+1601337128
+pixelherodev
+justin_smith: that doesn't help.
+
+1601337135
+pixelherodev
+I need a type that will explicitly result in "char" showing up in the header.
+
+1601337143
+pixelherodev
+There's no fun "trick" zig-side that will work.
+
+1601337149
+justin_smith
+pixelherodev: I bet using translate_c on a small program using char shows it
+
+1601337153
+pixelherodev
+Nope
+
+1601337160
+pixelherodev
+Pretty sure that uses u8.
+
+1601337167
+alexnask[m]
+Yeah I think so too
+
+1601337195
+alexnask[m]
+This sounds like a good argument for c_char to me tbh
+
+1601337200
+pixelherodev
+`pub extern var c: u8;`
+
+1601337209
+pixelherodev
+andrewrk: mind adding in your two cents on this?
+
+1601337213
+pixelherodev
+alexnask[m]: I'm inclined to agree.
+
+1601337237
+andrewrk
+
+
+1601337250
+pixelherodev
+Huh
+
+1601337252
+pixelherodev
+:P
+
+1601337264
+companion_cube
+what does it mean for a char to be signed, anyway?
+
+1601337271
+pixelherodev
+companion_cube: int8_t.
+
+1601337273
+companion_cube
+is anyone doing addition of chars? :s
+
+1601337277
+pixelherodev
+andrewrk: in light of #6250, is there a point in adding it to stage1?
+
+1601337285
+companion_cube
+or `-c` where `c:char`?!
+
+1601337291
+pixelherodev
+companion_cube: int8_t == signed char, uint8_t == unsigned char. Neither equals char.
+
+1601337300
+companion_cube
+yeah but *why*!! :D
+
+1601337314
+andrewrk
+pixelherodev, no
+
+1601337329
+pixelherodev
+andrewrk: so, simply put it, I need to suck it up and manually rewrite the header for now? :P
+
+1601337337
+alexnask[m]
+companion_cube: The C gods decided so ;)
+
+1601337339
+justin_smith
+companion_cube: I'm imagining some terrible "encryption" lib that uses bit-shift on chars and breaks if the signedness is unexpected
+
+1601337366
+pixelherodev
+companion_cube: because all of the `{u,}int` types are defined in terms of primitives, and char is
+
+1601337373
+companion_cube
+😱
+
+1601337376
+pixelherodev
+I don't think it occurred to anyone to add a distinct primitive
+
+1601337395
+pixelherodev
+Frankly, I'm of the opinion that all the stdint.h / stddef.h should
+
+1601337403
+justin_smith
+pixelherodev: how can char be an 8-bit primitive when it's not even defined to be 8 bits?
+
+1601337418
+pixelherodev
+justin_smith: it's defined to be
+
+1601337423
+pixelherodev
+This is why stdint.h exists, supposedly
+
+1601337429
+alexnask[m]
+pixelherodev: stdint is not guaranteed to provide uintN_t, intN_t for any N
+
+1601337435
+alexnask[m]
+: )
+
+1601337452
+pixelherodev
+alexnask[m]: thanks for reminding me that standard C has stupid ideas. I never would have remembered otherwise.
+
+1601337498
+alexnask[m]
+Actually it needs those: int8_t, int16_t, int32_t, uint8_t, uint16_t, uint32_t, mb :P
+

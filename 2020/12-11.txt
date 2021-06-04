@@ -1,0 +1,1284 @@
+1607647394
+andrewrk
+I'm really pleased with where we landed on std lib hash map API
+
+1607647460
+andrewrk
+big thanks to Sahnvour on that one :)
+
+1607647539
+andrewrk
+also there's something really beautiful that emerges with Unmanaged APIs + ensureCapacity + fooAssumeCapacity
+
+1607648218
+karchnu
+unmanaged APIs?
+
+1607648294
+Nilium
+I haven't looked at those yet, so that seems like something fun to read through while I'm learning Zig for AOC.
+
+1607648318
+andrewrk
+that's conventionally how I've been naming variants of common data types that omit the allocator: *Allocator field, requiring you to pass the allocator for every method
+
+1607648345
+andrewrk
+idea being if you want N ArrayLists on the heap, and they're all using the same allocator, it's kind of silly to store it in all of them
+
+1607648711
+karchnu
+ok, that's what I didn't understand in the doc
+
+1607648855
+karchnu
+so you can have a structure with tons of lists and hashmaps without any unnecessary memory cost
+
+1607648910
+karchnu
+I saw ensureCapacity while tweaking the tokenizer and the parser, that's nice too
+
+1607648949
+karchnu
+for now I only have good surprises ^^
+
+1607649208
+andrewrk
+ensureCapacity is nice because it removes error handling branches from your code
+
+1607649220
+andrewrk
+feels good to clean up those try's
+
+1607650122
+karchnu
+coming from C, I was already glad to have hashmaps. :D
+
+1607650289
+g-w1
+I am a little confused, why is "try list.ensureCapacity(list.len + 1); list.appendAssumeCapacity(x);" better than "try list.append(x);"? there is a try in both?
+
+1607650314
+justin_smith
+does std have any regular expressions or do I need to use C for that?
+
+1607650351
+justin_smith
+g-w1: I assumed the context was a known number of appends in a batch
+
+1607650967
+karchnu
+g-w1: in the parser there are many appends following the ensureCapacity
+
+1607650983
+andrewrk
+g-w1, for that example the simple append would be cleaner. the benefit comes in when you have 3 or more appends. then you have fewer `try`
+
+1607651004
+g-w1
+ah, this makes sense, thanks
+
+1607651005
+andrewrk
+or even 2 appends because then there is only 1 point of failure instead of 2
+
+1607651026
+andrewrk
+it can really help with resource management because you can make it impossible for some code to fail in a certain area of code, so that you don't have to worry about rolling something back if OOM occurs
+
+1607651026
+fengb
+But try looks simpler :(
+
+1607651051
+andrewrk
+try is safer, so I think looking simpler is appropriate
+
+1607651069
+andrewrk
+assumeCapacity inserts illegal behavior if your assumption is wrong
+
+1607651591
+karchnu
+however, it feels a bit redundant with having a large buffer
+
+1607651662
+karchnu
+I guess this is not the same thing, since the allocation is dynamic, you can still allocate more
+
+1607652051
+andrewrk
+it all comes down to comptime known vs runtime known
+
+1607656576
+andrewrk
+damn, I spent several hours trying to fix #7308 and then realized that my solution was fundamentally missing the problem
+
+1607658266
+andrewrk
+the bummer thing about #7308 is that I can fix it pretty easily, but it means adding code bloat, runtime logic, and memory usage in order to detect this situation. But it's an uncommon mistake to make and when it happens it is always user error
+
+1607658488
+g-w1
+make it undefined behavior ;)
+
+1607658596
+andrewrk
+I guess it's not so bad, it's just a 16-byte entry in a hash set per C object to be compiled
+
+1607660104
+andrewrk
+I guess that wasn't so bad:
+
+1607663487
+viashimo
+is there a way to iterate of the fields of a struct at runtime? I have the list of fields from eg. "var fields = comptime std.meta.fields(StructName)", but if I iterate from 0 to fields.len, I'm not able to access anything. eg fields[i].name will not compile
+
+1607663497
+viashimo
+error: values of type 'std.builtin.StructField' must be comptime known, but index value is runtime known
+
+1607663682
+viashimo
+heh, using fieldNames() works much better
+
+1607663767
+daurnimator
+viashimo: use `inline for`
+
+1607663789
+daurnimator
+though I've been meaning to make a `std.meta.FieldsEnum`...
+
+1607663858
+viashimo
+daurnimator: oh okay, thanks
+
+1607667464
+rowbee
+seems like zls doesn't have argument completion. hmmm
+
+1607671149
+rowbee
+i want to allocate a two-dimensional grid with runtime-determined width and height? i tried doing try allocator.create([height][width]u8); but that obviously fails because the dimensions are not constant
+
+1607671182
+rowbee
+i'd prefer it to be a contiguous chunk of memory
+
+1607671194
+rowbee
+s/i want to/how can i/
+
+1607671576
+daurnimator
+rowbee: I assume something like: `try allocator.alloc(u8, height * width)`
+
+1607671616
+rowbee
+hm... anyway i can convert that to a [][]u8?
+
+1607671635
+rowbee
+i suppose that would be more complicated
+
+1607671647
+daurnimator
+thats a slice of slices: you'd have to store that somewhere
+
+1607671730
+daurnimator
+you could index like: `grid[y*width..(y+1)*width][x]`
+
+1607671764
+rowbee
+i see
+
+1607671803
+rowbee
+no sense in forcing it to be a slice of slices, then
+
+1607673538
+rowbee
+is there a do-while analogue in zig?
+
+1607673658
+andrewrk
+while (true) { ...; if (!condition) break; }
+
+1607673753
+rowbee
+gotcha ty
+
+1607675338
+rowbee
+are log messages removed in ReleaseFast?
+
+1607675433
+rowbee
+ahhh it has different levels based on builtin.mode
+
+1607675455
+ikskuh
+andrewrk: i successfully integrated libsoundio into zig showdown yesterday \o/
+
+1607675464
+ikskuh
+only thing that made me a headache was the latency stuff
+
+1607675475
+rowbee
+is "root" the namespace of my main source file?
+
+1607675498
+rowbee
+hmmm seeing as root.main() is what's called when zig starts up my code i suppose so
+
+1607675538
+rowbee
+yeah there we go
+
+1607676019
+andrewrk
+nice ikskuh!
+
+1607676045
+ikskuh
+yeah!
+
+1607676257
+ikskuh
+it's so satisfying to press the left mouse button and hear a pling :D
+
+1607682638
+protheory8-new-m
+Is there some kind of struct/function in the standard library for listening to TCP requests?
+
+1607682717
+dutchie
+std.net.StreamServer
+
+1607683549
+protheory8-new-m
+thanks
+
+1607684751
+rowbee
+is there a SIMD copy in std?
+
+1607684997
+nore
+I tried to pass "-%1" as an argument to a function expecting an usize, and the function got 0 as the argument, is it a bug or is it something I didn't understand correctly?
+
+1607685018
+ikskuh
+i think it's %-, not -%
+
+1607685439
+nore
+Nah, the doc says -%
+
+1607685470
+nore
+If I pass @as(usize,0)-%@as(usize,1) it works
+
+1607685485
+nore
+But it's quite a bit longer than -%1
+
+1607685523
+nore
+Also, is there a signed size type? (That I could use for indexes that may be negative instead of relying on wrapping arithmetic)
+
+1607685524
+dch
+is it a problem to use a shared zig cache outside the source tree of my git repo?
+
+1607685549
+dch
+I'm thinking of putting it all in /var/cache/zig and mounting it as a tmpfs
+
+1607685814
+ifreund
+probably fine
+
+1607685828
+ifreund
+infact, it might be a bug if that wasn't fine
+
+1607690561
+dch
+cool, that didnt work in 20201206 zig master, but it does with today's one.
+
+1607690586
+marijnfs
+how do i grab a variable in a 'closure'
+
+1607690606
+marijnfs
+i want to access an array in a compare function for PriorityQueue
+
+1607690751
+ifreund
+you can either use a global or modify PriorityQueue to take a context arg like std.sort does for its compare functions
+
+1607690761
+ifreund
+(if you do the latter please make a PR)
+
+1607690783
+marijnfs
+is there another class that takes some context for reference?
+
+1607690828
+marijnfs
+also, people might not like that change in API, would you have a specific PriorityQueueWithContext struct?
+
+1607690940
+ifreund
+hmm, you could make the signature PriorityQueue(comptime T: type, comptime Context: type) and if Context == void then use the current API
+
+1607690994
+ifreund
+and if Context isn't void then use fn (T, T, Context) bool as the compare function as well as adding a context argument to all the methods
+
+1607691875
+marijnfs
+ifreund: I hope that isn't to complicated for the user?
+
+1607691897
+marijnfs
+Are we getting some closures at some point?
+
+1607691949
+ifreund
+nothing that allocates behind your back which is how closures usually work
+
+1607691976
+ifreund
+maybe stack capturing closure-like things:
+
+1607692022
+ifreund
+maybe that is too complicated, we could also just have them pass {} to every function if they have a void Context
+
+1607692178
+marijnfs
+context is in the end quite simple yeah
+
+1607692240
+marijnfs
+I guess you could pass the reference to context once at init() as well, but maybe that's too inflexible
+
+1607692458
+ifreund
+that's another option yeah
+
+1607692485
+ifreund
+you know, that's probably nicer to use in 99% of cases
+
+1607692506
+ifreund
+and you can always pass a pointer and change what it's pointing to if you need it to be more flexible
+
+1607692890
+marijnfs
+so the signature of init could change depending on what is passed as context type? How do I do that?
+
+1607693202
+ifreund
+currently it's ugly because we don't have #1717 yet.
+
+1607693254
+ifreund
+pub const init = if (C == void) struct { pub fn init(context: C) { ... } }.init else struct { pub fn init() { ... } }.init;
+
+1607693276
+ifreund
+marijnfs: ^
+
+1607693304
+marijnfs
+yeah that 1717 would be sweet
+
+1607694488
+marijnfs
+ifreund: that is some interesting code, forgot you can do if with comptime.. so simple
+
+1607695563
+ifreund
+yeah comptime is so powerful while remaining very intuitive, it's greatd
+
+1607698972
+llimllib
+I feel really dumb - but how do I remove const to make a string mutable?
+
+1607699090
+g-w1
+iirc, it is inlined in the binary, so it has to be const, but I may be wrong
+
+1607699100
+dutchie
+yeah, you'll
+
+1607699105
+dutchie
+(whhops)
+
+1607699115
+dutchie
+...most likely have to copy it onto the heap or somewhere else
+
+1607699295
+llimllib
+well I'm working on that but failing at it too
+
+1607699341
+fengb
+If it’s a literal, you can duplicate it onto the stack like`var foo = bar.*;`
+
+1607699371
+fengb
+“bar”.*
+
+1607699459
+llimllib
+"./a.zig:8:26: error: attempt to dereference non-pointer type '[]const u8'
+
+1607699459
+llimllib
+"
+
+1607699459
+llimllib
+var inputCopy = input.*;
+
+1607699493
+fengb
+Only literals
+
+1607699532
+fengb
+Only comptime known fixed sizes*
+
+1607699546
+fengb
+For variable length, you need an allocation strategy of sorts. allocator.dupe can help
+
+1607699574
+llimllib
+var inputCopy = alloc.dupe(u8, input) catch unreachable;
+
+1607699575
+llimllib
+inputCopy[0] = 'a';
+
+1607699577
+fengb
+If it’s already from an input, can you pass around the non const slice instead?
+
+1607699595
+llimllib
+all I'm trying to get to here is a non const slice
+
+1607699609
+g-w1
+var x = "string".*;
+
+1607699636
+fengb
+You can’t safely remove constness, but you can update the signature so it’s correctly capturing non-constness
+
+1607699698
+fengb
+e.g if you function has (input: []u8), it’s now mutable but you can’t pass literals to it
+
+1607699741
+llimllib
+ok I understand now that the `.*` gives me a const pointer to a string literal
+
+1607699752
+llimllib
+err non-const
+
+1607699761
+fengb
+No, it dereferences the string to make a copy
+
+1607699775
+llimllib
+onto the stack
+
+1607699779
+fengb
+Yeah
+
+1607699800
+fengb
+Literals are always const
+
+1607699815
+fengb
+So if you ever try to de-const it, it should be a segfault
+
+1607699832
+fengb
+Since you’re trying to write to read only memory
+
+1607699905
+llimllib
+roger. so now I have a mutable string but I can't pass it as a []u8? `expected type '[]u8', found '[109:0]u8'`
+
+1607699938
+fengb
+Hmm, what are you trying to do?
+
+1607699957
+fengb
+Is there a bigger code snippet
+
+1607699977
+llimllib
+
+
+1607699981
+fengb
+The dupe solution might be okay if you need to actually handle inputs
+
+1607699993
+dutchie
+
+
+1607700000
+llimllib
+all I want is to turn an input string into a mutable block of memory
+
+1607700017
+g-w1
+would &maps work to pass? to coerce to a slice?
+
+1607700065
+fengb
+Here’s the problem though
+
+1607700104
+fengb
+Is your input supposed to be from stdin? Or literals?
+
+1607700110
+fengb
+Cause they behave quite differently
+
+1607700150
+llimllib
+I usualy have `main` read from a file
+
+1607700167
+llimllib
+and provide the small examples as string literals
+
+1607700171
+fengb
+Ah
+
+1607700211
+fengb
+Okay, you can pass &maps. It’s an array right after you dereference and copy it to the stack
+
+1607700258
+fengb
+Need to declare it as “var maps” since you’re trying to mutate it
+
+1607700334
+llimllib
+ok that makes sense
+
+1607700351
+llimllib
+closer... now tokenize re-consts is though hah
+
+1607700369
+llimllib
+I guess I can just mem.dupe it onto the stack instead of modifying the original block
+
+1607700372
+llimllib
+alloc.dupe sorry
+
+1607700378
+llimllib
+I really appreciate the help, I am very obviously not used to manual memory management
+
+1607700380
+fengb
+They both have downsides. Duping requires proper memory management
+
+1607700404
+fengb
+Yeah it can be annoying at first
+
+1607708499
+betawaffle
+wait... you can close over comptime vars?
+
+1607708697
+andrewrk
+TheLemonMan, I was thinking maybe we bite the bullet and add all the def files from mingw-w64
+
+1607708718
+andrewrk
+maybe after we have a package management system we could figure out how to offload some of those installation size bytes into it
+
+1607708750
+andrewrk
+it would come out to approximately +6 MiB installation size, +656 KB tarball size
+
+1607708788
+TheLemonMan
+yeah, teaching the users to do the .def to .lib conversion on their own is much harder heh
+
+1607708816
+TheLemonMan
+have you tried compressing the .def files? we now have a decompressor for .gz files :)
+
+1607708846
+andrewrk
+ah interesting, have the installation keep some sources compressed, that's not a bad idea
+
+1607708873
+andrewrk
+although most def files are small by themselves - the real savings comes when they are compressed with each other in the same tarball
+
+1607708912
+andrewrk
+I'm less concerned about the installation size, more concerned about tarball size
+
+1607708974
+TheLemonMan
+then go for it, ~600kB is nothing wrt the whole tarball size
+
+1607708980
+andrewrk
+currently our installation size is 288 MiB, give or take differences in the zig binary for different systems
+
+1607709004
+andrewrk
+alright I'm gonna do it
+
+1607709015
+betawaffle
+wow, that's rather large, but yeah, 600kb isn't much
+
+1607709029
+TheLemonMan
+there's also #6646, that should be pretty easy to add
+
+1607709039
+betawaffle
+ohh, sorry, not the tarball
+
+1607709116
+andrewrk
+betawaffle, 162 MiB of that is the zig binary and ~150 MiB of that is LLVM/Clang/LLD
+
+1607709133
+betawaffle
+wow
+
+1607709168
+betawaffle
+is that with all debug symbols or something?
+
+1607709179
+fengb
+At some point would there be an official zig-lite tarball? :P
+
+1607709699
+andrewrk
+hmm some of these look pretty sketch though
+
+1607709709
+andrewrk
+why would you ever want to dynamic link msvcp60.dll?
+
+1607709726
+andrewrk
+that .def alone is 525 KB
+
+1607709838
+TheLemonMan
+nostalgia?
+
+1607709883
+andrewrk
+lol
+
+1607709924
+betawaffle
+what's in that?
+
+1607710015
+TheLemonMan
+runtime for visual C++ 6.0
+
+1607710050
+TheLemonMan
+back to '98
+
+1607710154
+leeward
+Oh, I remember that. They set the versions of all the things to 6.0.
+
+1607710177
+andrewrk
+hmm I'm going to stick with an explicit list of def files for now. this can remain an unsolved problem while we weigh our options
+
+1607710516
+justin_smith
+I'm stumped by a compiler error for an anonymous list of anonymous lists
+
+1607710526
+justin_smith
+I have this declaration: var traversals = .{.{1, 1}, .{3, 1}, .{5, 1}, .{7, 1}, .{1, 2}};
+
+1607710559
+justin_smith
+I get a compiler error on this: for (traversals) |trajectory|, saying that it can't evaluate constant expression
+
+1607710559
+andrewrk
+you can't store that in a var, you'll have to make it const or comptime var
+
+1607710571
+justin_smith
+andrewrk: ahh, I vaguely remember this, thanks
+
+1607710614
+fengb
+Or give it a real type definition
+
+1607710621
+g-w1
+or inline for iirc
+
+1607710715
+betawaffle
+andrewrk: are streams still on fridays?
+
+1607710744
+andrewrk
+I have been on a stream hiatus due to moving, but I'm going to get back into it
+
+1607710794
+andrewrk
+I want to focus on this 0.7.1 milestone today tho
+
+1607710825
+TheLemonMan
+three tickets left, all of them are windows-related
+
+1607711023
+andrewrk
+all of them are the creator of xmake trying to integrate zig on windows
+
+1607711362
+justin_smith
+fengb: yeah, I went with [_][2]usize{[_]usize{1,1} ...}
+
+1607711368
+justin_smith
+that's a lot clearer anyway
+
+1607711568
+justin_smith
+though it seems like the compiler could have inferred the right thing from [_][2]usize{{1,1} ...} - or is there a reason not to infer in a case like that?
+
+1607711723
+andrewrk
+I believe that will work if you fix the syntax
+
+1607711738
+andrewrk
+that is indeed how it is intended to work
+
+1607712370
+justin_smith
+andrewrk: the example in the docs uses both the outer [_][N]type{ ... }  and the inner [_]type{ ... } on each item, is there an example of a the correct syntax without the repeated declaration on the inner?
+
+1607712421
+andrewrk
+[_][2]usize{.{1,1} ...}
+
+1607712426
+andrewrk
+I added a `.`
+
+1607712443
+justin_smith
+ahh OK, that did it
+
+1607712520
+justin_smith
+that would be a nice thing to add to the doc section for multidemensional arrays
+
+1607712526
+andrewrk
+agreed
+
+1607712536
+andrewrk
+the .{} syntax is a relatively new feature
+
+1607712880
+leeward
+Thank you, Andrew. One of my gripes about C is that people conflate 1 and true. Python didn't fix this. I just got the following error while porting some C to Zig: "expected type 'bool', found 'u16'" for `if (1 & taccr0.*)`
+
+1607712894
+leeward
+This makes me all warm and fuzzy inside.
+
+1607713184
+andrewrk
+idea here is to make it harder to accidentally write code that runs but doesn't do what you want
+
+1607713202
+leeward
+Yep, it's great.
+
+1607713234
+leeward
+I'm just really glad you got on the "integers aren't booleans" train.
+
+1607713308
+leeward
+I've had arguments with people over the distinction between being an integer and being implemented as an integer.
+
+1607713369
+ifreund
+andrewrk: if you have a minute, I think I've misunderstood the stub .s file thing as I'm getting undefined symbol errors for the things I've put in that file, branch here:
+
+1607713385
+leeward
+Anyway, msp430 update for the day is that I've ported SLAA338A (
+
+1607713404
+leeward
+Time to find a 7-segment display and wire it up.
+
+1607713407
+andrewrk
+amazing that you had to implement random numbers
+
+1607713453
+ifreund
+I made a libc_nonshared.a as well which contains the symbols used by the crt1 files since that seemed to be what is done for glibc but that hasn't helped:
+
+1607713454
+leeward
+Well, the project I want to do requires a source of truly random bits.
+
+1607713493
+andrewrk
+ifreund, gimme 10-20 min and then I'll have a look
+
+1607713505
+leeward
+The method is pretty nifty. It uses a slow oscillator and a fast oscillator that are on completely separate hardware but integer multiples of each other, and counts whether there's an odd or even number of fast edges per slow edge.
+
+1607713511
+ifreund
+andrewrk: cool, no rush
+
+1607713530
+g-w1
+leeward: is this bare metal, or is it on an os?
+
+1607713574
+leeward
+g-w1: bare metal; I had to write _start (though to be fair I copied most of it from crt0)
+
+1607713585
+g-w1
+nice
+
+1607713625
+andrewrk
+ifreund, one thing that might help is to have a look around at the differences in the ELF files between the viable libc.so and the not viable libc.so, using the `readelf` tool
+
+1607713669
+andrewrk
+we do expect them to be different because the stubbed one does not need actual implementations of functions, but metadata wise they should be identical I think
+
+1607713692
+ifreund
+that's a good tip, I'll give it a look
+
+1607713723
+andrewrk
+TheLemonMan might get nerd sniped if you play your cards right ;)
+
+1607713786
+leeward
+seems probably
+
+1607713788
+leeward
+probable
+
+1607713822
+justin_smith
+leeward: a name I've heard for the phenomenon that bothers you is "concretization" - replacing some leaky abstraction with its implementation in one's mental model.
+
+1607713867
+ifreund
+yeah so they are definitely not the same, probably cause I barely have any idea what I'm doing with the asm :D
+
+1607713879
+justin_smith
+arguably, much of the negative reaction to clojure from the common lisp community is caused by a concretization around lists, so they are weirdly suspicious of first class data structures that aren't linked lists
+
+1607713918
+andrewrk
+ifreund, if you search your global zig cache dir (probably ~/.cache/zig) for .s files you can find the glibc ones
+
+1607713949
+andrewrk
+uhh musl doesn't need that symver nonsense tho
+
+1607713953
+ifreund
+yeah I found those, though I don't think I should be using symver though
+
+1607714027
+ifreund
+right now readelf -Ws tells me " 1692: 0000000000001210     0 FUNC    LOCAL  HIDDEN     5 write"
+
+1607714058
+ifreund
+but I want " 1692: 0000000000001210     0 FUNC    LOCAL  HIDDEN     5 write"
+
+1607714082
+ifreund
+er, copy failed: "   341: 000000000005e2e2    46 FUNC    GLOBAL DEFAULT    9 write"
+
+1607714188
+TheLemonMan
+don't use the same .s files we use for glibc
+
+1607714268
+TheLemonMan
+as you can see we mark the "clean" symbol with .hidden and then do the .symver magic
+
+1607714291
+leeward
+justin_smith: That's a good observation.
+
+1607714385
+ifreund
+TheLemonMan: I made a new one by massaging the output of readelf -Ws on libc.so built with musl's Makefile:
+
+1607714422
+ifreund
+but I've probably done something stupid/obviously wrong as I am not familiar with asm
+
+1607714520
+TheLemonMan
+I do get `1223: 0000000000000000     0 FUNC    GLOBAL DEFAULT    1 read`
+
+1607714554
+ifreund
+... let me clear my cache
+
+1607714562
+andrewrk
+ifreund, zig no longer computes a compiler id based on its own runtime binary
+
+1607714577
+andrewrk
+it's now dependent on the output of `zig version` only
+
+1607714623
+ifreund
+good to know
+
+1607714663
+ifreund
+huh, I still get LOCAL HIDDEN
+
+1607714682
+ifreund
+TheLemonMan: what compile flags did you use? maybe that's where I've screwed up
+
+1607714699
+TheLemonMan
+ifreund, `zig cc /tmp/foo.s -c -o foo1`
+
+1607714724
+ifreund
+thanks, I'll try that
+
+1607714735
+ifreund
+not totally sure what it's doing right now
+
+1607714780
+andrewrk
+ifreund, libc stuff goes into your global cache, not local one
+
+1607714798
+ifreund
+oh, i wiped that as well
+
+1607714814
+andrewrk
+I don't see how that .s file could generate LOCAL HIDDEN symbols
+
+1607714857
+ifreund
+oh I think I know what I've done wrong, I was using the wrong zig
+
+1607714881
+andrewrk
+been there, done that :)
+
+1607714951
+ifreund
+ok no more undefined symbols, but the compiler segfaulted so I'll investigate that and report back if/when I get stuck again
+
+1607714955
+ifreund
+thanks all
+
+1607715144
+andrewrk
+I think we could get rid of libc_nonshared.a for glibc libc.so
+
+1607715178
+andrewrk
+uhh never mind, I got confused for a sec, thought it was inside libc.so but it goes inside your application
+
+1607715250
+ifreund
+it's needed to link into the static crt files afaict
+
+1607715295
+andrewrk
+I think we only need 1 .s file to produce libc.so but there may be static crt files that you are required to link into your app
+
+1607715577
+TheLemonMan
+ifreund, you're better off with `objdump --dynamic-syms`, that's also the command glibc uses for building its own abilist files
+
+1607715667
+ifreund
+good to know thanks
+
+1607715731
+ifreund
+well shit, my dynamically linked musl binary didn't crash
+
+1607715736
+ifreund
+time to try river
+
+1607715868
+justin_smith
+is there a trick to defining multiple target executables in one build.zig? (or maybe a clever example...) - I have multiple addExecutable calls but I can't figure out how to parameterize the "run" arg via command line
+
+1607715917
+justin_smith
+my current workaround is a Makefile with various targets using the binaries that zig installs
+
+1607715926
+ifreund
+yooo! river runs on musl!
+
+1607715937
+justin_smith
+related: it would be nice if I could tell zig build I only want to build one of the exucutable targets
+
+1607715949
+ifreund
+now I've got a lot of clean up to do before I can make a PR
+
+1607715964
+TheLemonMan
+ifreund, 'grats! :D
+
+1607716037
+ifreund
+thanks for the help :)
+
+1607716067
+andrewrk
+nice!
+
+1607716078
+g-w1
+justin_smith, b.addExecutable multiple times doesn't work?
+
+1607716129
+TheLemonMan
+leeward,
+
+1607716151
+leeward
+TheLemonMan: That's the one.
+
+1607716192
+leeward
+There's a link in that pdf to "software included with this application report." It's a zip file with some code.
+
+1607716265
+g-w1
+justin_smith, you can also make only a certain exe run with `zig build thing` by just copy and pasting the `run` boilerplate when you do `zig init-exe`
+
+1607716274
+leeward
+Looks like I'm gonna have to buy a 7-segment display. I know I had one in a parts bin but can't find it, and can't borrow one from the lab because of the apocalypse.
+
+1607718310
+leeward
+Well, I found a ticket to a concert from 2004 and a CPLD dev kit, but no 7-segment displays.
+
+1607718476
+justin_smith
+g-w1: addExecutable multiple times does work, but doesn't give me granluarity in terms of what I build, and doesn't let me parametirize zig build run - unless I understand you correctly and I can just define extra build target tasks
+
+1607718527
+ifreund
+justin_smith: you can have e.g. run-foo run-bar and run-zed steps
+
+1607718610
+ifreund
+having it only build one of the executeables could be accomplished through build options
+
+1607719626
+ifreund
+stage1 is crashing on me after I refactored a bit :/
+
+1607719776
+andrewrk
+bummer
+
+1607719840
+ifreund
+gdb told me what function it's crashing in though so that's good
+
+1607719892
+andrewrk
+do a little rain dance to make stage1 happy
+
+1607719958
+ifreund
+think I got it, I had written code that shouldn't compile but instead of a compile error I got a crash :D
+
+1607719983
+fengb
+Sounds like C++ 🤔
+
+1607720007
+ifreund
+oh I'm writing zig thanks to #6250
+
+1607720026
+ifreund
+I don't think I would have tried to do this if this code was still in C++
+
+1607721623
+ifreund
+hmm, should we keep the default of statically linking musl or should it be dynamic by default now?
+
+1607721645
+ifreund
+dynamic is way faster to build with an empty global cache
+
+1607722046
+andrewrk
+ifreund, I think if the target os is native, it should default to dynamic linking musl if the system libc is musl, otherwise default to static linking
+
+1607722096
+ifreund
+that sound reasonable
+
+1607722104
+ifreund
+now to find the code making that decision :D
+
+1607722111
+andrewrk
+the good news is we have all that info already!
+
+1607722120
+andrewrk
+lmk if you want me to point you around
+
+1607722160
+andrewrk
+the decision to static or dynamic link starts at Compilation.zig:575
+
+1607722223
+andrewrk
+there's an is_native_os flag in the Options passed to that function
+
+1607722231
+ifreund
+cool, that saves me some time :)
+
+1607722269
+andrewrk
+finally there is options.target.abi which can tell you musl or glibc
+
+1607727793
+cCCCCcccccCCc
+Hi, in the 0.7 series, I've been unable to compile a program I wrote in 0.6 that interfaces with the libz C library. Specifically when I declare a z_stream struct, one of the fields is named 'opaque' and it appears to clash with the language's opaque keyword.
+
+1607727797
+cCCCCcccccCCc
+./libz.zig:88:9: error: expected token '}', found '.'
+
+1607727797
+cCCCCcccccCCc
+.opaque = null,
+
+1607727903
+andrewrk
+cCCCCcccccCCc, apologies for the incomplete release notes - I hope to get them done soon - but @OpaqueType() has been replaced with `opaque {}` which behaves similar to a struct. You can use @"opaque" syntax for any identifiers that clash with keywords
+
+1607727918
+cCCCCcccccCCc
+andrewrk: Thank you very much, good sir!
+
+1607727980
+cCCCCcccccCCc
+That indeed was the fix.
+
+1607728099
+andrewrk
+happy hacking
+
+1607729919
+andrewrk
+ifreund,
+
+1607729943
+andrewrk
+j/k I'm happy to help you finish up this project, don't rush it
+
+1607730097
+ifreund
+Oh it's just about done, I just need to get the default thing worked out and write something to autogenerarte the .s file
+
+1607730117
+ifreund
+got distracted by cooking and my flatmate though :)
+
+1607730368
+andrewrk
+hmm how
+
+1607731167
+ifreund_
+read the symbols from the libc.so created by musl’s Makefile using readelf and then did some magic with kakoune
+

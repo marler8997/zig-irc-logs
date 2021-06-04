@@ -1,0 +1,736 @@
+1583886503
+andrewrk
+BaroqueLarouche, I need a way to test for lib/std/build/emit_raw.zig so I can update it for  #4710
+
+1583886808
+daurnimator
+andrewrk: might be nice to merge 4665 before 4710?
+
+1583886932
+andrewrk
+4665 is not ready to be merged
+
+1583886989
+daurnimator
+oh; doh. I'll fix it
+
+1583888745
+daurnimator
+andrewrk: oh damn; in stage2.cpp we actually rely on the zero-termination, and ignore the length fields (like include_dir_len). misleading :(
+
+1583897477
+fengb
+So because new OutStreams are comptime, they can automatically become async when needed?
+
+1583898450
+andrewrk
+yes
+
+1583898496
+andrewrk
+I'm now able to build the std lib tests in evented mode, and it's hitting a bug in the event loop implementation
+
+1583898503
+andrewrk
+so that's progress
+
+1583901615
+daurnimator
+so why do we have a .outStream() method instead of a comptime .outStream field?
+
+1583902753
+mikdusan
+it saves 6 * @sizeOf(usize)
+
+1583902788
+daurnimator
+mikdusan: huh?
+
+1583902803
+mikdusan
+for comptime I'm not sure. but vtable for in/out/seekable
+
+1583902823
+daurnimator
+with them being comptime they should take 0 bits
+
+1583903893
+andrewrk
+daurnimator, it returns a struct with a runtime known context field
+
+1583903931
+andrewrk
+comptime struct fields can't have runtime values
+
+1583906750
+daurnimator
+andrewrk: hmmm. is there any circumstance where the context wouldn't be a pointer to `self`?
+
+1583907183
+andrewrk
+not in this branch. but "self" is a convention, not a language concept
+
+1583907852
+daurnimator
+andrewrk: well yes... but I suppose my point is more: `stream = &file.outStream; stream.write(...)`  -> could that work if outStream was 0-bit (comptime) field?
+
+1583907949
+daurnimator
+and it could also be written as: `file.outStream.write(...)`
+
+1583908518
+andrewrk
+it can't be a comptime field since it has a runtime value
+
+1583911911
+daurnimator
+andrewrk: ah right.... so not comptime then; but it could have a virtual offset within `file`?
+
+1583922866
+mq32
+<fengb> @MasterQ32 I think the new OutStream rewrite solves the always-async problem
+
+1583922870
+mq32
+can you give me context here?
+
+1583922879
+mq32
+looks like i missed some updates
+
+1583923275
+daurnimator
+mq32:
+
+1583923711
+mq32
+ah nice
+
+1583932298
+fengb
+Probably be helpful if I linked the pr >_>
+
+1583940585
+r4pr0n
+is it possible to make a var volatile?
+
+1583940610
+r4pr0n
+i.e. that the var doesn't get optimized out if i don't use it anywhere
+
+1583940716
+mq32
+volatile var foo: u32 = 0;
+
+1583940806
+r4pr0n
+then i get "error: expected token '}', found 'volatile'"
+
+1583940967
+mq32
+ah wait
+
+1583940970
+mq32
+only pointers can be volatile
+
+1583940980
+mq32
+why do you need a volatile var?
+
+1583941036
+r4pr0n
+for testing purposes
+
+1583941049
+r4pr0n
+not in any real application
+
+1583941104
+mq32
+hm, good question
+
+1583941105
+mq32
+ah wait
+
+1583941114
+mq32
+_ = foo; // makes "foO" used
+
+1583941273
+r4pr0n
+wait it's "_ = foo", not "var _ = foo"?
+
+1583941277
+r4pr0n
+is that a special operator
+
+1583941333
+mq32
+_ is a special  variable in zig
+
+1583941341
+mq32
+you can assign anything you want, but you are not allowed to read from _
+
+1583941354
+mq32
+you can use it to discard values or mark values as "used"
+
+1583941375
+mq32
+it also brings stuff into existance:
+
+1583941386
+mq32
+comptime { _ = myFunction; } // makes sure that myFunction will be compiled and analyzed
+
+1583941492
+r4pr0n
+oh that's nice, thanks
+
+1583941517
+r4pr0n
+but it isn't really helping at this, the variable assignments gets still removed
+
+1583941571
+mq32
+hm
+
+1583941579
+mq32
+why do you want to do that? for debugging?
+
+1583941610
+r4pr0n
+yeah
+
+1583941920
+TheLemonMan
+andrewrk, preadAll is quite dangerous as it never checks if the amount of bytes read is zero
+
+1583941938
+TheLemonMan
+I've managed to turn it into a nice endless loop once or twice heh
+
+1583942877
+andrewrk
+TheLemonMan, hmmm, I think the *All functions should probably return an EOF error if all the bytes were not read
+
+1583942911
+TheLemonMan
+yeah, that's much better than spinning indefinitely
+
+1583942924
+andrewrk
+weird, idk what I was thinking
+
+1583942958
+andrewrk
+good thing zig is open source so that you and others can point out all the flaws
+
+1583943198
+TheLemonMan
+take that closed-source software, keep sucking behind closed doors!
+
+1583943273
+andrewrk
+TheLemonMan, I'm running tests for 4709 now locally
+
+1583943433
+TheLemonMan
+that's Azure being weird as fuck, yesterday build finished and then got stuck for 6h somewhere
+
+1583943496
+mikdusan
+that 6h hammer is the only thing that prevents complete azure outages
+
+1583943505
+andrewrk
+¯\_(ツ)_/¯
+
+1583944228
+TheLemonMan
+mikdusan, did you figure out what caused that (caching?) problem with compile flags
+
+1583944452
+mikdusan
+not yet. I see 3 distinct issues related to -target/-mcpu and want to dig some more
+
+1583944508
+andrewrk
+it's narrowed down to not a cache problem, right? you can observe the issue with `zig builtin`
+
+1583944593
+TheLemonMan
+`zig builtin` works fine for me now that I fixed the kernel version detection
+
+1583944633
+TheLemonMan
+and `zig targets` seems to ignore mcpu
+
+1583944634
+mikdusan
+andrewrk: i might backtrack on that claim, turns out `-mcpu native-off+on` is
+
+1583944697
+andrewrk
+I'll take a look after fixing the issues with #4710
+
+1583944840
+mikdusan
+andrewrk: the other issue was bogus features were not checked if -target not used. I don't know if this is the correct fix, all I did was flatten block and subst null triple with "native":
+
+1583944842
+mikdusan
+
+
+1583945114
+andrewrk
+mikdusan, yeah that's good, CrossTarget.parse should be called unconditionally\
+
+1583946935
+mikdusan
+andrewrk: re: CrossTarget stuff, have some progress. will open PR shortly
+
+1583953988
+mikdusan
+whups; Stage2Target.cache_hash is stuffed with cpu features as bytes and eventually processed by cache_hash.cpp/cache_str which expects a null-term string. so any features coming after a null-byte are never blake2b'd
+
+1583954077
+andrewrk
+oooooh
+
+1583954092
+andrewrk
+bitten by null term strings, damn
+
+1583954275
+fengb
+Base64 encode it? Tis the JS solution to binary data 🙃
+
+1583954341
+mikdusan
+heh human string version is avail but I think andrew would prefer we feed blake2b the bytes instead of human str
+
+1583954341
+andrewrk
+the solution is simply to use the length
+
+1583954386
+andrewrk
+the implementation of cache_str calls strlen anyway
+
+1583955250
+TheLemonMan
+death to all the null-terminated strings
+
+1583956218
+TheLemonMan
+andrewrk, double check if your FixedBufferStream changes break the stage1 stack traces on your nixos box
+
+1583956255
+andrewrk
+ok
+
+1583956307
+andrewrk
+TheLemonMan, you're referring to removing the EndOfStream error from the set, right?
+
+1583956345
+andrewrk
+I realized that I had previously observed the preadAll problem you mentioned before, and "fixed" it in fixed_buffer_stream.zig by adding that error, but that was the incorrect place to fix it
+
+1583956357
+TheLemonMan
+yep, the seeking behaviour should be consistent with the file streams
+
+1583956377
+andrewrk
+agreed - the recent commit to the branch I made is in efforts to do that
+
+1583956384
+TheLemonMan
+iirc the traces got broken because I was doing getPos/setPos on the very last byte
+
+1583956415
+TheLemonMan
+shouldn't self.pos be clamped to the buffer size too?
+
+1583956462
+andrewrk
+according to my understanding, it is allowed to lseek a file past the end: "lseek()  allows  the  file  offset to be set beyond the end of the file
+
+1583956462
+andrewrk
+(but this does not change the size of the  file)"
+
+1583956485
+andrewrk
+stack traces are still working nicely
+
+1583956552
+TheLemonMan
+yeah, but if you ftell the stream it'll return the file size
+
+1583956560
+andrewrk
+hmm I see
+
+1583956575
+andrewrk
+ok yes then pos should be clamped
+
+1583957862
+andrewrk
+done. alright let's see how badly I screwed up this elf parsing implementation
+
+1583958344
+pmwhite
+Back on the C++ question. I realized the library I am using has a C api in an h file. However, now I'm getting a linker error for __gxx_personality_v0. I tried linking with stdc++ per an SO question, but my Nix shell is having trouble finding the library.
+
+1583958420
+andrewrk
+pmwhite, here is zig compiler's build script logic to find libc++:
+
+1583958458
+andrewrk
+2 notes. (1)
+
+1583958470
+andrewrk
+(2)
+
+1583958650
+pmwhite
+Ahh, well that's exciting.
+
+1583958948
+TheLemonMan
+holy shit, the CI is stuck on my commit...again!
+
+1583959622
+fengb
+If the CI breaks on all your commits... 🤔
+
+1583959684
+andrewrk
+hmm it passed fine on my computer
+
+1583959753
+andrewrk
+it might be nice to restore the feature where it says what test its working on before attempting it
+
+1583962991
+andrewrk
+TheLemonMan, hmm, i just realized that when I thought I was running your branch, actually I was running master. because my git checkout was in a different dir and i didn't notice the error
+
+1583963268
+TheLemonMan
+lol
+
+1583965579
+mikdusan
+Azure, Azure, why hast thou forsaken me? (windows CI for #4717... hang @ same spot as TheLemonMan's 51c6bb9)
+
+1583965940
+andrewrk
+I can reproduce locally
+
+1583966002
+TheLemonMan
+does it hang somewhere?
+
+1583966047
+andrewrk
+yeah it hangs in `zig build test-runtime-safety`
+
+1583966104
+TheLemonMan
+can you attach a debugger?
+
+1583966388
+andrewrk
+build.exe is stuck on windows.WaitForSingleObjectEx(self.handle, windows.INFINITE, false) in child_process.zig, presumably for the "shift left by huge amount" program
+
+1583966478
+TheLemonMan
+hmm, I've accidentally left a std.debug.warn in the panic handler
+
+1583966515
+TheLemonMan
+does removing that solve the problem?
+
+1583966545
+andrewrk
+I have a stack trace on the child process too
+
+1583966563
+andrewrk
+yeah it's a deadlock inside std.debug.warn calling itself
+
+1583966581
+andrewrk
+wow this attach-to-process thing in msvc that I just discovered is really useful
+
+1583966628
+andrewrk
+nice catch, I didn't even notice that warn() there until now
+
+1583966635
+andrewrk
+it's fixed now, pushing to master
+
+1583966670
+TheLemonMan
+I wonder what's triggering the warn() loop
+
+1583966833
+andrewrk
+
+
+1583966872
+andrewrk
+ooh I should find out what that unexpected error is
+
+1583966908
+andrewrk
+unexpected errors are like a rare pokemon
+
+1583966934
+andrewrk
+gotta catch it, figure out its number, and add it to the pokedex
+
+1583966956
+fengb
+lol
+
+1583967027
+TheLemonMan
+#4196 ?
+
+1583967053
+TheLemonMan
+the test is run with `run.stderr_action = .ignore;`
+
+1583967212
+pmwhite
+Well, I got the c++ stuff to link with suprisingly little trouble. Copy-paste actually worked rather well this time.
+
+1583967265
+andrewrk
+TheLemonMan, that looks relevant
+
+1583967275
+andrewrk
+congrats pmwhite
+
+1583968141
+andrewrk
+frmdstryr, you were the one doing some perf testing with streams right? I think the new I/O abstractions will optimize better
+
+1583968176
+jjido
+andrewrk what's new?
+
+1583968210
+frmdstryr
+yes, i'll have to run that test script again
+
+1583968273
+pmwhite
+is there a way to rename a whole set of functions? I'm thinking about a c api that uses a really long prefix.
+
+1583968309
+andrewrk
+pmwhite, that's being considered but no current feature exists
+
+1583968333
+andrewrk
+jjido, in summary:
+
+1583968355
+jjido
+thank you
+
+1583968375
+mikdusan
+is this right: 1954 commits since 0.5.0 ?
+
+1583968398
+andrewrk
+most importantly, this hot garbage is deleted:
+
+1583968469
+andrewrk
+mikdusan, that sounds right to me
+
+1583968510
+andrewrk
+if you're looking at github's releases page, you can see 3497 - 1954 = 1543, which matches (off by 2) the 0.5.0 release notes page
+
+1583968511
+fengb
+Oh boy it's merged
+
+1583968539
+andrewrk
+so it's still 1 month until 0.6.0 and we have already surpassed 0.5.0 commit count by 411
+
+1583968656
+fengb
+What happened to SliceInStream?
+
+1583968666
+andrewrk
+FixedBufferStream does everything
+
+1583968686
+andrewrk
+the name matches the convention of std.heap.FixedBufferAllocator
+
+1583968694
+fengb
+Ah okay
+
+1583968701
+andrewrk
+updating your code should strictly improve everything
+
+1583968723
+andrewrk
+probably you'll use the function version, std.io.fixedBufferStream(slice)
+
+1583968779
+andrewrk
+it infers whether the stream is writable based on whether the memory is constant, and you'll get compile errors not runtime errors
+
+1583968800
+pmwhite
+how do you use a null terminated array of structs from a C API as a null-terminated zig slice?
+
+1583968886
+pmwhite
+more precisely, I have a [*c]const mystruct, and I want a [:0]const mystruct.
+
+1583968960
+andrewrk
+std.mem.span
+
+1583969110
+andrewrk
+fengb, if you were doing any @ptrCasting with anyerror streams, that was undefined behavior, but you should be able to update your code in a straightforward manner with std.io.StreamSource
+
+1583969131
+andrewrk
+see the linked example from the PR
+
+1583969150
+fengb
+I've been doing mostly ducktype streams to work around errorsets
+
+1583969232
+andrewrk
+in that case these changes should provide some welcome code cleanups
+
+1583969239
+pmwhite
+Wait, but a [*c] has no sentinal in the type, so how word std.mem.span know what to do with it?
+
+1583969266
+pmwhite
+error: length of pointer with no sentinel
+
+1583969282
+andrewrk
+pmwhite, you should use @as to cast your c pointer into the pointer that it actually is, and then use normal zig API on it
+
+1583969406
+pmwhite
+oh wait, I see. I need a sentinal value for this struct, instead of 0.
+
+1583969592
+fengb
+Hmm, wrapping streams are now parallel functions that are basically the new init function?
+
+1583969715
+andrewrk
+I read that question a couple times but I don't understand
+
+1583969749
+andrewrk
+hmmm, (both!) my redis conf talks got accepted, but the conference is now "remote"
+
+1583969775
+andrewrk
+I suppose it's not so bad, the video recordings of the talks are always more useful than the live audience anyway
+
+1583969949
+fengb
+CountingOutStream's new init is countingOutStream()
+
+1583969992
+fengb
+So most init will be fn(var, args) instead of the old Stream(Error).init(args)
+
+1583970361
+daurnimator
+andrewrk: aw. :( I probably would never attend a "remote" conference
+
+1583970370
+daurnimator
+I mainly go to conferences for the hallway conversations
+
+1583970396
+daurnimator
+otherwise you might as well watch youtube...
+
+1583970412
+pmwhite
+Is there a way to make a sentinel-terminated slice of structs, where the sentinel is just completely zeroed out? I mean, I could construct the value like this, but I feel like there could be an easier way.
+
+1583970440
+daurnimator
+pmwhite: you'd have to create that zeroed out value yourself.
+
+1583970456
+daurnimator
+pmwhite: use `std.mem.zeroes`.
+
+1583970521
+mikdusan
+it must be comptime value right?
+
+1583970526
+andrewrk
+pmwhite, or don't try to be so clever about it. just use [*]S and deal with it
+
+1583970586
+daurnimator
+andrewrk: I thought they were trying to create a: `[*:std.mem.zeroes(S)]S` and then use `mem.span` on some pointer given to them from C
+
+1583970591
+pmwhite
+andrewrk, but I don't know how many items are in the [*]. There is no way to figure that out with some out-of-band info.
+
+1583970623
+pmwhite
+daurnimator: righto.
+
+1583970769
+pmwhite
+std.mem.zeroes errors with and out of bounds pointer access.
+
+1583970790
+daurnimator
+pmwhite: I actually expected you to hit an error because `mem.indexOfSentinel` doesn't use `std.meta.eql`, it uses just `==`
+
+1583970795
+andrewrk
+why don't you just do what you would do in C in this case? you're using a C API
+
+1583970845
+daurnimator
+pmwhite: perhaps you could share the C code that uses this structure and we can help you translate it to zig?
+

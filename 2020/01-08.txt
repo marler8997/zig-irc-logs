@@ -1,0 +1,1384 @@
+1578441886
+fengb
+Oh I saw that sometimes runtime function args aren't actual pointers. Is that an LLVM optimization?
+
+1578442056
+andrewrk
+are you asking about
+
+1578442067
+andrewrk
+sometimes stuff is passed in registers
+
+1578442127
+fengb
+I mean args that are functions, like `lessThan: fn (T, T) bool` can end up being inlined
+
+1578442180
+fengb
+I see what you mean. After these changes, writeFn doesn't even need an async version:
+
+1578442248
+andrewrk
+I think it still would, because someone would make an OutStream that uses std.os.write (which would be an async function)
+
+1578442287
+andrewrk
+in your branch you can try enabling it:
+
+1578442302
+andrewrk
+this is the big goal here: integrate std.os.write with async io mode
+
+1578442340
+fengb
+I can't because the outstream crashes on a segfault :P
+
+1578442488
+andrewrk
+yeah, alright let me prioritize those async related bugs you reported recently
+
+1578442504
+fengb
+I need to reduce this last one. Maybe I can find a workaround
+
+1578442552
+fengb
+But it’s a doozy because out stream goes everywhere. Pretty sure switching debug.warn over is causing some problems
+
+1578442619
+andrewrk
+inspecting the crash with gdb can often lead to shortcuts in figuring out how to reduce
+
+1578442640
+andrewrk
+basically you go up the stack until you see any IrInstruction and use the dump() method to have it printt the source location
+
+1578443060
+andrewrk
+fengb, oh yeah, even making the callback comptime is still a problem, because format() becomes an async function, and then you still have to solve the recursion problem
+
+1578443115
+daurnimator
+hmmm why didn't I have these issues in my stream branch?
+
+1578443120
+fengb
+It seems to be able to analyze everything
+
+1578443149
+andrewrk
+oh, it's the missing spill, right? the llvm error message with "dominate" ?
+
+1578443207
+fengb
+It’s missing a spill in the optional if block but that was an easy workaround
+
+1578443260
+fengb
+
+
+1578443422
+fengb
+andrewrk: format is
+
+1578443484
+fengb
+Unless this bug is me completely mangling the semantics, which is quite possible >_>
+
+1578443619
+daurnimator
+fengb: why always? e.g. bufPrint shouldn't be async...
+
+1578443649
+fengb
+The internals are async due to generators. Nobody should notice it’s async
+
+1578444059
+fengb
+
+
+1578445061
+andrewrk
+oh wow fengb I think your bug might actually be solved in the branch I was planning on working on today anyway
+
+1578445084
+andrewrk
+has to do with solving the inconsistency of how result locations work with comptime stuff vs runtime stuff
+
+1578445164
+fengb
+Ah okay cool
+
+1578445195
+fengb
+We need a cloning machine to have you work on PRs and actual tasks
+
+1578445385
+andrewrk
+yeah, or, you know, a hiring budget
+
+1578446892
+via
+andrewrk: in C at least the use of volatile for that use case would make sense
+
+1578446939
+via
+would be appropriate rather. that is a use case outside of mmio
+
+1578447119
+via
+in this case both volatile and atomic are valid, but they mean different things. the volatile is relevent for the fact that the memory location can be changed behind the compiler's back, the atomic because it can race with the isr -- though for this use case a u32 would be an atomic load/store no matter what
+
+1578447131
+via
+not sure if zig's volatile 100% matches C
+
+1578447526
+andrewrk
+via, atomic and not volatile is correct here in both zig and c
+
+1578447564
+andrewrk
+even if arm 32 has atomic u32 loads/stores, atomic operations tell the optimizer that there is more than 1 thread observing the memory (interrups count)
+
+1578447605
+via
+i can envision situations where the atomicity of a load store between threads is not actually needed
+
+1578447636
+via
+but volatile explicitly in c at least is to instruct the compiler to not assume no changes between memory accesses of the same location
+
+1578447675
+via
+with what you're describing, why would there be any need for volatile? if atomic tells the compiler also that it can't hold onto loads and stores
+
+1578447756
+via
+e.g. why would mmio also not just count as another "thread"
+
+1578448043
+daurnimator
+via: a volatile will
+
+1578448049
+daurnimator
+via: an atomic might be eliminated
+
+1578448097
+daurnimator
+via: e.g. `const a: volatile *u8 = getsomeptr(); var b = a.*; b = a.*;` will always do two loads.
+
+1578448139
+via
+i can't speak to c11's atomic types, i don't know them very well, but yes that is my understanding of the purpose of volatile
+
+1578448160
+daurnimator
+vs `const a: *u8 = getsomeptr(); var b = @atomicLoad(a, .Monotonic); b = @atomicLoad(u8, a, .Monotonic); b = @atomicLoad(u8, a, .Monotonic);` the compile is allowed to skip the first one
+
+1578448187
+daurnimator
+oops I pasted twice. but you get the point
+
+1578448231
+via
+i was unaware the atomics could be optimized that way, but especially if thats true i feel like thats reinforcing what i'm saying
+
+1578448276
+via
+e.g. spinning on reading a memory location that may be changed by an isr
+
+1578448333
+daurnimator
+"why would there be any need for volatile?" -> because the read might have side effects.
+
+1578448388
+daurnimator
+volatile means "I want this read to happen the exact number of times I write in the code (but the compiler is allowed to move them around)". atomic is "if you do this load/store, it must happen before/after other such annotated loads/stores"
+
+1578449134
+via
+are you disagreeing with what andrewrk said? it sounds like you're more or less saying what i was
+
+1578449221
+via
+i was under the impression volatile was specifically a compiler hint to not optimize loads stores. i was unaware atomic had ordering gaurantees so much as just gauranteeing the write or read happened without overlapping with something else reading/writing to the same location -- e.g. no partial read/write
+
+1578449505
+daurnimator
+via: .Monotonic is the same as C++'s memory_order_relaxed. see
+
+1578449576
+daurnimator
+ooo interesting: the "run this code" button above the snippet. We should do that with zig's docs and godbolt
+
+1578449795
+via
+my googling seems to indicate that even c11's atomic_ types allow a compiler to optimize away subsequent loads, and volatile would still be needed for this case
+
+1578450295
+fengb
+andrewrk: I've never used gdb or lldb before. Is this trace at all helpful?
+
+1578450422
+andrewrk
+fengb, it tells me that the code got past analysis, something went wrong making LLVM IR instructions, and that a struct field pointer thing generated a wrong llvm type
+
+1578450454
+andrewrk
+you can get the source location if you go up the stack to #5 and look at instruction.base.dump()
+
+1578450995
+fengb
+Updated with some more info. Pretty neat
+
+1578451212
+daurnimator
+`zig run` appears to make files in ~/.cache/zig/stage1 ?
+
+1578451370
+fengb
+po instruction[0].base.dump() -> `#330| StructFieldPtr        | *const ?usize| 2 | @StructFieldPtr(&#329.width)`
+
+1578451411
+daurnimator
+fengb: I recommend installing this for gdb:
+
+1578451435
+fengb
+I can't seem to get gdb working with mac. The SIP is stronk
+
+1578451468
+fengb
+I suppose I can fire it up in Docker
+
+1578451486
+daurnimator
+also happy note: since pygments merged zig support I get highlighting in gdb :D
+
+1578454491
+via
+are nested packed structs supposed to stay packed?
+
+1578454514
+via
+
+
+1578454549
+via
+been debugging why i can't get this usb code on arm to work, narrowed it down to that
+
+1578454617
+daurnimator
+via: packed structs have a lot of bugs....
+
+1578454646
+daurnimator
+via: likely you hit something related to
+
+1578454657
+via
+i was eyeing
+
+1578454667
+via
+yeah, that too
+
+1578454910
+via
+well thats a bummer
+
+1578459277
+daurnimator
+I sort of want separate to have a single-char-delimiter-taking version so that we can return sentinel terminated slices.
+
+1578461176
+fengb
+I think I need an actual Linux dev box. Celeron / Atom isn't quite good enough :P
+
+1578464964
+daurnimator
+fengb: why aren't you running linux as your main machine? :)
+
+1578465377
+fengb
+`loop.init()` this is causing _start to be async when I flip os.write to be async :(
+
+1578465536
+fengb
+lol it's easier for me to compile on the mac and copy it over. I love how great Zig's cross platform support
+
+1578466790
+andrewrk
+fengb, you gotta figure out where you can make a seam
+
+1578470725
+wilsonk
+daurnimator: wow, thanks for that gdb-dashboard recommendation. Love it!
+
+1578472542
+bgiannan
+daurnimator, do you know how to disable by defaultl some of the panels of gdb-dashboard? i waste time everytime doing `dashboard assembly`, `dashboard register`etc. to disable those i don't use
+
+1578475647
+SyrupThinker
+bgiannan: Append the commands to .gdbinit
+
+1578477244
+bgiannan
+SyrupThinker, thx
+
+1578487658
+phillyiscool
+I have a function like this:
+
+1578487663
+phillyiscool
+pub fn addGuard(t: Transition, comptime gfn: fn () bool) void {  t.guard_fn = gfn;}
+
+1578487678
+phillyiscool
+The compiler says: `error: cannot assign to constant`
+
+1578487685
+phillyiscool
+t here is not a constant, what is going on?
+
+1578487694
+phillyiscool
+And how should I model something like this?
+
+1578487893
+mikdusan
+`pub fn addGuard(t: *Transition, comptime gfn: fn () bool) void { ... }`
+
+1578487989
+phillyiscool
+Ah, ok that makes sense
+
+1578488000
+phillyiscool
+So always pass a pointer when you want to modify a struct in a function
+
+1578489021
+Snektron
+yes
+
+1578491158
+fengb
+Shoot, the last unexplained crash is probably result location
+
+1578491350
+fengb
+Maybe it'll be resolved by the cleanup?
+
+1578492017
+gonzus
+During Advent of Code, I found myself several times missing a good way to write a while loop where the controlling variable is scoped to the loop only.
+
+1578492053
+gonzus
+I would write something like: `var j: usize = 0; while (j < top) : (j += 1) { ... }`
+
+1578492081
+gonzus
+But that means that `j` is available to the code after the loop.
+
+1578492087
+gonzus
+Is there a better idiom for this?
+
+1578492200
+mikdusan
+just make a sub-scope ?
+
+1578492261
+gonzus
+Yes, that works, but it looks really ugly... :-)
+
+1578492314
+gonzus
+I guess I just wish I could declare that variable inside the `while ()` part. Too much C influence, maybe?
+
+1578492366
+gonzus
+I mean, that `while` loop has almost everything from a C `for` loop.
+
+1578492405
+mikdusan
+it's interesting you bring that up. I was just looking at c++17 or 20, and what it does for that. so `for` and `if` allow init-statements. but `while` does not and the general opinions are "well just use for"
+
+1578492422
+mikdusan
+and if you sit down and think about it, that's a lot of garble,
+
+1578492427
+mikdusan
+just to avoid a sub-scope
+
+1578492468
+hryx
+gonzus: I recently came across an interesting blog post on this topic (as it relates to C anyway)
+
+1578492530
+gonzus
+Right. This is of course a matter of aesthetics. I am so used to writing `for (int j = 0; j < top; ++j) {...}` that its semantics are absolutely obvious to me. And because I love lexical scoping, RAII, and so forth, I find myself missing that idiom.
+
+1578492558
+gonzus
+hryx checking that link...
+
+1578492979
+gonzus
+hryx: interesting read. There is a subtlety to the variable in a C for loop, which doesn't affect C that much but is visible in languages that do support closures.
+
+1578493053
+gonzus
+Since I already brought up one thing I found myself missing, I will mention another: easier way to express literals (for example, for initializing variables).
+
+1578493127
+fengb
+I like Go's strategy of only using for loops
+
+1578493136
+hryx
+gonzus: re: closures, exactly. I've run into bugs because of it in Go, a la
+
+1578493161
+gonzus
+At some point I wanted to have a `HashMap(A, HashMap(B, usize))` and it was a pain to initialize it.
+
+1578493208
+gonzus
+fengb: I don't know Go well enough. Can you declare variables in Go's `for` statement?
+
+1578493275
+hryx
+gonzus: Go supports the C-style for loops you want
+
+1578493292
+gonzus
+I have been doing lots of Perl and JS development lately, and I guess I am spoiled by how easily you can initialize hashes of arrays of hashes of...
+
+1578493408
+fengb
+No, but it handles iterating by ranges pretty elegantly. It's the same philosophy as "one loop" but using for loops instead of while loops
+
+1578493434
+fengb
+gonzus: yes but it's supposed to hurt in Zig, because it doesn't map to machine code well :P
+
+1578493445
+gonzus
+fengb: I think it does =>
+
+1578493499
+gonzus
+fengb: ack, that makes sense.
+
+1578493516
+fengb
+Oh oops, I actually forgot the manual loop existed. Okay I'm not a fan anymore >_>
+
+1578493528
+fengb
+It seems they simply merged 3 different semantics into the for loop
+
+1578493539
+fengb
+I thought it was more elegant lol
+
+1578493580
+hryx
+I think the thinking was "this is elegant because we only have this one keyword to remember"
+
+1578493615
+hryx
+but all those semantics are smooshed in there
+
+1578493626
+gonzus
+I would still love to be able to do `var data = { "foo": [ 1, 2, 3], "bar": [4, 5], "baz": [6] };`, though.
+
+1578493651
+fengb
+I've been using for := range forever so I guess I just assumed that was the only option
+
+1578493693
+gonzus
+With a subset of JSON-like syntax, where each element has a consistent type that could be inferred by the compiler.
+
+1578493707
+fengb
+You can use anon structs: `.{ .foo = .{ 1, 2, 3 }`
+
+1578493717
+fengb
+It's not runtime iterable so it probably doesn't solve your problem
+
+1578493741
+gonzus
+Ah, right. Those are kind of new, correct?
+
+1578493768
+gonzus
+I have seen more recent code calling `std.debug.warn()` that uses those.
+
+1578493781
+fengb
+Yeah. Using a struct as a hashmap isn't semantically correct though
+
+1578493808
+fengb
+That's one thing Javascript did really poorly: mixing records and collections :/
+
+1578493844
+fengb
+I have to relearn that they're different whenever I switch to a different language >_>
+
+1578493857
+gonzus
+Agreed. I'm actually thinking more of what Perl does, but with JS syntax (because it looks closer to JSON, which is better known).
+
+1578495013
+BaroqueLarouche
+ohhh only 14 pull request, getting near 0!
+
+1578495249
+fengb
+All of them have been reviewed too so it's effectively 0!
+
+1578498221
+fengb
+Hmm, I'm starting to encounter cases where I have to rebuild zig to run std lib tests
+
+1578498258
+mikdusan
+that doesn't sound right
+
+1578498366
+fengb
+Some of std lib is being linked into the binary
+
+1578498496
+fengb
+Or maybe it's the other way around -- my failures in std lib is prevent the build?
+
+1578498624
+mikdusan
+try running tests with `zig0` instead -> `zig0 test lib/std/std.zig`
+
+1578498657
+Snektron
+<hryx "gonzus: I recently came across a"> This problem is not so bad in languages with explicit typing
+
+1578498670
+Snektron
+or without reference semantics of basic types
+
+1578498726
+Snektron
+for example, in c++ i could choose between the two with either `[=i] { return i; }` and `[i] { return i; }`
+
+1578498904
+fengb
+Oh that thing. Go's biggest footgun :P
+
+1578507559
+leeward
+I know why this is failing to compile (4114), but does anyone see any errors in the code? I'm getting a segfault on line 12 if I fix the print calls.
+
+1578508289
+mikdusan
+change to `var logger = ...`
+
+1578508301
+mikdusan
+and change to `const allocator = &logger.allocator;`
+
+1578508976
+andrewrk
+one reason that while doesn't have its own syntax for declaring a variable is to teach the programmer that it's ok to make sub-scopes
+
+1578508989
+andrewrk
+people avoid these for some reason, but they are generally good
+
+1578509256
+leeward
+mikdusan: Now I hit os.zig:499 - "EBADF => unreachable, // Always a race condition."
+
+1578509294
+bheads
+for some reason sub-scopes just look wrong
+
+1578509344
+mikdusan
+leeward: yeah I only corrected those 2 lines. It looks like locals `stderr` needs a similar fix
+
+1578509363
+andrewrk
+bheads, this can be unlearned
+
+1578509468
+bheads
+the only thing I miss is simpler syntax for looping over static ranges
+
+1578509524
+bheads
+was wondering if that could do solved with slice ranges  for(.{1..10}) |x| { ...
+
+1578509620
+leeward
+Is the plan to do this with generators?
+
+1578509632
+bheads
+seems like major over kill
+
+1578509646
+fengb
+You can do `for([_]void{{}} ** n) |_, i|`. Probably not recommended :P
+
+1578509676
+leeward
+mikdusan: I'm not sure what you mean.
+
+1578509753
+leeward
+Are you saying `std.io.getStdErr().outStream().stream` should be const?
+
+1578509762
+mikdusan
+leeward, `getStdErr().outStream()` thinking in C++/Java terms, returns an
+
+1578509770
+fengb
+andrewrk: was fiddling with async os.write last night, all of _start.zig needs some form of wrapping since debug.* all become async due to os.write
+
+1578509771
+mikdusan
+so first throw that into a local
+
+1578509808
+mikdusan
+then grab `&stderr_impl.stream` which gives a
+
+1578509817
+andrewrk
+fengb, for debug info, we know that we open the files in blocking mode - even when std.io.is_async is true. so we can use `noasync` function calls for debug info stuff
+
+1578509828
+andrewrk
+this creates a "seam" between blocking and async, and stops the spread of async
+
+1578509846
+fengb
+Hmm, I can try that
+
+1578509883
+fengb
+But it calls os.write, which I thought would always be async when io.is_async is true
+
+1578509898
+andrewrk
+os.write will be generated as an async function, yes
+
+1578509921
+fengb
+All the debug functions are indirectly dependent on it
+
+1578509921
+andrewrk
+`noasync` calls an async function, asserting that it does not actually suspend
+
+1578509946
+andrewrk
+what's interesting about noasync is it allows a blocking function to call an async function
+
+1578509954
+leeward
+mikdusan: It works! Now to understand why...
+
+1578509979
+andrewrk
+...as long as the assertion is correct that in this particular case (e.g. fd is in blocking mode), the async function does not actually take advantage of its async-ness and suspend
+
+1578509997
+fengb
+Aha
+
+1578510013
+mikdusan
+leeward: do you use C++?
+
+1578510014
+andrewrk
+I believe there is safety for it even
+
+1578510016
+leeward
+I've bumped into this before, with allocators. Why can't I get `.stream` from the `getStdErr().outStream()` directly?
+
+1578510037
+fengb
+I'm actually really happy with how this is turning out. The fact that format() is internally async does not matter to the rest of std
+
+1578510042
+leeward
+mikdusan: Not when I can avoid it. I haven't professionally for about 10 years.
+
+1578510064
+andrewrk
+fengb, confirmed we have test coverage for runtime safety on this:
+
+1578510075
+fengb
+I know that was the intent... but I really didn't expect it to work so seamlessly
+
+1578510103
+andrewrk
+seamlessly except for the 3 compiler crashing bugs you filed 🙃
+
+1578510134
+fengb
+Architecturally it's sound
+
+1578510149
+fengb
+Unless those bugs are actually exposing bad semantics... which is possible
+
+1578510169
+mikdusan
+leeward: the first correction I provided was analogous to in C++, one cannot copy-by-value (dereference) a pointer to an object, and this is what `var allocator = logger.allocator` is effectively doing.
+
+1578510184
+fengb
+I expected to go and hunt down random bugs when I started stitching back std, but everything just passes! (or crashes)
+
+1578510242
+andrewrk
+fengb, yes I think we've managed to keep the number of footguns down to a low number
+
+1578510249
+andrewrk
+still not as low as I'd like yet
+
+1578510255
+mikdusan
+leeward: and actually the `var stderr = std.io.getStdErr().outStream().stream;` is doing the same thing, trying to copy an interface as opposed to just getting a pointer to it
+
+1578510271
+andrewrk
+speaking of footguns ^
+
+1578510340
+leeward
+mikdusan: Ah, ok. On the subject of footguns, is this the kind of thing the compiler could detect?
+
+1578510378
+bheads
+could the struct be marked as uncopyable
+
+1578510383
+mikdusan
+leeward: yes this is a long known issue(s) and there have been some substantial ideas floated to solve
+
+1578510444
+mikdusan
+leeward:
+
+1578510494
+andrewrk
+bheads, yes and that is planned
+
+1578510519
+leeward
+mikdusan: Thanks.
+
+1578510526
+andrewrk
+either with the issue mikdusan noted or the competing proposal
+
+1578510638
+via
+what is the best way to build zig without optimizations and with symbols such that gdb'ing through it is useful?
+
+1578510694
+andrewrk
+via, build from source using the default settings
+
+1578510704
+via
+ok, thanks
+
+1578510740
+andrewrk
+via, if building llvm/clang from source, however, you probably still want release builds for those
+
+1578510752
+andrewrk
+otherwise linking is going to take 4ever
+
+1578510778
+via
+i wasn't building those from source, just using debs from apt.llvm.org
+
+1578510973
+andrewrk
+those have optimization on
+
+1578511006
+via
+but if i need to step through just zig proper, thats fine right?
+
+1578511074
+andrewrk
+right
+
+1578511096
+andrewrk
+generally you want optimized llvm/clang unless you're trying to debug llvm ir generation
+
+1578511125
+via
+baby steps :p thanks
+
+1578511144
+leeward
+mikdusan: To be clear, was I copying `stdio.getStdErr().outStream().stream` with the expression `&stdio.getStdErr().outStream().stream`?
+
+1578511220
+mikdusan
+leeward: if I have the right link, line 6 does not get address:
+
+1578511491
+mikdusan
+well that wasn't a good link
+
+1578511508
+leeward
+mikdusan: Oh, you're right! I thought it had an & at the start of the line.
+
+1578511517
+leeward
+It's ok, I still have the page open.
+
+1578511527
+leeward
+
+
+1578511596
+leeward
+Ah, this makes sense now. I had written different code than I thought I had.
+
+1578511637
+mikdusan
+also note that line 9 is correct because c_allocator is a pointer
+
+1578511694
+leeward
+Right, I spent some time figuring that out.
+
+1578515370
+leeward
+Is there a Zig equivalent of strcmp for comparing if slices are equal?
+
+1578515378
+leeward
+My search-fu is failing me.
+
+1578515418
+frmdstryr
+mem.eql(u8, a,b)
+
+1578515443
+leeward
+Ah, yep, there it is.
+
+1578515449
+leeward
+Under slices in the docs, no less.
+
+1578515505
+frmdstryr
+via: I forget, were you working with the stm32?
+
+1578515513
+via
+yeah
+
+1578515524
+frmdstryr
+were you able to get usart working?
+
+1578515532
+via
+i was doing stuff with usb
+
+1578515550
+via
+unfortunately i got stopped by the packed struct bug, though it took a long time to figure out
+
+1578515562
+via
+that said, this morning i think i figured that out, i was gonna make a PR this evening
+
+1578515618
+frmdstryr
+Is that #4056 ?
+
+1578515696
+SyrupThinker
+via: You are my hero if you did
+
+1578515911
+via
+no, was working on
+
+1578515936
+TheLemonMan
+yo andrewrk, I added one more idea I had while reworking #3971, if you could answer that it'd be sweet as that PR is almost complete
+
+1578516827
+TheLemonMan
+I really miss `zig fmt` when I work on the cpp code :(
+
+1578517130
+andrewrk
+TheLemonMan, the use case is a const external weak symbol?
+
+1578517131
+fengb
+clang-format exists. No idea how well it works in C++ >_>
+
+1578517196
+andrewrk
+TheLemonMan, I suppose this is the bit of info that would be provided by using `var` or `const` if this was a regular `extern` variable
+
+1578517210
+andrewrk
+are you opposed to making that a parameter?
+
+1578517245
+andrewrk
+or maybe even @externWeakConst
+
+1578517510
+TheLemonMan
+an extra parameter feels a bit ... awkward, doesn't it?
+
+1578517966
+andrewrk
+yes
+
+1578517995
+andrewrk
+serious proposal: @externWeakVar and @externWeakConst. This mirrors `extern var` / `extern const`
+
+1578518089
+andrewrk
+I'm confident about the pointer thing though
+
+1578518096
+andrewrk
+the type should be the type of the symbol
+
+1578518103
+TheLemonMan
+hmm, that's even more awkward and begs for the question "why isn't weak just one more fn attribute ?"
+
+1578518122
+fengb
+Has anyone taken a look at Beef Lang?
+
+1578518162
+andrewrk
+TheLemonMan, like this? `extern weak var foo: c_int;`
+
+1578518180
+andrewrk
+how do you check if it is null or not?
+
+1578518307
+andrewrk
+TheLemonMan, what is your full counter proposal, how would you want to see it done?
+
+1578518342
+via
+what is the right way to handle
+
+1578518504
+andrewrk
+via, add a *
+
+1578518520
+via
+to the extern in the header?
+
+1578518536
+andrewrk
+oh, that's in generated zig code. I see the problem now
+
+1578518554
+via
+yeah, i ran into this over the weekend with the libopencm3 headers -- an internal struct for usb definitions, and i had to pass a pointer to it
+
+1578518567
+via
+worked around it by defining an external symbol of the same name to a u32
+
+1578518595
+andrewrk
+I think we can remove that compile error for extern variables. It exists because zig doesn't know how big the type is. but zig doesn't have to if it's defined externally
+
+1578518620
+andrewrk
+so zig needs to be improved to allow this
+
+1578518649
+via
+ok. i can make an issue this evening
+
+1578518653
+andrewrk
+thanks!
+
+1578518667
+via
+but it might just be seeing if its marked extern and not erroring in a spot?
+
+1578518682
+via
+as the fix
+
+1578518752
+andrewrk
+yes I think it would be that simple
+
+1578518780
+andrewrk
+would need to probably add another check though, if you tried to get the size of it
+
+1578518782
+TheLemonMan
+andrewrk, addressof of a weak var returns a ?*T instead of *T
+
+1578518829
+TheLemonMan
+maybe that's... weird? maybe @externWeak is fine and we're just overcomplicating everything?
+
+1578519015
+andrewrk
+what I like about the builtin fn call is that it's simple syntactically, it is powerful in a way that we have a precedent for (with @export comptime string as symbol name), and the return type is always ?*T
+
+1578519086
+andrewrk
+I would probably want to avoid `weak` as the keyword since it could easily clobber a userland identifier, and the idea of a var which almost always gives *T now giving ?*T when the keyword is present, is OK, but could be a little surprising. let me consider it for a minute
+
+1578519228
+andrewrk
+I do think a builtin would be easier for someone reading code to discover what it does than a keyword that changes the type that & gives. you see `externweak var foo: c_int;`, and the reader might guess wrong about the type of &foo. but with a builtin, I don't think anyone would guess wrong. they would either look it up or guess correctly
+
+1578519351
+andrewrk
+fengb, I don't see any design decisions here that disagree with zig yet
+
+1578519819
+andrewrk
+I think making an IDE early on was a smart move
+
+1578520313
+andrewrk
+damn, already an IDE and non-llvm fast debugging backend
+
+1578520362
+andrewrk
+this is really impressive
+
+1578520413
+fengb
+I don't like how syntactically it's close to C/C++/Java/C# :P
+
+1578520424
+fengb
+After using Swift, Go, and Zig, it feels backwards to put types on the left lol
+
+1578520498
+mq32
+fengb: i'm a fan of the C# syntax
+
+1578520511
+mq32
+it has some things, but in general it's pretty clean
+
+1578520999
+andrewrk
+it's time for zig to have ide support and fast debug mode compilation. I'm tired of living in the stone ages
+
+1578521104
+companion_cube
+so, a LSP server?
+
+1578521113
+andrewrk
+fengb, let's do this. I'm going to focus on unblocking your format() stuff so we can move on to async std lib. then it's full steam ahead on self hosted
+
+1578521154
+hryx
+awwwww yeah!
+
+1578521158
+andrewrk
+zig's compiler server protocol will be more powerful than LSP, which will allow an LSP adapter proxy
+
+1578521181
+andrewrk
+zig's compiler server protocol will be whatever is appropriate and most efficient for zig
+
+1578521292
+companion_cube
+why not start with LSP? best bang for your buck, by far, imho. Works out of the box on all editors…
+
+1578521369
+companion_cube
+(note that LSP is somewhat extensible, too)
+
+1578521407
+companion_cube
+and I think it's the simplest thing for a start; just implement the basic protocol + diagnostics, all the other features are opt-in
+
+1578522373
+BaroqueLarouche
+so Beef is basically a native C# with no exceptions
+
+1578522471
+mq32
+I have to take a closure look at Beef and how it differs from Vala
+
+1578522483
+mq32
+which is a C# clone with refcounting based on the GObject system
+
+1578522626
+companion_cube
+😱
+
+1578522797
+daurnimator
+andrewrk: what does "have IDE support" mean/imply for you?
+
+1578523587
+BaroqueLarouche
+daurnimator: VS code support is good, but it would be better if the debugger understand Zig complex types like array, slices and tupls
+
+1578523657
+BaroqueLarouche
+can't wait for a proper LSP integrated with the VS Code extension
+
+1578523698
+mq32
+BaroqueLarouche, there was already a zig autocompleter by someone, i used it until it broke with a zig update
+
+1578523707
+mq32
+was really great to have even basic autocompletion working
+
+1578523723
+BaroqueLarouche
+nice
+
+1578523741
+BaroqueLarouche
+but the logically way is to wait for the self-hosted compiler
+
+1578523758
+mq32
+yeah, the autocompletion needs a lot of info from the compiler
+
+1578523758
+daurnimator
+mq32: I use tabnine which works okay with zig
+
+1578523764
+mq32
+what is that?
+
+1578523782
+daurnimator
+AI/ML autocompleter
+
+1578523796
+daurnimator
+most editors have a plugin for it
+
+1578523828
+mq32
+ooof, not the extension i want :D
+
+1578523855
+mq32
+<= hates any "autotyping" that isn't following 100% forseeable rules
+
+1578523855
+daurnimator
+why?
+
+1578523861
+daurnimator
+ah okay
+
+1578523869
+daurnimator
+it often guesses what I'm about to type
+
+1578523892
+mq32
+i don't like completion that changes order
+
+1578523898
+mq32
+because it slows down my workflow
+
+1578523903
+companion_cube
+for me, auto completion is also useful to validate that I'm typing stuff that makes sense (like, identifiers in scope)
+
+1578523909
+companion_cube
+AI stuff would definitely not be good at tha
+
+1578523910
+mq32
+and something that "learns" (even for basic statistics) does that
+
+1578523911
+companion_cube
+t
+
+1578523926
+companion_cube
+heuristic stuff, I should say :-°
+
+1578523951
+mq32
+yeah
+
+1578523994
+mq32
+the most autocompleters assume that you write code top-to-bottom
+
+1578524001
+mq32
+as in "line 1 to n"
+
+1578524052
+mq32
+that's why i disable pretty much all of the "we complete the word if you press space" stuff, i want to explicitly confirm that i want that completion
+
+1578524053
+companion_cube
+also:
+
+1578524196
+via
+i have a zig program running on an stm32f4 target successfully creating a usb cdc acm device and sending hello world strings ove rit
+
+1578524214
+TheLemonMan
+that's cool
+
+1578524235
+TheLemonMan
+"usb cdc acm" heh that gives me horrible flashbacks
+
+1578524261
+mq32
+via: nice!
+
+1578524267
+via
+the packed structs are still issues, i hacked around it, but i'm working on that. figuring out which struct wasn't being packed right is nice though
+
+1578524379
+via
+andrewrk: where is the right place to put tests to test struct packing? the stuff in stage1 doesn't apply does it?
+
+1578525603
+daurnimator
+companion_cube: correct identifers etc is taken care of by my linter.
+
+1578525620
+companion_cube
+that comes far too late, imho
+
+1578525629
+companion_cube
+I want feedback as I'm writing the identifier, not when I save
+
+1578525630
+daurnimator
+companion_cube: my linter runs as I type
+
+1578525652
+companion_cube
+then what's the difference between that and completion? sounds like it could directly help you complete :p
+
+1578525654
+daurnimator
+companion_cube: note that I'm not always typing valid identifiers, e.g. I might write a function that takes an allocator, but I haven't aliased std.mem.allocator yet: tabnine still suggests it
+
+1578525705
+daurnimator
+`fn foo(a` --> suggests `allocator: *Allocator`
+
+1578525760
+daurnimator
+companion_cube: FWIW I `zig fmt` on save.
+
+1578525807
+companion_cube
+I'm more thinking about other languages, but sure
+
+1578525816
+companion_cube
+I mean, the way I use completion)
+
+1578525842
+companion_cube
+java IDEs would suggest you std.mem.allocator with proper completion, and add the import :)
+
+1578525851
+companion_cube
+(import or alias)
+
+1578525858
+fengb
+I type everything perfectly the first time
+
+1578525865
+fengb
+If I don't, the compiler deletes my code
+
+1578526130
+fengb
+"Besides, there's no such thing as a truly infinite loop. Eventually our sun will go supernova, at which point the offending code will be removed."
+
+1578526963
+lupine
+and voyager will still be phoning home
+
+1578527213
+fengb
+Is there a need to copy lib/ into build/?
+
+1578527364
+daurnimator
+fengb: no. there's a cmake option to skip it
+
+1578527822
+fengb
+Aha thanks!
+

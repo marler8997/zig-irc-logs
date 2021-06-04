@@ -1,0 +1,884 @@
+1581835584
+andrewrk
+FireFox317, it's going well. I just pushed some prerequisite changes to master. Good night!
+
+1581849810
+mq32
+hey
+
+1581849822
+mq32
+what's the current way of doing type erasure and storing untyped pointers?
+
+1581849833
+mq32
+i remember something with @OpaqueType
+
+1581855342
+betawaffle
+is it possible to write shaders with zig? i see that zig has targets for GPUs
+
+1581856968
+shakesoda
+betawaffle: that would be interesting
+
+1581862752
+betawaffle
+i wish i could attach methods to an opaque type
+
+1581862779
+betawaffle
+i mean... i suppose this is the same complaint as not having newtype
+
+1581866896
+Snektron
+I doubt it would be efficient to target amdgpu
+
+1581867853
+andrewrk
+betawaffle, SPIR-V is a planned target of self-hosted
+
+1581867858
+andrewrk
+llvm does not provide it
+
+1581867867
+betawaffle
+what's that?
+
+1581867899
+andrewrk
+shader language.
+
+1581867945
+betawaffle
+heh, if only the whole industry supported the "industry standards"
+
+1581868458
+metaleap
+andrewrk: on zig/ast.Location is the `column` a byte-offset-based count or utf-8-based / "editor-like"              (aka every char >127 still represents 1 column)?
+
+1581868521
+metaleap
+(and every multibyte "char"/rune too)
+
+1581868528
+andrewrk
+column is bytes
+
+1581868538
+metaleap
+andrewrk thx
+
+1581868548
+andrewrk
+note that zig has line-independent tokenization
+
+1581868573
+andrewrk
+so an editor will only have to be unicode-aware starting from column 0 of that line
+
+1581868602
+andrewrk
+also if there are no string literals or @"identifiers" on a line, it's currently guaranteed to be ascii
+
+1581869436
+Xatenev
+any possibility to call `zig build-exe` with the executable name? cant find it
+
+1581869585
+andrewrk
+are you looking for `--name` ?
+
+1581869590
+metaleap
+andrewrk understood, i already found the std.unicode.utf8* stuff so should be able to reconstruct editor-position-info from `Location` and vice-versa
+
+1581869646
+Xatenev
+andrewrk: oh my bad, thanks! i found it now in the compile options too :)
+
+1581869648
+Xatenev
+that was it.
+
+1581869842
+Xatenev
+one thing I wonder, im experimenting a bit with `comptime` - when I have a basic function fn add(x: i64, y: i64) i64 { return x + y; } and then call it via comptime: const len = comptime add(1,2); const arr: [len]u8 = undefined;
+
+1581869858
+Xatenev
+that works fine with comptime, but without comptime it doesn't
+
+1581869874
+Xatenev
+"expected type "usize", found "i64"
+
+1581869884
+Xatenev
+where can i read about more info on that behavior?
+
+1581869942
+andrewrk
+Xatenev, that's "type coercion":
+
+1581869969
+Xatenev
+andrewrk: thanks /me reads :)
+
+1581869994
+andrewrk
+Xatenev, I think the docs could be improved with the rules of when automatic type coercion is allowed. but the rule you're looking at right now is - if an integer is comptime-known, then it will allow an automatic coercion to another integer if it fits into the destination type
+
+1581870012
+Xatenev
+i see, that makes sense
+
+1581870020
+andrewrk
+otherwise if it's runtime-known, then it has to use the types alone to decide if it's a safe conversion
+
+1581878526
+andrewrk
+here's a PR with that Batch thing working:
+
+1581878645
+andrewrk
+colorless functions are real! this function LibCInstallation.findNative is compiled in blocking I/O mode when it is used from the stage1 compiler, but it's compiled with async I/O when used from stage2
+
+1581878830
+fengb
+Oh wow
+
+1581879047
+andrewrk
+related: this is a use case for rejecting the proposal
+
+1581879081
+andrewrk
+it is quite convenient here for address-of-temporary to be scoped to the function
+
+1581879187
+jessermeyer
+How do you do something obviously unsafe like casting a c_ulong to a c_long to accommodate a C API?
+
+1581879228
+andrewrk
+what do you want to happen if the value is larger than c_long can fit?
+
+1581879252
+andrewrk
+assert that it won't happen?
+
+1581879343
+jessermeyer
+I don't know.  These values are all produced and consumed by Window's API.
+
+1581879410
+andrewrk
+it sounds like your next task is to collect more information what these APIs expect and produce
+
+1581879436
+mq32
+andrewrk: is the behaviour of "storing a pointer to temporary for later" defined behaviour in zig?
+
+1581879472
+jessermeyer
+I know what they expect and produce, but they intentionally break Zig's type safety.
+
+1581879503
+andrewrk
+jessermeyer, ok so can the thing producing a c_ulong produce a value that is outside the range of a c_long?
+
+1581879522
+andrewrk
+mq32, yes
+
+1581879535
+mq32
+oh nice
+
+1581879543
+mq32
+but i remember that it failed some time to do stuff like
+
+1581879550
+andrewrk
+mq32, it's a bit of a flow-chart, depending on whether the value is comptime-known, and whether it is in global or function-local scope
+
+1581879551
+mq32
+const stream = &something.getStream().stream;
+
+1581879572
+andrewrk
+that pattern works in function-local scope, and it
+
+1581879588
+mq32
+which i've seen quite often in the std library, but i was scared that it will break
+
+1581879623
+mq32
+my thought was: it will only keep the ".stream" object, but not the actual SomethingStream=struct{…,stream:IOStream(…)}
+
+1581879646
+mq32
+so yes, the behaviour is "safe" in terms of accessing stream later, but will maybe? break when calling @fieldParentPtr
+
+1581879657
+fengb
+Having escape analysis could locate most of these errors
+
+1581879783
+jessermeyer
+Yes, it does.
+
+1581879830
+jessermeyer
+Winerror.h just casts the signed bit away.
+
+1581879988
+andrewrk
+jessermeyer, I don't have enough information to advise you. This isn't really a Zig question. It's a question of what you want your bits in memory to be. Zig lets you make your bits whatever you want them to be
+
+1581880050
+jessermeyer
+So if these bits are produced and interpreted by a chain of black boxes, how do I continue to use Zig here?
+
+1581880256
+jessermeyer
+It's actually a very simple task I'm wanting to do.
+
+1581880293
+jessermeyer
+FunctionA might return an error, and its value is a HRESULT, which is a c_long, but its error code is designated as a UL, and its range,
+
+1581880325
+jessermeyer
+That value can then be fed into another function to tell me more information about what failure occurred.
+
+1581880378
+jessermeyer
+I mean, it's a totally insane API.
+
+1581880380
+mq32
+UL is unsigned long, you could bitcast those types
+
+1581880391
+jessermeyer
+Ah, the bitcast ...
+
+1581880833
+jessermeyer
+Here's the hilarity. Consider 0x887A0002L.  That is how the error code is specified.  That hex value exceeds the L range.  If I 'expand' that number in VS, it automatically converts the L to UL.
+
+1581880864
+andrewrk
+it sounds like you want @bitCast
+
+1581880873
+jessermeyer
+Yeah
+
+1581880896
+jessermeyer
+So, translate-c has no hedge against this, I imagine.
+
+1581880953
+jessermeyer
+I'll open a ticket for discussion.
+
+1581880990
+andrewrk
+so far it doesn't sound like a zig issue
+
+1581881221
+jessermeyer
+It's a fuzzy boundary.  Every Zig programmer interfacing with winerror.h will have to face this, especially if it comes through translate-c.  The Zig generated code produced by translate-c
+
+1581881241
+jessermeyer
+In fact, it doesn't even compile at all.  Not without this @bitcast
+
+1581881249
+andrewrk
+ok that sounds like a zig issue. thanks
+
+1581881407
+TheLemonMan
+andrewrk, yo, should this work?
+
+1581881483
+andrewrk
+yo
+
+1581881499
+andrewrk
+TheLemonMan, [*] pointers are supposed to require index syntax and not allow .*
+
+1581881520
+andrewrk
+x[0] == y[0]
+
+1581881531
+andrewrk
+the first case should be a compile error
+
+1581881544
+TheLemonMan
+yeah that's what I suspected
+
+1581885560
+Dominic[m]
+I'm hitting
+
+1581885566
+Dominic[m]
+(I'm not writing much, only 5 bytes.
+
+1581885649
+andrewrk
+Dominic[m], check the man pages for write - it explains when EINVAL occurs
+
+1581885701
+Dominic[m]
+I had a look, but the case doesn't make much sense to me!
+
+1581885978
+Dominic[m]
+Unless zig is sending O_DIRECT, but I didn't (intentionally) ask it to do that
+
+1581886089
+andrewrk
+nah zig isn't adding O_DIRECT
+
+1581886097
+andrewrk
+maybe an strace would be informative
+
+1581886305
+Dominic[m]
+Oh, I see. strace is awesome.
+
+1581886373
+Dominic[m]
+So, what happened is that I'm writing to "/sys/class/backlight/intel_backlight/brightness", and I was copying how most scripts write to it `echo "123" > /sys..`, including the trailing newline. But that causes an EINVAL when writing the newline. In C/bash/everything else, this just silently works!
+
+1581886394
+Dominic[m]
+oh, Java also silently ignores this.
+
+1581886450
+jessermeyer
+Nice find!
+
+1581886535
+Dominic[m]
+As an aside, is there a simple way to do (u8*u8)/100? There's a potential overflow in the middle, but doing the /100 first causes problems with rounding :)
+
+1581886571
+TheLemonMan
+uh this is weird, stracing `echo` shows that write doesn't return any error
+
+1581886576
+TheLemonMan
+can you share your Zig code?
+
+1581886640
+Dominic[m]
+Yeah, I just tried my C code and noticed the same!
+
+1581886659
+fengb
+How about extend the u8 into u16 first? That should be a “noop” in most architectures
+
+1581886667
+Dominic[m]
+This is what I was doing
+
+1581886702
+Dominic[m]
+fengb: Yeah? Oh that's great. Thanks. I was worried about that. By extend, do you mean `@as` or do you mean something else?
+
+1581886726
+fengb
+@intCast sorry. It’s called extend in wasm >_>
+
+1581886748
+Dominic[m]
+Ah, great. Thanks, I'll give that a go.
+
+1581886758
+fengb
+Then you can @intCast the result back
+
+1581886767
+andrewrk
+Dominic[m], @as is preferred for extending
+
+1581886777
+fengb
+Oh
+
+1581886781
+andrewrk
+@as is a safe cast. @intCast asserts the integer fits in the destination type
+
+1581886814
+fengb
+Good point
+
+1581886873
+Dominic[m]
+Here's the strace comparison for zig & C:
+
+1581886878
+TheLemonMan
+oh here's what happens, the formatter is printing the integer argument first (the {} part) and then the newline
+
+1581886899
+TheLemonMan
+sysfs doesn't like that and returns an error
+
+1581886901
+andrewrk
+it wants the entire write to happen atomically
+
+1581886926
+andrewrk
+leaving off the \n seems like a good solution
+
+1581886932
+andrewrk
+assuming the \n is superfluous
+
+1581886952
+Dominic[m]
+It is superfluous, yeah.
+
+1581886959
+TheLemonMan
+I guess the kernel is only interested in the numerical value
+
+1581886968
+Dominic[m]
+Are there any cases where splitting the writes might be bad? Perhaps with misbehaving fuse devices?
+
+1581886981
+andrewrk
+it's probably calling atoi or whatever libc function which will give a value even if there is junk after the integer
+
+1581887011
+TheLemonMan
+split writes are bad when the underlying device is not a normal file
+
+1581887036
+TheLemonMan
+if the outStream were a buffering one you wouldn't notice this problem :)
+
+1581887052
+andrewrk
+well you would if the packet was big enough
+
+1581887075
+andrewrk
+in this case a buffer is one of those things that mostly makes things work but then creates a really annoying leaky abstraction
+
+1581887096
+andrewrk
+IMO better for the API user to manage a buffer if the system wants certain packets
+
+1581887139
+Dominic[m]
+I've avoided a buffer because I'm (for no real purpose than to try) optimizing all the things.
+
+1581887164
+TheLemonMan
+indeed, a buffered stream adds one more layer to manage
+
+1581887176
+andrewrk
+right, in that case zig's lack of buffering is helping you because if you do introduce a buffer, that's the only layer
+
+1581887441
+Dominic[m]
+For whatever reason, zig runs 1ms quicker than the C version, consistently. Yay zig :) It also highlights way more error points than the C one did.
+
+1581887762
+Dominic[m]
+Possibly not a question for this channel. But I'm comparing the output of strace from the C & zig version to get a feel for the timings. It looks like the C version uses malloc to allocate arguments, I noticed a comment in one of the argument examples where it mentioned the  slow C allocator. It seems that in this case, zig is somehow able to avoid that altogether. I am using nextPosix() to achieve that. Does gcc not follow
+
+1581887762
+Dominic[m]
+that behavior on posix platforms?
+
+1581887813
+Dominic[m]
+I guess I'm assuming that's why brk() is being called, and I don't know that's why. Silly assumption.
+
+1581887826
+andrewrk
+Dominic[m], you're asking about the command line arguments?
+
+1581887862
+andrewrk
+when linux begins executing a binary, it has the command line arguments in stack memory. zig leaves them there and refers to them directly
+
+1581887880
+Dominic[m]
+andrewrk: I think so. Does C/gcc use malloc to allocate the cli argument?
+
+1581887904
+andrewrk
+however, usually there will be a heap allocation when writing cross platform software, because on windows it is necessary to convert to UTF-8
+
+1581887938
+andrewrk
+if you're comparing with C then I'm guessing you're observing the dynamic linker do a lot of stuff
+
+1581887956
+andrewrk
+you can make it leaner by using zig to build a simple C file statically with musl
+
+1581887968
+andrewrk
+zig build-exe --c-source foo.c -lc -target x86_64-linux-musl
+
+1581887995
+andrewrk
+(zig can also build glibc but it requires dynamic linking)
+
+1581888024
+Dominic[m]
+Ah I see. Interesting.
+
+1581888038
+Dominic[m]
+This might be a stupid question, but how do zig binaries get so small if it compiles statically against musl?
+
+1581888063
+TheLemonMan
+it doesn't link against any libc, that's the trick
+
+1581888093
+andrewrk
+zig only links against libc if you give -lc (or on systems whose syscall ABI
+
+1581888141
+andrewrk
+if you compile a zig program with -lc then the relevant syscalls will go through libc, as usually expected
+
+1581888164
+Dominic[m]
+Then I'll get all of the dynamic linker work that I see with the C program?
+
+1581888165
+andrewrk
+but yeah without -lc zig programs just talk directly to the kernel :)
+
+1581888175
+andrewrk
+yes
+
+1581888179
+TheLemonMan
+is sr.ht running the whole set of tests now?
+
+1581888196
+andrewrk
+TheLemonMan, yep!
+
+1581888211
+andrewrk
+the libclang API issue is annoying
+
+1581888216
+andrewrk
+#4455
+
+1581888221
+TheLemonMan
+amazing!
+
+1581888237
+TheLemonMan
+yeah, that's 100% a bug on the libclang end
+
+1581888253
+andrewrk
+yeah so it's just a couple hundred MiB left to reduce peak RSS and we'll have 100% CI coverage on freebsd
+
+1581888255
+Dominic[m]
+Zig's compile of the C program is just as clean as the zig version. strace output is night & day.
+
+1581888285
+andrewrk
+Dominic[m], could that be musl vs glibc?
+
+1581888296
+TheLemonMan
+the reduced memory consumption made it possible for me to run the tests locally without earlyoom kicking in every time!
+
+1581888296
+andrewrk
+try -target x86_64-linux-gnu
+
+1581888310
+Dominic[m]
+That also knocks it down to 2ms from 3ms.
+
+1581888314
+Dominic[m]
+Will give it a go
+
+1581888347
+Dominic[m]
+The x86_64-linux-gnu output was equally "clean" & fast.
+
+1581888369
+andrewrk
+what does `ldd` report on the binary for that?
+
+1581888392
+Dominic[m]
+`not a dynamic executable`
+
+1581888398
+Dominic[m]
+the binary size is huge.
+
+1581888403
+andrewrk
+that executable is not linking glibc
+
+1581888411
+andrewrk
+double check your commands
+
+1581888444
+Dominic[m]
+I ran this: `./zig/zig build-exe --c-source ~/workshop/brightness.c -lc -target x86_64-linux`
+
+1581888503
+mq32
+looks like the -gnu is missing in the target spec
+
+1581888568
+Dominic[m]
+oh, derp. I feel stupid.
+
+1581888606
+Dominic[m]
+yeah, that's back to being "slow" & noisy again.
+
+1581889401
+andrewrk
+Dominic[m], I filed a proposal inspired by your question about (u8*u8)/100:
+
+1581889453
+andrewrk
+with this proposal it would be: @intCast(u8, math.mul(a, b) / 100)
+
+1581889463
+Dominic[m]
+Ooh, that would be handy. Subscribing!
+
+1581889501
+Dominic[m]
+Thanks.
+
+1581889586
+mq32
+andrewrk: that's a nice idea!
+
+1581889611
+mq32
+so when i want to have truncating multiplication, i can just @truncate(u8, std.math.mul(a,b)) or use cast for overflow detection :)
+
+1581889613
+mq32
+neat!
+
+1581889641
+Dominic[m]
+Has anyone played around with using zig in conjunction with a RTOS?
+
+1581889662
+andrewrk
+yes idea is that you can do a bunch of math with ever-increasing integer bit sizes (but they are inferred) and then at the end you decide whether you want to assert no overflow, detect overflow, or something else
+
+1581889735
+pmwhite
+What are efficiency considerations? Do you think it will just optimize into the same thing?
+
+1581889772
+mq32
+pmwhite, yeah probably
+
+1581889773
+fengb
+But wouldn’t that differ from .add and .sub?
+
+1581889781
+mq32
+C does this all the time
+
+1581889792
+andrewrk
+it depends on how large the types grow. if you do too many multiplications you will quickly end up with very large integer types, in which case it would have been better off to handle overflow earlier
+
+1581889801
+mq32
+if you add two uint8_t in C, they will widen to "int", add, then will be clamped again into uint8_t
+
+1581889822
+andrewrk
+with add and sub it would work fairly well, because if you start with a relatively low number like u8, you could do something like 48 additions before getting an integer larger than u64
+
+1581889836
+andrewrk
+in machine code that's just a bunch of register math
+
+1581889838
+TheLemonMan
+I'd be wary of the code duplication
+
+1581889856
+andrewrk
+how so?
+
+1581889863
+TheLemonMan
+you end up with an endless set of `mul` for different input/output types
+
+1581889873
+fengb
+mq32: C overflow is undefined. Most implementations wrap but that depends on the compiler :P
+
+1581889915
+mq32
+fengb: yes. overflow is undefined for signed types
+
+1581889916
+mq32
+but!
+
+1581889927
+mq32
+it is defined that types widen suddely :D
+
+1581890048
+andrewrk
+TheLemonMan, in theory they would all be inlined. but I agree, it is appropriate to be wary of this
+
+1581890971
+andrewrk
+oh nice, the wine package on my system is upgraded to 5.0 and now the cross compiled zig std lib tests pass again
+
+1581891217
+jessermeyer
+^_^
+
+1581892634
+Flaminator
+Is there an easy way to extract 10-bit values from an array of u8?
+
+1581893171
+andrewrk
+I believe PackedIntArray from the std lib handles this use case
+
+1581893184
+Flaminator
+I am currently doing something like
+
+1581894434
+daurnimator
+Flaminator: PackedIntArray
+
+1581896143
+fengb
+Why would handling wasm stackoverflow require a seg fault?
+
+1581896193
+andrewrk
+they want to put a "guard page" after the stack, so that if the memory is accessed, it causes a segfault
+
+1581896238
+andrewrk
+that's how stack overflow mitigation works in most languages, including zig currently
+
+1581896242
+fengb
+Oh is this “cheaper at runtime” compared to bounds checking?
+
+1581896267
+andrewrk
+yes, the segfault is triggered in hardware, so it's basically free
+
+1581896278
+fengb
+But specifically to wasm, there are better solutions, unless it’s using the native stack as the wasm stack
+
+1581896287
+andrewrk
+but it requires "probing" the stack for functions with frames larger than the page size
+
+1581896340
+fengb
+I guess I should just implement the naive way and “discover” the better solution :P
+
+1581896537
+andrewrk
+once zig has safe recursion, stack-annotated function pointers, and ability to measure stack upper bound size at compile time, it will become the only language that has all of these at the same time: (1) prevention of stack overflow (2) no bounds checking (3) no stack probing or guard pages (4) no hidden memory allocations
+
+1581896647
+fengb
+I meant specifically for the wasm vm, it feels weird to let it page fault, since I think I can code the vm path to have no dynamic stack requirement
+
+1581896691
+fengb
+But I suppose it makes sense if it’s cheaper than bound checking every stack push inside the VM
+
+1581896723
+fengb
+Just trying to figure out what the hell I’m doing >_>
+
+1581896856
+andrewrk
+if perf isn't the main goal of the vm, I think avoiding signals entirely is a cleaner design
+
+1581896895
+andrewrk
+even if it is, some kind of JIT + smart bounds checking might still be the best bet
+
+1581897047
+jaredmm
+What is the correct way to cast 4 bytes from an offset in a []u8 to a u32?
+
+1581897147
+andrewrk
+one of the std.mem.readInt functions
+
+1581897154
+andrewrk
+depending on whether you want native, little, or big endian
+
+1581897159
+fengb
+Okay that makes sense. Using signals reminds me of exceptions heh
+
+1581897193
+andrewrk
+one big problem of signals is that they are very global. relying on signals in a library is very problematic, for example
+
+1581897213
+andrewrk
+and maybe somebody wants to embed the wasm vm in another project
+
+1581897229
+andrewrk
+signals don't compose
+

@@ -1,0 +1,1076 @@
+1587516693
+bnbn
+I recently updated from 0.5.0 to 0.6.0. I interface with a c library (stbi_image.h) to load images into memory. In 0.5.0, I could successfully pass a []const u8 via .ptr to a c function looking for a constant null-terminated string. Now in 0.6.0, it does not work. I've been trying to convert a []const u8 to the new [*:0]const u8, but I can't quite get it. Any advice/examples would be appreciated, thanks!
+
+1587516864
+pixelherodev
+bnbn, make sure the slice is marked as null-terminated?
+
+1587516867
+pixelherodev
+`[:0]const u8`
+
+1587516918
+bnbn
+Is there an easy way to convert a []const u8 to a [:0]const u8?
+
+1587516938
+pixelherodev
+Where's the source?
+
+1587516942
+pixelherodev
+Is it a string literal?
+
+1587517030
+bnbn
+It's an entry.path passed from walker.next
+
+1587517137
+pixelherodev
+It's
+
+1587517140
+pixelherodev
+`@ptrCast`?
+
+1587517202
+bnbn
+Yeah that's what I thought because I remember when upgrading from 0.4.0 to 0.5.0 I could remove all the c"strings" everywhere. And it did work, so it was null terminated.
+
+1587517273
+pixelherodev
+Yeah literals are null-terminated
+
+1587517287
+pixelherodev
+and anything coming from a C-ish environment (including syscalls) is almost certainly null-terminated
+
+1587517300
+pixelherodev
+So, it 's probably safe to @ptrCast it
+
+1587517314
+pixelherodev
+`@ptrCast([:0]const u8, val)`
+
+1587517347
+bnbn
+ok, I will try that, thanks!
+
+1587517489
+pixelherodev
+:)
+
+1587517850
+bnbn
+hmm get this error ` error: expected pointer, found '[:0]const u8'` when trying to cast with `const tpath = @ptrCast([:0]const u8, path);` path is a []const u8
+
+1587517871
+pixelherodev
+Ah right hmm
+
+1587517891
+pixelherodev
+I had this exact issue multiple times
+
+1587517894
+pixelherodev
+and I never remember how I solved it
+
+1587517936
+pixelherodev
+std.mem.toSlice might work
+
+1587517944
+pixelherodev
+s/Slice/SliceConst
+
+1587517963
+pixelherodev
+I don't
+
+1587518240
+bnbn
+Ok I'll check those methods out, as well as @as. I see that toSlice/toSliceConst are now deprecated in 0.6.0, replaced with spanZ
+
+1587518740
+salotz
+hello, is tgschultz around? Reading your blog posts (rants). I'm also thinking about "Operating" Environments
+
+1587518928
+BaroqueLarouche
+speaking of OS, I have done a list of bullet points just for fun of what I would do if I did an OS:
+
+1587519112
+salotz
+thats not a too unreasonable of a list tbh
+
+1587519142
+salotz
+I think I have way more off the wall requirements :P
+
+1587519177
+BaroqueLarouche
+like ?
+
+1587519195
+salotz
+has anyone here ever heard of Genode OS? I'm interested in writing zig for it. Also anyone writing kernel and sandboxing should check it out
+
+1587519356
+salotz
+I basically want a lisp machine and an RPG-esque tile-based terminal protocol for buffers that works remotely.
+
+1587519383
+salotz
+And to have a single rendering tree for the whole thing
+
+1587519398
+salotz
+
+
+1587519415
+salotz
+and of course if 3D if I can
+
+1587519756
+foobles
+hallo
+
+1587519772
+foobles
+how to you check that two ZigTypes are equivalent?
+
+1587519777
+foobles
+you can't just check the ids
+
+1587519813
+pixelherodev
+Deep comparison you mean?
+
+1587520082
+salotz
+is there a testing system anyone uses for zig?
+
+1587520099
+foobles
+yes
+
+1587520102
+foobles
+pixelherodev
+
+1587520118
+foobles
+i did find `types_match_const_cast_only`
+
+1587520122
+foobles
+but im not sure that's right
+
+1587524259
+foobles
+anyone know?
+
+1587524268
+foobles
+the comparing types thing
+
+1587524291
+foobles
+i guess I don't need to compare, i could just do peer type resolution and call it a day
+
+1587525052
+daurnimator
+salotz: zig has testing built in
+
+1587525072
+daurnimator
+salotz:
+
+1587528917
+mikdusan
+foobles: ZigValue can hold a ZigType and inside const_values_equal() all it does is `return a->data.x_type == b->data.x_type`; in other words compare pointers. because types or interned. but it sounds like peer-type resolution is what you need
+
+1587530363
+foobles
+mikdusan thanks!
+
+1587530373
+foobles
+so just comparing the type pointers directly should work?
+
+1587530396
+foobles
+because the proposal doesn't say anything about implicit conversions
+
+1587530399
+foobles
+its just ?T and T
+
+1587530420
+mikdusan
+tbh that proposal is pretty thin. it doesn't answer a lot of questions that arise during impl
+
+1587530429
+foobles
+yeah :P
+
+1587530448
+foobles
+so how does the type interning work?
+
+1587530452
+foobles
+like im just wondering
+
+1587530459
+foobles
+that seems pretty complicated
+
+1587530584
+mikdusan
+well here's a simple example. if you want a bool type, that's builtin. the `ZigType *` for bool is just the start of all things - codegen.builtin_types
+
+1587530627
+mikdusan
+now for let's any arbitrary sized ints. someone asks for u187 . they both get back the intern'd pointer because you go through make_int_type()
+
+1587530653
+mikdusan
+sorry you go through get_int_type()
+
+1587530681
+mikdusan
+which if it's not already there according to parameters such as is_signed and size_in_bits, it will be created and put in a table
+
+1587530693
+mikdusan
+for future matches the one already in table is returned
+
+1587530730
+mikdusan
+same goes for structs --> get_struct_type() and it has the criteria to judge if two structs are identical
+
+1587530797
+foobles
+oh awesome
+
+1587530811
+foobles
+so even arbitrarily complex generic types have that going all the way down?
+
+1587530819
+mikdusan
+yes
+
+1587530821
+foobles
+:O
+
+1587530828
+foobles
+thats very cool
+
+1587531097
+mikdusan
+so right now compiler is single-threaded; it'll get twice as cool when self-hosted comes out and multiple threads are dancing and creating types, interning will of course be sync'd
+
+1587536566
+pmwhite
+mikdusan: I'd be somewhat surprised if multithreading gives more than a 2 times speedup due to dependencies. My hope would be that compiler performance is  considered from the beginning and that Andrew is just better and making compilers.
+
+1587536614
+pmwhite
+In other words, I'm looking forward to systemic improvements more than "for-free" speedups like multithreading
+
+1587538234
+mikdusan
+I don't have andy's design in my brain, but my thought is incr builds will have to establish build segments of what today is global and those segments should be suitable for job scheduling
+
+1587539780
+gonz_
+My immediate thought is that I'd rather see a simple compiler than a complicated one reaching a local maximum with tons of threading.
+
+1587539795
+gonz_
+This is a straw man or false dichotomy, of course.
+
+1587539859
+gonz_
+Some of this is embarassingly parallel
+
+1587539919
+gonz_
+But I'm convinced that what we know as slow compilers (`ghc` & co.) have massive speedups hiding in there somewhere, but no one can get at them because they're too complex.
+
+1587540996
+andrewrk
+mikdusan, speaking of, check the PR I just opened:
+
+1587542538
+mikdusan
+so `hello.zir` is already targeted? ie: it's at a point where we know the machine/asm
+
+1587543827
+Snektron
+<BaroqueLarouche "speaking of OS, I have done a li"> Good luck writing custom gpu driver that supports Vulkan
+
+1587543845
+Snektron
+Do you think its possible to reuse amdgpu?
+
+1587546184
+GreaseMonkey
+yeah i second that notion, don't bother with Vulkan at this point,
+
+1587546735
+GreaseMonkey
+if anyone does want to make a GUI-first operating system i'd highly recommend working in 32-bit ARGB rectangles with only one possible component order, if you want anything higher depth allow 64-bit ARGB rectangles
+
+1587546843
+retrhelo
+Hello, I met a problem while learning to use zig. The character '\t' is seen as invalid while compiling. I wonder if there is a way to solve this problem. Thanks!
+
+1587546874
+afontain_
+replace the tabs
+
+1587546890
+afontain_
+:-(
+
+1587546902
+daurnimator
+retrhelo:
+
+1587546953
+retrhelo
+Fine, I'll check it out, thank you. :)
+
+1587550477
+pixelherodev
+ZIR!!
+
+1587552109
+Snektron
+So when exactly is Allocator.realloc allowed to fail?
+
+1587552320
+Snektron
+nevermind, i think it works out
+
+1587553084
+nephele
+what would be the equivalent to posix_spawn for zig? it does not seem to be in std/os at all (or maybe i suck at searching :g)
+
+1587553110
+pixelherodev
+nephele, child_process ?
+
+1587553168
+ikskuh
+std.ChildProcess
+
+1587553180
+ikskuh
+according to std/build/run.zig
+
+1587553192
+nephele
+thanks
+
+1587554522
+pixelherodev
+Oh I was looking at file name, not type name :P
+
+1587556713
+r4pr0n
+are we sure that llvm overrides the stack with garbage when inlining posixCallMainAndExit()?
+
+1587556766
+r4pr0n
+i changed it to always_inline and built
+
+1587557443
+Sphax
+Hello. I managed to create a repro for the error I got yesterday which I still don't understand:
+
+1587557456
+Sphax
+am I doing something wrong or is this a bug ?
+
+1587562613
+antaoiseach
+hey folks... anybody know the status of the macOS homebrew+llvm issue? Right now I'm making do with an old commit
+
+1587564048
+TheLemonMan
+r4pr0n, _start is naked, you want to take the original stack pointer value and then create a frame for the other functions
+
+1587564137
+r4pr0n
+why though?
+
+1587564242
+TheLemonMan
+because you need the sp to find the argc/argv/auxv
+
+1587564278
+TheLemonMan
+if you allocate a stack frame for _start you're thrashing the kernel-supplied stack pointer
+
+1587564429
+pixelherodev
+Even if you know the size of that stack frame?
+
+1587564452
+pixelherodev
+Can't you do `current_sp + @sizeOf(@StackFrame(_start))` (not real code)
+
+1587564463
+TheLemonMan
+yes
+
+1587564479
+TheLemonMan
+but you usually don't know the size of the stack frame
+
+1587564558
+pixelherodev
+Ahh, right
+
+1587564574
+pixelherodev
+Wait, isn't knowing stack frame size an accepted part of safe recursion?
+
+1587564609
+TheLemonMan
+that's vapourware atm
+
+1587564660
+TheLemonMan
+you really know how big the frame is after LLVM starts the codegen phase, when all the inlining and other optimizations are done
+
+1587564753
+pixelherodev
+ahhhh, right
+
+1587566097
+TheLemonMan
+
+
+1587566107
+TheLemonMan
+it seems C is getting arbitrarily-sized ints
+
+1587566298
+fengb
+What about larger than 128? :P
+
+1587566380
+TheLemonMan
+std.math.int to the rescue!
+
+1587567409
+fengb
+I'm glad the bootstrap repo exists. Gives me the perfect LLVM build :)
+
+1587568716
+oats
+I get the feeling people are having fun translating the go stdlib into zig :P
+
+1587568724
+oats
+maybe I should get in on some of this action
+
+1587568947
+r4pr0n
+where is that?
+
+1587569174
+oats
+r4pr0n: hmm?
+
+1587569187
+r4pr0n
+what about the go stdlib
+
+1587569194
+r4pr0n
+where is that being transleted to zig
+
+1587569216
+oats
+r4pr0n: I'm just seeing that a lot of stuff in the zig standard library has been translated from Golang's
+
+1587569229
+oats
+
+
+1587569232
+oats
+just an example
+
+1587569322
+r4pr0n
+hm oka
+
+1587569326
+r4pr0n
+y
+
+1587569872
+fengb
+Some people like translating code
+
+1587569888
+oats
+y'know, it sounds like fun
+
+1587569891
+fengb
+I don't because I always want to fix it >_>
+
+1587569913
+fengb
+And then I make this ungodly hybrid of half working, half fugly crap
+
+1587570706
+tgschultz
+salotz: I'm curious to hear your thoughts. Offtopic for Zig though, so please email me if you want to talk about it.
+
+1587571426
+fengb
+Is there a simple equation that maps 3x u5 back to 3x u8 ?
+
+1587571451
+fengb
+I'm manually left shifting by 3 for every field
+
+1587571550
+companion_cube
+casts?
+
+1587571560
+TheLemonMan
+are the 3 u5 packed in a single word/vector/array?
+
+1587571576
+fengb
+I mean, u5@31 => u8@255
+
+1587571590
+fengb
+Yes they're packed. I feel like there's some magic that can be done
+
+1587571686
+fengb
+I could load a u32 manually and shift them all by 3. That'd save 2 ops
+
+1587571784
+pixelherodev
+I have made the
+
+1587571868
+TheLemonMan
+I'd suggest to write a naïve implementation using ands/shifts and let LLVM do its job
+
+1587571876
+pixelherodev
+
+
+1587571902
+fengb
+It's in Javascript
+
+1587571920
+fengb
+Which also means maybe it won't ever be optimized >_>
+
+1587571945
+fengb
+I guess I could try tossing it in wasm to see if the function overhead is worth it
+
+1587571969
+TheLemonMan
+oh, the plot thickens
+
+1587571993
+fengb
+Oh good point, maybe LLVM can give me a useful enough output that I can leverage
+
+1587572012
+TheLemonMan
+you want to do this, right? `xxxxxyyyyyyzzzzz => 000xxxxx000yyyyy000zzzzzz` ?
+
+1587572074
+fengb
+xxxxx000yyyyy000zzzzz000
+
+1587572111
+fengb
+Er... whichever one that pads the least significant bits
+
+1587572217
+fengb
+
+
+1587572228
+fengb
+LLVM gave me an or. This is pretty interesting
+
+1587572325
+fengb
+Oops, I shifted wrong.
+
+1587572389
+fengb
+Yeah okay, LLVM is smarter than me
+
+1587572398
+layneson
+does anyone know of a way to force (all) functions to go in a certain section?
+
+1587572401
+fengb
+All a bunch of magic numbers lol
+
+1587572442
+TheLemonMan
+layneson, write a custom linker script
+
+1587572488
+layneson
+TheLemonMan: I'll take a look at that, thanks!
+
+1587572637
+TheLemonMan
+the bitcast is the lea+or
+
+1587572754
+fengb
+Oh so I can do better if I used a raw u32?
+
+1587572879
+TheLemonMan
+nah it should produce the same code
+
+1587573908
+oats
+speaking of which, any good linker script "tutorials" out there?
+
+1587573958
+ikskuh
+the documentation for the linker script
+
+1587573966
+ikskuh
+it's the only reliable source i found
+
+1587574248
+oats
+which linker script?
+
+1587574274
+ikskuh
+afaik only GNU ld supports linker scripts
+
+1587574285
+ikskuh
+and lld can parse the ld format
+
+1587574381
+oats
+ah
+
+1587574533
+andrewrk
+oats, I think there are some on os dev wiki
+
+1587574573
+andrewrk
+it helps if you start by thinking about what a linker script should let you do in theory, and then mapping your ideas to reality
+
+1587574787
+oats
+andrewrk: lol I have no idea what that sentence means
+
+1587574828
+oats
+or are you saying that it helps to understand what a linker script does, first
+
+1587575002
+TheLemonMan
+lots of trial&error required, that's what it means :P
+
+1587575021
+pixelherodev
+Is there any reason not to use e.g. `_ = std.os.write(std.os.STDOUT_HANDLE, "") catch 0` instead of std.debug.warn?
+
+1587575026
+pixelherodev
+(aside from stdout vs stderr)
+
+1587575036
+pixelherodev
+(and formatting)
+
+1587575040
+pixelherodev
+(and you know what that's two reasons already)
+
+1587575206
+ikskuh
+i use warn only for debugging stuff
+
+1587575211
+ikskuh
+and for app logic i use
+
+1587575220
+ikskuh
+try std.io.getStdOut().writeAll(msg);
+
+1587575287
+fengb
+`and     r2, r2, r0, lsl #6` that doesn't look too reduced 🙃
+
+1587575440
+TheLemonMan
+reduced?
+
+1587575486
+fengb
+RISC. The inline `lsl` is a lie!
+
+1587575521
+TheLemonMan
+that's the barrel shifter for you
+
+1587575534
+TheLemonMan
+you get a shift! you get a shift! everybody gets a shift!
+
+1587576030
+companion_cube
+too bad there's no RAII there, too
+
+1587576061
+shakesoda
+raii is a plague upon software anyways
+
+1587576397
+pixelherodev
+Rai is that? (I'm kidding, I agree, I just couldn't resist the pun)
+
+1587580342
+Flaminator
+I have a question that is probably really easy to answer but if const TypeName = @import("typename.zig"); and I use @typeName(TypeName); why does it use the filename for the name?
+
+1587581063
+fengb
+@typeName uses the original names. const Foo = Bar assigns an alias such that Foo == Bar
+
+1587581145
+fengb
+When you assign "anon", like `const Foo = struct`, it'll use the target variable as the name, but it seems that @import() itself assigns a name
+
+1587581192
+Flaminator
+Yeah I was using the typename.zig as a struct itself.
+
+1587582597
+marler8997
+got a quick question, is there any way to include/exclude a struct function based on a comptime condition?
+
+1587582653
+ikskuh
+marler8997: don't use it?
+
+1587582660
+ikskuh
+if(condition) call_it();
+
+1587582675
+marler8997
+the caller needs to know whether or not the function can be called at comptime
+
+1587582688
+marler8997
+so it uses @hasDecl(T, "foo")
+
+1587582712
+marler8997
+it takes a different code path based on whether or not the struct implements that function
+
+1587583402
+tgschultz
+const BackingStruct = struct { ... }; pub const RealStruct = if(comptime_condition) struct { usingnamespace BackingStruct; fn foo() {} } else BackingStruct;
+
+1587583533
+marler8997
+hmmm, I should have clarified that they were instance functions
+
+1587583689
+andrewrk
+marler8997, `pub usingnamespace switch (foo) { a => struct {}, b => struct {} };`
+
+1587583794
+marler8997
+I have struct Foo, and I'm creating a struct Bar that wraps Foo, and uses @hasDecl to check whether it should wrap N functions...
+
+1587583890
+marler8997
+Actually I think what I'll do is have the underlying type define a boolean for each function that it implements.  That way, it MUST explicitly indicate whether it supports all functions which will prevent errors from typos
+
+1587583918
+marler8997
+Then a wrapper type won't have to indicate support by conditionally defining member functions, it can just use the boolean interface as well
+
+1587583952
+marler8997
+sorry for the noise, thanks for the tips
+
+1587585597
+mikdusan
+tritao: fix for macos version detection merged in master
+
+1587588070
+mikdusan
+andrewrk: can you host new qemu 5.0.0-rc4 binary?
+
+1587588091
+tritao
+@mikdusan great, thanks.
+
+1587588431
+tritao
+does zig cc work on macosx for macosx targets? from a quick test it seems to complain about stdio.h not found
+
+1587588448
+tritao
+mikdusan: is your macho ld64.lld PR related to this?
+
+1587588662
+mikdusan
+tritao: unrelated
+
+1587588834
+mikdusan
+that PR was driven by the 3rd item ".... when running zig0" which is not interesting unless modifying the compiler on macos
+
+1587588853
+mikdusan
+s/modifying/developing
+
+1587588866
+tritao
+ok cool. do you know if anyone if working on zig cc for macosx?
+
+1587588891
+mikdusan
+not specifically for mac. are there some things you have in mind?
+
+1587588931
+tritao
+from a quick test (`./zig cc -target x86_64-macosx-gnu hello.c`) it fails on macosx
+
+1587588938
+tritao
+id like to get it to work
+
+1587588997
+tritao
+think maybe i just need to teach the driver how to pass the right include paths, either from xcode or `/usr/include`
+
+1587589036
+tritao
+but for linking im not sure if it should use the system linker or macho lld
+
+1587589064
+mikdusan
+hmmm that cmd works for me, latest master
+
+1587589081
+mikdusan
+(just an empty int main() {})
+
+1587589113
+tritao
+i get `hello.c:1:10: fatal error: 'stdio.h' file not found`
+
+1587589138
+tritao
+i do have some custom changes related to this, dunno if they are affecting anything
+
+1587589185
+mikdusan
+I think you may have some old artifacts no longer required find and nuke these 2 files, if they exist: zig-cache/native_libc.txt and ~/Library/Application\ Support/zig/native_libc.txt
+
+1587589257
+tritao
+removed `~/Library/Application\ Support/zig/stage1/native_libc.txt`but same issue
+
+1587589289
+mikdusan
+and `clang` (or more specifically, `cc`) is in your path?
+
+1587589311
+tritao
+yeah the one from Xcode (clang.1000)
+
+1587589354
+mikdusan
+can you paste the output from: `cc -E -Wp,-v -xc /dev/null`
+
+1587589390
+tritao
+
+
+1587589436
+mikdusan
+does /usr/include/stdio.h exist?
+
+1587589449
+tritao
+yeah
+
+1587589467
+tritao
+zig is not passing the path to clang
+
+1587589484
+tritao
+its only passing ` zig/lib/include`
+
+1587589487
+mikdusan
+oh one sec. let me do more than an empty main
+
+1587589585
+nephele
+Hey, are there some zig examples for allocating a buffer to pass to syscalls? (I am trying this with readlink, but the type system is giving me major issues (because i don't understand it yet :g))
+
+1587589618
+mikdusan
+ah i see it now
+
+1587589738
+mikdusan
+tritao: also tried ld64 PR; doesn't do anything to fix this issue
+
+1587589754
+tritao
+ok i can take a look at this
+
+1587589882
+mikdusan
+hmm I think this has to do with the concept of "is the build for host, or for another target"
+
+1587589940
+mikdusan
+so because the OS is no longer "native" it changes things. this works btw: -target x86_64-native-gnu , or native-native-gnu
+
+1587589945
+tritao
+hmm right if i dont pass an explicit target it works
+
+1587589955
+tritao
+good find
+
+1587589971
+marijnfs_
+where can i find the c allocator?
+
+1587590047
+mikdusan
+i must admit I'm having trouble with the issue that this breaks things: 1. `zig targets` to find my target --> `x86_64-macosx.10.15.4...10.15.4-gnu` and then using x86_64-macosx causes a compile error
+
+1587590099
+ifreund
+ok, does std.mem.eql not work with sentinal terminated pointers? or am I doing something wrong?
+
+1587590167
+fengb
+Most of stdlib doesn’t understand it
+
+1587590228
+ifreund
+hmm, how do i best compare them then? iterate manually?
+
+1587590317
+mikdusan
+ifreund: slice it? `std.mem.eql( foo[0 .. std.mem.len(foo) )`
+
+1587590447
+ifreund
+oh neat, didn't know you can do that, but it totally makes sense
+
+1587590597
+fengb
+std.mem.spanZ() will convert it to a slice for you
+
+1587590653
+ifreund
+ah nice
+
+1587591552
+yrashk
+I wish there was clamping/saturating arithmetic, also supported by AtomicRmwOp :)
+
+1587591769
+yrashk
+maybe I will try to make a PR for that
+
+1587591871
+fengb
+I think saturating arithmetic is an accepted issue
+
+1587591888
+yrashk
+yes
+
+1587591896
+yrashk
+
+
+1587592889
+andrewrk
+mikdusan, done
+
+1587598218
+Snektron
+error: out of bounds pointer access in mem.zeroes?
+
+1587598223
+Snektron
+Thats odd
+
+1587598550
+Snektron
+ah its one of those odd things again, maybe related to the bug i ran into earlier
+
+1587598660
+mikdusan
+andrewrk: I'm seeing a few holes in target triple and how it's used; but before I write an issue up, is -target spec syntax meant to be loosely familiar? does `zig cc` or anything else tie our hands in what the syntax is?
+
+1587598683
+mikdusan
+as compared to what `clang` might use for target. or llvm.
+
+1587599530
+Cadey
+i'm trying to build a binary for ppc64 big-endian as a proof of concept and i'm getting a very odd error: `zig cc -target powerpc64-linux-musl hello.c` hello.c:
+
+1587599605
+Cadey
+i'm using zig from nixos unstable, specifically `/nix/store/rgc4wscqxabb6qr15szhw6rflj2n2y8k-zig-0.6.0/bin/zig`
+
+1587599730
+Cadey
+am i messing something up or did i find a bug?
+

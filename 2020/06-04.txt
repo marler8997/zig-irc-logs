@@ -1,0 +1,1408 @@
+1591231168
+zfoo
+does zig have an equivalent to 'if_nametoindex' in C?
+
+1591231329
+lunamn
+zfoo: maybe std.net.if_nametoindex could be made public
+
+1591231493
+zfoo
+would be convenient
+
+1591231602
+dec05eba
+my 30 bytes packed struct gets padded automatically to 36 bytes. Is there a way to prevent that? the doc for packed struct only mentions that there is no padding between fields
+
+1591231621
+dec05eba
+also why would it get padded to 36 bytes, not 32?
+
+1591231631
+daurnimator
+dec05eba: packed structs are quite broken
+
+1591231644
+dec05eba
+oh no..
+
+1591231767
+pixelherodev
+Yeah :(
+
+1591235562
+ttmrichter
+daurnimator: Really?  That presents a bit of a bind for my use case.
+
+1591235679
+daurnimator
+ttmrichter: if you pad everything to byte boundaries then you can get by for now
+
+1591235765
+daurnimator
+
+
+1591236205
+ttmrichter
+Well, since the peripherals are all basically a bunch of 32-bit integers with bit fields, that doesn't sound so bad.  One thing I couldn't see immediately, however, was how to define a field that's 3 bits wide or the like.  Or is that using "u3" as a type?
+
+1591236252
+shakesoda
+yeah, that would be u3
+
+1591236277
+shakesoda
+zig has arbitrary integer sizes
+
+1591236364
+leeward
+hah
+
+1591236529
+ttmrichter
+OK, that's nice to have.
+
+1591236550
+leeward
+So I'm trying to make the case for "uword" or similar types, and I figured I'd take a look at some aarch64 disassembly to see how it handles 32-bit overflow. My first attempt had it popping and pushing the value inside the loop to the stack. Ok, -O0 is stupid. Of course, I remembered why I used -O0 when -O1 emmitted the hard coded result and just skipped the loop entirely. I guess I do have to play this game. Oh look, making it volatile
+
+1591236550
+leeward
+goes back to pushing and popping from the stack.
+
+1591236555
+ttmrichter
+Especially if it's actually defined to be packed in order, etc.
+
+1591236617
+leeward
+And...if I use -O3, it partially unrolls the loop but still fiddles with the stack.
+
+1591236619
+ttmrichter
+The next question I haven't found an immediate answer for: can I coerce an arbitrary integer into a pointer to a specific struct?
+
+1591236667
+ttmrichter
+For instance I have five USARTs.  They're all structured (almost) identically in ways that I can capture as a struct.  Can I then say "0x40013e00" is a pointer to that struct?
+
+1591236774
+daurnimator
+ttmrichter: `@intToPtr`
+
+1591236795
+ttmrichter
+Ah, nice!  It's a function, not an operator.  That's where I missed.
+
+1591236808
+daurnimator
+ttmrichter: its not a function either; its a builtin
+
+1591236829
+ttmrichter
+Builtin isn't short for "builtin function" a.k.a. BIF?
+
+1591236833
+daurnimator
+nope
+
+1591236849
+ttmrichter
+OK.  I'll dig into the distinction there then.
+
+1591236873
+daurnimator
+builtins can do things functions can't do; e.g. `@field(somestruct, "somefield") = blah;`
+
+1591236880
+ttmrichter
+Uh...
+
+1591236887
+ttmrichter
+It's literally CALLED builtin functions.
+
+1591236930
+daurnimator
+okay; they're functions; but not as you might expect them to be
+
+1591236948
+ttmrichter
+They look like Modula-2 BIFs and other language's "pseudo-functions".
+
+1591236970
+daurnimator
+think of them as "compiler magic that didn't deserve unique syntax"
+
+1591236972
+ttmrichter
+Syntactically treated like functions, but can do funky stuff because they're actually done by the compiler.
+
+1591237009
+pixelherodev
+Syntactically functions, but not semantically
+
+1591237011
+ttmrichter
+I presume, for example, that most of them are inline operations for the simpler things.
+
+1591237034
+ttmrichter
+And some of them can change stuff in order of ops, etc. that a function can't do.
+
+1591237097
+leeward
+Ugh, I argued myself out of wanting a uregister type, but now I want uint_least16 or something similar.
+
+1591237103
+ttmrichter
+Ooh.  There are some interesting ones in there.
+
+1591237178
+pixelherodev
+leeward: that's what u16 is
+
+1591237185
+pixelherodev
+u16
+
+1591237187
+pixelherodev
+or u64
+
+1591237189
+pixelherodev
+or anything else
+
+1591237201
+leeward
+pixelherodev: No, u16 is 16 bits. If I add 1 to 65535, it will yell at me.
+
+1591237204
+pixelherodev
+the compiler is allowed to grow integers (hence u5 -> u8), but you can't use the upper parts
+
+1591237216
+pixelherodev
+You mean bigints?
+
+1591237223
+pixelherodev
+std.int, IIRC?
+
+1591237237
+leeward
+No, I mean stdint.h's int_least16_t
+
+1591237259
+daurnimator
+leeward: what would be the point of that?
+
+1591237267
+leeward
+Maybe I can play games with build modes to make it not care that my u16 overflowed.
+
+1591237280
+daurnimator
+leeward: unless you use `extern` or `packed` then the in-memory layout of something with a e.g. u16 is undefined.
+
+1591237283
+leeward
+daurnimator: portability and speed when I don't care how big my numbers are.
+
+1591237291
+daurnimator
+leeward: you already have that
+
+1591237296
+pixelherodev
++%
+
+1591237300
+pixelherodev
+You can do wrapping addition
+
+1591237308
+pixelherodev
+It's just a separate op from "normal" addition
+
+1591237316
+leeward
+Yes, but it takes extra instructions on every architecture where that isn't the word size.
+
+1591237347
+pixelherodev
+Godbolt source?
+
+1591237350
+pixelherodev
+Show me an example of that?
+
+1591237370
+leeward
+in a bit, I have some real world stuff to deal with
+
+1591237511
+ttmrichter
+Huh.  Still no rotation operations.
+
+1591237521
+ttmrichter
+That's such a weird oversight in language designs.
+
+1591237543
+pixelherodev
+?
+
+1591237551
+pixelherodev
+bitshifting, you mean?
+
+1591237552
+daurnimator
+ttmrichter: std.math.rotl
+
+1591237557
+daurnimator
+ttmrichter: they didn't need to be builtins
+
+1591237564
+pixelherodev
+Ahh
+
+1591237578
+pixelherodev
+builtins are only for things which
+
+1591237611
+daurnimator
+pixelherodev: also things that due to LLVM design were easiest done as builtins; and one day they'll probably fall away
+
+1591241064
+ttmrichter
+daurnimator: Why are bit shifts BIFs while rotations are not?
+
+1591241070
+ttmrichter
+I'm kinda confused about that.
+
+1591241102
+ttmrichter
+std.math.shl/shr/shra/whatever should be fine too, no?
+
+1591241179
+daurnimator
+ttmrichter: we should probably add std.math.clz etc as wrappers around the builtins
+
+1591241184
+pixelherodev
+ttmrichter: I think that's what he was asying about intrinsics
+
+1591241186
+pixelherodev
+saying*H
+
+1591241188
+pixelherodev
+saying*
+
+1591241194
+daurnimator
+that way std.math is the "main" place to go
+
+1591241260
+pixelherodev
+Anyone knoThat's not a bad idea
+
+1591241264
+daurnimator
+IMO once
+
+1591241393
+pixelherodev
+Whoops
+
+1591241396
+pixelherodev
+That's not a bad idea*
+
+1591242016
+leeward
+pixelherodev:
+
+1591242034
+leeward
+Note how the C version uses a 32-bit value because it's a single instruction.
+
+1591242110
+daurnimator
+leeward: you need %+
+
+1591242194
+leeward
+daurnimator: I don't.
+
+1591242256
+leeward
++% would get the same behavior in debug as release-small and release-fast. What I want is for it to emit faster code, like in the C example (PRIuFAST16 is a uint32) in release-fast and release-small.
+
+1591242300
+leeward
+Of course, I don't want it so bad that I want to make a stink about it. It's just a thing that exists in C that I use sometimes.
+
+1591242316
+leeward
+Probably not worth the cost to add to a language like Zig.
+
+1591242373
+leeward
+Better off making a library with a bunch of switches based on architecture and `const ufast16 = u32` and the like.
+
+1591242462
+leeward
+Sometimes having types as values is convenient.
+
+1591242542
+daurnimator
+leeward: ah right. just because zig currently picks u16 doesn't mean it
+
+1591242561
+ttmrichter
+leeward: Having types as values is one of the things that has me interested in Zig.
+
+1591242567
+daurnimator
+leeward: instead of printing 0, a different optimization in zig may make it print 65536
+
+1591242721
+leeward
+right
+
+1591242736
+leeward
+I guess that's not so much a language issue as an optimization issue.
+
+1591242751
+leeward
+Which is way down at the bottom of the list.
+
+1591242833
+daurnimator
+leeward: what makes you think the optimization C does is better anyway?
+
+1591242845
+daurnimator
+leeward: they both entirely compute it at compile time :P
+
+1591242866
+daurnimator
+leeward:
+
+1591242968
+leeward
+daurnimator: Yes in the stupid example, but with -O0 things change.
+
+1591242976
+leeward
+Also in real code.
+
+1591243067
+daurnimator
+does uint_fast16_t even make sense at -O0?
+
+1591243090
+leeward
+sure, it's defined in the header
+
+1591243091
+leeward
+but no
+
+1591243091
+daurnimator
+"go fast but don't do any optimizations" -> "wat"
+
+1591243119
+leeward
+I didn't feel like making sure it couldn't optimize out my code; real code isn't trivial.
+
+1591243145
+pixelherodev
+I'll just point out
+
+1591243148
+pixelherodev
+You don't need a library for this
+
+1591243158
+pixelherodev
+You can have Zig pick a bigger type on platforms where it makes sense
+
+1591243609
+leeward
+Libraries are easier to include than build system hacks.
+
+1591243622
+pixelherodev
+I'm not talking about a build system hack
+
+1591243629
+pixelherodev
+I'm talking about a compiler optimization
+
+1591243654
+leeward
+And that compiler optimization is set in...the build system?
+
+1591243658
+pixelherodev
+No.
+
+1591243661
+pixelherodev
+The *compiler*.
+
+1591243666
+pixelherodev
+e.g. "if (size < native) { size = native }"
+
+1591243685
+leeward
+Right, that's the optimization thing.
+
+1591243686
+pixelherodev
+Or have it check `if (32_fastest && size < 32) {} else if (64_fastest)` etc
+
+1591243719
+pixelherodev
+Heck, here's an idea
+
+1591243726
+pixelherodev
+Have it modify
+
+1591243728
+pixelherodev
+But leave
+
+1591243760
+pixelherodev
+That should allow for better optimizations, and make e.g. debugging / printing it give the right value even if it silently wraps
+
+1591244275
+hspak
+Is there a way for "fs.cwd().openFile()" to create the file if it doesn't exist?
+
+1591244445
+daurnimator
+hspak: use `createFile` instead
+
+1591244650
+hspak
+Oops, must've missed that while reading through the source, thanks  daurnimator!
+
+1591246575
+leeward
+hooray, new router
+
+1591246838
+pixelherodev
+Nice
+
+1591292020
+scientes
+generating a new function from stage1 is not easy
+
+1591292032
+scientes
+*function call
+
+1591292039
+scientes
+not an actual function
+
+1591292215
+scientes
+I can do this in LLVM
+
+1591293660
+Xavi92
+is it guaranteed by zig enums start from zero by default, as in C?
+
+1591293722
+scientes
+Xavi92, no
+
+1591293914
+Xavi92
+scientes: are they still ordered sequentially?
+
+1591293925
+scientes
+no
+
+1591293956
+scientes
+I mean, they are, but no guarantees
+
+1591293970
+Xavi92
+scientes: okay, thanks!
+
+1591293977
+pixelherodev
+Currently, they are
+
+1591293988
+pixelherodev
+If you need that behavior guaranteed, use an extern enum
+
+1591293990
+pixelherodev
+IIRC
+
+1591294003
+pixelherodev
+Hmm
+
+1591294012
+ikskuh
+extern enum or explicit assignment
+
+1591294020
+pixelherodev
+Zig linter idea: detect enums where @enumToInt / @intToEnum is used without explicitly defined values
+
+1591294046
+ikskuh
+well, this still is a legal behaviour
+
+1591294051
+ikskuh
+for serialization/deserialization
+
+1591294055
+pixelherodev
+Yes,
+
+1591294058
+ikskuh
+but not a future proof one
+
+1591294065
+pixelherodev
+^
+
+1591294073
+pixelherodev
+that, and a linter isn't meant to be "YOUR CODE IS BADDDDD"
+
+1591294080
+pixelherodev
+It's meant to be a "Hey, you might want to verify this"
+
+1591294091
+pixelherodev
+It's a tool to help the user, not to make decisions for you.
+
+1591294110
+Xavi92
+thanks for your tips! Not that I need to interface C ABI, but feeling lazy to define a set of constants with explicit values
+
+1591294389
+Xavi92
+@compileLog is returning 5 for `@sizeOf(Gp1)`, but was expecting 4. Why is that?
+
+1591294449
+pixelherodev
+GP1?
+
+1591294452
+pixelherodev
+Ahh linked
+
+1591294474
+pixelherodev
+Xavi92: bug
+
+1591294483
+pixelherodev
+Known bug :(
+
+1591294490
+pixelherodev
+Packed structs are largely broken
+
+1591294519
+Xavi92
+Oh :(
+
+1591294525
+pixelherodev
+Yeah.
+
+1591294529
+pixelherodev
+It sucks :(
+
+1591294599
+Xavi92
+pixelherodev: packed structs are a tough problem to solve I guess
+
+1591294614
+Xavi92
+pixelherodev: I'll stick to manual bit masks for the time being, thanks anyway!
+
+1591294875
+scientes
+uggh, it is a PITA to split a slice in stage1
+
+1591294879
+scientes
+into ptr and len
+
+1591294896
+scientes
+but I don't think the C ABI is nice to slice structs
+
+1591295022
+pixelherodev
+scientes: you mean internally, within the compiler?
+
+1591295027
+scientes
+yes
+
+1591295032
+pixelherodev
+Gotcha
+
+1591295038
+scientes
+especially in codegen.cpp
+
+1591295044
+scientes
+probably have to do so in ir.ccp first
+
+1591295046
+pixelherodev
+How are `.ptr` / `.len` implemented for slices?
+
+1591295068
+scientes
+basically i have to call those
+
+1591295091
+pixelherodev
+That's the pain?
+
+1591295099
+pixelherodev
+What are you trying to do?
+
+1591295106
+pixelherodev
+What's the endgame, rather
+
+1591295114
+scientes
+I've got a algorithm for doing switch on []u8
+
+1591295117
+pixelherodev
+Passing slices to C callconv functions as ptr + len?
+
+1591295119
+pixelherodev
+Huh
+
+1591295135
+scientes
+but it needs a run-time interpreter
+
+1591295840
+FireFox317
+Xavi92, if you replace the packed's with extern it will work I think. reserved might need to be split into two fields, a u8 and a u16
+
+1591295931
+fengb
+Packed would work if you split reserved into u8 and u16
+
+1591295934
+Xavi92
+FireFox317: as in here?
+
+1591295954
+Xavi92
+fengb: that worked!
+
+1591295966
+fengb
+Let’s do the rain dance of making the compiler work :P
+
+1591296009
+FireFox317
+Xavi92, hmm what about 4 u8's? :D
+
+1591296022
+FireFox317
+oh lol did not read fengb's sugestion
+
+1591296056
+fengb
+I think anything bigger than u8 has “natural” sizes and packed doesn’t properly ignore them
+
+1591296071
+fengb
+So if they don’t line up, it gets really confused
+
+1591296087
+pixelherodev
+Hmm
+
+1591296094
+pixelherodev
+Nah, I'm focusing on stage2
+
+1591296100
+pixelherodev
+Gonig to finish the error_tests changes today
+
+1591296217
+FireFox317
+Good job pixelherodev
+
+1591296237
+pixelherodev
+:P
+
+1591296246
+pixelherodev
+Next Zig task is a refactoring tool :)
+
+1591296255
+pixelherodev
+I started on one months ago but
+
+1591296256
+pixelherodev
+well
+
+1591296260
+pixelherodev
+I forgot to save it when I wiped my PC
+
+1591296266
+pixelherodev
+So I lost motivation entirely :P
+
+1591296268
+pixelherodev
+:(
+
+1591296278
+companion_cube
+refactoring tool -> you mean zls, right? :p
+
+1591296286
+FireFox317
+Well a refactoring tool is basically zls
+
+1591296287
+pixelherodev
+No
+
+1591296291
+FireFox317
+lol
+
+1591296334
+pixelherodev
+Refactoring as in `zrf package.struct.function.local package.struct.field` should move a local var and update references to it
+
+1591296367
+ikskuh
+yeah that's job of a language server
+
+1591296371
+pixelherodev
+Boo.
+
+1591296376
+companion_cube
+that's definitely the job of LSP
+
+1591296382
+pixelherodev
+:(
+
+1591296385
+pixelherodev
+Everyone's a critic.
+
+1591296385
+companion_cube
+cause instead of typing the whole field (if it even has a name)
+
+1591296393
+companion_cube
+you just say "do this where my cursor is"
+
+1591296412
+fengb
+Cursor? That's heresy
+
+1591296426
+companion_cube
+do you write code with ed? :p
+
+1591296457
+ikskuh
+language server style is
+
+1591296472
+ikskuh
+"hover a field with the cursor, press F2, enter a new name, press enter, have all references renamed"
+
+1591296480
+companion_cube
+^
+
+1591296505
+ikskuh
+one refactoring which i think would be absolutely awesome is "extract method/function"
+
+1591296530
+ikskuh
+select a piece of code, tell your refactoring tool that it should separate this into a function and replace the selected code with a function call
+
+1591296557
+companion_cube
+like java IDEs do…
+
+1591296637
+ikskuh
+if we get such power to zls, it would be really awesome
+
+1591296688
+pixelherodev
+:(
+
+1591296697
+pixelherodev
+fine. I'll stick to stage2. I see how it is.
+
+1591296702
+pixelherodev
+(joking, joking)
+
+1591296706
+pixelherodev
+(you're probably right :)
+
+1591296751
+companion_cube
+you can make the refactoring tool into a library that zls might use :p
+
+1591296758
+companion_cube
+or any other frontend
+
+1591296771
+pixelherodev
+no point
+
+1591296773
+pixelherodev
+it would be worse
+
+1591296778
+pixelherodev
+ZLS uses its own parsing
+
+1591296783
+pixelherodev
+Using a library for refactoring would be inefficient
+
+1591296789
+pixelherodev
+A library for general usage isn't a bad idea though
+
+1591296799
+pixelherodev
+But it'd make more sense to do it the other way around
+
+1591296804
+pixelherodev
+Add the functionality to ZLS, make a ZLS library
+
+1591296812
+pixelherodev
+So you can import ZLS from Zig code and use its tools natively
+
+1591296819
+pixelherodev
+Without needing an actual LSP client
+
+1591296825
+ikskuh
+afaik ZLS uses stage2 parser
+
+1591296832
+pixelherodev
+It does
+
+1591296836
+pixelherodev
+But I mean, it caches data
+
+1591296847
+pixelherodev
+So there's no point in
+
+1591297890
+pixelherodev
+andrewrk: is the intent to, down the line, add a `getAllNotesAlloc` to Module as well?
+
+1591297957
+pixelherodev
+(and Warnings, etc)
+
+1591298128
+scientes
+So how do i split a slice?
+
+1591298131
+andrewrk
+errors gets everything. the structure is a tree, each error is a root. notes are children of errors. no warnings
+
+1591298132
+scientes
+into its ptr and len component?
+
+1591298138
+scientes
+I can't figure it out right now
+
+1591298153
+pixelherodev
+Ahh
+
+1591298159
+scientes
+(in stage1)
+
+1591298165
+pixelherodev
+Currently, that's not implemented though, correct?
+
+1591298181
+pixelherodev
+scientes: trace the path of a `.ptr` through the code?
+
+1591298182
+scientes
+well you can clearly do it in zig
+
+1591298184
+scientes
+so it is possible
+
+1591298185
+pixelherodev
+Find where it gets tokenized
+
+1591298189
+pixelherodev
+Then how that token is consumed?
+
+1591298213
+pixelherodev
+andrewrk: we don't yet have notes, correct?
+
+1591298240
+pixelherodev
+AllErrors.Message doesn't have any relevant entries
+
+1591298366
+andrewrk
+yeah no notes in stage2 yet. a couple TODOs where we already need them
+
+1591298413
+pixelherodev
+Gotcha
+
+1591298418
+pixelherodev
+Should I implement those as part of this PR?
+
+1591298425
+pixelherodev
+Or do a second PR after this one adding those and extending the harness?
+
+1591298431
+mikdusan
+scientes: iirc it is repr as a struct with 2 fields: slice_ptr_index, slice_len_index . search for that in ir.cpp for examples
+
+1591298440
+scientes
+mikdusan, it is
+
+1591298452
+scientes
+but how do i extract it into a new IrInstGen
+
+1591298458
+scientes
+that is annoying
+
+1591298966
+scientes
+especially since I don't think we have types in pass1
+
+1591298983
+pixelherodev
+Gah
+
+1591298989
+pixelherodev
+Leaks.
+
+1591299012
+pixelherodev
+Error - detected leaked allocations without matching free: 1
+
+1591299020
+pixelherodev
+There were 2, but I found the first one
+
+1591299209
+pixelherodev
+uhhh
+
+1591299223
+pixelherodev
+andrewrk: `all_errors.deinit(module.allocator)` seems to leak
+
+1591299257
+pixelherodev
+`(try module.getAllErrorsAlloc()).deinit();` leaks, that is.
+
+1591299308
+pixelherodev
+s/deinit\(/deinit\(module.allocator/
+
+1591299334
+andrewrk
+good to know. best way to find it is to use -Dforce-link-libc and then valgrind --leak-check=full
+
+1591299344
+pixelherodev
+This is weird
+
+1591299348
+pixelherodev
+with allocator it works
+
+1591299353
+pixelherodev
+with module.allocator it leaks
+
+1591299358
+pixelherodev
+but they should be identical!
+
+1591299379
+pixelherodev
+module.allocator is defined as the allocator given to Module.init
+
+1591299402
+pixelherodev
+Or I'm an idiot and the second test was faulty
+
+1591299404
+pixelherodev
+:P
+
+1591299410
+pixelherodev
+Yeah, no, it leaks.
+
+1591299423
+pixelherodev
+Thanks for the tip, investigating
+
+1591299529
+pixelherodev
+Ah wait
+
+1591299534
+pixelherodev
+I think I found it w/o valgrind :)
+
+1591299540
+pixelherodev
+andrewrk: Module.zig:664
+
+1591299551
+pixelherodev
+Wait no, I misread that
+
+1591299563
+pixelherodev
+That should still be within the arena
+
+1591299571
+pixelherodev
+Forgot how the interace worked for a bit there
+
+1591299699
+mikdusan
+
+
+1591299705
+mikdusan
+is that right?
+
+1591299788
+pixelherodev
+...
+
+1591299790
+pixelherodev
+probably not.
+
+1591299793
+pixelherodev
+good caatch
+
+1591299795
+pixelherodev
+catch*
+
+1591299799
+pixelherodev
+especially as valgrind seems to be not happy
+
+1591299808
+pixelherodev
+even with -Dforce-link-libc, it doesn't detect the leaks...
+
+1591299810
+pixelherodev
+Oh wait.
+
+1591299813
+pixelherodev
+Shouldn't switched allocators :P
+
+1591299835
+pixelherodev
+Wait actually
+
+1591299839
+pixelherodev
+mikdusan: it is correct
+
+1591299853
+pixelherodev
+`errors` is allocated with the normal allocaator
+
+1591299855
+pixelherodev
+allocator*
+
+1591299862
+pixelherodev
+then duped by the arena and removed from the normal one
+
+1591300212
+pixelherodev
+Hmm, my tree was inconsistent. That might've been the problem.
+
+1591300237
+mikdusan
+it just seems weird to me that arena.state is copied, then arena is used (mutated). then later deinit tries to promote from that old state
+
+1591300412
+pixelherodev
+Wait hmm
+
+1591300418
+pixelherodev
+Gotcha
+
+1591300420
+pixelherodev
+I'll take another look
+
+1591300559
+pixelherodev
+-Dforce-link-libc is ignored for tests AFAICT
+
+1591300624
+pixelherodev
+Huh
+
+1591300627
+pixelherodev
+Seems to be good now
+
+1591300674
+pixelherodev
+I think the problem was that my tree was out of sync
+
+1591300739
+pixelherodev
+Tests passing now
+
+1591300833
+pixelherodev
+mikdusan: I suspect you're right, and that can be improved
+
+1591300838
+satchmo
+how come libraries like zig-clap don't have actual install steps? it looks like it just installs examples and runs tests.
+
+1591300848
+pixelherodev
+satchmo: link?
+
+1591300857
+satchmo
+
+
+1591300905
+pixelherodev
+satchmo: libraries don't get installed
+
+1591300912
+mikdusan
+satchmo: there's nothing to install. zig wants sources
+
+1591300915
+pixelherodev
+You use addPackage on the caller
+
+1591300917
+pixelherodev
+Yeah
+
+1591300936
+satchmo
+ah okay, i thought maybe it was designed for the package manager
+
+1591300939
+pixelherodev
+e.g. `exec.addPackagePath("clap", "libs/clap/clap.zig")`
+
+1591300994
+pixelherodev
+Ugh, need to rebase the branch
+
+1591301087
+mikdusan
+heh I haven't looked at any code for 2 weeks. my brain doesn't know what to do with a merge conflict right now
+
+1591301345
+fengb
+Design for vaporware :3
+
+1591301374
+pixelherodev
+fengb: ?
+
+1591301379
+pixelherodev
+Ahh
+
+1591301382
+pixelherodev
+libraries?
+
+1591301388
+fengb
+"designed for the package manager"
+
+1591301422
+leeward
+Vaporware doesn't end up getting built.
+
+1591301589
+pixelherodev
+Ahh
+
+1591301634
+fengb
+Duke Nukem Forever got released
+
+1591301635
+satchmo
+fengb: I'mma coin that phrase
+
+1591301689
+leeward
+Duke Nukem: No True Scotsman edition.
+
+1591301962
+fengb
+The real Duke ran on Quake 2 engine
+
+1591302074
+fengb
+"The licensing cost was steep—estimates were as high as $500,000—but Broussard reasoned that it would
+
+1591302208
+pixelherodev
+Alrighty, fixed the problems mentioned on 5422, just need to finish the impl :)
+
+1591302670
+ifreund
+does using orelse on a [*c] pointer not work?
+
+1591302700
+leeward
+Is it ![*c]?
+
+1591302720
+leeward
+They can be cast to optional types, right?
+
+1591302759
+ifreund
+it's just [*c]
+
+1591302779
+ifreund
+i think the orelse might actually be working but something werid is definitely going on here
+
+1591302788
+leeward
+easy enough to find out
+
+1591302864
+ifreund
+ok, no it looks like I'm doing something wrong. The error message led me a little astry
+
+1591302881
+pixelherodev
+Alrighty, transformation updates are good now :)
+
+1591303554
+leeward
+ifreund: Confirmed: a [*c] with value 0 will trip an orelse.
+
+1591303575
+ifreund
+leeward: thanks for testing that
+
+1591303591
+ifreund
+It seems I have indeed screwed up something else
+
+1591303607
+leeward
+no problem
+

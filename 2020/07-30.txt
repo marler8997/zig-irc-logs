@@ -1,0 +1,2168 @@
+1596067228
+gruebite
+i feel like zig and C could be happy siblings. as long as that interfacing is hidden from library consumers
+
+1596067232
+fengb
+Macro less C can possibly be fully translated
+
+1596067293
+pixelherodev
+not quit
+
+1596067294
+pixelherodev
+quite*
+
+1596067297
+pixelherodev
+like, 90% I think
+
+1596067494
+gruebite
+so is it preferrable to fix the C so translate-c work and have a zig-only library, or to have the user addCSourceFile?
+
+1596067510
+pixelherodev
+Ehh, neither
+
+1596067512
+pixelherodev
+That's not what I meant
+
+1596067521
+pixelherodev
+I meant that we should have a way to have addPackage do that automatically
+
+1596067529
+gruebite
+yeah, i agree :D
+
+1596067536
+pixelherodev
+Maybe a separate function in build.zig that runs when the package is being imported?
+
+1596067552
+gruebite
+that's a thought i had too haha
+
+1596067580
+gruebite
+build/consume but idk. ideally the same interface should cover both cases
+
+1596067601
+gruebite
+maybe a way to mark in build.zig what's required to be consumed
+
+1596067619
+gruebite
+but in the meantime, is there an expectation from zig users?
+
+1596067627
+pixelherodev
+probably addCSource for now
+
+1596067633
+pixelherodev
+andrewrk: another idea for stage2: maybe we should have all genFuncInst calls resolve to genInstAsm?
+
+1596067649
+pixelherodev
+So e.g. genSetReg resolves to genInstAsm(mov inputs=blah)
+
+1596067672
+pixelherodev
+Could be a partially comptime call
+
+1596067691
+pixelherodev
+(resolve the strings at comptime, so it has no runtime compilation overhead)
+
+1596067724
+pixelherodev
+It'd mean a small performance cost when compiling the stage2 compiler, in exchange for cleaner deduplicated code
+
+1596067759
+pixelherodev
+Then we could also move genInstAsm into std.assembler.ARCH and expose assemblers for all supported targets for arbitrary usage
+
+1596068009
+frmdstryr
+Can I make a single field volatile?
+
+1596069935
+leeward
+frmdstryr:
+
+1596069954
+leeward
+There's some discussion in there, but the short answer is no.
+
+1596069963
+leeward
+Unless the field is a pointer.
+
+1596077578
+gruebite
+if i wanted to tackle the C ABI compatibility, is there context i should have? i recall there being a discussion on wanting to implement it fully at a specific stage (not in c++)
+
+1596084074
+shakesoda
+is there literally any use for volatile other than mmio
+
+1596084130
+shakesoda
+like, if you hypothetically just actually named it "mmio" as an attribute pointers can have, would that be accurate
+
+1596084137
+shakesoda
+emphasis on this as a question and not a suggestion
+
+1596084294
+gruebite
+*mmio foo?
+
+1596085132
+leeward
+shakesoda: I don't know of another use for volatile.
+
+1596085137
+shakesoda
+gruebite: yeah
+
+1596085231
+leeward
+It doesn't help with regular memory, since it doesn't affect caches. A cache hit means it won't read from main memory, volatile or not.
+
+1596085259
+leeward
+If you want to prevent timing attacks, for example, you have to use other mechanisms to evict cache lines.
+
+1596085352
+leeward
+The only other thing it could affect is aliased pointers, but we have other mechanisms for that.
+
+1596086415
+pixelherodev
+leeward: shakesoda: I believe other uses are mentioned
+
+1596086420
+pixelherodev
+Somewhere deep in a GH thread
+
+1596088206
+andrewrk
+shakesoda, yeah, mmio is just about it
+
+1596088213
+leeward
+There could be an ISR that services some piece of hardware and updates a chunk of memory as its mechanism for communicating with the rest of the system. That might need volatile pointers.
+
+1596088227
+leeward
+That case is very similar to mmio though.
+
+1596088239
+andrewrk
+it could be renamed to "sideeffect" and would be a nice change for asm as well
+
+1596088244
+leeward
+It's just emulated.
+
+1596088251
+andrewrk
+`asm sideeffect` / `*sideeffect T`
+
+1596089244
+eleanor-nb
+May I suggest `impure`? Shorter, and in line with FP terminology. At one time introducing it was part of #5241.
+
+1596090518
+gruebite
+i think impure would be confusing here. not sure fp constructs map well to hardware semantics.
+
+1596090584
+leeward
+Particularly since it implies that things not using it are pure, which could lead to a lot of overuse.
+
+1596090606
+gruebite
+yeah
+
+1596090678
+gruebite
+i don't mind volatile, since it's deeply rooted in C terminology and familiar. but still misunderstood? i'm not sure how prominent the belief it's for atomic operations is.
+
+1596090773
+DarkUranium
+There's also the fact that `volatile` means different things in C vs Java, gruebite.
+
+1596090778
+leeward
+I have no data, but I doubt it's more prominent than the belief it's for "stuff I don't need."
+
+1596090813
+DarkUranium
+And the fact that
+
+1596090858
+leeward
+Wha? I've never run into a volatile bug.
+
+1596091017
+DarkUranium
+leeward, I've lost the source, but I've just read comments by the C standards committee yesterday, on that very topic (among others).
+
+1596091089
+DarkUranium
+The basically said that they investigated this, and it turned out that 0 compilers implement `volatile` according to Cstd semantics, and it is something that kernel developers (where the difference between the two is critical) are simply aware that this is one of those "normal deviations" --- and they also said that's okay, because C was designed to be practical, so standard theorycrafting is useless if it doesn't fit a purpose.
+
+1596091098
+gruebite
+java's at a higher level, it won't be touching volatile memory.
+
+1596091143
+DarkUranium
+leeward, to be clear, apparently, all compilers implement the same semantics --- it just doesn't happen to be the semantics that the C standard specifies.
+
+1596091144
+gruebite
+and i think the correctness of the semantics vs it's intended use is a separate topic
+
+1596091148
+gruebite
+its*
+
+1596091151
+DarkUranium
+I don't know how old the comments were though, so maybe C11 or C14 reconciles that.
+
+1596091204
+gruebite
+huh, apparently C# has volatile too. didn't know that
+
+1596091248
+gruebite
+also used differently haha
+
+1596091474
+DarkUranium
+Does C# have the same semantics as Java there, or ...?
+
+1596093493
+leeward
+Are you talking about fencing? Most C compilers will reorder access to non-volatile memory around access to volatile memory, but it's not clear the standard forbids that. At least, it wasn't in C99.
+
+1596094503
+DarkUranium
+leeward, shakesoda: on `volatile` uses, there are.
+
+1596094520
+DarkUranium
+(w.r.t. this:)
+
+1596094521
+DarkUranium
+<shakesoda> is there literally any use for volatile other than mmio
+
+1596094521
+DarkUranium
+<shakesoda> like, if you hypothetically just actually named it "mmio" as an attribute pointers can have, would that be accurate
+
+1596094592
+DarkUranium
+For example, `setjmp` invalidates all non-volatile locals after a longjmp(). So if you want to use `if(setjmp(...)) { do_something(some_local); }`
+
+1596094607
+DarkUranium
+Then e.g. `int some_local = 5;` is UB; you need `volatile int some_local = 5;`
+
+1596094618
+DarkUranium
+s/some local/some_local/
+
+1596094630
+DarkUranium
+WTF, hexchat is deleting underscores?
+
+1596094696
+shakesoda
+i'm seeing them here.
+
+1596094748
+DarkUranium
+Huh, weird.
+
+1596094777
+shakesoda
+the longjmp issue wouldn't apply in zig, right
+
+1596095409
+DarkUranium
+shakesoda, unless you're compiling specifically to C, no.
+
+1596095918
+DarkUranium
+shakesoda, I seem to remember that non-constant globals used in signal handlers (read
+
+1596095931
+DarkUranium
+I'm sure there are other issues. `volatile` in C is basically `uncached`.
+
+1596102403
+ikskuh
+ifreund: now that Dunstblick is near-100% zig, i lost most of my code documentation :D
+
+1596102418
+ikskuh
+i should switch the doc generator to the zig one
+
+1596102462
+ifreund
+that'd be good, we need more people to learn how the zig docgen works :P
+
+1596102466
+ikskuh
+haha :D
+
+1596102620
+ikskuh
+first step: add support for that into build.zig
+
+1596103279
+ikskuh
+aaaand it "failed"
+
+1596103291
+ikskuh
+docs are somewhere lost in the zig-cache
+
+1596108185
+protheory8-new-m
+How do I link my Zig library to C library `lib.so` in `build.zig` file?
+
+1596108205
+protheory8-new-m
+* How do I link my Zig library to C library file `lib.so` in `build.zig` file?
+
+1596108338
+ikskuh
+b.addDynamicLibrary("name", "path/to/lib.zig", .{ .major = 1, .minor = 0, .revision = 0 });
+
+1596108352
+ikskuh
+will give you a library project
+
+1596108359
+ikskuh
+oh
+
+1596108362
+ikskuh
+other way round :D
+
+1596108390
+ikskuh
+you have to use zigthing.addLibPath("./path/to/lib/folder");
+
+1596108397
+ikskuh
+then zigthing.linkSystemLibrary("yourlib");
+
+1596108419
+ikskuh
+see also
+
+1596108557
+protheory8-new-m
+Thanks!
+
+1596109936
+protheory8-new-m
+Seems like Zig compiler thinks it's a path in include directory
+
+1596109990
+protheory8-new-m
+Any way to make it do `#include "./c_lib/lib.h"`?
+
+1596110253
+protheory8-new-m
+Nevermind, `lib.addSystemIncludeDir("./src/c_lib/include");` in `build.zig` works.
+
+1596119070
+protheory8-new-m
+Now how do I link Zig executable to Zig static library?
+
+1596119149
+ikskuh
+the same way you link dynamic libraries
+
+1596119159
+ikskuh
+there's no difference between a C and a zig static/dynamic library
+
+1596119167
+ikskuh
+but you might want to "link" zig code as a package instead of a library
+
+1596119209
+protheory8-new-m
+> but you might want to "link" zig code as a package instead of a library
+
+1596119209
+protheory8-new-m
+`LibExeObjStep.addPackage()`?
+
+1596119233
+ikskuh
+yep
+
+1596119240
+protheory8-new-m
+* > but you might want to "link" zig code as a package instead of a library
+
+1596119240
+protheory8-new-m
+`LibExeObjStep.addPackage()`?
+
+1596119262
+protheory8-new-m
+What are the benefits of linking as a package?
+
+1596119420
+pixelherodev
+How would one even link against static Zig? `extern` everything?
+
+1596119616
+ikskuh
+linking as a package gives you Zig ABI
+
+1596119620
+ikskuh
+so comptime, slices, …
+
+1596119630
+ikskuh
+linking as a library means you're bound to C ABI
+
+1596119640
+ikskuh
+no namespaces, no tagged unions, …
+
+1596119659
+protheory8-new-m
+Well, the library only exports one variable, doesn't really matter here.
+
+1596119669
+ikskuh
+even then
+
+1596119670
+ikskuh
+:D
+
+1596119765
+protheory8-new-m
+So `LibExeObjStep.linkSystemLibrary()` also works on static libraries?
+
+1596119783
+ikskuh
+yep
+
+1596119884
+protheory8-new-m
+Doesn't seem to work for me
+
+1596119916
+ikskuh
+if you are in build.zig
+
+1596119920
+ikskuh
+and you build the library there
+
+1596119928
+ikskuh
+you can link that  with linkArtifact i think
+
+1596119965
+protheory8-new-m
+Nah, library and executable are two different projects.
+
+1596119990
+ikskuh
+then you also have to add a libraryPath
+
+1596119998
+ikskuh
+addLibraryPath i think
+
+1596120472
+protheory8-new-m
+I guess I don't need to do import?
+
+1596120481
+ikskuh
+you cannot @import a library
+
+1596120496
+ikskuh
+if you have a C header, you need to use @cImport
+
+1596120510
+protheory8-new-m
+I don't have one
+
+1596120527
+ikskuh
+else you need to write your own package/zig file defining the correct extern symbols
+
+1596120529
+pixelherodev
+You'll need to define the library functions
+
+1596120530
+pixelherodev
+Yeah
+
+1596120559
+protheory8-new-m
+How do I get C header though?
+
+1596120569
+protheory8-new-m
+I guess I need to write it manually
+
+1596120621
+fengb
+Zig prefers to share via code
+
+1596120637
+fengb
+We don't have a defined ABI so it's basically using C's
+
+1596121058
+protheory8-new-m
+I got `addPackage()` working, thanks everyone!
+
+1596121081
+protheory8-new-m
+btw, why is `std.heap.page_allocator` so slow?
+
+1596121243
+fengb
+Because it's wired into mmap directly. It's not intended to be a general purpose allocator
+
+1596122284
+alexnask
+DarkUranium Hey, ping me anytime if you want to talk about zls or lsp stuff, just saw your message in the logs, I wasnt around in IRC for a bit
+
+1596122379
+DarkUranium
+alexnask, yo!
+
+1596122384
+DarkUranium
+pong :)
+
+1596122387
+alexnask
+hihi
+
+1596122403
+DarkUranium
+Fair warning, I'm not actually familiar with zig otherwise.
+
+1596122445
+alexnask
+No problem :P
+
+1596122486
+DarkUranium
+I basically just wanted to ask if you had any guidelines to creating a language with builtin LSP support (n.b.: when I say "LSP", I mean "C API with same features" --- not talking about actual HTTP+JSON protocol, I'll do that via a wrapper)
+
+1596122503
+DarkUranium
+Bit of background first:
+
+1596122538
+scientes
+DarkUranium, "builtin" is kinda a mis-nomer, the only important thing is to use the same parser
+
+1596122547
+pixelherodev
+Not here
+
+1596122547
+scientes
+and AST
+
+1596122550
+DarkUranium
+scientes, don't you want the same semantic analysis, too?
+
+1596122553
+pixelherodev
+It's for a language with an embedded runtime
+
+1596122554
+alexnask
+I assume they are talking about integrating it into the compiler
+
+1596122557
+pixelherodev
+Yep
+
+1596122583
+alexnask
+Which is also a goal for stage 2 eventually afaict
+
+1596122591
+DarkUranium
+I'm making an embeddable (in the "inside C programs" sense, like Lua; not in the "inside microcontrollers" sense) statically-typed language. A certain someone mentioned this LSP stuff, and I kind of realized that it would be
+
+1596122617
+pixelherodev
+s/only/first
+
+1596122618
+pixelherodev
+;)
+
+1596122621
+pixelherodev
+Only a matter of time
+
+1596122635
+DarkUranium
+s/first/only* (* terms and conditions may apply)/
+
+1596122637
+DarkUranium
+there :P
+
+1596122671
+DarkUranium
+(think someone embedding my language into some custom editor within their program --- they'd have ready-made hooks for autocomplete and all that fancy stuff)
+
+1596122748
+protheory8-new-m
+I looked up implementation of `std.heap.c_allocator` in master branch, why doesn't `resizeFn` use C `realloc`?
+
+1596122751
+alexnask
+Yeah it would be nice for sure
+
+1596122800
+alexnask
+DarkUranium, for LSP specifically (or an equivalent protocol with the same features) all you need access to is the resolved types and their associated definitions
+
+1596122811
+fengb
+resizeFn guarantees in place
+
+1596122885
+DarkUranium
+alexnask, yeah ... but the problem is, I can't just reparse the entire universe the moment the user hits a character.
+
+1596122895
+DarkUranium
+Also, the file they're editing will have errors, which is something to deal with.
+
+1596122966
+protheory8-new-m
+I'm not sure what does 'expand or shrink memory in place' means to be honest
+
+1596123000
+alexnask
+Right, both valid points. In zls we reparse the whole file on every change (the editor will usually not send a request for every char change but for a few characters that were inserted/deleted within some timefram)
+
+1596123008
+pixelherodev
+protheory8-new-m: realloc can change the address
+
+1596123018
+leeward
+DarkUranium: volatile in C has no interaction with the CPU's cache. It's a compiler directive, not a processor one.
+
+1596123020
+pixelherodev
+Which isn't allowed for std.mem.Allocator
+
+1596123032
+fengb
+in-place means the pointer doesn't change
+
+1596123042
+leeward
+DarkUranium: Also, I had a similar issue with underscores on XChat. Fixed by fiddling with fonts.
+
+1596123061
+pixelherodev
+DarkUranium: Zig's parser is error-tolerant
+
+1596123069
+pixelherodev
+It'll always return a full AST even if there are errors in the source
+
+1596123074
+alexnask
+I thought about doing something more clever but Im using the stdlib parser and its quite a difficult problem in the first place (detecting what statements need reparsing and replacing them)
+
+1596123094
+DarkUranium
+leeward, aye, I meant more in terms of caching at the language level.
+
+1596123104
+DarkUranium
+leeward, in that a compiler could decide not to read the same ptr twise.
+
+1596123121
+alexnask
+The error tolerance is easier, in the zig parser its implemented by skipping ahead to some character depending on the context when the node is not valid
+
+1596123126
+alexnask
+For example `;` in blocks
+
+1596123204
+fengb
+So the Zig parser now keeps trying after the first error?
+
+1596123222
+alexnask
+Yeah Vexu implemented this really quickly right after zls started becoming useful
+
+1596123243
+alexnask
+Since it was stopping at 1 error before although the API was meant for multiple errors from the getgo
+
+1596123277
+DarkUranium
+alexnask, for the reparse issue, what I was thinking was to use memoization.
+
+1596123297
+leeward
+DarkUranium: I guess you could say the C abstract machine gets to cache things that aren't volatile, but that makes my brain hurt this early.
+
+1596123321
+DarkUranium
+alexnask: For example, if I insert a character at position 50 ... all
+
+1596123364
+DarkUranium
+alexnask, and the moment I run into a token that has the same position & contents as before (shifted by the insertion amount), I know that & everything after it is unchanged, too. Because the lexer is not context-sensitive.
+
+1596123403
+DarkUranium
+As a bonus, if I use an immutable datastructure for this, I can have async tasks (such as a symbol lookup) running on the old version.
+
+1596123428
+protheory8-new-m
+Thanks everyone
+
+1596123442
+DarkUranium
+Semantic analysis is more difficult, but I know for a fact that it's been done before with this approach.
+
+1596123518
+pixelherodev
+np
+
+1596123544
+alexnask
+This does sound viable for sure but in my experience reparsing was not such a big performance hit to necessitate rewriting the parser with this in mind. YMMV of course
+
+1596123557
+DarkUranium
+alexnask, I reckon it depends on the sizes of programs, etc.
+
+1596123565
+DarkUranium
+Note that it's not just reparsing, but also re-semantic-analysising.
+
+1596123612
+alexnask
+Yes, this is true. Ive tested zls with 80k+ loc files and this part is good enough (although I could optimize it further for sure)
+
+1596123626
+pixelherodev
+Hmm, here's a thought
+
+1596123645
+pixelherodev
+Fully lex every time unconditionally, then do a differentiation against the previous lex to speed up the parser
+
+1596123656
+DarkUranium
+pixelherodev, that's sort of what I said. Except you don't need to fully lex!
+
+1596123685
+alexnask
+Right you only need to lex the new text and replace the tokens in the old range that was possibly deleted
+
+1596123687
+DarkUranium
+Remember that lexers are greedy (basically: once a token is emitted, anything that follows the token
+
+1596123694
+DarkUranium
+alexnask, exactly.
+
+1596123702
+pixelherodev
+True, true
+
+1596123704
+DarkUranium
+And you only need to re-parse parts that had their tokens changed.
+
+1596123738
+DarkUranium
+(for parsing, this is a trivially-modified packrat parser)
+
+1596123853
+Nypsie
+This case would still parse nearly the full file if you insert an extra line at line 5 for example, right?
+
+1596123873
+Nypsie
+Well, I guess that could invalidate whatever is behind it anyway so that'
+
+1596123875
+Nypsie
+s fine
+
+1596123896
+DarkUranium
+Nypsie, no, like I said, you shift all the later offsets by whatever you inserted.
+
+1596123908
+DarkUranium
+So if you inserted 3 characters, you'd check if (pos == old_pos+3)
+
+1596123919
+Nypsie
+Aaaah I see
+
+1596123928
+alexnask
+Right, this would only cause a new parse of the single newline token (whioch will return 0 nodes) if I understand correctly
+
+1596123938
+DarkUranium
+After all, parsers don't care about source offsets (other than to forward them to error handling)
+
+1596123958
+Nypsie
+(I ment with some actual code, Alex. My bad, should've been more specific)
+
+1596123959
+DarkUranium
+alexnask, I think you could actually special-case this!
+
+1596123969
+alexnask
+Yeah for sure, just saying in general :)
+
+1596123977
+alexnask
+This is very similar to what I had in mind when starting zls but I never went ahead with it
+
+1596123984
+DarkUranium
+alexnask, after all, a newline is an "ignorable token" (my lexers tend to have the concept --- useful for syntax highlighting)
+
+1596123992
+alexnask
+Mostly because of the convenienve of a good, fast already available parser in stdlib
+
+1596124000
+alexnask
+convenience*
+
+1596124004
+DarkUranium
+I did run into this which seems interesting (cc pixelherodev), sec
+
+1596124021
+DarkUranium
+
+
+1596124025
+Nypsie
+DarkUranium: What if those 3 characters you input, invalidate the tokens behind it?
+
+1596124029
+DarkUranium
+^ supposedly, it handles incremental parsing for you.
+
+1596124055
+alexnask
+If the new tokens fall within an old definition/AST node
+
+1596124064
+DarkUranium
+Nypsie, then those tokens are deleted, and any related parse (sub)trees invalidated.
+
+1596124075
+alexnask
+Then it is invalidated and you reparse from the start of the old definition to the start of the next definition
+
+1596124080
+DarkUranium
+Nypsie, you stop when you hit a token with (pos == token.start_pos+num_inserted)
+
+1596124099
+DarkUranium
+Because if you reach the same exact position, and because lexers are context-free, you know the rest of the result will be 100% the same.
+
+1596124126
+Nypsie
+Aaaaah true
+
+1596124133
+DarkUranium
+Nypsie, basically: an insertion "invalidates" (so to speak) a range of tokens (and thus positions).
+
+1596124134
+Nypsie
+Alright, got it. Thanks both
+
+1596124162
+DarkUranium
+Any subtree that touches those tokens needs reparsing. But the reparsing can take advantage of tree that have
+
+1596124169
+DarkUranium
+(this is the core principle of packrat parsing ^)
+
+1596124171
+alexnask
+I guess there could be some edgecases. Consider: "const a = some_expr; some_fn_call();" -> "const a = some_expr + some_fn_call();"
+
+1596124186
+alexnask
+But im sure you can design an algorithm that takes care of this as well
+
+1596124188
+DarkUranium
+alexnask, I don't think that would break anything.
+
+1596124195
+DarkUranium
+You start parsing from the top.
+
+1596124203
+DarkUranium
+(or bottom, for LR)
+
+1596124215
+alexnask
+Right
+
+1596124220
+DarkUranium
+Basically, in order to facilitate this, you need to change this:
+
+1596124223
+DarkUranium
+parse_statement();
+
+1596124224
+DarkUranium
+into this:
+
+1596124225
+alexnask
+Yeah makes sense, yo ujust have to check that the reparse
+
+1596124236
+alexnask
+if the reparse*
+
+1596124245
+alexnask
+Goes into the next nodes from the previous parse
+
+1596124281
+DarkUranium
+if(memoized[position] is statement) { return memoized[position]; } else { memoized[position] = parse_statement(); }
+
+1596124293
+DarkUranium
+(pseudocode, it's a bit more complex than that because of position shifts due to insertion/deletion, but yeah)
+
+1596124331
+alexnask
+I may actually experiment with reworking zig's parser to do this, it sounds fun :P
+
+1596124331
+DarkUranium
+I reckon bottom-up parsing would be even simpler (because you
+
+1596124334
+DarkUranium
+haha
+
+1596124364
+DarkUranium
+alexnask, well, tree-sitter above supposedly handles this!
+
+1596124391
+alexnask
+Cool, Ive seen this linked before but never looked into it
+
+1596124584
+DarkUranium
+Haven't really look into it either.
+
+1596124997
+DarkUranium
+alexnask, for semantic analysis, it's tricky. One option is to keep a set of "back-pointers", from AST into symbols, and from symbols into all other symbols, and update them when you reparse ... but that can get hairy, fast.
+
+1596125042
+alexnask
+Yeah keeping track of all the dependencies sounds like hell tbh
+
+1596125209
+DarkUranium
+alexnask, this might sound silly, but one option would be to keep a bloom filter that keeps track of which semantic nodes may be affected.
+
+1596125257
+DarkUranium
+(a bloom filter is a
+
+1596125266
+alexnask
+Hmm
+
+1596125381
+DarkUranium
+Another option could be to keep a list --- transitively --- of all affected semantic nodes, for each AST node. That's only
+
+1596125496
+DarkUranium
+Note that, because I can mark nodes as being "outdated", it doesn't matter which direction the dependencies go in.
+
+1596125524
+DarkUranium
+Could be a pointer from the semantic node
+
+1596125540
+DarkUranium
+(but that all sounds memory-expensive --- O(nm), really)
+
+1596125565
+alexnask
+Yeah, not sure about the tradeoffs here. Its an interesting problem for sure
+
+1596125599
+alexnask
+Are you aware of any compiler that does incremental semantic analysis? Would be interesting to look at their source code
+
+1596125615
+DarkUranium
+I know TypeScript and Roslyn (C#'s compiler) resolve it somehow.
+
+1596125619
+DarkUranium
+alexnask, ^ those two.
+
+1596125629
+DarkUranium
+The author who inspired me to do this is the one who implemented both.
+
+1596125635
+DarkUranium
+(in an interview)
+
+1596125659
+DarkUranium
+alexnask, incremental semantic analysis is actually not a problem --- you already do it, where you iterate over everything.
+
+1596125676
+DarkUranium
+The only difference is that here, you can start it at any node, instead of starting at root (so it changes some assumptions).
+
+1596125684
+DarkUranium
+Apparently, they do compilation by just doing foreach(everything) resolve();
+
+1596125695
+DarkUranium
+(+ codegen, obviously)
+
+1596127546
+frmdstryr
+gdb seems to not be able to print optional fields in a struct, is there any way to make that work?
+
+1596127643
+frmdstryr
+Oh, nevermind.. using p *&path.to.the.field seems to work
+
+1596131521
+ikskuh
+
+
+1596131533
+ikskuh
+zig has now its first functional android app, with 100% zig code
+
+1596131545
+leeward
+\o/
+
+1596131553
+BaroqueLarouche
+w00t!
+
+1596131607
+ikskuh
+oh, and no ndk-build requirement, it only needs Android NDK/SDK for providing libc and some template stuff
+
+1596131758
+pixelherodev
+Could you bundle that info so it doesn't need to be fetched again?
+
+1596131779
+ikskuh
+
+
+1596131797
+Nypsie
+No annoying gradle files needed either, nice
+
+1596131884
+ikskuh
+Nypsie: when i say 100% zig, i mean that :D
+
+1596131900
+Nypsie
+Yeah this is wonderful! Great work
+
+1596131985
+ikskuh
+btw, the app is only 250k in size
+
+1596131993
+ikskuh
+with support for x86_64, arm and aarch64
+
+1596132006
+ikskuh
+it shrinks further when you remove support for one or two platforms
+
+1596132016
+ikskuh
+x86_32 has some linking errors :D
+
+1596132050
+andrewrk
+ikskuh, with some work the libc requirement can probably go away. what's the template stuff?
+
+1596132173
+ikskuh
+sorry, i don't understand the second question completly
+
+1596132192
+ikskuh
+you need to link against C libraries and zig requires to link libc then
+
+1596132219
+ikskuh
+there's a PR that makes linking with android libc easier by using env vars, but afar from that i can't see a way to lift that requirement
+
+1596132230
+ikskuh
+as you are required to allocate some memory with "malloc" anyways
+
+1596132358
+andrewrk
+I haven't looked super closely but it appears android libc would be pretty straightforward for zig to provide (no SDK/NDK requirement)
+
+1596132374
+andrewrk
+I can't imagine it being that much different than musl
+
+1596132777
+ikskuh
+that would be awesome
+
+1596132783
+leeward
+Is reading past the end of an array using an array pointer UB in Zig?
+
+1596132784
+ikskuh
+i think meme/keegan is working on that
+
+1596132802
+ikskuh
+leeward: i think that's UB on any platform/language :D
+
+1596132803
+leeward
+(also writing)
+
+1596132819
+leeward
+ikskuh: I know it is in C, but Zig is particular about its UB.
+
+1596132847
+leeward
+Specifically, I mean as distinct from safety-checked illegal behavior.
+
+1596133156
+andrewrk
+leeward, reading past the end of an array using an array pointer is safety checked illegal behavior, which means in safe build modes, it's well-defined to panic, and in unsafe build modes, it is UB
+
+1596133390
+leeward
+andrewrk: I think there's a bug then. I just printed arr_ptr[100] after assigning `const arr_ptr: [*]u8 = &array;` where `array` is [18]u8 in debug mode.
+
+1596133415
+ikskuh
+that can't be safety-checked
+
+1596133416
+andrewrk
+arr_ptr is an unknown-length pointer, not an array pointer
+
+1596133424
+ikskuh
+there is no knowledge of length in [*]
+
+1596133434
+leeward
+Ah, nomenclature.
+
+1596133443
+andrewrk
+an array pointer would be *[100]u8
+
+1596133453
+leeward
+I meant to say [*]T when I said array pointer.
+
+1596133456
+andrewrk
+gotcha
+
+1596133474
+leeward
+Ok, so that's undetectable UB.
+
+1596133480
+fengb
+multi pointer?
+
+1596133487
+andrewrk
+not necessarily. zig has a well-defined memory model
+
+1596133526
+andrewrk
+there's no concept of an end of a [*]T - depending on how you set up the memory, any index could possibly be valid
+
+1596133560
+andrewrk
+but it's certainly possible (and dangerously easy) to invoke unchecked UB with a [*]T
+
+1596133577
+andrewrk
+which is why we encourage use of []T instead
+
+1596133602
+leeward
+Right. I'm just trying to get an accurate handle on the intended state of things.
+
+1596133621
+andrewrk
+I get the impression that your intuition is accurate
+
+1596133662
+leeward
+Are there other instances in Zig where it's easy to invoke unchecked UB? (I'm guessing C pointers)
+
+1596133832
+andrewrk
+status quo, or even after all the plans are implemented?
+
+1596133929
+leeward
+The plan is more important than today's reality.
+
+1596133974
+leeward
+Though I am interested in the state of the language now too.
+
+1596133985
+leeward
+So...both?
+
+1596134018
+andrewrk
+pointers to function-local variables which outlive the function call are unchecked UB in status quo zig. however there's a plan to make that safety-checked
+
+1596134056
+andrewrk
+same situation with structs which require not being moved because e.g. they have pointers to their own fields
+
+1596134095
+andrewrk
+async function frames are examples of structs which require not being moved
+
+1596134103
+leeward
+It's going to detect structs with internal references?
+
+1596134143
+leeward
+That sounds fancy.
+
+1596134679
+andrewrk
+not quite - it will allow the programmer to annotate a struct as "pinned" which will make it a compile error if it would ever get moved
+
+1596134690
+leeward
+Ah, the pinned thing.
+
+1596134699
+andrewrk
+and then one would do this annotation if one wanted to make internal references
+
+1596134727
+andrewrk
+async function frames already need this annotation today
+
+1596134755
+andrewrk
+(it would be implied; I am not talking about modifying syntax for async stuff)
+
+1596134759
+leeward
+I remember reading that ticket. It was related to the implicit-copy thing.
+
+1596135508
+cren
+is
+
+1596135565
+cren
+I have a feeling it's out of date because running some functions from it with a recent master branch tarball seems to not work
+
+1596135624
+leeward
+cren: You might be better off using ikskuh's zig-network
+
+1596135710
+leeward
+If you're running Windows, you'll find the limits of std.net pretty fast.
+
+1596135767
+cren
+I'm running Linux. But I'll take a look at zig-network. ikskuh seems reliable based on the interactions I've had with ikskuh on here
+
+1596135860
+leeward
+
+
+1596135933
+cren
+leeward: thanks, I was just about to ask if that was the one
+
+1596135962
+cren
+is there an accepted way to use third party libraries in zig yet? Do I just stick it in my working directory?
+
+1596135977
+ikskuh
+just do what you want
+
+1596135984
+ikskuh
+i use git submodules
+
+1596135993
+ikskuh
+because it's easier to work with
+
+1596136007
+cren
+I've never used git submodules before, does it have significant advantages?
+
+1596136027
+ikskuh
+i can check in code in the package again and push that
+
+1596136034
+ikskuh
+and you can pull updates
+
+1596136035
+leeward
+It lets you tie revisions of your code to a revision of your dependency's code.
+
+1596136050
+cren
+Oh that definitely sounds like a good idea
+
+1596136067
+fengb
+If you don't know how to use it yet... maybe it's not a great solution :P
+
+1596136080
+leeward
+^not a bad point
+
+1596136087
+pixelherodev
+Eh, I kinda consider that a disadvantage
+
+1596136090
+pixelherodev
+Tying versions, i mean
+
+1596136097
+cren
+oh?
+
+1596136097
+leeward
+Kinda true about most of git though
+
+1596136118
+fengb
+I still get super confused when using submodules
+
+1596136126
+pixelherodev
+Tying
+
+1596136126
+fengb
+Like trying to switch from one remote to another
+
+1596136133
+cren
+leeward: it's worth learning how to push and pull and clone just so you can use other people's work and share your work on github & co.
+
+1596136134
+leeward
+That's...not a disadvantage.
+
+1596136143
+fengb
+It's just yet-another-workflow that doesn't make a whole lot of sense
+
+1596136144
+pixelherodev
+It means you don't get bug fixes
+
+1596136159
+pixelherodev
+And if the dep is making breaking changes without bumping major versions that's a problem too
+
+1596136164
+leeward
+pixelherodev: You absolutely do get bug fixes; you just have to know you're getting them.
+
+1596136184
+leeward
+"breaking changes" includes introducing regressions.
+
+1596136209
+leeward
+cren: Sure, it's worth learning. Git just goes the extra mile to make things harder than they need to be.
+
+1596136212
+alexnask
+Right, I dont see how this is different than just pulling in some specific version, youd still have to update it manually to get the bug fixes
+
+1596136219
+pixelherodev
+Git is much easier than you think
+
+1596136224
+leeward
+It really is not.
+
+1596136226
+alexnask
+by pulling in I mean copying it in
+
+1596136227
+pixelherodev
+The problem is that most people learn it by using it
+
+1596136232
+pixelherodev
+Which is a terrible way to learn
+
+1596136237
+fengb
+git submodules is a whole nother beast
+
+1596136241
+pixelherodev
+^
+
+1596136243
+pixelherodev
+for sure
+
+1596136250
+fengb
+None of its flows match regular git
+
+1596136250
+leeward
+The problem is that it's a bunch of scripts written by different authors with different sensibilities wrapped around a core.
+
+1596136255
+pixelherodev
+Most parts of git are pretty straightforward when you think about it from the perspective of git
+
+1596136259
+pixelherodev
+I'm not talking about the scripts
+
+1596136262
+pixelherodev
+Git itself
+
+1596136271
+leeward
+Scripts like git-fetch?
+
+1596136334
+leeward
+And git-checkout?
+
+1596136353
+leeward
+I think those are pretty core to Git's usage.
+
+1596136382
+pixelherodev
+For sure
+
+1596136395
+pixelherodev
+but if you understand how git
+
+1596136403
+pixelherodev
+I'm going to get back to finishing the how to backend guide now :P
+
+1596136412
+leeward
+Also, the author of git submodules doesn't know that "recurse" isn't a word, but that's just me being a grumpy English speaker.
+
+1596136419
+fengb
+
+
+1596136428
+cren
+leeward: wait, recurse isn't a word?
+
+1596136432
+pixelherodev
+False
+
+1596136435
+pixelherodev
+Recurse is a word.
+
+1596136439
+pixelherodev
+`Mid 17th century (in an earlier sense). From classical Latin recursāre to keep running back, return again and again`
+
+1596136462
+pixelherodev
+Multiple dictionaries disagree and dammit I'm doing it again
+
+1596136471
+leeward
+Recur is what they mean.
+
+1596136490
+fengb
+Gentoo is dumb. Discuss
+
+1596136504
+leeward
+fengb: There's nothing more to say.
+
+1596136514
+THFKA4
+but muh use flagz
+
+1596136560
+cren
+leeward: according to
+
+1596136592
+fengb
+lol
+
+1596136592
+cren
+but since we're discussing English, if you can say it, it's a word. No-one makes the rules
+
+1596136654
+cren
+fengb: I tried to install gentoo once because I'd heard that you can install most of the packages as binaries rather than compiling
+
+1596136657
+leeward
+cren: wiktionary isn't exactly an authoritative source, and I'm going to stay grumpy and prescriptivist on this one.
+
+1596136664
+alexnask
+Nothing wrong with neologisms
+
+1596136682
+leeward
+alexnask: That's the opposite of what I'm saying. We will fight now.
+
+1596136686
+alexnask
+: D
+
+1596136701
+leeward
+Unfortunately, I need you to keep making zls better so...I guess I lose?
+
+1596136741
+cren
+re. gentoo: it's a lie. Sure, you
+
+1596136758
+leeward
+fengb: What have you done?
+
+1596136781
+cren
+I gave up there. Anyway that was my experience
+
+1596136805
+fengb
+I was trolling phd. :(
+
+1596136822
+leeward
+cren: I had a friend in college who got an amd64 machine when they were brand new, so he tried putting gentoo on it. 2 days later, Firefox finished compiling.
+
+1596136846
+alexnask
+Wait, escalator was a brand name?
+
+1596136847
+leeward
+fengb: I know, and he managed to avoid the bait!
+
+1596136854
+THFKA4
+that friend's name? Albert Einstein
+
+1596136888
+leeward
+I think it was Eh! Steve. (
+
+1596136988
+alexnask
+wat
+
+1596136990
+leeward
+alexnask: also zipper
+
+1596137015
+alexnask
+Yeah I knew about zipper but escalator just sounds like a regular word for some reason :P
+
+1596137019
+leeward
+Oh, and heroin
+
+1596137105
+leeward
+fengb:
+
+1596137124
+alexnask
+lol
+
+1596137155
+leeward
+And the last one was pure gold.
+
+1596137772
+gruebite
+any thoughts on this pattern?
+
+1596137933
+THFKA4
+lol are you building a class by hand
+
+1596137991
+gruebite
+haha, yep
+
+1596138051
+leeward
+gruebite: What part are you asking about?
+
+1596138098
+gruebite
+is there a better way to do this (user provides custom function callbacks + type)
+
+1596138162
+gruebite
+a trait/interface would be ideal
+
+1596138244
+leeward
+For one thing, I'd skip making `update` optional, but as to the broader question, if you're looking for runtime dispatch you might want to take a look at
+
+1596138256
+alexnask
+wew, I didnt even have to link it myself
+
+1596138271
+gruebite
+sweet
+
+1596138271
+leeward
+^_^
+
+1596138293
+leeward
+Or if you want to do it the manual way:
+
+1596138298
+alexnask
+(it also supports optional virtual fns btw :D)
+
+1596138321
+alexnask
+fieldParentPtr smh
+
+1596138337
+shakesoda
+sounds cryptic
+
+1596138343
+alexnask
+This is the stdlib way though
+
+1596138380
+gruebite
+i suppose i should have looked at the stdlib for examples
+
+1596138454
+alexnask
+I would argue interface.zig is better but I dont have any data to support it so ¯\_(ツ)_/¯
+
+1596138485
+leeward
+Better on what axes?
+
+1596138502
+gruebite
+@OpaqueType isn't documented
+
+1596138511
+leeward
+Isn't it?
+
+1596138523
+alexnask
+Its deprecated, @Type(.Opaque) is the new way
+
+1596138527
+gruebite
+ahhhh
+
+1596138545
+leeward
+Oh wow, I have to update some stuff.
+
+1596138559
+alexnask
+leeward, Well for startes it completely decouples the interface and implementation, the stdlib pattern requires you to embed the vtable in your implementation type
+
+1596138606
+leeward
+Yep, that sounds better.
+
+1596138608
+alexnask
+It also lets you specify a storage policy for the implementation object and I will add a storage policy for the vtable as well one of these days
+
+1596138652
+gruebite
+i'm assuming these solutions don't remove the need for zig to facilitate this in some standard way?
+
+1596138660
+alexnask
+(atm I always store a const pointer to the vtable, I will add inline vtable storage as well for small vtables)
+
+1596138665
+gruebite
+i recall reading an issue regarding traits
+
+1596138671
+leeward
+gruebite: It's been argued that they do.
+
+1596138688
+leeward
+Zig: We have that feature in userland.
+
+1596138693
+alexnask
+I personally prefer a userland solution (ideally in std), its actually more flexible that e.g. traits in Rust
+
+1596138721
+alexnask
+interface.zig with the NonOwning policy is pretty much equivalent to dyn traits
+
+1596138740
+gruebite
+yeah, i think i prefer interface.zig or something similar in stdlib
+
+1596138742
+leeward
+It's a tradeoff. The language is much (MUCH) simpler for not having traits, but there's extra friction associated with using a library.
+
+1596138757
+alexnask
+gruebite, I wrote it for stdlib but it didnt make it in yet
+
+1596138766
+leeward
+Same with hash maps.
+
+1596138779
+fengb
+I do wish we had function arg generic type checking
+
+1596138788
+alexnask
+Since its not decided if we will have a language feature, keep the current stdlib pattern or add a utility like it in stdlib
+
+1596138833
+leeward
+I think Zig's philosophy will tend to push it toward userland solutions to problems like this.
+
+1596138848
+leeward
+fengb: You mean something more specific than "type"?
+
+1596138859
+gruebite
+i like userland solutions, but common ones should be in the standard library
+
+1596138884
+THFKA4
+i could've sworn the ~zig way~ had something about clear control flow
+
+1596138892
+alexnask
+Yeah this is my feeling as well especially if the solution is really flexible
+
+1596138906
+fengb
+
+
+1596138924
+leeward
+THFKA4: "Communicate intent precisely."?
+
+1596138954
+THFKA4
+not sure, can't find it now. i remember the C++ operator overloading used as a counterexample
+
+1596138965
+THFKA4
+where you don't know what A+B will call, and with Zig you would
+
+1596139009
+leeward
+I think something like interfaces.zig will end up in the standard library eventually. As it stands, I find it confusing but I haven't tried to use it in earnest yet. And the @fieldParentPtr method is also confusing (which is why I wrote that thing)
+
+1596139068
+alexnask
+I will rework it a bit to take an options struct with reasonable defaults and a bit better async handling (it works atm but I dont use @frameSize for some reason)
+
+1596139069
+leeward
+THFKA4: Yep, that's definitely a thing. I'm not sure how it relates to interfaces though. "No hidden control flow" isn't violated by runtime dispatch.
+
+1596139095
+alexnask
+I guess it could be argued it hides the indirections but that would be true of a language feature as well
+
+1596139109
+gruebite
+@fieldParentPtr reminds me of embedded data structures in C
+
+1596139117
+THFKA4
+well, you don't know what Reader.read() will call until runtime, right
+
+1596139118
+gruebite
+like tree.h/queue.h
+
+1596139135
+THFKA4
+obviously a useful feature, but makes reading the code harder
+
+1596139149
+alexnask
+THFKA4, I agree but this is explicitly what its made for, it should be discouraged unless runtime dispatch is actually needed for sure though
+
+1596139206
+leeward
+That's one of the reasons why I don't think it will turn into a language feature.
+
+1596139212
+alexnask
+(I would argue it hides less than a language feature like C++ virtual methods or Rust dynamic traits does as well)
+
+1596139234
+THFKA4
+yeah makes sense, it's always a balance
+
+1596139257
+gruebite
+Rust is getting to the level of C++'s "what code will this statement execute?"
+
+1596139264
+alexnask
+Hopefully one day I can remove the ugly ass switch over argument count
+
+1596139277
+alexnask
+I just need @Type(.Fn) at this point I think
+
+1596139352
+alexnask
+
+
+1596139423
+gruebite
+oof
+
+1596139464
+fengb
+5 argument limit? :(
+
+1596139562
+alexnask
+I just chose the minimum for mem.Allocator tbh
+
+1596139630
+alexnask
+With @Type(.Fn) + the Tuple hack I can get around this, maybe I should implement it, havent done any stage1 stuff in a while
+
+1596140159
+gruebite
+hmm, i also like @fieldParentPtr, but for different reasons
+
+1596140236
+pixelherodev
+andrewrk: how do we want to handle per-architecture tests?
+
+1596140241
+pixelherodev
+test/stage2/$arch.zig?
+
+1596140257
+pixelherodev
+test/stages/archs/$arch.zig, keeping backend-specific tests distinct from e.g. behavior tests?
+
+1596140273
+pixelherodev
+Finishing up the "How to backend" post :)
+
+1596140281
+andrewrk
+for now put them directly into the other files such as compare_output.zig. if we get a ton of them we can split the file up
+
+1596140307
+pixelherodev
+gotcha
+
+1596140321
+andrewrk
+arch isn't the only thing you could organize them by, for example we could organize by language feature instead
+
+1596140365
+andrewrk
+cool, looking forward to reading that post
+
+1596140399
+pixelherodev
+:)
+
+1596140480
+leeward
+also looking forward to reading about backends
+
+1596140496
+pixelherodev
+The pressure is on, got it :D
+
+1596140547
+pixelherodev
+Semi-related, anyone know how to get Zig highlighting in Jekyll?
+
+1596140664
+alexnask
+Rouge seems to support zig
+
+1596140675
+Nypsie
+{% highlight zig %}?
+
+1596140683
+Nypsie
+Not sure if it even supports Zig though
+
+1596140696
+alexnask
+(rouge is the default Jekyll highlighter apparently)
+
+1596140720
+fengb
+I cringe at the word rouge
+
+1596140729
+fengb
+Because people cannot spell rogue at all
+
+1596140763
+Nypsie
+I just read it as the French word for "red"
+
+1596140804
+pixelherodev
+Huh, it does?
+
+1596140900
+alexnask
+
+
+1596140905
+alexnask
+Idk how up to date it is
+
+1596140942
+Nypsie
+Still supports var instead of anytype :(
+
+1596140976
+pixelherodev
+It looks pretty good though
+
+1596140981
+pixelherodev
+Not perfect, but sufficient
+
+1596140986
+pixelherodev
+Just need to update jekyll
+
+1596141259
+pixelherodev
+Woot! highlighting is working! :)
+
+1596142185
+pixelherodev
+Preview:
+
+1596142186
+pixelherodev
+:)
+
+1596142228
+ifreund
+nice!
+
+1596142399
+pixelherodev
+Ugh, I wish GH had an option to receive a daily mail containing all conversations or something, instead of giving one email apiece
+
+1596142406
+leeward
+shiny
+
+1596142423
+leeward
+There's no digest mode?
+
+1596142436
+leeward
+That's...unusual.
+
+1596142451
+pixelherodev
+If there is, I haven't found it
+
+1596142544
+pixelherodev
+There's one for detected vulns, but not normal notifs
+
+1596146144
+Ristovski
+s-ol: Any progress on your zig-imgui?
+
+1596146509
+DarkUranium
+alexnask, oh, wb
+
+1596146528
+DarkUranium
+alexnask, wanted to link this to you, this is the video that was the source of my inspiration:
+
+1596146532
+DarkUranium
+cc pixelherodev ^
+
+1596146559
+DarkUranium
+Off to sleep now, so good night :)
+
+1596149042
+gruebite
+cool video
+
+1596149323
+shakesoda
+what's this about a zig imgui
+
+1596149334
+shakesoda
+the regular one works mostly fine w/cimgui
+
+1596149348
+shakesoda
+needs some hacking for c abi issues (struct passing that needs to be changed to pointers)
+
+1596150349
+Ristovski
+shakesoda: seems like that is exactly what
+
+1596150848
+shakesoda
+so it would seem
+

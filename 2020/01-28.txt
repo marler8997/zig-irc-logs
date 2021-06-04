@@ -1,0 +1,2332 @@
+1580169799
+andrewrk
+what, how did allowzero get into std.hash.murmur?
+
+1580169914
+andrewrk
+somebody (me) didn't review this code carefully
+
+1580170177
+mikdusan
+ah right. that's not a c-interop layer. that's zig userland
+
+1580170268
+mikdusan
+*std
+
+1580170655
+andrewrk
+this main loop of murmur hash looks like it should be rewritten with simd
+
+1580170806
+andrewrk
+also IMO the API should accept aligned slices
+
+1580171885
+andrewrk
+wow mikdusan it was a 1 liner that fixed all the rest
+
+1580172013
+mikdusan
+nice.
+
+1580172272
+mikdusan
+oh yeah I can see how that 1 liner has a huge effect
+
+1580176977
+andrewrk
+ir-clean-up-vars branch takes std lib tests from 3.378 GiB (4.59 GiB peak with time -v) down to 3.19 GiB (4.52 GiB peak with time -v)
+
+1580177036
+andrewrk
+we can narrow the gap between the measured-with-profiler and actual peak usage by freeing IrInstGen instructions after rendering them to LLVM, before calling emit module
+
+1580177416
+daurnimator
+What is your non-peak number there?
+
+1580177500
+mikdusan
+daurnimator: zig src/ C++ manual heap alloc/free counting/statistics. ie: doesn't include LLVM heap usage
+
+1580177572
+andrewrk
+peak is the real thing. the other thing is to help figure out what would be useful to work on
+
+1580177631
+andrewrk
+GenConst: 10342808 items, 64 bytes each, total 631.275 MiB
+
+1580177642
+andrewrk
+pretty sure none of these are referenced after each ir analysis
+
+1580177697
+andrewrk
+would be worthwhile to track down what these are:
+
+1580177700
+andrewrk
+Unknown_64: 2968513 items, 64 bytes each, total 181.184 MiB
+
+1580177704
+andrewrk
+Unknown_40: 3180098 items, 40 bytes each, total 121.311 MiB
+
+1580177719
+daurnimator
+40 byte allocations... wat
+
+1580177730
+andrewrk
+(they're "unknown" when the allocate<Foo>(...) calls don't have the string annotation)
+
+1580177751
+daurnimator
+shachaf: any more thoughts around implementing b+trees in zig?
+
+1580177832
+mikdusan
+also there's some alignment padding we don't account for. not terribly important just sayin'
+
+1580177838
+shachaf
+daurnimator: Is it clear what the API for this sort of thing should be?
+
+1580177908
+shachaf
+I could port my C code but right now it's just for u64 keys/values. It has a cursor API for iteration but it's a little ad-hoc, I'll probably work on that.
+
+1580178022
+daurnimator
+shachaf: any data structure like that should be parametized by Type
+
+1580178025
+daurnimator
+shachaf: similar to ArrayList or HashMap
+
+1580178034
+shachaf
+Sure, but it requires a little more thought how to do this for for more complex types.
+
+1580178180
+mikdusan
+Unknown_8: 37022601 items, 8 bytes each, total 282.460 MiB actually occupies twice that. if we found those and fwd'd them to a slab or arena allocator (that isn't even deinit'd) we'd get back 282 MiB
+
+1580178256
+andrewrk
+that's all pointers though, probably not a single type
+
+1580178269
+andrewrk
+every un-annotated T* is Unknown_8
+
+1580178307
+mikdusan
+but they're still malloc'd which on x86_64 does 16-byte allocations?
+
+1580178368
+daurnimator
+mikdusan: I'd be more concerned about overhead of allocation metadata
+
+1580178369
+andrewrk
+I do think there are several uses for an slab/arena allocator in stage1
+
+1580178380
+andrewrk
+oh I see what you're saying though
+
+1580178393
+andrewrk
+simply avoid overhead of unfreed things
+
+1580178395
+daurnimator
+shachaf: does it?
+
+1580178486
+andrewrk
+something that's kind of fun... once self-hosted is what we ship, and stage1 can be simplified to only be required to build self-hosted, we can make memory allocation decisions that are optimized for that use case
+
+1580178502
+mikdusan
+profile it and ship it :)
+
+1580178521
+andrewrk
+e.g. if we know that all of self-hosted source .zig files adds up to 9 MiB, then the memory allocation strategy is to allocate 9 MiB slab, and that's where source code goes
+
+1580178590
+mikdusan
+makes perfect sense. stage1 literally has 1 use case to tune for
+
+1580178861
+daurnimator
+five 2MB huge pages. done. :P
+
+1580178891
+daurnimator
+or I guess you can just have a huge buffer on the stack and allocate out of that
+
+1580179171
+mikdusan
+on macos re some malloc options: MallocScribble: "0x55 is written upon free and 0xaa is written on allocation"
+
+1580179185
+mikdusan
+there might be value for zig to write a different value than 0xaa to free'd areas?
+
+1580179225
+andrewrk
+there's value in having 0xaa be the bit pattern of `undefined` - we can use it for runtime safety to detect whether things are undefined
+
+1580179235
+andrewrk
+it would be a bit weird to introduce 2 different kinds of undefined states
+
+1580179235
+daurnimator
+mikdusan: sounds like it's already a perfect match
+
+1580179270
+mikdusan
+yeah I can see benefits of single undef value
+
+1580179293
+daurnimator
+mikdusan: mem-belongs-to-OS (segfault) -> malloc (0xaa) -> zig sets to undefined (0xaa) -> zig uses -> zig sets to undefined (0xaa) -> free (0x55) -> back to OS (segfault)
+
+1580179356
+mikdusan
+true. the option is still there isn't it
+
+1580179446
+andrewrk
+sometimes might have stronger detection of undefined, where 0x55 would also register as undefined
+
+1580179450
+andrewrk
+*some types
+
+1580179464
+andrewrk
+e.g. there can be a "not undefined" canary value
+
+1580179470
+andrewrk
+and 0xaa would clobber that
+
+1580179473
+andrewrk
+so would 0x55
+
+1580179558
+andrewrk
+it felt like a long dark tunnel this morning, but I think I may actually be able to merge  #4152 today
+
+1580179575
+andrewrk
+that's a good sign that this actually has paid off some tech debt
+
+1580179639
+shachaf
+daurnimator: For example the tree stores multiple copies of keys at different levels, which I guess is probably fine.
+
+1580179687
+shachaf
+Depending on implementation it might store keys that have been deleted (though I don't do that right now).
+
+1580179703
+shachaf
+And you might want to minimize comparisons if comparison is expensive, etc.
+
+1580179847
+daurnimator
+shachaf: those first points don't matter; and the last one sounds like an optimization we could provide tuning options for in the future: not worry about it for a first implementation
+
+1580180202
+shachaf
+I mean, if you have a tree of strings, and you delete a string from a tree, and free the string's memory, you probably don't want it to stick around as a key?
+
+1580180213
+shachaf
+Maybe that's not an expected use case, I don't know.
+
+1580180248
+daurnimator
+how would it stick around as a key?
+
+1580180281
+shachaf
+Keys that aren't used in the leaves might still be valid separators in internal nodes.
+
+1580180323
+shachaf
+I mean, maybe that doesn't matter.
+
+1580180335
+daurnimator
+to me it sounds like it doesn't matter...
+
+1580181371
+andrewrk
+alright I'm giving up on #4152 for today but hopefully will be able to merge tomorrow
+
+1580181381
+andrewrk
+it's quite close
+
+1580182346
+shachaf
+I should probably finish making my C library nicer before thinking about porting it, really.
+
+1580182388
+fengb
+Nah, ditch C already >_>
+
+1580182472
+shachaf
+Can you easily do something like C's struct Header { ... }; struct A { Header hdr; ... }; struct B { Header hdr; ... }; union AorB { Header hdr; A a; B b; };?
+
+1580182515
+shachaf
+(Where you're not always allocating A and B through a union, I guess I should add.)
+
+1580182804
+fengb
+Yeah you can use a packed union or extern union to share the data bits
+
+1580182847
+shachaf
+I don't particularly want these to be packed, just to share the header. I guess I can pad them manually.
+
+1580182968
+fengb
+They both mean well-defined memory layout. Sounds like extern union would be good since it emulates the C ABI
+
+1580183170
+wilsonk
+anybody know of a good terminal app/debugger that highlights the line of C and shows the dissassembly beside it? I thought someone here recommended one a few weeks back
+
+1580183221
+wilsonk
+I think I even installed it but now I can't remember what the name of it was...duh...
+
+1580183281
+wilsonk
+maybe it was mentioned as an alternative to remedyBG?
+
+1580183458
+mikdusan
+wilsonk: this one?
+
+1580183493
+wilsonk
+yep, that was it! Thanks :)
+
+1580183589
+wilsonk
+I mean I could use Ghidra or something but this is so much more lightweight
+
+1580184017
+companion_cube
+
+
+1580184098
+companion_cube
+(the `var i = 0; while …` pattern is a bit of a wart though)
+
+1580184278
+fengb
+`zig/lib/std/sort.zig:942:26: error: evaluation exceeded 1000 backwards branches`
+
+1580184292
+fengb
+I think sorting at comptime is breaking the compiler :P
+
+1580184445
+fengb
+Actually I’m a little surprised since there’s only 30 elements. I hope this can scale to at least 200
+
+1580184456
+companion_cube
+you can change the limit though, can't you? :)
+
+1580184541
+fengb
+Yeah but I didn’t expect it to hit the limit at 30. Curious what’s going on
+
+1580184601
+shachaf
+Is std/sort.zig actually a good algorithm in practice?
+
+1580184614
+shachaf
+It has a bunch of nice theoretical properties but it seems really complicated.
+
+1580184693
+fengb
+I’m less than the minimum threshold so it’s just an insertion sort
+
+1580184701
+fengb
+Or it should be...
+
+1580184742
+companion_cube
+it's probably super fast at runtime
+
+1580184747
+companion_cube
+but too complicated for comptime? :)
+
+1580184833
+fengb
+I’ll replace it with bubble sort
+
+1580184839
+companion_cube
+boggosort
+
+1580184844
+shachaf
+Is it actually fast at runtime?
+
+1580184914
+fengb
+I remember benchmarking std.sort and it’s about as fast as regular mergesort so it’s not bad
+
+1580185071
+shachaf
+
+
+1580185091
+fengb
+Yeah, prevents blowing out the stack
+
+1580185096
+shachaf
+But making quicksort use logarithmic stack space is a 2-line change.
+
+1580185107
+fengb
+Wiki sort is constant stack
+
+1580185117
+fengb
+So it’s impossible to overflow
+
+1580185121
+shachaf
+(Just use the stack for the smaller half and then loop for the bigger half.)
+
+1580185146
+shachaf
+Anyway I should learn how this block sort works probably.
+
+1580185150
+companion_cube
+anyway it's not like it's urgent
+
+1580185157
+fengb
+It’s a fancy in place sort
+
+1580185158
+companion_cube
+someone will rewrite it into timsort by 1.0, I'm sure
+
+1580185163
+fengb
+In place merge sort
+
+1580185168
+andrewrk
+shachaf, if you want less code and less theoretical properties use std.sort.insertionSort
+
+1580185177
+andrewrk
+it's real simple
+
+1580185216
+shachaf
+Fair enough! Or just write your own insertion sort.
+
+1580185234
+andrewrk
+9 lines
+
+1580185245
+shachaf
+Yep.
+
+1580186493
+fengb
+"The memory.grow instruction grows memory by a given delta and returns the previous size, or −1 if enough memory cannot be allocated." ... why is the spec so vague
+
+1580186568
+andrewrk
+maybe the wasm spec is less vague
+
+1580186647
+fengb
+That's wasm spec from W3c. I have no idea how to return pages above u31 because the return value is i32
+
+1580186650
+fengb
+I guess I'll just ignore it!
+
+1580186708
+shachaf
+wasm only supports 32-bit pointers as far as I know.
+
+1580186731
+shachaf
+
+
+1580186797
+fengb
+Oh right
+
+1580186802
+fengb
+I'm doing bad math
+
+1580186823
+fengb
+Ignore me!
+
+1580186826
+companion_cube
+on the one hand, that's sad; on the other hand, do I really want one browser tab to get 4GB of ram…
+
+1580186887
+fengb
+wasm64 is a spec of sorts
+
+1580187624
+daurnimator
+companion_cube: yeah I've had tabs use more  than that already
+
+1580211412
+betawaffle
+is there a way to dump out the zig code generated by a @cImport?
+
+1580212817
+daurnimator
+betawaffle: 1. use `zig translate-c` 2. look in zig-cache
+
+1580214064
+gonz_
+betawaffle: If you build/compile with `--verbose-cimport` you'll get a printout of the path to the generated zig file.
+
+1580214074
+betawaffle
+ok, thanks
+
+1580215574
+betawaffle
+is it safe to use an `extern enum(T)` as the type for an argument to an extern function that normally accepts `T` as an argument?
+
+1580215901
+daurnimator
+betawaffle: yes.... as long as you know that T will only be the values in the enum; or the enum is non-exhaustive
+
+1580215921
+betawaffle
+the enum is non-exhaustive, in this case
+
+1580215958
+betawaffle
+ok, same question, but with a packed struct of the same size and alignment as T?
+
+1580216148
+daurnimator
+yes
+
+1580217832
+nofmal
+hello, is it possible to list all error values that a function returns?
+
+1580217972
+mq32
+nofmal: yes, you can inspect the return value via comptime/reflection/std.meta
+
+1580218051
+nofmal
+mq32: which function in std.meta?
+
+1580218130
+mq32
+good question, do you know the online docs?
+
+1580218156
+nofmal
+of course
+
+1580218190
+mq32
+i would search there, maybe you find something useful
+
+1580218194
+mq32
+i don't know the exact naem
+
+1580218202
+mq32
+(or if such function actually already exists)
+
+1580218295
+nofmal
+i see, thought you were trying to walk me through the docs lol
+
+1580218323
+fengb
+I don’t think it exists. Was hunting last night
+
+1580218366
+fengb
+Not a convenient function I mean
+
+1580218404
+daurnimator
+Can anyone think of a nicer way to write:
+
+1580218417
+daurnimator
+I wanted to write `catch continue;`
+
+1580218436
+daurnimator
+(and get rid of the `found` variable)
+
+1580218453
+mq32
+daurnimator: catch null?
+
+1580218493
+daurnimator
+mq32: nope, the function returns a `!T` (where T can be ?something)
+
+1580218557
+fengb
+How about if (parseInternal) |t| { return stuff} else |err| {}
+
+1580218649
+daurnimator
+uh; is that valid?
+
+1580218670
+daurnimator
+yes
+
+1580218674
+daurnimator
+I was missing a {
+
+1580218704
+daurnimator
+thanks fengb,
+
+1580218763
+fengb
+nofmal: the raw data is available at `@typeInfo(return_type).ErrorUnion`:
+
+1580218940
+nofmal
+fengb: thanks, let me try that
+
+1580218966
+daurnimator
+fuck yeah; autojson now supports tagged unions
+
+1580218973
+daurnimator
+I'm amazed this actually works
+
+1580218994
+mq32
+\o/
+
+1580218995
+mq32
+nice!
+
+1580219006
+mq32
+in both serialising and deserialising?
+
+1580219022
+daurnimator
+yup
+
+1580219091
+fengb
+Oh the later incantation has a more obvious usecase:
+
+1580220017
+daurnimator
+I swear we had a CountingAllocator
+
+1580220143
+mq32
+daurnimator, LoggingAllocator?
+
+1580220226
+daurnimator
+na I want to call myfree() and test that it called the saved allocator X times
+
+1580220234
+daurnimator
+I can do it with failingAllocator....
+
+1580220508
+andrewrk
+fengb, I always read words backwards to see if they spell anything
+
+1580220531
+fengb
+Well damn, I was hoping to upload the beard later
+
+1580220535
+andrewrk
+hahaha
+
+1580220539
+Snektron
+nice
+
+1580220637
+andrewrk
+I made the beard photo for this conversation with my dad:
+
+1580220723
+Snektron
+if zig doesn't work out you can always go into the photoshop business
+
+1580221065
+daurnimator
+andrewrk: petition to reopen
+
+1580221269
+andrewrk
+thanks now I understand
+
+1580221504
+daurnimator
+andrewrk: looks like PRs can't be reopened?
+
+1580221532
+daurnimator
+that same branch is now a candidate for merge again
+
+1580221541
+daurnimator
+I guess I have to open a new PR?
+
+1580221560
+andrewrk
+I don't have a re-open button either
+
+1580221664
+daurnimator
+Replacement pr sent. (#4304).
+
+1580221666
+betawaffle
+is the byte-boundary thing still an issue for packed struct bit fields?
+
+1580221668
+daurnimator
+time to head to bed
+
+1580221966
+fengb
+Is the correct way to declare a named tuple to use `@"0", @"1"` ?
+
+1580222081
+daurnimator
+fengb: not sure I've considered that before.... `const foo = @TypeOf(.{@as(T, undefined), @as(T2, undefined)});`
+
+1580222110
+daurnimator
+I get the feeling that sort of code may end in compiler segfaults :P
+
+1580222149
+Snektron
+this gives me std::declval vibes
+
+1580222242
+Snektron
+The correct zig-type for a zero-terminated char* in C is `?[*:0]` right?
+
+1580222356
+novaskell
+as with error unions `||` is there an equivalent for structs such that `.{ x: u8 } <> .{ y: u8 } = .{ x: u8, y: u8 }`?
+
+1580222372
+daurnimator
+novaskell: no.
+
+1580222399
+daurnimator
+novaskell: there's a couple of open proposals that could result in that though
+
+1580222516
+novaskell
+nice, will try looking for them again
+
+1580222649
+andrewrk
+fengb, naming the fields as integers won't make zig consider the type to be a tuple. there's arguably a hole in the syntax for declaring tuples
+
+1580222662
+andrewrk
+it would make sense to be something like: tuple {i32, bool}
+
+1580222694
+daurnimator
+novaskell:
+
+1580222767
+daurnimator
+almost at 1000 open issues!
+
+1580222947
+waleee-cl
+the last commit to master (926a7adb3), wasn't the sentence  identical before and after (doc/langref.html.in) ?
+
+1580223024
+waleee-cl
+oh, my bad. The font I use apparently have crap difference between a and o in tig
+
+1580223168
+novaskell
+thanks daurnimator
+
+1580223278
+novaskell
+seems to be enough to emulate row polymorphism to some extent
+
+1580223747
+metaleap
+novaskell: what more "row polymorphism" than the already existing `var` could you possibly want? curious  :D
+
+1580223789
+metaleap
+(the "type" placeholder, not the var-decl keyword of course)
+
+1580223846
+daurnimator
+okay really bed now :P
+
+1580223897
+Snektron
+no c_char?
+
+1580224247
+novaskell
+Just ease of use since sometimes the combination of two structs would satisfy the type and repacking isn't usually that much fun (as in Idris (type machinery can but it's heavy), Haskell, etc) along with generating types based on DSLs. Though I probably need to explore zig more in depth than I currently have for it
+
+1580224288
+companion_cube
+row polymorphism and monomorphization together might not be that simple
+
+1580224309
+fengb
+Zig is much lower level than either of those languages. Struct fields need to map to memory directly
+
+1580224591
+metaleap
+i was only thinking of the duck-typing scenario `var` allows, but a join of 2 structs is sth else
+
+1580224605
+novaskell
+Sure, it's closer to ATS
+
+1580224667
+andrewrk
+the way I think of it is: zig is as high level as possible, without ignoring the reality of memory as a limited resource
+
+1580224692
+andrewrk
+and without giving up the ability to match ABIs
+
+1580224970
+metaleap
+can anyone explain me the whole "traits" design (seems too much in flux to make it into langref?) wrt this scenario: my struct-type is to have both an instream and an outstream field. whether socket or file or buffer etc (assume OSes where not "everything is a file" if that helps =)  so far I temporarily declared them explicitly `*std.io.InStream(std.os.ReadError)` and `*std.io.OutStream(std.os.WriteError)` to be able to take stdin/stdout's
+
+1580224971
+metaleap
+`&.<in/out>Stream().stream`. but is that the whole idea or is there a more interface-like notation without specific error sets? there could be instream impls having different errors. does the struct itself need to be generified/type-parameterized? hoping not, would become a cumbersome api
+
+1580225082
+fengb
+Yeah... diverging errorsets are a giant pain right now :P. One of the main drivers for
+
+1580225261
+fengb
+
+
+1580225377
+fengb
+Oh duh, I can't access fields through the type
+
+1580225380
+fengb
+user error!
+
+1580225547
+metaleap
+whats with using "@memberName(tupletype, idx)" =)
+
+1580225972
+andrewrk
+beautiful. the solution to fixing a test case in the ir-clean-up-vars branch was to delete result location code special handling of 0 bit types
+
+1580226022
+mq32
+andrewrk: those are the best fixes
+
+1580226030
+mq32
+deleting code means removing possible bugs :)
+
+1580226031
+Snektron
+oh man
+
+1580226043
+Snektron
+i just stumbled across this symbol
+
+1580226048
+Snektron
+VK_FORMAT_FEATURE_SAMPLED_IMAGE_YCBCR_CONVERSION_CHROMA_RECONSTRUCTION_EXPLICIT_FORCEABLE_BIT_KHR
+
+1580226105
+mq32
+oof
+
+1580226149
+fengb
+Reminds me of InternalFrameInternalFrameTitlePaneInternalFrameTitlePaneMaximizeButtonWindowNotFocusedState
+
+1580226172
+fengb
+Wow that got purged from Stackoverflow. What happened to that website? :(
+
+1580226360
+Snektron
+This is why i wanted to remove the C namespace from the enum variants
+
+1580226367
+Snektron
+its almost a 100 chars
+
+1580226700
+andrewrk
+this seems like the kind of thing where you can decide that it's not problem, and then it stops being one
+
+1580226826
+Snektron
+yeah i doubt anyone will ever use that specific flag, but there are plenty of other names longer than 60 characters
+
+1580229956
+dimenus
+Snektron: are you around at the moment?
+
+1580229991
+naltun
+Has anyone worked with libcurl and zig?
+
+1580230093
+metaleap
+ok, zig: "expected type 'jsonrpc2.struct:45:32', found 'jsonrpc2.struct:45:32'"
+
+1580230096
+metaleap
+and now?
+
+1580230203
+andrewrk
+metaleap, now implement more of report_recursive_error so that it tells you which field is problematic, or otherwise
+
+1580230314
+naltun
+Actually, this may be a general cImport/cInclude question then. I've a GH gist:
+
+1580230352
+naltun
+I'm getting `lld: error: unable to find library'
+
+1580230364
+metaleap
+just found the err-msg amusing to read. first will make a minimal repro
+
+1580230366
+naltun
+Not sure if it has to do with how I'm building w/ Zig
+
+1580230447
+andrewrk
+naltun, you're probably hitting
+
+1580230471
+andrewrk
+then you can change it from /usr/include/curl/curl.h to curl/curl.h as well
+
+1580230508
+andrewrk
+I'm guessing for you it will be -I/usr/include -L/usr/lib
+
+1580230527
+naltun
+So add the -l and -L onto what I already have?
+
+1580230553
+andrewrk
+that's a capital i
+
+1580230557
+naltun
+Ah
+
+1580230572
+andrewrk
+this tells zig where to find headers and library files, respectively
+
+1580230604
+andrewrk
+after #2041 is solved, then adding any -l option when building natively will trigger zig to detect your native system paths
+
+1580230640
+Snektron
+dimensus, now i am
+
+1580230660
+naltun
+andrewrk, I'm getting `Invalid argument: -I/usr/include' as a result
+
+1580230662
+Snektron
+dimenus i mean
+
+1580230692
+andrewrk
+naltun, what zig version?
+
+1580230711
+naltun
+0.5.0
+
+1580230719
+andrewrk
+-isystem /usr/include
+
+1580230724
+naltun
+trying
+
+1580230754
+andrewrk
+btw there was an overhaul of translate-c between 0.5.0 and master branch, which relates to using @cImport with curl
+
+1580230769
+andrewrk
+next release is in april
+
+1580230778
+naltun
+Awesome, thanks for that info.
+
+1580230791
+naltun
+Also, I just compiled successfully and was able to access the curl symbols. Thanks!
+
+1580230805
+naltun
+Thanks andrewrk.
+
+1580230816
+andrewrk
+I'm expecting that issue to be solved by 0.6.0, so you wouldn't need this workaround then
+
+1580230852
+naltun
+Awesome.
+
+1580231231
+metaleap
+do any of you know whether anonymous struct literals can today (or are planned to eventually) support the following (minimal repro gist) use-case?
+
+1580231232
+metaleap
+
+
+1580231287
+metaleap
+dont think there's a field mismatch, they're easy to see as compatible with signature. as per "structural typing" I'd feel the struct compat between the literal and its corresponding arg decl should be there?
+
+1580231298
+metaleap
+(err msg in gist title, same as described earlier)
+
+1580231427
+dimenus
+Snektron: trying to setup a post processing shader in a second render pass
+
+1580231437
+dimenus
+and i'm running into issues with SubpassDependencies
+
+1580231605
+andrewrk
+metaleap, this code looks like it should work to me
+
+1580231734
+metaleap
+andrewrk: indeed, if one extracts the struct into a named-def, it compiles. so for "structural typing" i suppose I'll open an issue then
+
+1580231824
+andrewrk
+thanks
+
+1580231922
+Snektron
+dimenus, what kind of issues? Not that i've done much with render passes
+
+1580231947
+Snektron
+in my project i cheekily used the feature that you can render directly to a framebuffer from a compute shader
+
+1580231950
+Snektron
+so i could skip all that
+
+1580231992
+dimenus
+the image layout transitions from the first pass, i'm going to re-read the spec on subpass dependencies
+
+1580232039
+Snektron
+you can manually transition the image to another layout iirc
+
+1580232049
+Snektron
+i had to do that quite a lot
+
+1580232429
+TheLemonMan
+andrewrk, what's the correct way to check if a given feature is available for the current target?
+
+1580232594
+andrewrk
+TheLemonMan, here's an example: std.Target.current.cpu_features.features.isEnabled(@enumToInt(std.Target.arm.Feature.neon))
+
+1580232604
+andrewrk
+it might be nice to have some helper functions for that
+
+1580232639
+andrewrk
+for example: std.Target.hasArmCpuFeature(.neon)
+
+1580232646
+andrewrk
+which would return false for non-arm arch
+
+1580232679
+andrewrk
+err it would be std.Target.current.hasArmCpuFeature(.neon)
+
+1580232801
+andrewrk
+TheLemonMan, I think you're going to be happy with the changes made by  #4152. it's a significant improvement in debugging experience
+
+1580232820
+andrewrk
+all these fixes haven't been hacks, they've been sensible improvements
+
+1580232875
+TheLemonMan
+yeah I was scrolling trough the commits, lots of nice stuff
+
+1580233133
+TheLemonMan
+"bitcast sandwich" hah
+
+1580233649
+betawaffle
+is it possible to get the value of a const declaration from TypeInfo?
+
+1580234014
+andrewrk
+betawaffle, are you aware of @field ?
+
+1580234026
+forbjok
+Is there any way to generate a set of function calls at compile time that take a non-compile time variable from the containing function?
+
+1580234038
+betawaffle
+does that work for declarations too?
+
+1580234085
+andrewrk
+it's equivalent to `a.b` syntax where `b` is a compile-time known string
+
+1580234125
+betawaffle
+ok, so if `a` is a `type`, it should let me get the declaration then?
+
+1580234134
+andrewrk
+yes
+
+1580234140
+betawaffle
+awesome
+
+1580236029
+mikdusan
+well I tracked down those stage1 8-byte allocations -- they're pointers; and mostly via ZigList<IrInstSrc*> -- so there's no easy malloc overhead to be clawed back :(
+
+1580236033
+TheLemonMan
+andrewrk, so, should we compile compiler-rt in release mode everywhere (but in tests) (and beside ReleaseSmall) ?
+
+1580236092
+andrewrk
+I support that
+
+1580236137
+andrewrk
+the code for that is in link.cpp calling create_child_codegen
+
+1580236168
+andrewrk
+mikdusan, ah yes, I briefly banged my head against c++ trying to address this
+
+1580236202
+andrewrk
+I keep admitting to people yeah zig's comptime parameters are basically the same as c++'s template parameters. but then I try to use c++ template parameters and it's a complete shit show
+
+1580236349
+companion_cube
+"basically the same, except usable"
+
+1580236376
+TheLemonMan
+BaroqueLarouche, I see you have some memset32/memcpy32 versions in your code. If you specify the right align() parameter llvm will automagically generate a call to a function that takes advantage of the alignment
+
+1580236409
+mikdusan
+and this (typename -> const char*) business is truly sad. I mean the symbols are there, the linker knows about it, and yet we
+
+1580236426
+BaroqueLarouche
+TheLemonMan: where do I put this align parameter ?
+
+1580236443
+TheLemonMan
+BaroqueLarouche, on your pointers
+
+1580236457
+Snektron
+mikdusan, you can recreate that functionality pretty simple
+
+1580236465
+Snektron
+but
+
+1580236468
+Snektron
+its not for the faint of heart
+
+1580236475
+BaroqueLarouche
+TheLemonMan: I'll try it soon
+
+1580236485
+TheLemonMan
+right now our compiler-rt uses a generic 1-byte-a-time memcpy/memset but it's very easy to fix that :P
+
+1580236489
+mikdusan
+Snektron: well I thought about hacking
+
+1580236500
+Snektron
+yeah that is the hack
+
+1580236516
+Snektron
+its disgusting but it works, and if its only for diagnostics it might be viable
+
+1580236536
+Snektron
+on compilers not {clang, gcc, msvc} it could just output "unknown"
+
+1580236548
+TheLemonMan
+maybe you can use some constexprs to ease the pain
+
+1580236562
+Snektron
+yeah you need to use constexpr to extract the type name after
+
+1580236571
+Snektron
+But you cant get it in a raw way
+
+1580236572
+Snektron
+anyway
+
+1580236589
+mikdusan
+Snektron: we basically only need it for platforms where a developer is identifying what needs to be worked on so that's not the issue. but it is an issue needing another fricken llvm build just for rtti . grrr.
+
+1580236598
+Snektron
+Does anyone know how align() works on packed structs
+
+1580236613
+Snektron
+i mean, what does align(a:b:c) mean?
+
+1580236633
+mikdusan
+yes!
+
+1580236640
+mikdusan
+i actually know. or I think I know :)
+
+1580236682
+mikdusan
+a = align in bytes. b = bitsize of type. no padding. c = "host integer" byte size. the size of what LLVM load instructions will be.
+
+1580236708
+mikdusan
+oh sorry b = offset in bits from host integer
+
+1580236736
+Snektron
+aha
+
+1580236751
+Snektron
+thank you
+
+1580236799
+mikdusan
+it's andrewr's clever way of making all sub-byte pointers work without needed any more bits in the pointer -- all the info is in static type system
+
+1580236900
+Snektron
+I ran into it before but i couldn't find any information about it
+
+1580237133
+fengb
+I'm glad godbolt is a thing.  Did not expect this stark difference:
+
+1580237382
+TheLemonMan
+if your string is always smaller than 32 bytes you're just wasting a lot of space heh
+
+1580237690
+andrewrk
+fengb, swhash2 looks like it might perform better for larger input values
+
+1580237704
+andrewrk
+the first one essentially assumes 8 bytes, right?
+
+1580237718
+fengb
+? doesn't u64 store 8 bytes?
+
+1580237755
+fengb
+They both assume 8 bytes. I have it extending to 16/u128... and I need a comptime check to make sure I don't get to big
+
+1580237772
+andrewrk
+where does swhash2 in the godbolt link assume 8 bytes?
+
+1580237773
+fengb
+It's just to allow for limited switches for strings
+
+1580237793
+andrewrk
+oh you're saying the result value is 8 bytes
+
+1580237811
+andrewrk
+what I mean is that llvm is noticing that you are only reading the first 8 bytes in swhash
+
+1580237819
+andrewrk
+but in swhash2, your result depends on the entire input
+
+1580237823
+fengb
+Yeah I removed the check
+
+1580237828
+fengb
+Ahhhhhh
+
+1580237831
+fengb
+Good point
+
+1580237861
+andrewrk
+llvm is actually allowed to omit the memcpy in swhash, but I guess it didn't figure out that much
+
+1580237895
+fengb
+I need to zero extend it
+
+1580237923
+fengb
+
+
+1580237938
+andrewrk
+in theory swhash could be compiled to simply "mov rax, [rsi]"
+
+1580237951
+TheLemonMan
+just change the slice to [0..8]
+
+1580237953
+andrewrk
+in the first godbolt version
+
+1580237970
+fengb
+xor eax, eax
+
+1580237983
+fengb
+I wonder if I can convince LLVM to do that
+
+1580237989
+TheLemonMan
+llvm emits `mov     rax, qword ptr [rdi]` if you do so
+
+1580238002
+andrewrk
+good find
+
+1580238022
+andrewrk
+I guess without that, llvm is actually avoiding engaging in optimizing UB
+
+1580238048
+andrewrk
+(most likely unintentionally)
+
+1580238093
+TheLemonMan
+string[0..len] cannot be constant folded and std.mem.copy iterates over that
+
+1580238115
+fengb
+Well I can't guarantee the length either
+
+1580238170
+TheLemonMan
+the assertion in `copy` should've stopped you `assert(dest.len >= source.len);`
+
+1580238178
+fengb
+Oh the memcpy happens because I don't know the length
+
+1580238226
+fengb
+dest is always 8 bytes. I have a pre-check for the source
+
+1580238232
+andrewrk
+
+
+1580238244
+andrewrk
+I guess that pattern is rather complicated to look for
+
+1580238303
+TheLemonMan
+so you just want to read a string of 8 u8 as a single u64 ?
+
+1580238351
+andrewrk
+I'm just playing with godbolt. but yeah that was the thing I was playing with
+
+1580238425
+fengb
+I'm compressing up to 8 bytes into a u64 so I can use it as a switch prong
+
+1580238443
+fengb
+Anything over 8 is pegged at maxInt(u64) and falls through to the else
+
+1580238465
+fengb
+Just the simplest "hash" that can work for my needs
+
+1580238541
+andrewrk
+fengb, btw you might find this article inspiring:
+
+1580238729
+TheLemonMan
+fengb, if you want a `mov` just take your first version and change the slice to [0..8]
+
+1580238838
+TheLemonMan
+it generates compact code also for ARM and friends
+
+1580238927
+fengb
+I can't guarantee that it's that length so I'd need to manually account for smaller lengths
+
+1580241061
+mikdusan
+andrewrk: if you're still adding to ir-clean-up-vars (otherwise I'll just do a tiny PR later):
+
+1580241062
+mikdusan
+
+
+1580241067
+Snektron
+mikdusan, if you want a quick solution for memory debugging,
+
+1580241108
+forbjok
+Is it possible to dynamically generate struct fields or enum variants at compile time based on a comptime variable?
+
+1580241152
+Snektron
+you can abuse usingnamespace
+
+1580241237
+andrewrk
+abusingnamespace
+
+1580241253
+Snektron
+mikdusan, the msvc function is similar but you need to extract everything between the outer <>
+
+1580241280
+mikdusan
+Snektron: ooh that doesn't look too bad
+
+1580241322
+Snektron
+it could be better, c++11 is quite restrictive on constexpr functions
+
+1580241334
+Snektron
+in c++14 you can use multiple declarations
+
+1580241336
+andrewrk
+alright, I expect the tests to pass now for #4152
+
+1580241346
+mikdusan
+
+
+1580241420
+fengb
+forbjok: for fields and not declarations, there's a few TODOs:
+
+1580241438
+fengb
+Enum is in scope. structs are not (yet)
+
+1580241484
+Snektron
+oh, and msvc uses FUNCSIG, mikdusan
+
+1580241489
+mikdusan
+yup
+
+1580241515
+andrewrk
+forbjok, this use case may be better solved with generating zig code at build time. or, better yet, maybe you don't need meta programming at all. maybe you can solve the problem with programming
+
+1580241523
+forbjok
+fengb: Yeah, I saw that before. I'm already using @Type to generate an arbitrary-sized integer at compile-time, but would this allow creating struct fields at compiletime if it was implemented?
+
+1580241568
+forbjok
+Yeah, there are probably ways to avoid it. I'm just trying to figure out what can be done and what can't, as I haven't used Zig until today.
+
+1580241573
+fengb
+Possibly? But it's not defined or scoped out. I remember tgschultz having something in userland
+
+1580241636
+fengb
+
+
+1580241650
+tgschultz
+It involves some advanced comptime usage.
+
+1580241664
+forbjok
+I was trying to create a simple Entiy Component System that takes a set of component and systems in a comptime variable and generates an ECS struct
+
+1580241672
+tgschultz
+The implementation is linked within, but has not been updated since 5.0
+
+1580241684
+forbjok
+Ideally, I'd want it to do as much of the setup as possible at compiletime
+
+1580241774
+mq32
+forbjok, for a simple ECS you don't need much meta programming
+
+1580241785
+tgschultz
+The basic technique is: take a struct type as input and a new field type, then return a struct with the previous struct as a field and the new type as another field. Use a bunch of helper methods to set and get fields.
+
+1580241856
+mq32
+Each component "class" must provide an array of all components, each component must know it's entity and you need to know all possible component types
+
+1580241873
+mq32
+that should be easily doable in Zig with a little bit of comptime :)
+
+1580241876
+mq32
+like
+
+1580241876
+forbjok
+mg32: I know it isn't strictly needed. I've implemented a similar one in C# before, where every component array field was just hardcoded in. I could probably also use a multi-dimensional array for the components to store them all in a single field
+
+1580241884
+forbjok
+since code generation doesn't seem possible anyway
+
+1580241897
+mq32
+just don't go the C# way of "inheritance"
+
+1580241913
+mq32
+use array-of-data instead of data-with-array
+
+1580241938
+forbjok
+I didn't use inheritance in my C# ECS. That would kinda undermine the point of an ECS.
+
+1580241943
+mq32
+const MyComponent = createEcsComponent(struct { health: u32 });
+
+1580241967
+mq32
+var ptr = try MyComponent.attach(entity);
+
+1580241990
+mq32
+let me hack you a quick example :)
+
+1580242019
+forbjok
+If you mean use an array for each component type, then that's already what I was intending
+
+1580242022
+dimenus
+how do i ensure that a bool is 4 bytes?
+
+1580242030
+forbjok
+as opposed to having an Entity struct
+
+1580242043
+forbjok
+entities will just be an index into the component arrays
+
+1580242053
+mq32
+yeah, kinadish that's the idea
+
+1580242059
+forbjok
+so the entity ID is effectively just the index
+
+1580242077
+TheLemonMan
+dimenus, turn it into a u32?
+
+1580242097
+dimenus
+was just curious if there was a more idiomatic way
+
+1580242102
+dimenus
+i spose that's it lol
+
+1580242120
+mq32
+forbjok: use a double-indirection of ID→Index
+
+1580242130
+mq32
+because otherwise you have to reuse indices which is bad
+
+1580242136
+mq32
+make entity IDs unique
+
+1580242160
+forbjok
+I kinda wanted to avoid the indirection for performance reasons
+
+1580242170
+forbjok
+but it might end up being necessary
+
+1580242233
+forbjok
+I can see how it might result in some weird bugs if indexes are reused and there is a reference to an entity ID in some other entity's component
+
+1580242277
+mq32
+yep
+
+1580242284
+mq32
+with unique ids you can check liveness
+
+1580242327
+forbjok
+Yeah. Another option might be to keep a generation number separate from the component bitmasks
+
+1580242347
+Snektron
+you can also use a generational id
+
+1580242355
+forbjok
+That way I could keep both index and generation wherever entities are referenced and check them when retrieving a specific entity
+
+1580242387
+forbjok
+The main iteration loops in systems wouldn't really need the check, so it'd be a lot of overhead if it was done universally
+
+1580242414
+TheLemonMan
+andrewrk, re TTY.Config in debug.zig, why do you want a file payload for windows_api? isn't out_stream enough?
+
+1580242527
+naltun
+Question on navigating between types. When working with CURLoption, I get `error: expected type '.cimport:13:17.CURLoption', found 'comptime_int''.
+
+1580242539
+naltun
+when working with libcurl's CURLoption*
+
+1580242625
+andrewrk
+TheLemonMan, GetConsoleScreenBufferInfo and SetConsoleTextAttribute are using the stderr_file global, which is not available via the stream arg
+
+1580242645
+andrewrk
+if you called dumpStackTrace with an out stream that is not stderr, that code is incorrect
+
+1580242711
+andrewrk
+btw fengb I realized that fixing missing async spill bugs is easy
+
+1580242736
+TheLemonMan
+oh well, it'd be incorrect anyway since supportsAnsiEscapeCodes is always called on stderr_file
+
+1580242743
+andrewrk
+turns out I made this really convenient SpillScope thing. the hardest part is just looking at the llvm error, looking up the !1234 thing into source locations, figuring out where in the source that is referring to
+
+1580242798
+andrewrk
+TheLemonMan, at all detectTTYConfig() callsites, the code is using stderr as the stream
+
+1580242820
+andrewrk
+I agree the code would be more clear to accept a file parameter
+
+1580242842
+andrewrk
+detectTTYConfig and TTY can probably be usefully moved out of std.debug to become generally useful
+
+1580242921
+TheLemonMan
+naltun, I guess you need a @intToEnum(libcurl.CURLoption, libcurl.CURLOPT_URL)
+
+1580242950
+TheLemonMan
+or just .CURLOPT_URL if it's really an enum
+
+1580242967
+TheLemonMan
+andrewrk, yeah all the callsites use stderr, that's why I asked
+
+1580242993
+andrewrk
+but for example writeCurrentStackTrace is public
+
+1580243064
+naltun
+TheLemonMan thanks, I'll review that function now.
+
+1580243085
+TheLemonMan
+yeah, making sure the titty config and the out_stream refer to the same stream is up to the caller then
+
+1580243130
+TheLemonMan
+we could just shove both in a context struct but that's not a big deal atm
+
+1580243144
+fengb
+Ah cool, I was planning on trying to tackle the optional spill
+
+1580243166
+andrewrk
+TheLemonMan, detectTTYConfig could be a nice member function of std.fs.File
+
+1580243235
+andrewrk
+fengb, here's an example of fixing a missing spill for pointer elem capture of for loops:
+
+1580243235
+TheLemonMan
+*shrug*, it just calls supportsAnsiEscapeCodes/isTty, it'd feel redundant
+
+1580243283
+andrewrk
+I do think it would be nice to figure out some convenient way to make the easiest way to write data to a terminal, to properly terminal escape text, but also support intentional terminal escapes
+
+1580243337
+forgot-password
+andrewrk: Did you read my message about the `zig translate-c` thing on sunday?
+
+1580243341
+andrewrk
+e.g. if you did std.debug.warn("{}\n", blah), and `blah` contains terminal escape codes, and the output is a terminal, they should be escaped
+
+1580243372
+andrewrk
+I'm using the word "escape" ambiguously here but I think you get the idea
+
+1580243381
+andrewrk
+forgot-password, no, can you remind me?
+
+1580243395
+forgot-password
+It was about translating the CoreAudio headers on macOS
+
+1580243424
+forgot-password
+You replied to me about that, but I only saw that in the evening and you were offline
+
+1580243458
+andrewrk
+can you repeat the question
+
+1580243503
+forgot-password
+Sure – I got errors about some seemingly swift-wrapper-related code when using `translate-c`, but compiling with clang works fine
+
+1580243550
+forgot-password
+I thought that clang maybe detected it as objective-c, where it worked fine, but even using `clang -x c $file` didn't throw the error
+
+1580243583
+forgot-password
+I posted a link to a pastebin with the error messages:
+
+1580243639
+andrewrk
+zig always passes -x c to clang for translate-c:
+
+1580243699
+andrewrk
+you could try removing that and see if anything changes. worth finding out what happens
+
+1580244058
+andrewrk
+TheLemonMan, shouldn't debug mode things still get release builds of compiler-rt?
+
+1580244567
+TheLemonMan
+andrewrk, yeah, sometimes I can't think straight
+
+1580244716
+andrewrk
+TheLemonMan, while you're at it, might be nice to make a switch, just in case that enum ever gets bigger
+
+1580244792
+TheLemonMan
+sure thing, I love switches
+
+1580245330
+forgot-password
+andrewrk: Well, it runs fine when I invoke it without `-x c`
+
+1580245385
+forgot-password
+`zig translate-c` throws said errors and clang works
+
+1580245517
+andrewrk
+forgot-password, feel free to make a PR for that. I think that's reasonable to consider removing the -x c
+
+1580245535
+forgot-password
+But that doesn't change anything about the result
+
+1580245549
+andrewrk
+did you try editing zig sources to remove -x c?
+
+1580245570
+forgot-password
+No, can you point me to the right file?
+
+1580245598
+forgot-password
+Wait, I'll probably have to build the compiler then, correct?
+
+1580245601
+andrewrk
+☝️ ☝️ ☝️
+
+1580245612
+andrewrk
+
+
+1580245639
+andrewrk
+yes
+
+1580245650
+forgot-password
+Okay, I'll need to get the build process up and running then, thanks a lot! :)
+
+1580246590
+andrewrk
+#4152 merged! I expect there to be a few regressions - with reasonable fixes - and also quite possible a bunch of seemingly unrelated bugs fixed
+
+1580246666
+TheLemonMan
+andrewrk, how did you solve the problem with the sr.ht machine?
+
+1580246903
+andrewrk
+TheLemonMan, the problematic behavior had this algorithm: if cpu matches exactly, assume the cpu features based on the static set of cpu features in the list we have hard coded for that CPU
+
+1580246966
+andrewrk
+now, master branch behavior has this: if the cpu matches a known cpu, initialize feature set with the list we have hard coded for that CPU. next, iterate over the provided cpu features, respecting the + and - affecting the set. finally, chase the dependencies
+
+1580247002
+andrewrk
+so, on sr.ht if you inspect the target CPU at comptime it will be wrong. but the detected cpu features correctly override the feature set, so that everything works
+
+1580247020
+andrewrk
+basically, detected cpu features override detected cpu model
+
+1580247051
+andrewrk
+which is the same reason why gcc and clang work on that machine
+
+1580247090
+TheLemonMan
+have you tried running clang with --march=native ?
+
+1580247118
+andrewrk
+no
+
+1580247147
+andrewrk
+well, kind of. zig is passing that when building libcs from source in the test suite
+
+1580247232
+TheLemonMan
+I still think this is a (unneeded) workaround
+
+1580247286
+andrewrk
+I don't consider it to be a workaround; I consider it to be the correct way to detect the cpu feature set
+
+1580247327
+TheLemonMan
+you're throwing away a piece of information (the cpu name) because of this
+
+1580247356
+andrewrk
+that's not true - the cpu name is kept, and available at comptime, and it is used to initialize the set of cpu features
+
+1580247390
+andrewrk
+`std.Target.current.cpu_features.cpu.name` is always available - it's a struct field, not union, and it's non-optional
+
+1580247403
+TheLemonMan
+who cares, LLVM doesn't get it so it's just a useless string
+
+1580247410
+andrewrk
+llvm does get it
+
+1580247449
+TheLemonMan
+it should crash and burn with the "athlon-xp" + 64bit features combo
+
+1580247462
+andrewrk
+llvm also has the logic, that makes the cpu features override the model
+
+1580247507
+andrewrk
+one other thing that was pointed out to me in #llvm is that the cpu model name is not unique - there are pieces of hardware that match model name yet have different sets of features enabled
+
+1580247512
+andrewrk
+maybe in the bios, for example
+
+1580247533
+TheLemonMan
+the cpu name specifies more than a set of features
+
+1580247570
+andrewrk
+I double checked, we're passing the cpu name to llvm unconditionally, and also to clang for translate-c/cimport
+
+1580247602
+TheLemonMan
+then why it's not blowing up like it did before?
+
+1580247616
+TheLemonMan
+the cpu is indeed wrong, but that's a problem with qemu
+
+1580247621
+andrewrk
+because before, llvm was not getting +64bit, but now it is
+
+1580247690
+andrewrk
+detecting invalid combinations of cpu model and features is an interesting and probably useful concept, but it's more complicated than simply not taking into account detected cpu features. it would be more involved to add this detection
+
+1580247701
+andrewrk
+it is correct to take into account detected cpu features
+
+1580247724
+andrewrk
+the knowledge that detecting "64bit" on an "athlon-xp" cpu is a strange situation, is extra-cirricular
+
+1580247790
+pixelherodev
+andrewrk, what's the short summary of the effects of that tech debt merge?
+
+1580247821
+pixelherodev
+That is, from a user's perspective :P
+
+1580247833
+pixelherodev
+Changes in speed / RAM usage? or is it fully behind-the-scenes?
+
+1580247860
+TheLemonMan
+if llvm is fine with such cpu/+64bit combo then I rest my case
+
+1580247901
+andrewrk
+it is; and so is gcc. that's why gcc and clang both work on that box
+
+1580248020
+andrewrk
+pixelherodev, (1) fixing bugs in the most complicated parts of the compiler is now significantly easier (2) there may be some new regressions, but also I expect that to have fixed a handful of other nasty bugs (3) small reduction in RAM usage (4) meaningful progress towards #2765 and #2761
+
+1580248269
+pixelherodev
+Gotcha, neat! "Small" meaning "a couple KB" or "1%" or?
+
+1580248425
+andrewrk
+
+
+1580248432
+andrewrk
+std lib tests from 3.378 GiB (4.59 GiB peak with time -v) down to 3.19 GiB (4.52 GiB peak with time -v)
+
+1580248484
+pixelherodev
+Not bad at all!
+
+1580248486
+andrewrk
+between 1-6%
+
+1580248662
+TheLemonMan
+still too much to run on the freebsd CI machines?
+
+1580248706
+andrewrk
+let's give it a shot
+
+1580248749
+andrewrk
+who wants to do do the pull request where you mess with ci/srht/freebsd_script and try to uncomment as much test cases as possible?
+
+1580249522
+fengb
+
+
+1580249623
+mikdusan
+try master :)
+
+1580249674
+mikdusan
+like
+
+1580249721
+fengb
+I just pulled
+
+1580249891
+TheLemonMan
+that's what he said
+
+1580250225
+sirnaysayer
+Hey all, I'm getting this error
+
+1580250233
+andrewrk
+fengb, your tuple has comptime-known fields
+
+1580250265
+fengb
+But I'm getting the typeOf so it shouldn't matter right?
+
+1580250314
+andrewrk
+your struct looks like this: struct { comptime @"0": i32 = undefined, comptime @"1": i32 = undefined };
+
+1580250319
+andrewrk
+Pair(i32,i32) is a 0-bit type
+
+1580250358
+fengb
+Oh
+
+1580250369
+fengb
+Welp that's probably not good heh
+
+1580250385
+andrewrk
+I don't think it's possible to make Pair as you want to with current zig
+
+1580250404
+andrewrk
+because the function runs at comptime, so every value passed to anon tuple literal will be comptime, so all fields will be comptime
+
+1580250418
+andrewrk
+you just want actual tuple syntax, right?
+
+1580250420
+TheLemonMan
+sirnaysayer, how are you compiling that?
+
+1580250432
+sirnaysayer
+zig build-lib -lc -dynamic .\main.zig
+
+1580250451
+fengb
+Yeah, I'm trying to annotate my function so I can do some metadata analysis
+
+1580250467
+fengb
+But structurally it should be a tuple since order matters. I could make a fake tuple struct
+
+1580250506
+andrewrk
+I think it would make sense to have tuple syntax probably. the language has the type and it's not exposed. that's weird. it would be less weird to just expose the type with syntax like every other type
+
+1580250662
+fengb
+Struct field order is well defined right? It's only memory layout that's undefined
+
+1580250672
+jessermeyer
+Would leveraging the build system be the most natural place to systematically implement profiling blocks?
+
+1580250774
+andrewrk
+fengb, correct
+
+1580251197
+sirnaysayer
+TheLemonMan: compiling as release-small seemed to work just fine, ill play with those settings. I am still curious why those errors happen on the default mode.
+
+1580251258
+TheLemonMan
+sirnaysayer, yeah you're disabling some security features
+
+1580251299
+TheLemonMan
+try with -target x86_64-windows-msvc
+
+1580251509
+Snektron
+how often does godbolt update the trunk compiler?
+
+1580252188
+andrewrk
+TheLemonMan, stack traces in stage1 panics stopped working for me btw
+
+1580252213
+TheLemonMan
+linux?
+
+1580252213
+andrewrk
+
+
+1580252228
+andrewrk
+x86_64-linux-gnu. I can repro it with
+
+1580252255
+TheLemonMan
+uh, weird, it's working fine here
+
+1580252279
+andrewrk
+I'll look into it
+
+1580252306
+andrewrk
+this is with gcc 8.3.0
+
+1580252374
+TheLemonMan
+same here, I'll have a look after I finish this PR
+
+1580252520
+jessermeyer
+Does translate-c translate strictly more than the input provided?
+
+1580252534
+jessermeyer
+I tried translating a very simple macro and the output was ... well.. a lot more than the macro.
+
+1580252570
+TheLemonMan
+it tries its best at interpreting what the macro is trying to do
+
+1580252587
+andrewrk
+yes translation of macros are heuristic at best
+
+1580252623
+jessermeyer
+#define macro(param)\    (param)
+
+1580252625
+jessermeyer
+gives me...
+
+1580252638
+andrewrk
+consider that you're asking zig to look at arbitrary text substitution (which may not even be valid C), with no context, and convert that to zig
+
+1580252668
+jessermeyer
+
+
+1580252702
+andrewrk
+but it seems like that pattern can safely be translated as inline fn macro(arg: var) @TypeOf(arg) { return arg; }
+
+1580252704
+TheLemonMan
+those are default macros
+
+1580252815
+jessermeyer
+C has default macros?
+
+1580252830
+TheLemonMan
+C compilers define some default macros
+
+1580252907
+jessermeyer
+Ah.
+
+1580252927
+andrewrk
+notice that one of them is the clang version
+
+1580252933
+jessermeyer
+Yup.
+
+1580252950
+jessermeyer
+It was just unexpected output.
+
+1580252988
+andrewrk
+the test cases in test/translate_c.zig are looking for substring matches
+
+1580253202
+TheLemonMan
+andrewrk, the stack traces are fine here
+
+1580253243
+TheLemonMan
+I tried with a fresh copy of master, on the same snippet of code
+
+1580253478
+andrewrk
+good to know. I'll investigate over here
+
+1580255471
+Snektron
+Is the compiler emitting "concurrent modification a known issue"? I searched github but couldn't find anything
+

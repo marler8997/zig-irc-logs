@@ -1,0 +1,392 @@
+1577847699
+wilsonk
+andrewrk: thought I would take a quick stab at issue #4020, bit if I modify ir.cpp so that ir_resolve_fn() is only called if CallModifier is always_inline, compile_time or async_kw then a new error comes up:  'cannot assign to constant'. There are only two spots that can happen:  ir.cpp:17920 or 17940.  17940 is where the actual error message originates from so I assume allow_write_through_const is false when it should be true? Maybe?
+
+1577856911
+andrewrk
+happy new year from -0500
+
+1577857354
+leeward
+\o/
+
+1577878758
+daurnimator
+
+
+1577881065
+companion_cube
+maybe they wanted a stable language though :)
+
+1577883683
+Snektron
+daurnimator, i found an old laptop with an i486, so maybe ill try to make something for that in Zig
+
+1577883688
+Snektron
+it also has vga graphics
+
+1577885034
+daurnimator
+Snektron: would be more interesting to see zig running on stm32 devices
+
+1577885052
+daurnimator
+is espressif in llvm 10?
+
+1577887634
+daurnimator
+no :(
+
+1577888587
+frmdstryr
+daurnimator: zig already works on stm32 devices, there's 2 projects on github
+
+1577888617
+frmdstryr
+i've also got it working on one yesterday
+
+1577888649
+frmdstryr
+the problem is porting all the drivers which are all in c
+
+1577888660
+daurnimator
+frmdstryr: link?
+
+1577888674
+daurnimator
+frmdstryr: yeah I figured as much. though @cImport should get you pretty far right?
+
+1577888689
+frmdstryr
+
+
+1577888722
+frmdstryr
+
+
+1577888738
+frmdstryr
+haven't tested the armv8 one, i don't have one of those laying around
+
+1577892242
+protty
+is there a way to guarantee struct field layout order without using `extern struct`?
+
+1577892254
+fengb
+Packed struct
+
+1577892291
+protty
+do you have to specify the alignment of each field manually or does it still do that in a packed struct?
+
+1577892323
+fengb
+Every field is assumed to be align 0
+
+1577892352
+fengb
+So you’ll have to manually align them. And zig gets confused if the struct isn’t a multiple of 8 bits
+
+1577892451
+fengb
+If you’re not actually packing, extern is fine since C struct alignment is well defined
+
+1577892483
+fengb
+Actually wait... no it’s not. Forget I just said that
+
+1577892533
+protty
+so extern struct all the way down?
+
+1577892626
+protty
+hm, how would you go about fitting std structs in there as well?
+
+1577892754
+protty
+nvm, think I can do this with alignment on fields instead
+
+1577901419
+andrewrk
+protty, you probably need
+
+1577904629
+swoogan
+can the run step in a build.zig execute an arbitrary command?
+
+1577904648
+andrewrk
+yes
+
+1577904673
+andrewrk
+swoogan, here's an example:
+
+1577905447
+swoogan
+thank you
+
+1577909284
+schme245
+in this code, is the if statement guaranteed to get inlined since the `encrypted` parameter is known at compile time? or does that only apply to comptime variables?
+
+1577909288
+schme245
+
+
+1577909302
+schme245
+`encrypt` parameter, sorry
+
+1577909341
+andrewrk
+schme245, in order for encrypt to be known at compile time, you will need to annotate it with `comptime`
+
+1577909348
+andrewrk
+but if you do that, then, yes
+
+1577909365
+schme245
+hmm, that leaves me with an interesting conundrum
+
+1577909400
+schme245
+I want to have the `desCryptCbc` method available in the API to give users flexibility, but I also want to use it to DRY up my code
+
+1577909433
+schme245
+does that mean I need two versions of that function, a private one where `encrypt` is comptime, and a public one where it's not?
+
+1577909445
+andrewrk
+do you actually need encrypt to be comptime known for semantic reasons? or are you considering performance?
+
+1577909455
+schme245
+it's for performance
+
+1577909470
+andrewrk
+have you measured it with and without making it comptime? I predict there will be no difference
+
+1577909486
+schme245
+I agree, but I still think it's interesting whether this is possible or not
+
+1577909498
+andrewrk
+sure, you can make your API whatever you want
+
+1577909921
+schme245
+I'm trying to understand if it's possible to avoid this duplication:
+
+1577909947
+schme245
+the only difference between desCryptCbcInline and desCryptCbc is that encrypt is comptime
+
+1577909963
+schme245
+I understand that it doesn't matter for performance in this case, but there might be others where it does
+
+1577910270
+andrewrk
+where's the duplication?
+
+1577910290
+andrewrk
+that looks fine to me
+
+1577910346
+schme245
+sorry, easier to see like this:
+
+1577910440
+andrewrk
+oh, have desCryptCbc do an if on encrypt, and call desCryptCbcInline with comptime known encrypt
+
+1577910496
+andrewrk
+I would also suggest enum{encrypt, decrypt} instead of bool
+
+1577910536
+andrewrk
+make it first parameter too, and then API becomes: desCryptCbc(.encrypt, keys, iv, inData, outData)
+
+1577910569
+schme245
+sorry, how do I call a fn with a comptime known parameter? I thought that had to go in the fn signature
+
+1577910609
+andrewrk
+with an `if` on encrypt, within each branch of the `if` you have comptime-known encrypt
+
+1577910619
+andrewrk
+if (x) foo(true) else foo(false)
+
+1577910631
+andrewrk
+this will work even if foo has a comptime parameter
+
+1577910656
+andrewrk
+definitely do the enum thing though, kill that bool
+
+1577910738
+schme245
+alright, gimme a minute and I'll see if I got this straight
+
+1577911204
+schme245
+ahh so it would be like this then:
+
+1577911296
+azth
+Hi all. When I run this locally (compiler version `zig-macos-x86_64-0.5.0+25051832b`), the program exits with a `SIGBUS (Misaligned address error)`. Link to program:
+
+1577911363
+azth
+However, if I change line 10 to `var point = I32Wrapper{.x = 10}`, and call `var p = foo(&point)` it exits without errors.
+
+1577911508
+azth
+Actually, I was able to reduce it to:
+
+1577911510
+azth
+```
+
+1577911540
+azth
+
+
+1577912990
+schme245
+andrewrk: just updated the code with your suggestions, thanks a lot for your time! :)
+
+1577913050
+schme245
+also, is DES of interest for the std lib? there's already AES in there, and while it's preferable there are many protocols which depend on DES
+
+1577913083
+hryx
+Can anyone remind me how to build without @panic? I have the boilerplate code with `export fn entry` and `pub fn panic` but I forget if there's a required build flag
+
+1577913136
+fengb
+release-fast should remove panic
+
+1577913246
+andrewrk
+fengb, are you thinking of unreachable? @panic is defined to call the panic handler in all build modes
+
+1577913275
+andrewrk
+hryx, you're trying to get a minimal file for debugging zig ir, yes?
+
+1577913287
+fengb
+Oh I thought the question is removing the handler
+
+1577913298
+fengb
+For unreachable
+
+1577913307
+hryx
+andrewrk: exactly. actually I was trying to shrink the output of what azth linked (but they just left)
+
+1577913331
+hryx
+er, not zig IR in that case, but the asm
+
+1577913366
+andrewrk
+
+
+1577913417
+hryx
+thanks! I know mikdusan had a gist previously but looks like it's gone
+
+1577913465
+andrewrk
+oh, nice, I think mikdusan put it in the FAQ:
+
+1577913522
+hryx
+ah, cool
+
+1577913552
+andrewrk
+fengb, you are correct that if the panic handler is proven unreachable by the optimizer, it will be removed
+
+1577913573
+andrewrk
+in a large application this is unlikely to be the case however
+
+1577913605
+fengb
+Technically correct but not helpful. That’s me! :P
+
+1577914077
+hryx
+Ahhhh now I see what I was doing wrong. I was using `zig run` instead of `zig build-obj`. derp
+
+1577914215
+schme245
+andrewrk: DES in std lib, yay or nay? (reposting my question from above in case you missed it, if not, sorry for spam!)
+
+1577914263
+andrewrk
+schme245, yay with the caveat that it may be removed during
+
+1577914398
+schme245
+cool, I'll take a look at the other crypto in std and see if it makes sense to match the existing APIs!
+
+1577914420
+schme245
+also, same caveats as for AES re timing attacks etc applies ;)
+
+1577914445
+andrewrk
+yes, the relevant issue for that is
+
+1577914995
+traviss
+schme245, did you ever post your code for benchmarksgame?  i was curious to see how you got vectorization to work for the nbody problem.
+
+1577915160
+schme245
+well, as expected, it turns out I'm a dunce and the actual numbers are ~4-ish for my code and 2.6-ish for Rust
+
+1577915196
+schme245
+next up now that I'm done with DES is to see if I can beat it with @Vector
+
+1577915236
+schme245
+let me throw the code of the anyways
+
+1577915409
+schme245
+wow, that'suuuh... one hell of a sentence xD anyway, here's the code:
+
+1577915417
+schme245
+traviss: ^
+
+1577915428
+traviss
+ah. thats still sounds like a pretty good time. i tried myself to port the nbody-gcc-8.c solution but ran into problems related to _mm_cvtps_pd and similar
+
+1577915462
+traviss
+thank you :)
+

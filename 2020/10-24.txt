@@ -1,0 +1,832 @@
+1603500067
+frmdstryr
+Is there anyway to do this so slice does not become a dangling pointer?
+
+1603502383
+Kuraitou
+frmdstryr: update slice whenever buf reallocates, or don't store a pointer and instead use buf.items[0..4] in place of slice, or make sure buf is big enough ahead of time and never resize it
+
+1603502970
+frmdstryr
+Kuraitou: Thanks, will just try to make it big enough and don't resize
+
+1603510808
+kandinski
+if there isn't, it seems to me that std.math.sign returning an i2 enum for numeric values and an error for non numeric values would be a good beginner feature, and I offer to write it up on github and try and contribute it if you all think it's worthy.
+
+1603511302
+kandinski
+This is my proposal for std.math.sign(). Comments appreciated:
+
+1603511323
+kandinski
+(I won't put it on github until someone with better criteria tells me it's a reasonable idea)
+
+1603518250
+Axiomatic
+It could be the case (perhaps in the future) that numeric values include complex numbers, so one might think of what it should do then.
+
+1603518295
+Axiomatic
+Or, if a number is binary, and meant to be interpreted as 1s complement vs 2s complement vs unsigned.
+
+1603518618
+Axiomatic
+And similarly for number-ish NaN, etc.. Would a "positive infinity" have a positive enum value, and a negative one a neative value?
+
+1603529209
+daurnimator
+karrick: what about signed zero?
+
+1603529220
+daurnimator
+uh kandinski
+
+1603531676
+kandinski
+daurnimator: if it's signed zero, this application doesn't care. It's a C return code.
+
+1603531706
+kandinski
+but you're right that in this case the function would not be able to perform all kind of uses over all kind of numerics. Oh well.
+
+1603531839
+kandinski
+Axiomatic: just saw your answer in backroll. Yeah well, I got something that works for me now, and I'll keep thinking about it.
+
+1603531846
+kandinski
+Thanks both of youse.
+
+1603543715
+marijnfs
+damn, is Andrew allright?
+
+1603555328
+ryuukk__
+are there built in functions to cast slice into i32 and other types, with options for endianess?
+
+1603555532
+ryuukk__
+i tried cast with poiunter but it complains with: error: cast increases pointer alignment
+
+1603555841
+ifreund
+ryuukk__: you can @alignCast() as well, but what you probably want is in std.mem
+
+1603556401
+ryuukk__
+ifreund: can you show me how exactly to do this please? int i = *(int*) &data; i fail to understand what to pick from std.mem
+
+1603556444
+ifreund
+what is data?
+
+1603556564
+ryuukk__
+a fixed char array, or if you prefer int i =
+
+1603556575
+ifreund
+ryuukk__: mem.bytesAsValue()
+
+1603556798
+ryuukk__
+i get: error: expected *[4]u8, passed *u8
+
+1603556824
+ryuukk__
+
+
+1603556879
+ryuukk__
+data is supposed to be a []u8, not a fixed array, but for this example to keep it simpler i use fixed array
+
+1603556930
+ifreund
+well, you can @ptrCast() that if you know there will always be at least 4 u8s
+
+1603556953
+ryuukk__
+that is what i tried to do with it complained, check msg above
+
+1603556969
+ryuukk__
+can you show me please?
+
+1603556981
+ryuukk__
+i spent quite some time already without success..
+
+1603557076
+ifreund
+ryuukk__: @ptrCast(*[4]u8, &self.data[self.pos]),
+
+1603557183
+ryuukk__
+doesn't work, it prints:  instead of 5
+
+1603557266
+ryuukk__
+this is frustrating
+
+1603557279
+ifreund
+why should it print 5
+
+1603557296
+ryuukk__
+5, 0, 0, 0 = 5
+
+1603557330
+ifreund
+uh, byte order?
+
+1603557343
+ryuukk__
+it's x64 so little endian
+
+1603557534
+ifreund
+uh, your function is hardcoded to return 0...
+
+1603557656
+ryuukk__
+i know it is to stop compiler to complain, above i print the ret value
+
+1603557671
+ryuukk__
+here clean example:
+
+1603557673
+ryuukk__
+var data = [_]u8{5,0,0,0};
+
+1603557673
+ryuukk__
+std.log.info("{}", .{ret});
+
+1603557673
+ryuukk__
+var ret = @ptrCast(*[4]u8, &data[0]);
+
+1603557687
+ryuukk__
+it prints: info: ♣
+
+1603557713
+ryuukk__
+i need an i32 that prints 5
+
+1603557740
+ifreund
+no, you still need mem.bytesAsValue
+
+1603557765
+ryuukk__
+i'd prefer to do it manually to understand how things works compared to my C++ project code
+
+1603557796
+ryuukk__
+it really is not possible to do:  int i = *(int*) data; ???
+
+1603557822
+ifreund
+manually is just @ptrCast(*i32, @alignCast(4, ptr));
+
+1603557846
+ryuukk__
+so why u gave me different code ?
+
+1603557878
+ifreund
+but that only works if the bytes are aligned
+
+1603557888
+ifreund
+but it's what the C version is doing
+
+1603557904
+ryuukk__
+incorrect alignment
+
+1603557909
+ryuukk__
+var ret = @ptrCast(*i32, @alignCast(4, &data[0]));
+
+1603557919
+ifreund
+but it's UB if the bytes aren't aligned, see mem.bytesAsValue for a proper implementation
+
+1603557927
+TheLemonMan
+there's readIntNative too
+
+1603557936
+ryuukk__
+i don't want a function
+
+1603557939
+TheLemonMan
+or readIntSliceNative...
+
+1603557939
+ifreund
+isn't that just a wrapper?
+
+1603557956
+ifreund
+nvm
+
+1603557971
+TheLemonMan
+yep, but it works on unaligned pointers by using a pointer with alignment of 1
+
+1603557984
+ryuukk__
+forget std.mem exists
+
+1603557986
+ryuukk__
+how to do it?
+
+1603557996
+ifreund
+read what std.mem does
+
+1603557997
+TheLemonMan
+read std.mem
+
+1603558006
+ryuukk__
+nobody can explain?
+
+1603558016
+mht
+ryuukk__: what would you like to happen if the pointer is not aligned?
+
+1603558023
+TheLemonMan
+read what I said
+
+1603558050
+TheLemonMan
+@ptrCast(*align(1) const i32, data).*
+
+1603558055
+TheLemonMan
+voilá
+
+1603558062
+ifreund
+\o/
+
+1603558095
+TheLemonMan
+beware of the performance implications on non-x86 silicon
+
+1603558119
+ryuukk__
+that works, it print 5, thanks
+
+1603558150
+TheLemonMan
+you owe me a tenner
+
+1603558661
+ryuukk__
+mht: it is not gonna happen on my use case so i don't need to worry about that
+
+1603558819
+Kena
+Hello, please in which case should I use `expect()` instead of `assert()`?
+
+1603558836
+Nypsie[m]
+assert is for debug modes, expect is for tests
+
+1603558909
+Kena
+So in releases like fast, small or safe, i shall never have neither of them?
+
+1603558959
+Nypsie[m]
+Assert will not be called in non-debug modes yes.
+
+1603558959
+Nypsie[m]
+Anything part of std.testing should not be used outside tests. (ever)
+
+1603559006
+Kena
+Allright, I understand.
+
+1603559282
+Kena
+Are you aware of any kind of Zig projects related to graphQL server/client libraries? Or there will be any in the upcoming months? I think it would benefit greatly to Zig's visibility.
+
+1603559397
+Nypsie[m]
+Haven't seen any yet. The ecosystem is quite small still, so you'd have to write one yourself.
+
+1603559496
+Kena
+Seems only fair :)
+
+1603560691
+Kena
+I have a grammatical question, a little off-topic I admit, but English is not my native language: does the words ``bit` and `byte` are prononced the same way?
+
+1603561051
+earnestly
+Kena: Nope, bit is pronounced as, well, bit (e.g. [bit]ten by a dog), byte is bye-t, e.g. "I took a bite out of the dog"
+
+1603562443
+fengb
+ryuukk__: looks like you were doing a bit kludge? Zig has @bitCast(u32, data) for that
+
+1603562472
+fengb
+Also protects you from doing a bad cast due to mismatched size
+
+1603562487
+Kena
+Thank you earnestly! I try to reason in english when I read the Zig documentation and I always stumble upon the prononciation issue especially with the alignment question where bits and bytes often cohabit.
+
+1603562575
+alva
+Bit is /bɪt/ and byte is /baɪt/. And English is an inconsistent mess. :)
+
+1603562648
+earnestly
+Tolkin was sad that most of the world spoke English, instead of their own unique tongues
+
+1603566645
+ryuukk_
+@fengbit doesn't work, @bitCast(i32, &data[pos])
+
+1603566782
+ryuukk_
+
+
+1603566805
+ryuukk_
+i'm having trouble figuring out what to put to handle float types here
+
+1603566848
+ryuukk_
+@typeInfo have 0 documentation
+
+1603566895
+ryuukk_
+i feel like i'm gonna wait for zig 1.0, port progress is way to slow that it is way to frustrating for me
+
+1603566909
+ryuukk_
+i'm fighting with language every step
+
+1603567648
+ryuukk_
+why don't they document stuff as they implement things, how people expected to use them
+
+1603567692
+Kena
+You also have
+
+1603567747
+ryuukk_
+this is horrible user experience
+
+1603567759
+ryuukk_
+also this link has 0 info how to use
+
+1603567805
+Kena
+It was declared several times that documentation would always be left behind as the language is still under heavy development and breaking changes are to be expected until 1.0 (which is not planned before 2 years according to Andrew, who also added that it was already the case last year ^^)
+
+1603567834
+Kena
+I know, it is fairly discouraging for beginners.
+
+1603567852
+alva
+Knowing what state things are in, I just keep a local clone of the git repo, for documentation
+
+1603567875
+ryuukk_
+it's just just documentation it is the features too
+
+1603567877
+alva
+So I've only gotten stuck on actual bugs :)
+
+1603567879
+ryuukk_
+it's just confusing mess
+
+1603567920
+ryuukk_
+i kept continuing with the port because i thought it's ok i only have to do X thing once, but it's like that every step
+
+1603567927
+Kena
+Yeah, it seems the best available workaround, as learnzig.org will not provide you with any kind of intermediate level of knowledge.
+
+1603568067
+Kena
+You may want to start a kickstarter campaign to finance a introduction to programmation in Zig's book :)
+
+1603568090
+ryuukk_
+i didn't need book for D and the port was done in 1 week
+
+1603568092
+Kena
+But it's a pipe dream before releasing 1.0
+
+1603568100
+ryuukk_
+here im almost 1 week, and not even 20% done
+
+1603568151
+tane
+a website featuring common idioms like chapter 2 of ziglearn.org seems fine and should be easy to keep in sync
+
+1603568208
+Kena
+D 0.0 was launched the december 9th 1999 by Walter Bright, it has a lot more time than Zig to gain maturity
+
+1603568245
+ryuukk_
+that is not an excuse, with LLVM now, everyone can make language in under a year
+
+1603568247
+Kena
+Maybe you should ask some questions to Marler8897, he was a D contributor until last year.
+
+1603568275
+ryuukk_
+and this language has simple features wich makes it require less time
+
+1603568276
+Kena
+and fell in love with Zig when a guy posted a link to ziglang.org in the D newsgroup lol.
+
+1603568346
+ryuukk_
+i liked ZIG at first, but as i try to implement stuff i get frustrated even more
+
+1603568452
+Kena
+Perhaps you should synthesize your thoughts (and frustrations) about Zig in a reddit post. It would be more consistent and academic than raising some vague deceptions in IRC?
+
+1603568509
+Kena
+Knowing than others with prior experience in programmation have still difficulties to port some basic features towards Zig may be reassuring for a silent part of the community.
+
+1603568550
+ryuukk_
+i should have noted the issues as i encounter them
+
+1603568560
+ryuukk_
+but i don't have time to write blog post, i'm not interested
+
+1603568641
+Kena
+It's understandable, perhaps you would reconsider to share a post when you'll have overcome even more difficulties.
+
+1603568743
+Kena
+With regard to the current progress and the functional scope to reach, I think there will be at least a 0.10.0 before 1.0 so there's plenty of time before stabilizing the language (and the documentation afterwards)
+
+1603568852
+Kena
+It is clearly still expertimental so the workarounds and others hint/tips will be scattered into IRC, reddit and informal medium, we are nowhere near to a exhaustive documentation or even a full tutorial to begin with.
+
+1603569211
+ryuukk_
+they just need to test other languages, really, like the iterator problem, it's easy with other language, why i need to type ton of bloat to make something similar, same for interface, why i need to write ton of bloat, for pointer casting why it is so confusing to get right, same for std.log.info, why is not possible to remove the need to type .{} at the end, it's many little things like that that stack up, it's not just documentation, i think they have
+
+1603569211
+ryuukk_
+different meaning for "simple language", it is instead "minimal language", not simple, they put constraints that doesn't help move forward
+
+1603569260
+ryuukk_
+self: *Self whenever i write a function in a struct, it should be implicit
+
+1603569271
+ryuukk_
+many little things like that
+
+1603569436
+alva
+I like not having variadic functions, and that the language doesn't make arbitrary decisions for me in order to appear simple (while hiding potential bugs.) These things are subjective. :)
+
+1603569465
+alva
+There's plenty of language that do that already
+
+1603569468
+ryuukk_
+move i type, more stuff are convoluted and actually hides the reasoning in the code
+
+1603569471
+ryuukk_
+more*
+
+1603569483
+ryuukk_
+wich introduces bugs more easily
+
+1603569714
+g-w1
+what about static methods
+
+1603569743
+ryuukk_
+another case where it is misleading in ZIG actually
+
+1603569745
+ryuukk_
+static methods
+
+1603569762
+g-w1
+wdym?
+
+1603569777
+ryuukk_
+*, ithe thing that differientiate them, and it is confusing, it is * times, * pointer, and * is super tiny character
+
+1603569791
+ryuukk_
+bug that is easy to introduce
+
+1603569797
+ryuukk_
+static fn
+
+1603569801
+ryuukk_
+easy
+
+1603569818
+ryuukk_
+and things like that stack up
+
+1603570069
+alva
+Instance methods can take self by value too.
+
+1603570076
+Kena
+Interfaces and iterators are still considered issues in discussion in github I believe. You could add your two cents on the matter and express your concern in a more formal manner.
+
+1603570083
+ryuukk_
+alva: even more confusing
+
+1603570105
+ryuukk_
+Kena: interface are not, they closed all the issues about it
+
+1603570108
+alva
+How so? It's totally explicit
+
+1603570127
+ryuukk_
+it is confusing because it can be many things
+
+1603570137
+ryuukk_
+implicit self, and explicit static solve that
+
+1603570150
+ryuukk_
+but no, they decided to be "simple"
+
+1603570170
+alva
+How would you choose by value or by reference with implicit self?
+
+1603570181
+travv0
+i'll give you that i wish methods taking self by value and by reference had different syntaxes
+
+1603570181
+ryuukk_
+if not implicit then forbit putting functions inside structs
+
+1603570209
+travv0
+not sure what that has to do with static though
+
+1603570231
+ryuukk_
+it is confusing
+
+1603570233
+travv0
+static methods don't mention self at all unless i'm misunderstanding
+
+1603570249
+Kena
+It may be related to "communicate intent precisely" principle or even "no hidden control flow" requirement.
+
+1603570266
+g-w1
+they are saying that all struct methods should have self: *Self by default unless it is static fn
+
+1603570273
+g-w1
+travv0
+
+1603570288
+travv0
+ah, i gotcha
+
+1603570304
+travv0
+i don't see the problem with the way it is, it's also how rust does it and it works well there too
+
+1603570329
+travv0
+plus the whole by value/by reference thing
+
+1603570358
+ryuukk_
+i don't consider rust to be a good example to be honest
+
+1603570370
+ryuukk_
+rust didn't like 1 day in my testing
+
+1603570373
+ryuukk_
+last*
+
+1603570374
+travv0
+thanks for being honest
+
+1603570394
+alva
+Not everything is for everyone.
+
+1603570610
+ryuukk_
+of course, but that shouldn't from having concerns, opinions and suggestions
+
+1603570615
+ryuukk_
+prevent*
+
+1603570620
+ryuukk_
+sorry my typing is bad today
+
+1603570676
+ryuukk_
+rather have them than people testing product and leaving without notice
+
+1603570733
+travv0
+but as Kena pointed out, this isn't really the medium to point that stuff out if you want it to get any real attention
+
+1603570763
+ryuukk_
+using IRC is the best i can do
+
+1603570909
+Kena
+you could expose your grief during a ShowTime Zig :p
+
+1603571006
+Kena
+It can help formalizing a brief proposition in github/reddit.
+
+1603571074
+ryuukk_
+i don't think i can do that
+
+1603571101
+ryuukk_
+if all this IRC already doesn't understand my points i doubt it can change :p
+
+1603571145
+ryuukk_
+i'm not saying it has to change
+
+1603571215
+alva
+I understand your points, I just disagree with them. :)
+
+1603571242
+alva
+Doesn't make you wrong
+
+1603571318
+Kena
+Start forking Zig and conquer the world.
+
+1603571884
+ryuukk_
+i only want to make a game :p
+
+1603571964
+Kena
+Do you plan to conceive your own GUI?
+
+1603572064
+ryuukk_
+that is the plan, but for the moment i have to finish the foundation of the engine
+
+1603572084
+ryuukk_
+will see if i manage to finish it before stopping and waiting for zig 1.0
+
+1603572097
+CmdrCrisp
+@ryuukk_, FWIW (i know the conversation has drifted a bit), here's this:
+
+1603572150
+CmdrCrisp
+The thing about that code sample is there just arent' that many floats. It's not purely generic, but it's not too much work to maintain.
+
+1603572497
+ryuukk_
+CmdrCrisp: thanks a lot
+
+1603572553
+CmdrCrisp
+Sure, no problem.
+
+1603582380
+maxrazer
+I'm trying to understand the potential use cases of zig vs. golang. I'm thinking that maybe go would allow easier and more rapid development when real time is not an issue. Or, would zig be easy and rapid enough to negate this benefit? I know in the presentation there were 4 different reasons given languages should be disqualified to be perfect. This seems like zig is trying to be an all-use case general programming language.
+
+1603582380
+maxrazer
+However, does it really have all the advantages of golang for example, without any of the negatives?
+
+1603582455
+rx_
+whaat?
+
+1603582531
+maxrazer
+Does zig have all the advantages of golang without the disadvantages?
+
+1603582535
+g-w1
+Are you talking about the talk at localhost?
+
+1603582582
+rx_
+I'm unaware this was a thing
+
+1603582584
+maxrazer
+I'm look at the Emerging Technologies for the Enterprise Conference, but I also watched another presentation before.
+
+1603582607
+maxrazer
+
+
+1603582626
+rx_
+I don't think there is a comparison at all, but I would like to see how this plays out
+
+1603582726
+g-w1
+Ok. I have not programmed in golang, but I have seen that talk. Since golang is garbage collected, it may be easier to program in, since you do not have to do manual memory management, but zig provides a lot of features to make that super easy. These features include, defer, general purpose allocator, testing allocator. I would say: write some programs in zig and see how fast you develop compared to golang.
+
+1603582924
+rx_
+is zig going to bless some libraries or make a big standard library?
+
+1603582943
+rx_
+iirc regexp is not currently a thing?
+
+1603583024
+g-w1
+Someone wrote a compile time regex library, but I do not know if it is official
+
+1603583062
+g-w1
+
+
+1603583109
+rx_
+that's cool :]
+
+1603583554
+maxrazer
+Ok, thank you.
+

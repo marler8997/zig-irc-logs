@@ -1,0 +1,760 @@
+1594858730
+plumm
+mikdusan, have you tried compiling zig on Big Sur yet? A couple of users have reported that the dylib changes break the build. I've fixed it by trying to not add the linked libraries to the cache hash for the compiler id (because it uses _dyld_image_count, and the linked system libraries no longer exist on the file system); I'm not sure the
+
+1594858731
+plumm
+rationale behind that but it's gotten zig working on Big Su
+
+1594858739
+plumm
+Big Sur*, someone is testing the same fix on Catalina
+
+1594860467
+plumm
+andrewrk that change might not be all that needs to change, when running the zig compiler on Big Sur, lld complains about an unknown library for `-lSystem`
+
+1594861382
+mikdusan
+plumm: haven't tried Big Sur yet. not sure I will prior to general release.
+
+1594861745
+plumm
+mikdusan do you have any insight about the inclusion of `-lSystem`?
+
+1594861763
+plumm
+I thought it was always linked by default
+
+1594861949
+mikdusan
+I've only heard a few experiences here and there but nothing concrete.
+
+1594862098
+mikdusan
+if I understand correctly, catalina being `10.15`, big sur will be `11.0` and that's the first bump in rev major. probe scripts fun time :)
+
+1594862183
+plumm
+Big Sur will be 10.16 for intel, 11.0 for arm
+
+1594862204
+mikdusan
+oh my
+
+1594862218
+leeward
+It's OS XI now?
+
+1594862221
+plumm
+`lj->args.append("-lSystem");` is what is causing problems, but removing it leads to a bunch of symbols being undefined in cache objects
+
+1594862228
+plumm
+I guess for arm yeah
+
+1594862277
+fengb
+macOS
+
+1594862283
+fengb
+The X is dead :(
+
+1594862305
+leeward
+It had a good run.
+
+1594862317
+mikdusan
+plumm: curious, what does `otool -L /bin/ls` output for you?
+
+1594862333
+plumm
+uh
+
+1594862364
+plumm
+damn kiwichat
+
+1594862417
+plumm
+"/usr/lib/libutil.dylib""/usr/lib/libncurses.5.4.dylib""/usr/lib/libSystem.B.dylib"
+
+1594862437
+mikdusan
+this is on big sur?
+
+1594862439
+plumm
+yes
+
+1594862446
+plumm
+but also calling stat on the libSystem there is no file found
+
+1594862580
+andrewrk
+macos is asking for a lot of volunteer effort to be spent on supporting it, while being proprietary and pretty hostile to developers
+
+1594862600
+andrewrk
+apple better watch its back
+
+1594862606
+mikdusan
+and re: "lld" complaints, I have to guess, but smells like lld for llvm 11.x or somesuch will likely add support for big sur, and our 10.0 version is poo about it
+
+1594862856
+plumm
+mikdusan considering CLT and Xcode ship with lld (llvm ig), is it possible to override the linker used?
+
+1594863036
+mikdusan
+zig embeds the linker (I hope I am not misremembering). but you could eyeball zig's link command line, and try to substitute with Xcode 12 beta's lld manually.
+
+1594863059
+plumm
+yeah im looking for where Xcode's lld is rn
+
+1594863064
+mikdusan
+ie: get zig to show the full lld command line
+
+1594863163
+plumm
+possible, trying now
+
+1594863264
+mikdusan
+speaking of which, here's a good comparison to do; make a hello.c and `clang -### -o hello hello.c` on catalina, and repeat same on big sur and see if there are any special args during compile or link phases
+
+1594863282
+plumm
+I don't have a Catalina install available to me right now, will ask someone
+
+1594863343
+plumm
+wtf
+
+1594863360
+plumm
+its definitely llvm10's lld, cause the included ld with Xcode uses -lSystem too
+
+1594863392
+mikdusan
+catalina hello.c -->
+
+1594863442
+plumm
+
+
+1594863530
+mikdusan
+and what are you seeing for zig's lld verbose usage (when it fails with -lSystem)
+
+1594863541
+mikdusan
+ie: can you post command line
+
+1594863584
+plumm
+apparently you can set the path to the linker, so that's good
+
+1594863590
+plumm
+how do I view the verbose version?
+
+1594863617
+plumm
+oh —verbose-link
+
+1594863646
+plumm
+
+
+1594863676
+plumm
+uh -lsystem should be there this is just the version of the compiler I built without it 1s
+
+1594864070
+plumm
+I tried using the dynamic linker provided by Xcode but run into a missing __tlv_bootstrap
+
+1594864332
+mikdusan
+what's the error you get for unmodified `zig build-exe hello.zig` on big sur?
+
+1594864359
+mikdusan
+ah found #5715
+
+1594864405
+plumm
+can't believe I just did all of that when it was there in the issue tracker
+
+1594864406
+plumm
+big L
+
+1594864628
+mikdusan
+plumm: try building a zig exe with `zig build-exe --cache off`
+
+1594864634
+mikdusan
+(unmodified zig)
+
+1594864679
+plumm
+missing lsystem
+
+1594864725
+plumm
+oh
+
+1594864730
+plumm
+run doesn't work, build-exe does
+
+1594864750
+plumm
+(with the Xcode ld)
+
+1594864792
+mikdusan
+also sanity check: does big sur still use case-insensitive filesystem?
+
+1594864801
+fengb
+Probably
+
+1594864802
+plumm
+that's dependent on the drive
+
+1594864810
+mikdusan
+default apfs install
+
+1594864818
+plumm
+should be sensitive?
+
+1594864820
+fengb
+I tried formatting case sensitive once and broke a lot of things
+
+1594864836
+fengb
+Userland is very insensitive
+
+1594864839
+plumm
+its not sensitive by default
+
+1594864843
+mikdusan
+ok
+
+1594865767
+mikdusan
+I don't want to be predicting problems were there are none, but if system dylibs are no longer available via filesystem interface,
+
+1594865828
+mikdusan
+custom macho code (ie. not using apple's dlopen/dlsym API) is a non-starter
+
+1594865873
+andrewrk
+that's the same as status quo
+
+1594865907
+andrewrk
+the std lib unconditionally relies on libc on macos
+
+1594865982
+mikdusan
+presumably llvm/lld/10.x has macho stat/symbol code that doesn't use dlopen/dlsym ?
+
+1594866004
+andrewrk
+during link time?
+
+1594866034
+mikdusan
+yes link time
+
+1594866102
+andrewrk
+there's no need to dlopen/dlsym at link time, just need to make a macho file that declaratively lists the dynamic libraries it wants
+
+1594866121
+andrewrk
+we can even do this cross compiling no problem
+
+1594866359
+mikdusan
+sure "undefs" linking against dylibs sounds plausible. but lld needs to find the library in a fs search path
+
+1594866376
+mikdusan
+so until it learns that it needs to check for file exist via dlopen it will fail
+
+1594866724
+andrewrk
+gotcha
+
+1594866882
+andrewrk
+I think realistically the main thing we're going to want to dynamic link is libsystem which we should have a hard coded path to
+
+1594866897
+andrewrk
+that, and frameworks. everything else should eventually be handled statically by the package manager
+
+1594866921
+andrewrk
+so I don't think this changes much really. apart from making the cache id stop looking at those libs
+
+1594867034
+mikdusan
+my understanding is beyond the zig caching issue:
+
+1594867066
+mikdusan
+>> lld complains about an unknown library for `-lSystem`
+
+1594867095
+andrewrk
+seems like a bug in lld which will be fixed before big sur comes out
+
+1594867458
+plumm
+andrewrk makes sense
+
+1594870050
+pixelherodev
+Never have I hated the internet more than I do right this second
+
+1594870070
+pixelherodev
+QTWebEngine takes more time to build than LLVM, Clang, and GCC put together and
+
+1594870083
+pixelherodev
+Probably more than all three put together times four
+
+1594876675
+andrewrk
+local variables working enough to test the register allocator:
+
+1594881778
+data-man
+andrewrk Are the packed structs compatible with C's bit fields?
+
+1594882244
+andrewrk
+I need to double check some things to give a confident answer, but I believe the answer is: zig's packed structs are more well defined, and they are compatible with most C implementations, which leave bit fields implementation defined
+
+1594882377
+data-man
+So translate-c should translate bit-fields to packed structs? Ideally :)
+
+1594883076
+daurnimator
+data-man: no!
+
+1594883094
+daurnimator
+packed bitfields are quite different to extern bitfields
+
+1594883293
+data-man
+So, what is the best way to translate C's bitfields to Zig?
+
+1594883365
+data-man
+I need Linux perf API. Benchmarks and so on...
+
+1594887190
+owl_000
+const std = @import("std").debug.print;
+
+1594887273
+owl_000
+here we declare a global constant named std, and then used @import buil in function (@ indicates it) to bring print function in our scope.
+
+1594887299
+owl_000
+here std is collection of modules, debug is a module and print is a function of that module
+
+1594887305
+owl_000
+am i right?
+
+1594887395
+owl_000
+oh, and assign print function in  std constant. the name of const can be anything. but the convention is using function name which is being assigned
+
+1594887420
+owl_000
+so `const print = @import("std").debug.print;`
+
+1594887653
+andrewrk
+data-man, yes, ideally :)
+
+1594888386
+data-man
+But daurnimator said "no!" :)
+
+1594898023
+ducdetronquito
+Hello there !
+
+1594898078
+ducdetronquito
+Noob question: I would like to run the unit tests in `std.http.headers`. How would you do that ?
+
+1594898165
+ducdetronquito
+I tried to run `zig test lib/std/http/headers.zig`, but I end up with compilation warning with the relative imports :/
+
+1594898644
+ifreund
+well, zig build test-std will run all the std tests
+
+1594898653
+ifreund
+not sure how to run a specific one
+
+1594898781
+data-man
+I always replace @import("../std.zig") to @import("std") in tests :)
+
+1594898855
+ducdetronquito
+Thanks Ifreund and data-man, I will try both strategies ;)  !
+
+1594900021
+ifreund
+I think we should techkically be using @import("std"); everywhere in the std now
+
+1594900126
+ikskuh
+ifreund: is there a reason to do so?
+
+1594900132
+ikskuh
+i don't think that's a good idea
+
+1594900170
+ifreund
+well, as demonstrated in this case it would make running indidual tests work
+
+1594901691
+data-man
+rg --stats -F \"std\" 171 matches, rg --stats -F "std.zig" 263 matches
+
+1594921623
+FireFox317
+hey andrewrk, i saw the register allocation demo you sent on irc yesterday, and i was wondering why the arguments of the function are defined as statements in the ZIR block. Was there some reasoning behind this?
+
+1594922926
+andrewrk
+FireFox317, yes, the arguments need the same mechanism that all instructions have, with respect to being allocated somewhere (in a register or on the stack). giving them each an instruction line makes it possible to reference them and deal with them the same as other instructions
+
+1594923273
+FireFox317
+Ah i see! Thanks :)
+
+1594925463
+andrewrk
+FireFox317, as an example, a parameter might be passed in as the %rdi register but then due to calling another function, %rdi has to be used as
+
+1594925494
+andrewrk
+and now I suspect that is why the machine code instruction is called "move" even though it copies data
+
+1594926056
+pixelherodev
+andrewrk: I mean, in most cases, you're overwriting or ignoring the old value afterwards, so yeah
+
+1594926161
+FireFox317
+Interesting stuff for sure
+
+1594926304
+FireFox317
+Funny that you discovered why the instruction is named mov :P
+
+1594926481
+andrewrk
+I didn't used to be able to read assembly, but it's funny how generating machine code forces you to learn heh
+
+1594926506
+leeward
+It really does.
+
+1594926605
+leeward
+Oh, I don't know if I told you: The msp430 code to read-modify-write an IO register that Zig generates is more efficient than what GCC or LLVM generate.
+
+1594926629
+andrewrk
+interesting, I wonder why, considering zig (stage1) uses LLVM
+
+1594926690
+scientes
+leeward, IO register
+
+1594926703
+scientes
+that means volatile
+
+1594926710
+scientes
+so LLVM and GCC both are really careful
+
+1594926713
+leeward
+memory mapped IO
+
+1594926716
+scientes
+you could teach them to be better however
+
+1594926754
+scientes
+yeah, well that is not what those compiler are designed for
+
+1594926763
+scientes
+you are probably better just using inline assembly
+
+1594926793
+leeward
+They both generate mov <mmio>, <reg>; op <reg>, <mmio>
+
+1594926810
+leeward
+No, this is from Zig code doing |= on a volatile pointer.
+
+1594926855
+leeward
+er, that second instruction was op <constant>, <reg>
+
+1594926856
+andrewrk
+how can you do better than mov <mmio>, <reg>; op <reg>, <mmio> ? that seems ideal
+
+1594926859
+leeward
+then another move
+
+1594926897
+leeward
+I was looking at both at the same time. Zig does it in 1 instruction: bis <constant>, <addr>
+
+1594926913
+leeward
+bis is msp430 for "or"
+
+1594927000
+leeward
+I'll stop being obscure: "mov.b &addr, r15; bis.b #1, r15; mov.b r15, &addr" vs. "bis.b #1, &addr"
+
+1594927093
+leeward
+Zig does the 3-instruction version with xor, though, which is interesting.
+
+1594927192
+leeward
+To the same address, even.
+
+1594927238
+andrewrk
+indeed
+
+1594927362
+leeward
+I wonder if Zig's annotating the llvm IR in a way that C doesn't.
+
+1594927370
+leeward
+The xor is also in a loop.
+
+1594927635
+leeward
+Unfortunately, I can't get clang to emit something that links without modification. It's assuming all kinds of false things about my system and I haven't had time to dig into all of them yet.
+
+1594933679
+Sahnvour
+andrewrk: do you have a precise idea of the hashmap benchmarks you want, or should I contribute the ones I ported from the C++ blogpost of Martin Ankerl ?
+
+1594934457
+shrumo
+hello, people. Just discovered zig and wanted to give it a test. Is there some general place where I can find code samples?
+
+1594934541
+ikskuh
+hey shrumo
+
+1594934554
+ikskuh
+read the stdlib, and search github for "zig" tag
+
+1594934559
+ifreund
+shrumo: not sure what exactly you're looking for, there is a list of community projects on the wiki
+
+1594934560
+ikskuh
+there are a lot of projects out there
+
+1594934564
+ifreund
+there is also
+
+1594934579
+ikskuh
+damn, ifreund :D
+
+1594934580
+ikskuh
+too fast
+
+1594934615
+waleee-cl
+oohh, it had an added chapter now (nr 3)
+
+1594934619
+shrumo
+I'll check out the community projects, then. Cheers
+
+1594934658
+epmills
+hey, all.
+
+1594934715
+epmills
+i'm implementing format for a struct and wanted some advice on the specifier.
+
+1594934768
+epmills
+if i have say a dozen formats, does it make more sense to (1) assign a rather non-mnemonic single character specifier or (2) use a multi-character more mnemonic one?
+
+1594934855
+epmills
+a good example would be time formats, like RFC822, RFC1123, RFC1123Z, StampMilli, etc.
+
+1594934962
+ifreund
+I'd default to a multi-character, more informative specifier for custom types
+
+1594935049
+epmills
+ifreund: is "RFC1123Z" too much?  should i shorten to say "r1z" or similar?  seems like a tough balance.
+
+1594935126
+ifreund
+personally I'd go with the full shebang, it makes things immediately clear what is going on
+
+1594935157
+epmills
+ifreund: cheers!
+
+1594935268
+leeward
+There's a chapter 3?
+
+1594935283
+leeward
+Ooh, zbs!
+
+1594935298
+leeward
+Documentation on ZBS that exists! It's a miracle!
+
+1594935333
+leeward
+I've been lazy about finishing 5800
+
+1594935342
+ifreund
+leeward: there's also
+
+1594935494
+leeward
+ifreund: Wow, that's way better than what existed when I first looked.
+
+1594935520
+leeward
+I think it was just "here are 2 examples that use it. Go learn."
+
+1594935637
+ifreund
+that's about what I remeber from when I got started
+
+1594936135
+ifreund
+hmm, apparently river stopped building on freebsd :(
+
+1594936202
+andrewrk
+Sahnvour, any kind of coverage you want to add is welcome
+
+1594937062
+Sahnvour
+okay I think I'll do that then
+
+1594937557
+shrumo
+I tried to be clever and not learn properly by reading the docs and jumping straigt into compiling examples and I found something awkward along my journey.
+
+1594937581
+shrumo
+First I got this: expected type '*std.io.writer.Writer(std.fs.file.File,std.os.WriteError,std.fs.file.File.write)', found 'std.io.writer.Writer(std.fs.file.File,std.os.WriteError,std.fs.file.File.write)'
+
+1594937610
+shrumo
+So I decided to pluck std.io.writer.Writer as the argument and I got this:
+
+1594937621
+shrumo
+error: container 'std.io' has no member called 'writer'
+
+1594937621
+shrumo
+fn mainInner(stderr: *std.io.writer.Writer) !void {
+
+1594937675
+ifreund
+shrumo: if you're using 0.6.0 writer is still called OutStream
+
+1594937869
+shrumo
+(also, thanks to the person that did zang.vim, because it fixes errors by itself (automatically translated `var` to `anytype`))
+
+1594937880
+epmills
+shrumo: yea, ran into that this week as well.
+
+1594938011
+shrumo
+ifreund: thanks.
+
+1594938063
+ifreund
+that would be zig fmt that fixed the error, which the vim plugin invokes
+
+1594938120
+ifreund
+whenever breaking language changes are made and it is feasible to do so, zig fmt is taught how to update the syntax
+
+1594938461
+shrumo
+cool stuff, thanks to zig fmt person as well then.
+

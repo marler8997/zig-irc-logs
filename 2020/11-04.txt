@@ -1,0 +1,348 @@
+1604448555
+fengb
+jaredmm: had some design issues at the time, mostly not being able to generate structs at comptime
+
+1604448618
+fengb
+I also wanted arbitrary field metadata to smooth out the auto serialization
+
+1604448636
+fengb
+And in the end... I didn’t really need it so I left it to rot
+
+1604448738
+frmdstryr
+Is there a way to make a vector of const u8 somehow? `const v = @as(@Vector(4, u8), "find");` does not work
+
+1604448926
+ifreund
+try `const v = @as(@Vector(4, u8), "find".*);`
+
+1604449066
+Biolunar
+I’d like to share some code between my projects. Are there pure zig libraries yet or only C compatible libs?
+
+1604449231
+frmdstryr
+ifreund: That works, thanks!
+
+1604449317
+fengb
+Zig libraries are by source only atm. Not sure if defining a Zig ABI is being planned
+
+1604449448
+frmdstryr
+ifreund: What about with a comptime known slice? Eg if I have `comptime vec: []const u8` , then somehow get a `const v = @as(@Vector(vec.len, u8), vec);`
+
+1604449679
+ifreund
+this might work: @as(@Vector(vec.len, u8), vec[0..vec.len].*);
+
+1604449710
+ifreund
+your goal is to get an array of the length you want the vector to be
+
+1604449740
+ifreund
+"foo".* has type [3:0]u8 for example
+
+1604449768
+Biolunar
+fengb: alright, thx
+
+1604449808
+frmdstryr
+sweet, yes that works
+
+1604485789
+sjums
+How do I call functions in a DLL on windows?
+
+1604485846
+sjums
+I've managed to create a .lib file from said dll. But as soon as I try to declare and call any extern functions the program just exists immediately
+
+1604486296
+ifreund
+Unfortuneatly I'm not at all familiar with windows, how are you linking your zig program against the dll?
+
+1604486680
+sjums
+For building I'm simply executing `zig build-exe .\main.zig --verbose-link`. In main.zig I have a `pub extern "wpcap" ...` declaration and from the --verbose-link output I can see the wpcap.lib file (residing in same dir as main.zig) is included in the linking process.
+
+1604486728
+sjums
+added to that, I also call the declared extern function, or else it's not included
+
+1604486801
+sjums
+(trying to use the pcap library, btw)
+
+1604486814
+ifreund
+what if you do `zig build-exe main.zig wpcap.lib`
+
+1604486902
+sjums
+Then wpcap.lib is included twice in the linker output
+
+1604486915
+sjums
+that gives no errors and no warnings
+
+1604487003
+ifreund
+for your extern declarations, you don't need to make them pub and if you leave out the "wpcap" string it won't limit the search
+
+1604487011
+ifreund
+I'd try just extern fn foobar();
+
+1604487123
+sjums
+Now I (obviously?) have to add the wpcap.lib as an argument when building. Same behaviour, though.
+
+1604487521
+ifreund
+hrm, don't think I can be of much help then sadly, hopefully a windows user stops by
+
+1604487660
+sjums
+No probs. Appreciate it anyway :) Does this look right, though?
+
+1604487672
+sjums
+pcap_lib_version returns a pointer to a string
+
+1604487766
+ifreund
+no, that should probably be a [*:0]u8 or [*:0]const u8
+
+1604487806
+ifreund
+strings in C are null terminated pointers to char or const char
+
+1604487828
+ifreund
+char is equivalent to u8 in zig
+
+1604487864
+ifreund
+also extern implies callconv(.C) but that shouldn't cause any issues
+
+1604487898
+sjums
+I initially got inspiration from kernel32.zig where the callconv is Stdcall
+
+1604487905
+sjums
+So I left it there (:
+
+1604487994
+sjums
+I had it as a usize since that's what's most equivalent to a "generic pointer" in bits.zig. I thought when a function returned a pointer to a string, you'd get a pointer and not the pointed to string?
+
+1604488060
+ifreund
+[*:0]u8 is a pointer to a 0-terminated series of u8s
+
+1604488072
+dominikh
+
+
+1604488096
+ifreund
+usize should have the same abi though
+
+1604488152
+ifreund
+but yeah, pcap_lib_version() returns a [*:0]const u8
+
+1604488189
+alexnask[m]
+You should do `extern "wpcap" fn pcap_lib_version() callconv(.C) usize;`
+
+1604488193
+alexnask[m]
+I think
+
+1604488222
+ifreund
+really? what am I missing about windows?
+
+1604488236
+sjums
+ifreund, no need to do unsafe things when safe alternatives exists ;)
+
+1604488249
+sjums
+alexnask[m], that's exactly where I started :p
+
+1604488252
+alexnask[m]
+Oh sorry mostly talking about the string thing after extern, not usize vs the pointer
+
+1604488292
+sjums
+Odd thing is that everything compiles, links and executes with no exceptions nor warnings. But the main method is never reached
+
+1604488331
+ifreund
+what happens if you run it in a debugger?
+
+1604488334
+sjums
+just broke open the main.exe in a dissasembler. execution never leaves the ntdll module. Not sure why though
+
+1604488356
+alexnask[m]
+huh
+
+1604488362
+sjums
+reversing is not my greatest talent
+
+1604488375
+ifreund
+you may want to have a look at std/start.zig to see the code that runs before your main is called
+
+1604488527
+sjums
+in my dissasembler start.zig code is part of my main.exe module, which is never called into. I have a breakpoint at the start.zig entrypoint which is never hit
+
+1604488540
+sjums
+I'm pretty sure I'm doing something really wrong!
+
+1604488579
+ifreund
+weird
+
+1604488618
+alexnask[m]
+Can you add `--library wcap` to your command line (and possibly a lib dir)?
+
+1604488639
+alexnask[m]
+Not sure if this will make a difference, I assume the current CLI will take the .lib file from the build-exe command and link against it anyway
+
+1604488769
+sjums
+alexnask[m], Code:
+
+1604488777
+sjums
+Build:
+
+1604488796
+sjums
+So wpcap should be linked
+
+1604488813
+alexnask[m]
+yeah this looks correct
+
+1604488931
+sjums
+gotta grab some lunch
+
+1604488934
+sjums
+bbl
+
+1604490731
+g-w1
+I have noticed this interesting pattern where for example Inst is just a struct with a tag that belongs to another struct. Then one can use the tag they find on inst and feildParentPtr to get the whole thing. Is this pattern common, and what is the benefit over just using union(enum).
+
+1604490732
+g-w1
+and src
+
+1604490774
+alexnask[m]
+union(enum) will have sizeOf ~= sizeOf(TagType) + sizeOf(biggest payload)
+
+1604490783
+ifreund
+well if the "child" structs aren't all the same size you save memory
+
+1604490842
+g-w1
+ah that makes sense, i was confused when i first saw this because no other langs have this
+
+1604491080
+dominikh
+is there a valid, builtin and concise way of doing something like this?
+
+1604491081
+alexnask[m]
+Well, this is essentially the same as doing `struct Child { Base base; more_data data; }` in C and casting from `Base*` to some child type pointer
+
+1604491093
+alexnask[m]
+aka hand-rolled inheritance
+
+1604491217
+alexnask[m]
+dominikh: std.meta.fieldInfo(Foo, "foo_field").field_type
+
+1604491295
+dominikh
+alexnask[m]: thank you
+
+1604491605
+g-w1
+alexnask[m] thanks. i didn't know about this type of pattern
+
+1604517643
+Kena
+Please, where can I find the implementation of the function fn endian(Arch) Endian` but I don't find it in
+
+1604517706
+ifreund
+Kena: std/target.zig
+
+1604517745
+Kena
+because using `Target.current.cpu.arch` is noted as deprecated
+
+1604517761
+alexnask[m]
+
+
+1604517785
+Kena
+Yes found it, thank you ifreund and alexnask[m]
+
+1604519428
+andrewrk
+Kena, where do you see `Target.current.cpu.arch` is noted as deprecated?
+
+1604519779
+dutchie
+i see a whole bunch of std code using ArrayList.span. is that worth going through and updating to be .items instead or is that something that zig fmt would update?
+
+1604520035
+ikskuh
+zig fmt will only update syntax changes
+
+1604520043
+ikskuh
+stdlib changes won't be updated
+
+1604525787
+Kena
+andrewrk, at
+
+1604526052
+ifreund
+Kena: I believe the re-export of Target.current.cpu.arch.endian(); as builtin.endian is what is deprecated here
+
+1604526069
+ifreund
+not Target.current.cpu.arch.endian() itself
+
+1604526467
+Kena
+Allright buddy, sorry for the inconvenience.
+

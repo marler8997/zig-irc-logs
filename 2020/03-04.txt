@@ -1,0 +1,1400 @@
+1583280004
+daurnimator
+windows actually has 3 different types of symlinks
+
+1583280096
+BaroqueLarouche
+
+
+1583280126
+daurnimator
+1. junctions (not real symlinks) 2. real symlinks (almost no one uses these; they also only can be created from admin accounts... but not system accounts; microsoft is really weird about them). 3. real-fake symlinks (used by WSL)
+
+1583280134
+andrewrk
+FireFox317, I can reproduce the c import failure
+
+1583280157
+andrewrk
+ahh right symlinks. the zig-sdl package can do without them
+
+1583280165
+andrewrk
+I'll make that improvement
+
+1583280174
+FireFox317
+i guess its symlinks, not sure tho
+
+1583280370
+FireFox317
+andrewrk, will try it tomorrow again :) goodnight y´all
+
+1583280931
+FireFox317
+andrewrk, cross compiling worked tho, thats so cool! I just restarted my laptop, booted linux, cross compiled for windows, copied the exe to the other disk, restarted, booted windows and ran clashproto.exe and it works!!
+
+1583280980
+andrewrk
+it works the other way too, windows => linux. would just need to make more zig packages for the C libs that soundio & sdl2 depend on
+
+1583281093
+FireFox317
+okay, really gonna sleep now, bye guys!
+
+1583281587
+alexnask
+@andrewrk, @call with async_kw modifier works for comptime known function pointers (since it allocates the stack frame for us)
+
+1583281614
+alexnask
+I will open an issue to modify @asyncCall to accept a tuple parameter instead of varargs
+
+1583281779
+andrewrk
+alexnask, sounds good
+
+1583282916
+adamkowalski
+andrewrk: is there a way to profile the compiler while it's compiling your code? my compile times are starting to get longer, and I want to know what's causing it. Is it because i'm doing to much work at compile time or whats going on
+
+1583283137
+mikdusan
+adamkowalski: `zig build-obj hello.zig -ftime-report`
+
+1583284213
+adamkowalski
+awesome thanks!
+
+1583284312
+adamkowalski
+Is it just me or is this a bit long
+
+1583284324
+adamkowalski
+4+ seconds for assembly printer
+
+1583284341
+adamkowalski
+4+ seconds in semantic analysis
+
+1583284348
+adamkowalski
+10+ seconds in llvm emit output
+
+1583284393
+adamkowalski
+-ftime-report doesn't tell me what semantic analysis is spending it's time on
+
+1583284579
+andrewrk
+adamkowalski, compare it with -ftime-report for std lib tests, the percentages
+
+1583285471
+fengb
+andrewrk: how’s the zig software foundation going?
+
+1583285975
+shachaf
+Is the plan for recursion still to disallow recursion on the call stack entirely, and require you to allocate stack frames yourself?
+
+1583285987
+shachaf
+What about indirect calls? Would those also be required to be async?
+
+1583286139
+adamkowalski
+andrewrk: here is the report for zig test lib/std/std.zig -ftime-report
+
+1583286160
+adamkowalski
+Semantic Analysis ~12 seconds
+
+1583286166
+adamkowalski
+LLVM Emit ~44 seconds
+
+1583286227
+adamkowalski
+the runtime code is crazy fast though. i'm just worried that as I keep adding more compile time features will my build times balloon
+
+1583286348
+mikdusan
+adamkowalski: stage1 comptime is not really optimized for speed at all; self-hosted is where that effort will go
+
+1583286349
+andrewrk
+adamkowalski, this is one of the primary concerns the self-hosted compiler is intended to address, and the main reason that progress is so delayed
+
+1583286536
+mq32
+andrewrk: got my build.zig to build C++ code :)
+
+1583286561
+adamkowalski
+I'm not complaining just curious. I know that D approached this by using a jit for compile time code rather then interpreting
+
+1583286921
+andrewrk
+yeah I'm with you. the perf of stage1 is abysmal compared to where I want to get to eventually
+
+1583286952
+andrewrk
+but consider: that runtime code being crazy fast, will be the
+
+1583288211
+andrewrk
+fengb, I'm planning to do a big announcement for ZSF within the next few months
+
+1583288237
+andrewrk
+but as a sneak preview: it's in the new york state database and the lawyer is working on getting non-profit status
+
+1583288247
+fengb
+Oh so I’m ruining it :P
+
+1583288259
+fengb
+Oh congrats!
+
+1583288289
+andrewrk
+the announcement will come when I can offer a way for people to donate to the org rather than to myself
+
+1583288332
+andrewrk
+shachaf, runtime-known function pointers will be annotated with minimum stack space they require (sort of like alignment metadata in pointers today)
+
+1583288359
+andrewrk
+there will be a safety check when you call a runtime-known function pointer, to make sure the actual stack space of the function you called matches the amount the pointer was tagged with
+
+1583288387
+andrewrk
+extern functions will default to something like 7 MiB stack space
+
+1583288469
+andrewrk
+maybe there can be a tool which can analyze object files and help automate coming up with more accurate numbers
+
+1583288491
+shachaf
+You mean maximum?
+
+1583288588
+shachaf
+Putting all this information in the type (effectively) is interesting.
+
+1583288648
+andrewrk
+maximum they could use; minimum they require
+
+1583288675
+andrewrk
+point being if your fn ptr is annotated as needing 100 KB but it only needs 10 KB that's OK
+
+1583288689
+andrewrk
+you just can't guess too low
+
+1583288788
+fengb
+Would it make sense for an stdlib type that converts functions to frame size + pointer?
+
+1583288827
+shachaf
+OK, sure.
+
+1583288857
+andrewrk
+fengb, not sure I follow
+
+1583289237
+fengb
+I have a need to convert comptime known functions into function pointers. Be sorta nice to have a standard data structure to store the frame size and pointer next to each other
+
+1583289739
+andrewrk
+I see
+
+1583291441
+adamkowalski
+Do we already have something like this in the standard library? I feel like I might be reinventing the wheel.
+
+1583291460
+adamkowalski
+I'm building a function "invoke" which can take a "callable" and some arguments
+
+1583291486
+adamkowalski
+a callable can either be a function pointer, or a struct with a "call" method which accepts the same number of arguments as were passed into "invoke"
+
+1583291544
+adamkowalski
+pretty much it allows you to abstract over closures and function pointers. it will determine which one got passed in and then either call with f(arg1, arg2) syntax or with f.call(arg1, arg2) syntax appriorpiately
+
+1583291564
+adamkowalski
+the usage would look like invoke(f, .{arg1, arg2})
+
+1583291791
+andrewrk
+@call ?
+
+1583291907
+daurnimator
+adamkowalski: sounds like you're inventing a new way to call functions because zig doesn't allow you to overload the call operator... think about why that might be :)
+
+1583291934
+adamkowalski
+andrwerk: that looks like a great building block for this thanks!
+
+1583291958
+adamkowalski
+daurnimator: it's necessary. I have some callers which just want to use a function pointer, and others which need to "close" over a value
+
+1583291979
+adamkowalski
+I don't want to have two copies of the function which only differ in how they invoke the function
+
+1583292001
+adamkowalski
+but i'm open to alternatives
+
+1583293187
+Cadey
+adamkowalski: let's think about it from an xy problem standpoint, what are you trying to do with that?
+
+1583293382
+adamkowalski
+before we get to that. lets just appreciate how amazing Zig is that the solution is this trivial:
+
+1583293449
+adamkowalski
+Cadey: i'm implementing a machine learning library (think numpy, tensorflow, pytorch) and I'm writing out all sorts of different operations on tensors.
+
+1583293488
+adamkowalski
+the backward pass for elementwise multiplication (local partial derivative) requires multiplying the incoming gradient by the corresponding input elementwise
+
+1583293513
+adamkowalski
+however, in the special case of broadcasting, one of the tensors is actually a scalar, and then you want to multiply each element of the gradient by that scalar
+
+1583293554
+adamkowalski
+however, you do this sort of elementwise traversal of tensors quite often so I implemented map and treat the tensors like a functor
+
+1583293571
+adamkowalski
+so I want to map over the tensor, scaling each element by the scalars value
+
+1583293625
+adamkowalski
+you can see the code here
+
+1583293645
+adamkowalski
+currently the -5 is hard coded, but it should actually come from the inputs[0].storage.scalar
+
+1583294738
+fengb
+`test "module with function body"...error: ComeUpWithABetterName` past me is trolling 🤔
+
+1583295524
+andrewrk
+lol get rekt
+
+1583299033
+daurnimator
+andrewrk:
+
+1583305200
+daurnimator
+andrewrk: rebased.
+
+1583309653
+daurnimator
+all so quiet now >.<
+
+1583323787
+Snektron
+Its oh so still
+
+1583323967
+mq32
+hello Snektron
+
+1583323969
+mq32
+hello rest!
+
+1583324037
+Snektron
+Hi mq32
+
+1583324093
+mq32
+now i'm building my project with zig build instead of qmake
+
+1583324196
+alexnask
+hihi
+
+1583324215
+mq32
+hey alexnask
+
+1583324765
+alexnask
+stage1 backtraces are so noice
+
+1583325190
+artifth
+Hi all, I'm trying to use zig to make a win32 application and I'm struggling with passing utf16le strings to WinAPI functions, particularly the CreateWindowExW function. I've converted string to utf16le using std.unicode.utf8ToUtf16LeWithNull and then I'm passing the result to CreateWindowExW, but it seems that it only takes first letter from the string. Does anyone have an idea what could cause that? Also, when I pass the exact
+
+1583325190
+artifth
+same string to MessageBoxW it displays it as intended
+
+1583325288
+alexnask
+Hmm, weird
+
+1583325312
+alexnask
+What is the string you are trying to pass? (And I assume you are passing it as a windows name?)
+
+1583325404
+artifth
+here is snippet
+
+1583325407
+artifth
+
+
+1583325474
+artifth
+LPCWSTR is [*c]const c_ushort
+
+1583325613
+alexnask
+Googling around it seems to be a fairly common issue (truncated titles) let me see if I can find some solution ppl agree on
+
+1583325747
+artifth
+hm, that wasn't a zig error
+
+1583325767
+artifth
+I was using DefWindowProc instead of DefWindowProcW :)
+
+1583325779
+alexnask
+Right was just gonna suggest that :D
+
+1583325782
+artifth
+had too much struggle with zig already that forgot to look into other direction
+
+1583325787
+artifth
+thanks :)
+
+1583325796
+alexnask
+cheers
+
+1583328755
+alichay
+In relation to issue #4591, implementing self-hosted CPU feature detection, would it be useful to have an implementation if it was only for x86 right now?
+
+1583328774
+alichay
+(I don't really have any ARM or RISC devices to tinker with lmao)
+
+1583328823
+mq32
+yeah, every bit helps :)
+
+1583333334
+alexnask
+Is anyone familiar with the InferredStructField mechanism used to initialize anonymous literals?
+
+1583333452
+mq32
+Is anyone familier with importing symbols from C/C++ defined in Zig?
+
+1583333461
+mq32
+using @export or pub export doesn't help
+
+1583333483
+BaroqueLarouche
+search for a generated header file in your zig-cache
+
+1583333497
+alexnask
+in ir_resolve_result, when we try to resolve an inferred struct field that has already been resolve, I don't see why we shouldn't error "duplicate field" right there
+
+1583333794
+mq32
+BaroqueLarouche, i'm writing an executable and getting linker errors, not writing a library
+
+1583334109
+mikdusan
+alexnask: I haven't looked at it closely, but anon-array-literal might use that too?
+
+1583334184
+alexnask
+Yes it does but you can never end up on that branch (I think)
+
+1583334213
+mikdusan
+oh wait even if it did, they have diff field names (@"0", @"1", ...)
+
+1583334219
+alexnask
+Right, exactly
+
+1583334238
+alexnask
+I'm struggling with #4597 rn
+
+1583334247
+alexnask
+But I think I'm close
+
+1583334291
+mq32
+BaroqueLarouche: I'm just stupid, that's all :D
+
+1583334339
+alexnask
+Well, I'm struggling to fix it while also not breaking anonymous struct literals :p
+
+1583335313
+mq32
+aaargh
+
+1583335318
+mq32
+as soon as you do things right, it will work!
+
+1583335756
+alexnask
+mq32 truisms are true ;)
+
+1583336261
+mikdusan
+alexnask: can you try this diff?
+
+1583336306
+alexnask
+I don't think that's the issue, I found a solution, updating #4610 in a minute
+
+1583336309
+alexnask
+But I will add it
+
+1583336314
+alexnask
+And test
+
+1583336357
+alexnask
+Basically I just change the inferred field's type to allow the write to succeed and the duplicate field is detected by existing code
+
+1583336556
+mikdusan
+(on a very recent branch from master) with that diff, seems to fix #4597 test cases
+
+1583336564
+alexnask
+Also incidentally closes #3878
+
+1583336623
+alexnask
+@mikdusan, Weird, I will try it against 4597 and 3878 testcases
+
+1583336833
+alexnask
+mikdusan, Did you run the testcases on linux?
+
+1583336848
+mikdusan
+no, macos
+
+1583336858
+mikdusan
+let me jump onto linux
+
+1583336862
+alexnask
+Nah its okay
+
+1583336870
+alexnask
+Can you try to run them on master on macos?
+
+1583336879
+alexnask
+They only crashed on windows and not linux for me
+
+1583336884
+mikdusan
+yup
+
+1583337205
+mq32
+<alexnask> mq32 truisms are true ;)
+
+1583337214
+mq32
+true! but it's good to remind everybody of that now and then
+
+1583337665
+mikdusan
+macos/0.5.0+e3b37fc9c --> allocator patch fixes crash:
+
+1583337667
+mikdusan
+
+
+1583337815
+mikdusan
+yeah I cannot reproduce #4597 on linux right now. let me get my house in order
+
+1583337840
+alexnask
+Ok let me test your diff on windows too
+
+1583337844
+alexnask
+Thanks
+
+1583338537
+alexnask
+While this does work I feel like it is fishy. I mean, it should work with any allocator
+
+1583338616
+alexnask
+Besides I'm 90% sure what happens is that `struct_val->data.x_struct.fields` on ir.cpp:18487 is only ever called with a new_field_count=1 and then, when copy_const_val we try to copy both fields
+
+1583338639
+betawaffle
+relevant:
+
+1583338656
+alexnask
+is only every allocated with new_field_count=1*
+
+1583338782
+alexnask
+(because the if block above returns early if the value is comptime, so if the tuple contains a comptime and a runtime value the runtime value is initialized but the comptime value is not, which is why I moved the block bellow the part that reallocates the value's fields)
+
+1583338906
+mikdusan
+
+
+1583338920
+mikdusan
+ok so that's a legit memory corruption. never mix allocators when reallocating :)
+
+1583338935
+mikdusan
+(this is my doing)
+
+1583338951
+mikdusan
+but how it relates to #4597 I'm not really sure.
+
+1583338997
+alexnask
+I don't see how this is a memory corruption error, it is using one allocator to allocate the list of pointers
+
+1583339005
+alexnask
+And one allocator to allocate the ZigValue's
+
+1583339046
+alexnask
+mikdusan, #4597 happens because we try to copy_cosnt_val a struct with 2 fields but only 1 fields has been allocated
+
+1583339092
+alexnask
+Because we skip the realloc of the struct value's fields if the value is comptime
+
+1583339150
+mikdusan
+one thing is, realloc is always called from size 0. and it could be I have a bug in c_allocator's realloc. and shifting it to the arena impl which does realloc's differently
+
+1583339182
+alexnask
+I dont think it's always called from size 0
+
+1583339197
+alexnask
+`struct_val->data.x_struct.fields = realloc_const_vals_ptrs(ira->codegen,
+
+1583339198
+alexnask
+struct_val->data.x_struct.fields, old_field_count, new_field_count);`
+
+1583339214
+alexnask
+We do 1 realloc for every InferredStructField
+
+1583339252
+alexnask
+(but we skip it if the value is comptime)
+
+1583339373
+alexnask
+Anyway I will check again but I'm pretty sure we only ever realloc with new_field_count=1 here and then copy_const_val() fields[1]
+
+1583339436
+mikdusan
+does it get to size 1 via alloc_const_vals_ptrs or realloc_Const_vals_ptrs?
+
+1583339484
+mikdusan
+but anyway the crash on macos for me was when copying field[1] so realloc is in play
+
+1583339495
+alexnask
+realloc_const_vals_ptrs
+
+1583339527
+alexnask
+We do a single realloc_const_vals_ptrs from 0 -> 1, then try to access fields[1] to copy_const_val it
+
+1583339536
+alexnask
+We never realloc_const_vals_ptrs from 1 -> 2
+
+1583339559
+mikdusan
+hmm I thought I checked that with an assert
+
+1583339655
+andrewrk
+remember when we didn't have to free stuff? that was nice
+
+1583339661
+alexnask
+Basically we generate two InferredStructField's, resolve the first one, it is not comptime so we realloc the struct_val's fields 0 -> 1, then when resolving the second one we exit eearly since it's comptime
+
+1583339688
+alexnask
+So we never realloc the fields from 1->2 and we try to copy fields[1] in copy_const_val when copying struct_val
+
+1583339691
+alexnask
+Does that make sense?
+
+1583339758
+alexnask
+I really don't think its an issues with realloc_const_vals_ptrs
+
+1583339764
+alexnask
+an issue*
+
+1583339871
+alexnask
+My PR fixes this (as well as passing tuples to comptime var arguments) but breaks something else atm :/
+
+1583340224
+fengb
+Should I have a temporary use-after-free or leak? 🤔
+
+1583340270
+mikdusan
+alexnask: you've went into this far further than me, maybe my assert is wrong? `copy_const_val()` for the struct it alloc's dest fields[] according to src_field_count. i've verified is 2. then it copies each field. field[1] gets segfault. how is x_struct.fields not properly sized?
+
+1583340370
+alexnask
+mikdusan, src_field_count is correct since it's a property of the struct type
+
+1583340387
+alexnask
+However the value only ever gets 1 field allocated
+
+1583340500
+alexnask
+Consider what happens if one of the fields has `value && instr_is_comptime(value) == true` and the other does not
+
+1583340511
+alexnask
+(lines 18461+)
+
+1583340740
+mikdusan
+are we on the same crash point?:
+
+1583340741
+mikdusan
+
+
+1583341440
+alexnask
+Yes
+
+1583341496
+mikdusan
+btw odd. I have a pointer value for fields[1]
+
+1583341531
+mikdusan
+but tbh it looks bogus.
+
+1583341535
+alexnask
+Yes
+
+1583341541
+alexnask
+I had that  happen yesterday
+
+1583341546
+alexnask
+It was just an invalid address
+
+1583341553
+alexnask
+Now it's NULL for some reason
+
+1583341618
+alexnask
+'src' is 'struct_val' in ir.cpp:18484 when resolving the inferred fields of the struct we are intializing
+
+1583341848
+mikdusan
+ok you've convinced me the allocator patch is not relevant to #4597. apologies for the sidetrack.
+
+1583341911
+alexnask
+Cheers :P
+
+1583341929
+alexnask
+Its a pretty convoluted bug
+
+1583342079
+alexnask
+Just for reference:
+
+1583342898
+mikdusan
+[new tag] llvmorg-10.0.0-rc3
+
+1583344003
+andrewrk
+nice, I'll merge master into llvm10, and start a full test suite run against debug llvm
+
+1583348301
+mq32
+we don't have some args parser for zig yet, right?
+
+1583348636
+companion_cube
+isn't there a `clap` library somewhere?
+
+1583348657
+companion_cube
+
+
+1583348877
+mq32
+looks cool
+
+1583348894
+mq32
+but i think i want to try a struct-based approach
+
+1583348948
+fengb
+need moar comptime
+
+1583348969
+fengb
+I worked around tags by injecting my metadata into function names. It's so janky bit it works :D
+
+1583348994
+companion_cube
+where's your "simpler than C" now? :p
+
+1583349032
+mq32
+it's simpler to get the function name than in C! :
+
+1583349814
+alexnask
+ComptimeClap sounds like a really bad disease /s
+
+1583354696
+fengb
+"zig test" seems to be eating some of the output: Tests failed. Use the following command to reproduce the failure:
+
+1583354715
+fengb
+If I run the test executable manually, it gives me: Test [1/1] test "module with function body"...Segmentation fault: 11
+
+1583355035
+andrewrk
+fengb, maybe try printing a newline before your content
+
+1583355059
+fengb
+It's the "Segmentation fault: 11" that got eaten
+
+1583355104
+TheLemonMan
+there are no segfaults if you can't see the error messages
+
+1583355174
+andrewrk
+fengb, are you running zig test in a child process? in this case you have to look for the termination data to see that there is a segfault. the "Segmentation fault: 11" message is printed by your shell
+
+1583356557
+mikdusan
+a few malloc tidbits: tried mimalloc (again) against stage1; here's a few words on it:
+
+1583356571
+mikdusan
+1. mimalloc is not ready for anything macos. crash. corruption.
+
+1583356645
+mikdusan
+2. mimalloc on linux links and works as expected; and lives up to some of the hype wrt. RSS. it reduced RSS by 10% when I simply switched out malloc calls (stage1's mem::os namespace)
+
+1583356666
+mq32
+since when has bpaste zig highlighting?! \o/
+
+1583356678
+mikdusan
+mq32: example?
+
+1583356709
+mikdusan
+oh sorry I thought "hastebin.com"
+
+1583356711
+mikdusan
+lol
+
+1583356776
+mq32
+haha :D
+
+1583356780
+mq32
+show off:
+
+1583356880
+companion_cube
+nice.
+
+1583356888
+companion_cube
+the shorthands struct… :o
+
+1583356970
+mikdusan
+how do you represent '-' for stdin/stdout? j/k I never use that old style anywyas
+
+1583357038
+mq32
+mikdusan: i could actually implement that single "-" is considered a positional argument and everything after "--" is considered positional
+
+1583357045
+mq32
+i just might do that, because it's useful and widespread
+
+1583357390
+fengb
+Neat
+
+1583359151
+mq32
+mikdusan: "--", "-" and "--option=value" are now supported
+
+1583359165
+mq32
+and still below 200 LOC
+
+1583359194
+mikdusan
+👍
+
+1583359813
+andrewrk
+nice work on #4573 alexnask
+
+1583359829
+alexnask
+Thanks :)
+
+1583359854
+alexnask
+Finally I can remove workarounds from std.interface PR :D
+
+1583359974
+TheLemonMan
+but why is_comptime || is_tuple is needed?
+
+1583360295
+andrewrk
+I was wondering the same thing
+
+1583360480
+companion_cube
+mq32: have you published your code yet?
+
+1583360504
+mq32
+
+
+1583360506
+mq32
+here you go :)
+
+1583360543
+fengb
+args4z
+
+1583360559
+TheLemonMan
+if the result_loc is marked as runtime due to the presence of runtime-known values that check only sidesteps the is_comptime check
+
+1583360657
+companion_cube
+damn that's an awesome demo for `inline for`
+
+1583360697
+mq32
+companion_cube: the args parser?
+
+1583360700
+companion_cube
+yeah
+
+1583360707
+mq32
+pretty much the perfect fit :D
+
+1583361223
+jessermeyer
+Is there a reason why enum members cannot begin with a number?
+
+1583361317
+meowray
+Does zig use lld Mach-O?
+
+1583361324
+jessermeyer
+
+
+1583361333
+meowray
+andrewrk: ^
+
+1583361344
+mq32
+jessermeyer: @"1D"
+
+1583361352
+jessermeyer
+Aaaah
+
+1583361360
+TheLemonMan
+meowray, yep
+
+1583361412
+andrewrk
+meowray, yes
+
+1583361437
+fengb
+jessermeyer: enum members are identifiers, and identifiers start with alphaunderscore in the tokenizer
+
+1583361458
+fengb
+Same reason why variables or struct fields can't start with numbers
+
+1583361461
+andrewrk
+meowray, we're looking forward to it being maintained now (according to
+
+1583361468
+fengb
+Without the @"" escape that is :P
+
+1583361497
+jessermeyer
+Thanks for the explaination.
+
+1583361535
+meowray
+andrewrk: yes. because i decide to rename -flavor darwin to -flavor old-darwin
+
+1583361583
+andrewrk
+meowray, that's fine with me, I plan on using the new code as soon as possible
+
+1583361594
+BaroqueLarouche
+mq32:
+
+1583361597
+BaroqueLarouche
+oups
+
+1583361604
+BaroqueLarouche
+your zig-args should be in std lib IMO
+
+1583361608
+mq32
+haha :D
+
+1583361617
+mq32
+i don't think it fits zig std very well actually
+
+1583361618
+andrewrk
+meowray, zig links against lld as a library and does not expose linker options directly; API breakage is not an issue for us
+
+1583361623
+mq32
+it's useful, but not std-worthy
+
+1583361626
+fengb
+stdlib is where projects go to die 🙃
+
+1583362050
+mq32
+btw, i really like how anonymous structs changed the way APIs are used :D
+
+1583362057
+mq32
+createFile for example is pretty cool now :)
+
+1583362183
+meowray
+
+
+1583362267
+meowray
+just so that FB people can immediately take "darwin"
+
+1583362376
+andrewrk
+well old-darwin basically unmaintained, so as long as the new version is at least as capable as the old version, I don't see why not to do that
+
+1583362400
+andrewrk
+why even keep old-darwin around? if the new one is better then replace it
+
+1583362419
+meowray
+there is reference value
+
+1583362460
+fengb
+This line causes a segfault: `var stack: [1 << 20]Op.Fixval align(16) = undefined;`
+
+1583362462
+andrewrk
+IMO it should be new-darwin until it is feature-compatible, then it should `mv new-darwin darwin`
+
+1583362486
+fengb
+Not a compiler segfault though. An execution segfault
+
+1583362509
+andrewrk
+fengb, I think you overflowed the stack
+
+1583362519
+fengb
+Oh
+
+1583362523
+andrewrk
+we don't have stack upper bound detection yet, which would cause zig to notice this and request a bigger stack from the OS
+
+1583362531
+andrewrk
+(at compile time)
+
+1583362544
+fengb
+16 MB too stronk?
+
+1583362568
+fengb
+Ah okay it's working again
+
+1583362574
+fengb
+Thanks
+
+1583362577
+andrewrk
+np
+
+1583362706
+fengb
+I guess I should create a stack out of heap memory. That sounds so weird
+
+1583362923
+meowray
+They want to add tests as `lld -flavor darwinnew`. I just want to save a step that does sed -i 's/darwinnew/darwin/'
+
+1583362941
+andrewrk
+fengb, here's where the zig std lib does exactly that for creating a thread:
+
+1583362973
+andrewrk
+meowray, I don't care, do it however you want. it will affect 1 line of code in zig 1 time
+
+1583363003
+andrewrk
+and here's WIP code for even doing it for the main thread:
+
+1583363133
+fengb
+Hmm... is the stack just a simple convention for most languages then?
+
+1583363184
+fengb
+e.g. the OS doesn't really care and the compiler reserves a segment of memory for the stack
+
+1583363219
+andrewrk
+yes
+
+1583363224
+andrewrk
+stackless python doesn't use a stack
+
+1583363229
+andrewrk
+go uses a segmented stack
+
+1583363340
+mikdusan
+I thought they switched to contiguous
+
+1583363366
+fengb
+I feel like I've learned more about low level programming since starting Zig than my entire career + college
+
+1583363376
+andrewrk
+:)
+
+1583363394
+andrewrk
+same
+
+1583363632
+mikdusan
+"hot split problem":
+
+1583363780
+andrewrk
+mikdusan, ah, thanks, this is interesting
+
+1583363799
+andrewrk
+so it does resize the stack, but it resizes into a new contiguous one and then copies data over
+
+1583363808
+mikdusan
+yes they rewrite pointers
+
+1583363811
+mikdusan
+
+
+1583363843
+andrewrk
+the property remains that calling a function in go can OOM
+
+1583363900
+andrewrk
+ha that's funny they cite rust also not using segmented stacks - the link is from 2013 when rust had green threads
+
+1583363915
+andrewrk
+it's pretty crazy how different rust was planned to be
+
+1583363972
+andrewrk
+there are only 4 months between rust removing green threads and the first commit to zig
+
+1583364023
+fengb
+But Zig was also a different beast ;)
+
+1583364033
+andrewrk
+was it?
+
+1583364065
+fengb
+%%maybe 🙃
+
+1583364086
+andrewrk
+according to my own memory I've been pressing the petal to the metal on the same highway going the same direction the whole time
+
+1583364098
+andrewrk
+%% had the same semantics as catch
+
+1583364108
+andrewrk
+it was like 20 lines to change it to a keyword
+
+1583364251
+mikdusan
+i suspect the stack problem will largely be solved in the future with huge address spaces and real smart mmu and nobody will ever care again
+
+1583364273
+mikdusan
+(Aside from statically determining it before hand of course)
+
+1583364348
+mikdusan
+maybe something like a vm-zone for each stack
+
+1583364455
+fengb
+
+
+1583364588
+andrewrk
+mikdusan, I think that's a wise prediction. The problem I have with that solution is that it doesn't support the use case of making sure you have all the (memory) resources available to complete a task before attempting to start it
+
+1583364656
+mikdusan
+true
+
+1583364702
+mikdusan
+no problem. when you can't call a function because stack is exhausted, just handle it... by calling another function to handle it :)
+
+1583364734
+andrewrk
+mikdusan, related:
+
+1583364762
+fengb
+Ah that'd be handy
+
+1583364764
+andrewrk
+fengb, ah maybe this was before your time. zig switched from &T to
+
+1583364765
+mikdusan
+fengb: i don't know why it mentions that I mentioned #33. it could be that stack trace had "#33" in it and I pasted it raw
+
+1583364801
+mikdusan
+hehe yup. #34 lists me too hahaha
+
+1583364812
+fengb
+You mentioned all of the old issues :P
+
+1583364819
+mikdusan
+ah sheeet.
+
+1583364824
+fengb
+Okay, enough trolling old history
+
+1583364827
+andrewrk
+fengb,
+
+1583365277
+protty
+Does anyone know why the .tail store at L75 is observed as 0xaaaaaaaaaaaaaaaa on another thread at L133 here?
+
+1583365283
+mikdusan
+#588, it looks to me like `var a: type = 32` breaks the "copy" rule in zig. if you see a "=" you make a copy. but not in this case, type is just a ref or alias?
+
+1583365309
+mikdusan
+typo: `var a: type = i32;`
+
+1583365460
+mikdusan
+protty: line #124. push it outside/before line #123.
+
+1583365496
+andrewrk
+mikdusan, given that types are immutable and have infinite lifetime, copies and references are indistinguishable
+
+1583365500
+mikdusan
+protty: meh i'm wrong. nevermind
+
+1583365814
+andrewrk
+5 weeks until the release. it's almost crunch time
+
+1583365878
+andrewrk
+0.6.0 milestone issue counts are on schedule
+
+1583365898
+fengb
+I saw that you already have some written notes ;)
+
+1583365985
+protty
+This mutex bug in particular has been my only show stopper so far with the worst part being that it acts like a race condition
+
+1583366009
+andrewrk
+fengb, oh, that zig-0.6.0 file on my desktop? here are the contents:
+
+1583366024
+andrewrk
+protty, I'll take a look later tonight or tomorrow
+
+1583366027
+andrewrk
+I'm about to go afk
+
+1583366116
+protty
+thanks (to mikdusan as well) for checking it out
+
+1583366173
+andrewrk
+protty, I also want to consider making language tools to help diagnose these kinds of bugs
+
+1583366199
+andrewrk
+maybe the language could specify "debug extensions" or something like this
+
+1583366201
+andrewrk
+anyway, ttyl
+

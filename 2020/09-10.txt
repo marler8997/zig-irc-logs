@@ -1,0 +1,884 @@
+1599710865
+andrewrk
+oh, ifreund, you may be able to work around your glibc issue with the --libc feature and providing explicit paths
+
+1599710877
+andrewrk
+with zig 0.6.0
+
+1599721398
+JimRM
+@andrewk looks good
+
+1599723981
+omglasers2
+I assume it's not ok to be able to get an infinite loop while compiling? it goes on forever at the Semantic Analysis stage (master on win64/lin64)
+
+1599725638
+omglasers2
+ah seems to be this
+
+1599729704
+ifreund
+andrewrk: nice, setting 'include_dir' in the libc.txt to /usr/lib/zig/libc/glibc/include seems to work
+
+1599738223
+jorangreef
+The `io_uring_sqe` struct in the kernel is expanding with ever more unions (
+
+1599738223
+jorangreef
+`union1`, `union2` naming that we have?
+
+1599739391
+daurnimator
+jorangreef: I think the answer is helpers to create the struct
+
+1599740029
+jorangreef
+We could future-proof these `unionN` fields by renaming them after the name of their first field, e.g. `union1` becomes `off` and then you set the off with .off = .{ .off = 0 } in a helper method, but that's still not as a good as C, where you could just do `.off = 0` and adding unions later doesn't break anything as it does in Zig.
+
+1599740129
+jorangreef
+I was also thinking we could just go back to plain u32s and u64s without unions plus padding as the earlier `io_uring_sqe` struct had.
+
+1599742786
+JimRM
+I have zig installed using Snap on Ubuntu. Is there a way to make the Zig library source code browsable via ZLS? I currently see this error for example:
+
+1599742787
+JimRM
+Unable to open 'std.zig': Unable to read file '/usr/bin/lib/zig/std/std.zig' (Error: Unable to resolve non-existing file '/usr/bin/lib/zig/std/std.zig').
+
+1599742823
+JimRM
+Should I just clone the source into that folder? or is there a better way to configure this? (I am using ZLS + VSCode)
+
+1599742970
+alexnask[m]
+You can configure the zig_lib_path in a zls.json file
+
+1599742978
+alexnask[m]
+See
+
+1599743126
+JimRM
+Thanks
+
+1599743277
+omglasers2
+Is there a way to make a recursive format() like this
+
+1599747835
+ikskuh
+omglasers2: you're actually doing direct recursion
+
+1599747858
+ikskuh
+oh wait, that shouldn't be endless i think
+
+1599747872
+ikskuh
+i have a whole bunch of recursive structures that i print like this
+
+1599748041
+omglasers2
+well that doesn't work for me on linux or windows, I'm getting an infinite compilation loop
+
+1599748252
+ikskuh
+oh
+
+1599748253
+ikskuh
+OH
+
+1599748255
+ikskuh
+that's that problem
+
+1599748268
+ikskuh
+it's a problem in the analysis, you can work around that by just introducing another function :D
+
+1599748342
+ikskuh
+
+
+1599748348
+ikskuh
+print force-inlines those calls
+
+1599748351
+ikskuh
+which kinda fails
+
+1599748689
+JimRM
+I am building for a baremetal target - and I have added a custom llvm flag (I think) which disables NEON instructions. However, when I step through the code and enter memcpy - I see there are a bunch of Qx registers used. Is this because memcpy etc is precompiled and just linked? or should that code also be built with the same flags as my project?
+
+1599748715
+ikskuh
+nothing in zig is precompiled
+
+1599748720
+omglasers2
+Great, thanks! seems to be what I need.
+
+1599748729
+ikskuh
+JimRM: does your project contain C code?
+
+1599748743
+JimRM
+My stuff is only Zig + Assembly
+
+1599748746
+ikskuh
+you should be able to just specify the right target with -target as you can exclude/include CPU features
+
+1599748780
+JimRM
+So this is what my build file looks like:
+
+1599748782
+JimRM
+
+
+1599748846
+JimRM
+I am hoping by using cpu_features_sub it disables NEON across the whole binary.
+
+1599748908
+ikskuh
+not sure
+
+1599748932
+JimRM
+But this is the assembly for memcpy (from c.zig)
+
+1599748936
+JimRM
+
+
+1599748990
+JimRM
+and it crashes at 0xffff0000000820bc (line 9) due to the use of Q0, Q1  (I haven't enabled the NEON  instruction set at this point, nor do I intend to)
+
+1599749009
+ikskuh
+do you link libc?
+
+1599749043
+JimRM
+I dont believe so (due to the freestanding target parameter)
+
+1599749090
+ikskuh
+hm
+
+1599749098
+ikskuh
+err why do you use memcpy then?
+
+1599749146
+JimRM
+I am using std.fmt - which uses memcpy under the hood. I assumed memcpy  would be a version provided by Zig not linked in from the standard library
+
+1599749162
+JimRM
+(I am not very familiar with Zig)
+
+1599749245
+ikskuh
+maybe you're running into optimizations of llvm?
+
+1599749261
+JimRM
+Looking at std/special/c.zig:105 I can see a zig version of memcpy
+
+1599749411
+ikskuh
+yeah that file is a partially implemnted libc
+
+1599749426
+ikskuh
+can you share the whole project of yours?
+
+1599749687
+JimRM
+Sure:
+
+1599749718
+ikskuh
+404
+
+1599749726
+ikskuh
+is it a private project?
+
+1599750055
+JimRM
+Not anymore!
+
+1599750060
+JimRM
+(Sorry - I thought it was public)
+
+1599750213
+JimRM
+OK, so I copied the zig memcpy into my main file + recompiled (after renaming it etc) and I see it still generates code using Q* registers. So I think my compiler flag settings are not correct
+
+1599750237
+ikskuh
+probably
+
+1599752197
+JimRM
+Hmm - pulling my hair out a little - this is the verbose output from zig build
+
+1599752201
+JimRM
+
+
+1599752219
+JimRM
+note the -mcpu=generic-fp_armv8
+
+1599752235
+JimRM
+but code is still being generated using Q* registers
+
+1599752501
+JimRM
+If I could see all of the commands that were being called as part of the build + possibly get the LLVM IR - I could play around with it.
+
+1599752909
+ifreund
+iirc there's a flag for that
+
+1599752919
+ifreund
+-femit-llvm-ir
+
+1599753100
+ask6155
+Hello!
+
+1599753132
+ikskuh
+hey ask6155!
+
+1599753153
+ask6155
+What is the alternative to printf in zig? I don't want to debug print I want to print to stdout normally
+
+1599753162
+ask6155
+hello ikskuh!
+
+1599753183
+ikskuh
+std.fmt.format
+
+1599753208
+ikskuh
+get a handle on stdout, then obtain a reader, then use .print on this:
+
+1599753215
+ikskuh
+var stdout = std.io.getStdOut();
+
+1599753224
+ikskuh
+var writer = stdout.writer();
+
+1599753234
+ikskuh
+try writer.print("{}", .{"Hello, World!"});
+
+1599753281
+ask6155
+If I need a writer to write than what does std.fmt.format do?
+
+1599753301
+ikskuh
+that's the basic "printf" logic
+
+1599753309
+ikskuh
+it does all the formatting
+
+1599753330
+ikskuh
+self.print(…) is pretty much just std.fmt.format(self, …)
+
+1599753337
+ask6155
+oh okay
+
+1599753372
+leeward
+unless you want a buffered writer, in which case use std.io.bufferedWriter(writer)
+
+1599753928
+ask6155
+the std.rand.random struct has a boolean function but it requires a random struct. How do I get a random struct?
+
+1599754059
+ikskuh
+use a random generator
+
+1599754064
+ikskuh
+it's similar to allocator
+
+1599754070
+ikskuh
+std.random.DefaultPrng i think
+
+1599754180
+ask6155
+but the std.rand.Random.boolean requires a *Random but DefaultPrng gives a... Xoroshiro128?
+
+1599754196
+leeward
+If you look at rand.zig, it's got an example of how to use it at the top.
+
+1599754232
+leeward
+var r = std.rand.DefaultPrng.init(seed); const b = r.random.boolean();
+
+1599754300
+leeward
+The pattern is Xoroshiro128 has a Random  in it (.random) and that's the thing you use.
+
+1599754321
+leeward
+This might help (or might confuse things):
+
+1599754506
+ask6155
+okay I'll look into it
+
+1599754591
+JimRM
+OK - solved my problem.
+
+1599754595
+JimRM
+Needed these:
+
+1599754598
+JimRM
+features_sub.addFeature(@enumToInt(std.Target.aarch64.Feature.neon));
+
+1599754598
+JimRM
+features_sub.addFeature(@enumToInt(std.Target.aarch64.Feature.fp_armv8));
+
+1599754625
+JimRM
+Added to the cpu_features_sub list to disable code generated using Q* registers
+
+1599754659
+JimRM
+That was some crazy journey through the zig code - don't think I am any the wiser!
+
+1599754700
+ifreund
+glad you got it worked out!
+
+1599756908
+smolck
+is there any way to declare an array with a length known at runtime without using the heap?
+
+1599756971
+smolck
+i.e. is there an equivalent to C99's     int array[size];
+
+1599756974
+smolck
+?
+
+1599756986
+smolck
+(where size is a size known at runtime)
+
+1599757113
+ifreund
+no, zig doesn't have VLAs
+
+1599757157
+ifreund
+there's no way to handle allocation failure
+
+1599757178
+smolck
+yeah that's what I thought. hmm
+
+1599757234
+ikskuh
+smolck: you need a heap allocation for that
+
+1599757247
+ikskuh
+or you can use a big-enough array when you know your upper bound and slice that
+
+1599757327
+smolck
+yeah, I think I'll have to do heap allocation for this
+
+1599757431
+smolck
+quick question, if I have nested ArrayLists, do I have to free each one of the nested ones in addition to the parent?
+
+1599757440
+smolck
+I'm guessing yes but just want to verify
+
+1599757448
+ifreund
+yes
+
+1599757451
+ikskuh
+yeah, you do
+
+1599757475
+JimRM
+Could you use an arena allocator for the list of lists?
+
+1599757485
+JimRM
+Then free everything all in one go?
+
+1599757490
+JimRM
+(Assuming that is what you are trying to do)
+
+1599757573
+smolck
+hmm I'm not sure, this is more of a library so the allocator is passed in
+
+1599757587
+smolck
+so I don't choose or make it
+
+1599757630
+JimRM
+You could create an arena allocator from the allocator passed in right?
+
+1599757651
+JimRM
+Or even if it is not an arena allocator - an allocator which frees all of its memory in a single call
+
+1599757688
+smolck
+yeah I guess so
+
+1599757710
+smolck
+I'm writing a msgpack library btw, and trying to figure out how to work with arrays, to add some context
+
+1599757737
+JimRM
+Ah right
+
+1599757760
+smolck
+and so serializing is pretty straightforward, but deserializing is the part I'm now struggling with
+
+1599757761
+JimRM
+I assume you are talking about the encoding phase?
+
+1599757767
+smolck
+no decoding
+
+1599757787
+smolck
+because I have to convert a slice/array of u8's to a []Value, but I can't really do that without VLA
+
+1599757792
+smolck
+(at least not that I know of)
+
+1599757801
+smolck
+and dealing with the heap makes this so much clunkier
+
+1599757856
+ikskuh
+huh
+
+1599757864
+ikskuh
+just reinterpretation?
+
+1599757864
+smolck
+I need to go from []u8 -> []Value
+
+1599757864
+companion_cube
+with an allocator it shouldn't be that clunky?
+
+1599757874
+companion_cube
+especially since you know the length of the array
+
+1599757930
+smolck
+it's clunky because I'd like the user to be able to pass in an array allocated on the stack, because it shouldn't be required to allocate all arrays on the heap in my mind
+
+1599757971
+companion_cube
+with an arena I think it's simpler this way; the user cannot know how big the deserialized array would be anyway?
+
+1599758027
+smolck
+no but they know the input array, and having to allocate that on the heap seems wasteful
+
+1599758095
+companion_cube
+ah I see what you mean.
+
+1599758103
+companion_cube
+but the input array might not even be aligned…
+
+1599758139
+smolck
+ikskuh: yes, I think it's just reinterpretation . . .
+
+1599758147
+ikskuh
+std.mem.sliceAsBytes
+
+1599758150
+ifreund
+smolck: you want std.mem.bytesAsSlice
+
+1599758151
+ikskuh
+and the other one i cannot remember
+
+1599758154
+ikskuh
+…
+
+1599758158
+ikskuh
+ifreund: this one!
+
+1599758170
+smolck
+what does bytesAsSlice do?
+
+1599758171
+companion_cube
+smolck: what if you have an array of arrays? it's not bitwise compatible
+
+1599758182
+ifreund
+it does []u8 -> []T
+
+1599758189
+ifreund
+for whatever T you chose
+
+1599758219
+smolck
+ifreund: how does that work though, because I'd need to specify a conversion function from u8 -> a union
+
+1599758242
+smolck
+companion_cube: can you elaborate a bit more? not sure I see what you're asking
+
+1599758256
+ifreund
+it just does a pointer cast, reinterpreting the memory
+
+1599758303
+smolck
+oh so they would still technically be u8's until I reassigned them then?
+
+1599758307
+companion_cube
+smolck: if you have an array of arrays of i32, in msgpack, you can't just cast it to a zig array
+
+1599758324
+companion_cube
+there's be "junk" in it because of the metadata (length of subarrays, etc.)
+
+1599758327
+ifreund
+sure?
+
+1599758335
+companion_cube
+I really see no way of deserializing msgpack without allocating stuff on the side
+
+1599758361
+ifreund
+it takes an arbitrary chunk of memory and interperts it as a slice of some given type, with a few safety checks
+
+1599758377
+ifreund
+the function's only like 10 line long if you want to see exactly what it does
+
+1599758403
+smolck
+companion_cube: yes, I do allocate on the heap, but not for the input list
+
+1599758410
+smolck
+ifreund: okay, I'll try that!
+
+1599758555
+smolck
+ifreund: wait, sliceAsBytes is for non-const slices, right?
+
+1599758586
+ifreund
+it preseves constness, if you pass it a const slice it will return a const slice and vice-versa
+
+1599758599
+smolck
+oh it returns a slice, ah I see
+
+1599758642
+companion_cube
+ah, the input buffer you mean? the raw bytes?
+
+1599758768
+smolck
+companion_cube: hmm . . . yes I think? The input, whether for serialization or deserialization, is stack-allocated
+
+1599759286
+smolck
+ifreund: is there a way to make bytesAsSlice() return a non-const slice given a const slice?
+
+1599759305
+ifreund
+no, that would be UB
+
+1599759330
+smolck
+hmm
+
+1599759418
+companion_cube
+smolck: you probably want to take an input slice anyway, I guess
+
+1599759419
+JimRM
+So.. would it be possible using zig's build system to build a binary and embed it into another target? Concrete case, I have a kernel binary that I build, I would also like to build a couple of other binaries (for example an idle process) and embedd that into the kernel binary. Ideally all within the same build.zig file
+
+1599759422
+companion_cube
+whether it's on the heap or stack
+
+1599759604
+ifreund
+JimRM: I don't think so currently, but that sounds like a valid use-case that the build system would ideally be flexible enough to support
+
+1599759618
+smolck
+hmm, welp, thank you all for your help, I'm gonna have to do some thinking about how to do this later, but for now I have to go. later!
+
+1599759676
+ifreund
+anyone use signalfd with the std event loop yet?
+
+1599760028
+jorangreef
+Hey everyone, I get "no field named 'ptr' in '*[100]u8'" for this:
+
+1599760030
+jorangreef
+var buf: [100]u8 = undefined;
+
+1599760034
+jorangreef
+var iovecs = [1]os.iovec { os.iovec { .iov_base = buf[0..].ptr, .iov_len = buf.len } };
+
+1599760040
+jorangreef
+Could someone please help me out?
+
+1599760136
+jorangreef
+And if I do this:
+
+1599760139
+jorangreef
+var iovecs = [1]os.iovec { os.iovec { .iov_base = buf.ptr, .iov_len = buf.len } };
+
+1599760141
+Nypsie[m]
+I believe you could just do &buf
+
+1599760144
+jorangreef
+Then I get "no field named 'ptr' in '[100]u8'"
+
+1599760161
+jorangreef
+Yes, that works, but I wanted to understand why? I thought slices and arrays would have a .ptr field?
+
+1599760197
+Nypsie[m]
+Only arrays
+
+1599760273
+jorangreef
+Yes but when I call .ptr on buf which is an array I get "no field named 'ptr' in '[100]u8'"
+
+1599760274
+Nypsie[m]
+My bad, only slices do..
+
+1599760285
+Nypsie[m]
+My bad, I keep mixing them up
+
+1599760292
+jorangreef
+Slices also don't seem to have ptr as per first example :)
+
+1599760330
+Nypsie[m]
+I think only in the case of [0..buf.len].ptr perhaps
+
+1599760876
+fengb
+There’s a small hole in the Zig semantics atm. Slicing with comptime known values produces a pointer to array, which doesn’t have .ptr
+
+1599760888
+fengb
+I think there’s a proposal to add .ptr for this reason
+
+1599761261
+jorangreef
+Thanks for the help Nypsie[m] and fengb!
+
+1599761856
+Nypsie[m]
+Sorry I couldn't explain why :)
+
+1599762477
+leeward
+I'm missing something in std.net. I made a std.net.StreamServer, called accept on it, read from the connection, then called (through defers) connection.file.close(), StreamServer.close(), and StreamServer.deinit(). When I go to run the server again, it can't bind because the address is already in use.
+
+1599762524
+leeward
+Does StreamServer.close() not unbind from the socket?
+
+1599762864
+leeward
+
+
+1599762900
+Nypsie[m]
+You need to provide the option .{ .reuse_address = true } on StreamServer.init()
+
+1599762962
+Nypsie[m]
+I kind of assume this is intended, considering this option exists
+
+1599763004
+leeward
+It's weird that it doesn't leave the system in the state it was in when I got to it.
+
+1599763060
+Nypsie[m]
+It was unexpected for me too, but never cared enough to ask if this is intended behavior or not.
+
+1599763089
+leeward
+Well, I guess std.net is going to be replaced eventually anyway.
+
+1599763101
+Nypsie[m]
+True it will
+
+1599763187
+ikskuh
+<leeward> Does StreamServer.close() not unbind from the socket?
+
+1599763201
+ikskuh
+it does, but most OS keep the socket "busy" for some time and prevent re-binds
+
+1599763221
+leeward
+Yeah, it seems like there's a 30 second or so timeout.
+
+1599763224
+ikskuh
+when you have reuse addr set, it will prevent other programs from rebinding your socket and only
+
+1599763236
+Nypsie[m]
+Aaaaah that makes sense actually
+
+1599763240
+Nypsie[m]
+TIL :)
+
+1599763288
+leeward
+The man page does a terrible job of explaining that. Weird that I've never run into this before.
+
+1599763926
+companion_cube
+you can disable that
+
+1599763955
+companion_cube
+the "LINGER" option somewhere i think
+
+1599767016
+ifreund
+andrewrk: thanks for all the merges, now my project builds on master zig :)
+
+1599767044
+andrewrk
+nice!
+
+1599768917
+leeward
+Is there a reason to use std.atomic.Queue over std.event.Channel for code that just wants a way to send messages between threads?
+
+1599769147
+leeward
+It seems like Channel is just higher level, but I can't be sure I'm not missing something.
+
+1599773442
+andrewrk
+leeward, Channel is for evented I/O currently and std.atomic.Queue uses kernel thread mutex locking to protect its state
+
+1599773460
+andrewrk
+leeward, std.atomic.Queue should be renamed to std.threadsafe.Queue
+
+1599773499
+andrewrk
+the plan is to have 2 API layers: a higher level API layer that works in both evented I/O mode and blocking mode, and a second API layer that deals exclusively with kernel threading
+
+1599773541
+andrewrk
+it's a bit messy currently, but it will become more clear and organized as the std lib event loop and surrounding APIs matures
+
+1599773560
+andrewrk
+for your purposes, if you are using normal blocking mode I suggest the thread safe queue
+
+1599773614
+andrewrk
+I hope you can forgive the mess, as some of these APIs were constructed before 2 complete redesigns of how concurrency would work in zig
+

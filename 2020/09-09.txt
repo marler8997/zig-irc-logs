@@ -1,0 +1,992 @@
+1599612840
+stripedpajamas
+is there a reason to use csprng instead of crypto.randomBytes if you just need (cs) random bytes ?
+
+1599616026
+daurnimator
+andrewrk: I might need some hand-holding later trying to figure out how to plumb into stage 2.  I tried yesterday for a couple of hours but failed
+
+1599616045
+andrewrk
+are you trying to do libgccjit?
+
+1599616051
+daurnimator
+yeah I was
+
+1599616057
+andrewrk
+that would heavily conflict with #6250
+
+1599616070
+daurnimator
+hence why I was trying on top of #6250 :)
+
+1599616077
+andrewrk
+aha!
+
+1599616560
+andrewrk
+I'm happy to give tips if you don't consider it to be implicit agreement in upstreaming it
+
+1599616657
+pixelherodev
+daurnimator: what are you trying to do?
+
+1599616694
+daurnimator
+pixelherodev: get stage2 to call out to a library for code gen
+
+1599616701
+pixelherodev
+ahhh
+
+1599616711
+daurnimator
+I want to be given a Module (I think) and traverse it generating code.
+
+1599617055
+andrewrk
+you'll have to think a little differently- this compiler is designed ground up to do incremental compilation, so there's not really a point in time the Module is "finished" and passed on to a next pipeline stage
+
+1599617085
+daurnimator
+Yeah that works fine with libgccjit too
+
+1599617089
+andrewrk
+the linker layer has to react to individual Decls getting added, updated, and removed
+
+1599617118
+andrewrk
+are you planning to use the existing ELF linking code and swap out the codegen parts only?
+
+1599617137
+daurnimator
+probably/yeah.
+
+1599617153
+daurnimator
+though I wasn't sure if that would be easier or harder
+
+1599617187
+andrewrk
+so you want to look at the seam between link/Elf.zig updateDecl and where that calls into codegen.zig, and react to base.options.use_llvm (I assume you changed that to an enum that includes libgccjit)
+
+1599617241
+pixelherodev
+andrewrk: you're working on LLVM support in stage2 (#6250)?
+
+1599617256
+andrewrk
+everything but the codegen
+
+1599617271
+pixelherodev
+Do you intend to add that also?
+
+1599617275
+andrewrk
+eventually
+
+1599617308
+andrewrk
+the goal of this branch is to fully move `zig cc` to stage2 and also ability to generate windows .lib files from .def files
+
+1599617340
+andrewrk
+I want to unblock alexnask[m] from doing more PE stuff
+
+1599617373
+pixelherodev
+I figured out the next big thing to focus on for CBE: conditionals. That'll require a bit more internal reworking (building upon what I did for the arithmetic branch) to bring it more in line with the normal codegen flow
+
+1599617411
+pixelherodev
+given the stated intent to compile stage2 using CBE to produce the new stage1, do we still want to stick with the decision to not put in effort for readable code?
+
+1599617504
+andrewrk
+there's a lot of stuff already accumulated for CBE to catch up to x86
+
+1599617515
+andrewrk
+including debug line info
+
+1599617572
+pixelherodev
+A lot of that is trivial though
+
+1599617575
+andrewrk
+yes, I'm confident in that decision. the project to replace stage1 can involve some bespoke hacks day-of to help us on our way
+
+1599617590
+pixelherodev
+Stage1 will be nearly impossible to maintain like that
+
+1599617610
+pixelherodev
+See example test output in the new CBE arithmetic PR, and imagine that scaled up an order of magnitude
+
+1599617652
+pixelherodev
+It'd likely lead to just doing it again and basing patches off of a diff
+
+1599617719
+pixelherodev
+It might be better with partly-optimized ZIR, though
+
+1599617732
+pixelherodev
+The equivalent of -O1 -ish
+
+1599617834
+pixelherodev
+But that makes it
+
+1599617868
+andrewrk
+what sounds easier: using critical thinking skills to independently solve 238 open stage1 bugs, or putting on some trance music and refactoring a bunch of already working code to have better names and organization?
+
+1599617882
+pixelherodev
+Honestly? I'm not sure.
+
+1599617887
+pixelherodev
+Neither one is remotely pleasant.
+
+1599617892
+andrewrk
+I am, I hate using my brain
+
+1599617895
+pixelherodev
+It's not just refactoring.
+
+1599617908
+pixelherodev
+Names and organization aren't the only things which will be thrown off
+
+1599617920
+andrewrk
+what else?
+
+1599617928
+pixelherodev
+Fundamentally, CBE is about producing machine code masquerading as C
+
+1599617930
+pixelherodev
+That's the whole
+
+1599617933
+andrewrk
+yes
+
+1599617999
+daurnimator
+oh; one fun thing I realised is that libgccjit is just codegen: it doesn't support parsing assembly. so I will actually need to call back into our stage2 assembly parsing and machine code generation for that part :)
+
+1599618006
+andrewrk
+we could even do incremental linking of .c files by using ascii art in comments to take up space!
+
+1599618066
+daurnimator
+andrewrk: or magic comments like //*// that comment/uncomment pieces :P
+
+1599618149
+pixelherodev
+I think sorting out the C code does win out ultimately, but only barely
+
+1599618184
+andrewrk
+daurnimator, behold, our current stage2 assembly parser: mem.eql(u8, assembly_text, "syscall")
+
+1599618189
+pixelherodev
+Inter-function borders are preserved, so the absolute worst case is manually rewriting whole functions from scratch - except every bit of their intended functionality is known, so it doesn't matter
+
+1599618218
+daurnimator
+andrewrk: and that's fine :) it should be all I need to get hello world working, right?
+
+1599618227
+andrewrk
+right
+
+1599618232
+andrewrk
+daurnimator, hmm are you sure it doesn't support inline assembly
+
+1599618237
+pixelherodev
+andrewrk: I think the one big thing regarding readability that I want to convince you is acceptable is split file generation
+
+1599618239
+daurnimator
+andrewrk: yep
+
+1599618251
+andrewrk
+that's a big limitation
+
+1599618251
+pixelherodev
+Basically, I want Module.zig functions to go into Module.c, even if everything goes in one header
+
+1599618261
+pixelherodev
+Or at least, I want that to be an
+
+1599618263
+andrewrk
+daurnimator, does it at least support inline machine code?
+
+1599618275
+daurnimator
+no
+
+1599618279
+pixelherodev
+Objection.
+
+1599618289
+pixelherodev
+It can emit calls, right?
+
+1599618293
+pixelherodev
+To arbitrary addresses?
+
+1599618296
+daurnimator
+yes.
+
+1599618330
+pixelherodev
+`genMC(buffer); gccjitGenCall(buffer);`
+
+1599618343
+daurnimator
+well yeah.
+
+1599618345
+pixelherodev
+Efficient? Pretty? Nah. Functional? Probably.
+
+1599618360
+daurnimator
+why wouldn't it be efficient and why isn't it pretty?
+
+1599618364
+andrewrk
+daurnimator, hmm you should probably start with solving inline assembly honestly. that sounds like a bit of a problem
+
+1599618377
+pixelherodev
+Because it means a full call + ret for even the most trivial bits of inline asm
+
+1599618390
+daurnimator
+pixelherodev: can do a naked call
+
+1599618425
+pixelherodev
+Probably good enough
+
+1599618441
+pixelherodev
+anywho, 'night
+
+1599618446
+andrewrk
+night
+
+1599618574
+daurnimator
+but yeah... I guess I should file a feature request for inline assembly.... somehow
+
+1599618597
+daurnimator
+or at least inline machine code
+
+1599618694
+andrewrk
+the main issue is that you need a way to get values in and out
+
+1599619931
+daurnimator
+
+
+1599631872
+andrewrk
+daurnimator, if your goal is to have gcc support, here's how I see that happening: copy zig source code into the gcc project and maintain it there. periodically pull from upstream zig and refresh the port/fork
+
+1599631926
+andrewrk
+or rather, don't copy zig source code, implement a GPL version for the gcc project. that's how that development process works
+
+1599632759
+andrewrk
+this is something that would make more sense with a spec
+
+1599632767
+andrewrk
+it's a worthwhile goal to have competing implementations
+
+1599633428
+daurnimator
+andrewrk: I have no desire to rewrite the parser or comptime features of zig; I'm just looking to support more targets and have an alternative to LLVM
+
+1599633769
+daurnimator
+if libgccjit doesn't work out the next middle ground would be a zir frontend for gcc.
+
+1599633795
+daurnimator
+but that would be too much work for me IMO.
+
+1599634652
+andrewrk
+I'm not seeing libgccjit likely to be upstreamed
+
+1599634744
+GreaseMonkey
+daurnimator: i didn't see that, i guess waiting for a compressor to be written was notably less pragmatic than depending on zlib
+
+1599634758
+GreaseMonkey
+(wrt a message from a day or so ago)
+
+1599636202
+daurnimator
+andrewrk: I don't see a good reason to not upstream it; but I do see good reasons to not enable by default.
+
+1599636225
+daurnimator
+andrewrk: otherwise, keeping it out of tree could provide guidance on making backends more pluggable (so we can e.g. load it with dlopen)
+
+1599636570
+andrewrk
+the goal of supporting more targets should be done directly in zig code
+
+1599636588
+andrewrk
+having a GCC implementation of zig is its own goal and makes sense to be a separate implementation from the spec
+
+1599636733
+andrewrk
+I don't see the point of libgccjit
+
+1599636737
+daurnimator
+I think having some way to make use of GCC's optimizer is as important as being able to use LLVM's optimier
+
+1599636852
+andrewrk
+there's a really efficient way to implement GCC in zig: make the language so popular that someone else does it :)
+
+1599636864
+andrewrk
+s/GCC in zig/zig in GCC/
+
+1599636874
+Michcioperz
+GCC in zig sounds like fun too
+
+1599636880
+andrewrk
+libgccjit is a great example of climbing a local maximum. waste of time IMO
+
+1599636886
+daurnimator
+if that worked, rust would have a gcc backend that was usable
+
+1599636918
+andrewrk
+it's a matter of time, someone is probably already working on a gcc implementation of rust
+
+1599636923
+daurnimator
+> Cunningham's Law states "the best way to get the right answer on the internet is not to ask a question; it's to post the wrong answer."
+
+1599636934
+andrewrk
+they have the disadvantage that the language is extremely complicated and no plan for a spec coming out soon
+
+1599636995
+andrewrk
+
+
+1599662798
+jorangreef
+fn stack_or_result_location_semantics() custom_struct {    var custom_structs: [1]custom_struct = undefined;    fill_in_custom_struct(&custom_structs, 1);    return custom_structs[0];}fn boom_or_safe() void {  var custom_struct = stack_or_result_location_semantics();}Will this allocate on the stack? If so, can Zig detect that stack memory is being
+
+1599662799
+jorangreef
+used incorrectly outside the function that allocates it?
+
+1599662836
+jorangreef
+Sorry for the copy pasta...
+
+1599662891
+jorangreef
+Here's the gist:
+
+1599662909
+ifreund
+yes, the memory for the custom_structs array goes on the stack
+
+1599662933
+ifreund
+no, zig does not detect this and it is undefiened behaviour
+
+1599662945
+jorangreef
+Thanks, could Zig possibly detect this?
+
+1599662949
+jorangreef
+In future...
+
+1599662996
+ifreund
+I'm not sure how feasible it would be, but it seems possible
+
+1599663010
+ifreund
+at the very least zig could overwrite the memory with 0xaa
+
+1599663068
+ifreund
+see also:
+
+1599663609
+jorangreef
+Thanks, with RLS for structs so convenient, I find it's easy to slip into returning stack allocated memory from init functions.
+
+1599663793
+jorangreef
+Isaac, would this be safe: const mmap = try os.mmap(); return .{ .mmap = mmap };
+
+1599663983
+ifreund
+sure, mmap() returns a slice
+
+1599664085
+ifreund
+you can think of a slice as a struct { ptr: *T, len: usize, };
+
+1599664122
+jorangreef
+Cool, and an Array or Struct would also be safe to return as a field of a Struct?
+
+1599664141
+ifreund
+so if the memory pointer to by the slice is on the heap, as is the case for mmap, you can can copy the slice around all you want
+
+1599664180
+ifreund
+you can return anything you want to by value or by pointer to something on the heap
+
+1599664202
+ifreund
+the only thing that you can't do is return a pointer to stack memory and expect things to work alright
+
+1599664237
+ifreund
+e.g. var foo: u32 = 42; return &foo;
+
+1599664241
+ifreund
+would be UB
+
+1599664483
+jorangreef
+Thanks for the explanation... would this be safe (because of RLS kicking in?): var foo: custom_struct = .{ the_number: 42 }; return .{ foo: foo };
+
+1599664587
+ifreund
+that's safe because you're making a copy of the stack variable foo
+
+1599664615
+ifreund
+I think you mean .{ .the_number = 42 } and .{ .foo = foo } by the way
+
+1599664641
+jorangreef
+Great, yes, too much JSON the past few years...
+
+1599664720
+ifreund
+result location semantics aren't really all that useful yet because you can't refer to the result location before the return statement.
+
+1599664730
+ifreund
+there's of course an open proposal though
+
+1599664747
+ifreund
+and they are of course a nice optimization
+
+1599665213
+jorangreef
+Thanks for the pointer to that issue. I was thinking 2765 would also be really useful if you could have init functions where the stack memory in the init function (like
+
+1599665214
+jorangreef
+compiler or runtime throws.
+
+1599665310
+jorangreef
+But I think that gist is probably going too far!
+
+1599665485
+jorangreef
+I think my confusion is confusing "RLS kicking in" with simply "making a copy of the stack variable foo". Thanks again!
+
+1599666836
+tsujp
+OH FREUND YOU ARE HERE TOO
+
+1599666837
+tsujp
+henlo
+
+1599666915
+ifreund
+i'm everywhere
+
+1599667369
+pixelherodev
+Muahaha?
+
+1599667381
+pixelherodev
+I feel like there should be an evil laugh after a statement like that
+
+1599668783
+andrewrk
+argh, sr.ht can't build stage2 anymore due to OOM
+
+1599669424
+jorangreef
+Isaac, I took another look at
+
+1599670348
+ifreund
+jorangreef: indeed, that is totally safe, you are returning a copy of the struct in the array
+
+1599670370
+ifreund
+I guess I misread the code pasted into IRC :P
+
+1599670494
+jorangreef
+(y)
+
+1599674876
+JimRM
+Hi  all - I've asked this before but cannot find the answer. I am having trouble compiling some code I found:
+
+1599674876
+JimRM
+pub var mbox: [36]u32 align(16) = []u32{0}**36;
+
+1599674897
+JimRM
+error: array literal requires address-of operator to coerce to slice type '[]u32'
+
+1599674912
+JimRM
+Can someone remind me of the issue here?
+
+1599675162
+ifreund
+JimRM: I think you might want pub var mbox: [36]u32 align(16) = [1]u32{0}**36;
+
+1599675285
+JimRM
+Thanks, that worked!
+
+1599678621
+JimRM
+So I am having some trouble with embedFile on bare metal aarch64 - I build an elf file but I cannot seem to find my embedded file inside of it. I hex dump both the .elf and the .bin file I have embedded and I cannot find one inside the other.
+
+1599678633
+JimRM
+Should this work? or am I misunderstanding something?
+
+1599678666
+JimRM
+(I assumed an embedded binary file would appear as is inside of a rodata section of the elf, so a hex dump of both should allow me to find one inside the other)
+
+1599678689
+alexnask[m]
+It should appear in rodata if your executable actually uses it
+
+1599678712
+alexnask[m]
+If you only define it but never reference it it will not make it in (although I guess you could @export it explicitly)
+
+1599678769
+JimRM
+My code does reference it - the problem I am having is what I see in memory does not look anything like what has been embedded
+
+1599678818
+JimRM
+Here is a section from my symbols dump file
+
+1599678825
+JimRM
+ffff000000082fa8 l     O .rodata00000008 __unnamed_1
+
+1599678825
+JimRM
+ffff000000082ef8 l     O .rodata00000008 FontEmbed
+
+1599678825
+JimRM
+ffff000000083180 l     O .bss00000008 LFB
+
+1599678855
+JimRM
+The FontEmbed file is much larger than the address different between FontEmbedd and __unnamed_1
+
+1599680620
+leeward
+Did I hallucinate that there was a change from camelCaseFunctionNames to snake_case_function_names?
+
+1599682096
+ifreund
+leeward:
+
+1599682206
+leeward
+Ah, it's not approved.
+
+1599682210
+leeward
+That's fun.
+
+1599682213
+leeward
+er, accepted
+
+1599682279
+ifreund
+yeah not yet, though it seems like it would be given a "rename symbol" tool
+
+1599682444
+leeward
+That would be...hard to make. How do you rename a function like xmlHttpRequest automatically? Build a list of initialisms?
+
+1599682528
+ifreund
+oh I don't mean a tool that does the style conversion automatically
+
+1599682546
+ifreund
+just a tool that renames an aribitrary function to an arbitrary new name
+
+1599682548
+leeward
+Oh, just a global refactor-this-symbol tool?
+
+1599682552
+ifreund
+yeah
+
+1599682555
+leeward
+Yeah, that's less hard.
+
+1599682570
+Nypsie[m]
+xmlHttpRequest -> xml_http_request sounds pretty easy
+
+1599682600
+Nypsie[m]
+Harder for things like parseBE()
+
+1599682634
+leeward
+Nypsie[m]: It does; I meant not-function insteaf of function. XML_HTTP_Request isn't trivial to get.
+
+1599682644
+leeward
+instead, even
+
+1599682649
+Nypsie[m]
+Aaaaah
+
+1599682662
+Nypsie[m]
+Gotcha
+
+1599682677
+alexnask[m]
+zls does renaming but I think it has a few bugs
+
+1599682696
+alexnask[m]
+I have some free time, I will try to improve it and implement packages correctly
+
+1599682705
+ifreund
+that reminds me, it's been weeks since I last updated my zls
+
+1599682715
+leeward
+pretty sure I could write a sed script that could rename arbitrary zig symbols without too much effort
+
+1599682720
+ifreund
+Everything's been working fine so I didn't touch it :P
+
+1599682736
+Nypsie[m]
+Yeah haven't updated it in forever either, it just works nowadays xD
+
+1599682757
+leeward
+Yeah, zls is actually what triggered this. It told me my snake case functions didn't follow the style guide so I updated and it didn't change opinion.
+
+1599684944
+leeward
+Ooh, panic in stage2
+
+1599685013
+leeward
+I guess I'll have to figure out what caused it...
+
+1599685266
+leeward
+ahah, found it
+
+1599685405
+JimRM
+Does anyone know how embeds work under the hood? (Or can they point me in the right direction to find out?) I think something weird is going on.. but it could also be my linkerscript. In one case it seems symbols are pointing to the wrong memory locations when reading embedded data.  In another case (mentioned above) I cannot even find the embedded data.
+
+1599685832
+leeward
+Well, it's not a regression since 0.6
+
+1599685871
+ifreund
+JimRM: From skimming the compiler source, it looks like it treats the contents of the file just like any other constant string literal
+
+1599685920
+ifreund
+aka a *const [42:0]u8 where 42 is the length
+
+1599685973
+JimRM
+Do you know how it gets embedded into the final binary?
+
+1599685997
+ifreund
+just like any other string literal does, there's no special casing for that I see
+
+1599686017
+ifreund
+so if you don't reference it, it likely won't get embedded
+
+1599686030
+JimRM
+It is being embedded, just incorrectly
+
+1599686087
+ifreund
+might help to post code somewhere and elaborate on what exactly is incorrect about it
+
+1599686103
+Michcioperz
+is the compiler smart enough to figure out which parts are actually referenced?
+
+1599686124
+JimRM
+The behavior is pretty weird. If I just fill a file with a particular pattern and import that it appears in the final output binary - unchanged. But when I embed something like a zip file, I cannot find any common byte pattern in the output binary
+
+1599686153
+JimRM
+So  1 1KB file filled with 41414141 will appear as exactly 1kb of 4141 in the final binary
+
+1599686175
+JimRM
+(Although the address in the symbol table is incorrect)
+
+1599686180
+ifreund
+hmm, can zip files have null bytes in the middle of the file?
+
+1599686191
+JimRM
+Yeah probably...
+
+1599686404
+JimRM
+
+
+1599686420
+JimRM
+There is an example - first line is the Symbol table entry for FontEmbed
+
+1599686437
+JimRM
+The FontEmbed file is completely full of 3131 3131 3131
+
+1599686456
+JimRM
+You can see there is an offset between 83040 and the beginning of the file's data
+
+1599686487
+JimRM
+But the data has not been truncated (it is still 1KB of data)
+
+1599686661
+Michcioperz
+how are you using that embedded data in code?
+
+1599686840
+JimRM
+I've updated the Gist above
+
+1599686912
+JimRM
+So x8 is loaded with the address of FontEmbed as it appears in the symbol table. And then offset #28 from there is loaded (which corresponds to Width)
+
+1599686920
+JimRM
+So it looks like the code being generated is sane
+
+1599686940
+JimRM
+Just the location of the data OR the value of the symbol is wrong
+
+1599686995
+Michcioperz
+just random intrusive thought but i wonder if making FontEmbed export const could help
+
+1599687090
+JimRM
+So that just made the symbol global:
+
+1599687092
+JimRM
+ffff000000083040 g     O .rodata00000008 FontEmbed
+
+1599687096
+JimRM
+(Same address as before)
+
+1599687640
+leeward
+I've successfully embedded compiled executables before. I don't think there are issues with 0 bytes. Maybe it's a regression? What version of Zig are you using?
+
+1599687811
+JimRM
+0.6.0+749417a1f
+
+1599687851
+leeward
+It might be worth trying it on 0.6.0.
+
+1599688285
+JimRM
+Hmm, I just noticed something interesting  - not sure if it was the same before trying 0.6.0
+
+1599688310
+JimRM
+Yes it was (just checked the gist)
+
+1599688357
+JimRM
+Looks like an indirection thing - if you look at the address:  ffff000000083040 it contains the value:  3140 0008   which reversed = 00083140  which is the address at which the data starts
+
+1599688437
+leeward
+Well that sounds like maybe it's not wrong.
+
+1599688447
+leeward
+If your machine is little endian, that is.
+
+1599688456
+JimRM
+Indeed!
+
+1599688472
+JimRM
+So I guess I need to update this line: var Font: *const PSFFont = @ptrCast(*const PSFFont, &FontEmbed);
+
+1599688478
+JimRM
+To be a "pointer to a pointer"
+
+1599688544
+alexnask[m]
+what about `var Font = @ptrCast(*const PSFFont, FontEmbed);`? embedFile returns a pointer to an array
+
+1599688572
+leeward
+I don't think your stack of u32s will hit it, but you should be aware that packed structs are buggy at the moment.
+
+1599688661
+JimRM
+@alexnask thanks - I've just tried that and it appears to work
+
+1599688683
+JimRM
+Now I just need to test it with the "real" data..
+
+1599688802
+JimRM
+Awesome - it works! I guess when in doubt you should always blame the compiler XD
+
+1599688809
+leeward
+\o/
+
+1599688845
+leeward
+To be fair, with Zig the compiler is not all that unlikely to be at fault, relatively speaking.
+
+1599688876
+JimRM
+I feel the problem I encountered there is something that the compiler should have picked up? ie the additional layer of indirection?
+
+1599688909
+JimRM
+ie casting a ** to a * (in C parlance) would be a compiler error
+
+1599688946
+alexnask[m]
+`@ptrCast` can cast from to any pointer
+
+1599689053
+leeward
+Yep, there it is: *const [X:0]u8
+
+1599689093
+leeward
+I wonder if @as works there.
+
+1599689147
+alexnask[m]
+I dont think so, `@ptrCast` or `@bitCast` on the value are the options here
+
+1599689160
+leeward
+Yeah, it's not "unambiguous and safe."
+
+1599693884
+andrewrk
+JimRM,
+

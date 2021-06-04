@@ -1,0 +1,796 @@
+1588897315
+plumm
+gonz_ file an issue?
+
+1588899772
+curtisf
+I'm finally upgrading from zig 0.4.0 --> 0.6.0 and wondering about a "slice literal". I'm getting an error from this line of code:`    const space_class = CharacterClass.fromList([_]u8{ ' ', '\t', '\n' });`
+
+1588899815
+curtisf
+saying that I need to take `&` to coerce the array into a slice. My question is, is that slice going to still be valid after the containing function returns? Would the array be on the stack or in static space?
+
+1588899861
+fengb
+No it’s never safe to return slices (or pointers) like that
+
+1588899876
+fengb
+Wait... it might be if it’s const
+
+1588899938
+fengb
+If it’s a variable, it’ll be on the stack and be broken yeah. If it’s const it probably would work since it should be in the data section
+
+1588900052
+curtisf
+I guess that seems a little spooky to rely on... is there a way to require "this expression should be (comptime and) located in data and not on the stack"?
+
+1588900300
+alexnask
+The u8 array will always be in static data in this case
+
+1588900323
+alexnask
+Since all elements are constant values
+
+1588900341
+curtisf
+I guess something like this could guarantee it?
+
+1588900393
+curtisf
+or is just (&comptime x) enough
+
+1588900403
+alexnask
+Here is an example with arrays of strings:
+
+1588901298
+andrewrk
+curtisf, they `comptime` keyword is enough
+
+1588901384
+andrewrk
+curtisf, note that in 0.4.0, zig was implicitly taking the address behind your back, so the level of safety here remains the same. if anything it has increased, since you are now more aware this is happening
+
+1588901414
+andrewrk
+for example in 0.4.0 if any of the array elements were runtime known, that pointer would expire when the function returns
+
+1588901429
+curtisf
+Yea, the error just made me think about this more, which I appreciate.
+
+1588901464
+curtisf
+If it
+
+1588901489
+fengb
+End of block
+
+1588901538
+curtisf
+Cool, that's what I was hoping
+
+1588901613
+curtisf
+Oh no, I'm hitting a new compiler crash. Too much comptime lol
+
+1588902058
+alexnask
+curtisf, can you link to the code?
+
+1588902065
+curtisf
+I'm working on shrinking it
+
+1588902075
+alexnask
+ok cool
+
+1588902080
+curtisf
+I'm assuming you won't appreciate a 700 line test case ;)
+
+1588903695
+Cadey
+andrewrk: how complete is zig translate?
+
+1588903703
+Cadey
+i'm half considering trying it on the super mario 64 code
+
+1588904245
+andrewrk
+Cadey, it's probably not up to that task
+
+1588904272
+andrewrk
+that would be a fun motivating use case though
+
+1588904286
+Cadey
+the sm64 pc port code does some insane things
+
+1588904288
+andrewrk
+maybe try to get Vexu excited about the idea :)
+
+1588904331
+Cadey
+i saw an ifdef case that ended during a function definition
+
+1588904334
+Cadey
+like
+
+1588904349
+Cadey
+ifdefing functions entirely while in the middle of another function
+
+1588904367
+andrewrk
+that part is no problem for zig
+
+1588904381
+andrewrk
+it would be an unimplemented translation such as bit fields
+
+1588904390
+andrewrk
+...that would be problematic
+
+1588904406
+Cadey
+well
+
+1588904412
+Cadey
+guess what this game uses all over the place
+
+1588904414
+Cadey
+:D
+
+1588904485
+andrewrk
+haha
+
+1588904594
+Cadey
+it also does some funky stuff like an implicit cast from an array to an integer
+
+1588904601
+curtisf
+Wow, I got this crash very small. ...though the assert message is slightly different than when I started
+
+1588904784
+curtisf
+alexnask: If you're still interested in looking
+
+1588904845
+curtisf
+If someone wouldn't mind reproducing ^ on master I can file a GitHub issue
+
+1588905629
+andrewrk
+curtisf, confirmed repro on master. thanks for the small test case
+
+1588905810
+curtisf
+Is there a type for "I want a comptime
+
+1588914716
+andrewrk
+today I worked on self-hosted incremental compilation. I think this is going to work extremely well...
+
+1588914730
+andrewrk
+hopefully will have something to demo on a stream within a few days
+
+1588914786
+andrewrk
+as it turns out, LSP, hot code swapping, and incremental compilation is all kinda the same problem
+
+1588918451
+tdeo
+very exciting
+
+1588929128
+ikskuh
+andrewrk: can you explain how "Hot code swapping" is supposed to work?
+
+1588929148
+ikskuh
+I really love that feature in C# with "edit & continue" and it would be absolutely awesome to have this in zig
+
+1588937025
+gonz_
+I would settle for consistent symbol availability on Windows without "edit & continue" :P
+
+1588937032
+gonz_
+And watch window support, etc.
+
+1588937038
+gonz_
+Neither of which is currently a thing.
+
+1588937181
+ikskuh
+isn't gdb working on windows?
+
+1588937715
+alexnask
+Idk about gdb but lldb works fine in my experience
+
+1588937983
+gonz_
+I've tried WinDBG, VS, WinDBG via VSCode, RemedyBG and some other ones I basically never expected to work anyway.
+
+1588938011
+gonz_
+alexnask: Does LLDB work for x64 on Windows?
+
+1588938025
+gonz_
+As far as I heard it doesn't, which is a no-starter.
+
+1588938222
+alexnask
+It works, at least for clang/clang-cl or llvm compiled executables
+
+1588940264
+gonz_
+Not from what I'm seeing here
+
+1588940281
+gonz_
+No watch window support, etc., none of the symbols available
+
+1588940295
+gonz_
+With LLDB I'm not even getting locals
+
+1588941232
+gonz_
+Either the LLDB vscode debug adapters are all broken or LLDB is actually a step down from VSdbg or whatever the basic C++ debugging adapter is w/ VSCode
+
+1588941266
+gonz_
+At least with that one I get breakpoint support (didn't with the LLDB adapter that worked) and locals +
+
+1588947032
+gonz_
+I'm either hitting a very, very rare case of stuff working fairly well or the basic VS/WinDBG/ debugging is improved and giving an uncharacteristically correct view of symbols.
+
+1588949451
+frmdstryr
+const ISR = extern fn () void;
+
+1588949453
+frmdstryr
+./startup.zig:775:13: error: invalid token: 'extern'
+
+1588949457
+frmdstryr
+?? what changed
+
+1588949495
+ikskuh
+callconv(.C)
+
+1588949503
+ikskuh
+const ISR = fn() callconv(.C) void;
+
+1588949675
+frmdstryr
+Ah, thanks!
+
+1588949709
+frmdstryr
+Is there something similar for async fn?
+
+1588949760
+plumm
+i think theres a callconv for async?
+
+1588949789
+ikskuh
+callconv(.Async)
+
+1588951765
+frmdstryr
+Has `const something  = if (xxx) a else b; ` also changed?
+
+1588951787
+frmdstryr
+Gone for like a few weeks and everything is broken haha
+
+1588951822
+plumm
+That should still work
+
+1588957138
+andrewrk
+ikskuh, pretty straightforward: check out
+
+1588957402
+plumm
+andrewrk would it make sense to have a source format check just as a nice-to-have but also real time test of zig fmt?
+
+1588957466
+andrewrk
+are you thinking of the --check flag?
+
+1588957510
+plumm
+I dont have a zig installed to check but if that exists yes
+
+1588957512
+plumm
+In CI
+
+1588958214
+ikskuh
+andrewrk: ah so kinda super-dynamic linking :)
+
+1588958291
+ikskuh
+one problem is that funtions will always return into the old code :D
+
+1588958333
+andrewrk
+ikskuh, that's a feature! each function call will get the new function, but any ongoing control flow finishes in the old function
+
+1588958419
+ikskuh
+hmm
+
+1588958428
+ikskuh
+well, it's a first step for sure ☺
+
+1588958438
+ikskuh
+have you ever used VisualStudio+C#+Edit&Continue?
+
+1588958438
+shakesoda
+i can see that causing explosions but it sounds good
+
+1588958466
+ikskuh
+if weg get this powerful at zig language level
+
+1588958470
+ikskuh
+it would be absolutely awesome
+
+1588958473
+shakesoda
+hot swapping is always a bit prone to that
+
+1588959196
+andrewrk
+ikskuh, yep my first programming language supported that. VB6
+
+1588959222
+andrewrk
+in some ways I have never gotten back to the productivity that I experienced with the VB6 IDE and debugger
+
+1588959361
+ikskuh
+hehe, would be a glorious goal
+
+1588960306
+pmwhite
+Does zig create debug symbols with the default build.zig?
+
+1588960621
+FireFox317
+andrewrk, will you be streaming tonight? :D
+
+1588960657
+andrewrk
+maybe! I want to get to a certain checkpoint in the code. right now I'm doing a lot of chin scratching and thinking and staring at struct layouts
+
+1588960693
+andrewrk
+pmwhite, yes
+
+1588960747
+pmwhite
+I thought so. I was having trouble using the linux perf tool because some things seem to be broken. It's another problem with my system though.
+
+1588960955
+oats
+andrewrk: ooh, what are you working on?
+
+1588960969
+andrewrk
+self-hosted (non-llvm) backend
+
+1588961000
+oats
+Sweet, already!
+
+1588961041
+oats
+Will that make it harder to target/support as many architectures as are right now?
+
+1588961269
+Xavi92
+That's an interesting question
+
+1588961353
+andrewrk
+no it makes it much easier
+
+1588961364
+andrewrk
+we don't lose any backends since llvm/clang/lld remain an optional dependency
+
+1588961468
+Xavi92
+andrewrk: and what would the self-hosted compiler generate for other targets? LLVM IR?
+
+1588961540
+FireFox317
+code :D
+
+1588961560
+FireFox317
+i mean instructions for a cpu
+
+1588961655
+Xavi92
+FireFox317: now I'm confused. Wouldn't the backends provided by llvm?
+
+1588961662
+Xavi92
+be provided*
+
+1588961703
+FireFox317
+Xavi92, the self-hosted compiler that andrewrk is writing also includes his own codegeneration
+
+1588961802
+FireFox317
+in that sense it would be much easier to add a target to zig, since you would have to add the target to the zig code instead of the big and bulky llvm codebase
+
+1588961868
+Xavi92
+So that, even if easier due to the size of the zig code base, backends would still need to be written from scratch, right?
+
+1588961976
+FireFox317
+yes i think that is correct. Not 100% sure tho
+
+1588962003
+andrewrk
+Xavi92, it looks like filling out functions like this:
+
+1588962029
+andrewrk
+the neat thing we can do in zig is make the architecture a comptime parameter in those functions, so there would be no compilation speed penalty for switching on the arch :D
+
+1588962169
+Xavi92
+andrewrk: looks handy, but... really? Magic constants on zig? :P
+
+1588962226
+andrewrk
+where's the magic? that's the machine code for `ret` in x86
+
+1588962321
+Xavi92
+I'd rather use e.g.: `const ret = 0xcc` than a constant with a comment on its side, but that's personal taste for sure
+
+1588962350
+fengb
+It’s already in the genRet block
+
+1588962451
+Xavi92
+Don't take it too seriously, that is a very simple example after all
+
+1588962477
+ikskuh
+nah, it's a perfect example where it doesn't make sense to include a constant
+
+1588962505
+ikskuh
+why should you return a constant? it clutters namespace and will make reading code harder than with a simple comment like in the code above
+
+1588962521
+ikskuh
+it is used only there, nothing else in the code relies in that value
+
+1588962561
+fengb
+Also x86 really doesn’t map to constants well. There’s lots of names that correspond to multiple instruction codes
+
+1588962641
+Xavi92
+Didn't say I would place the constant on the global namespace. If anything, I'd rather place it inside the `.i386, .x86_64` block
+
+1588962690
+Xavi92
+ikskuh: that's also your personal opinion
+
+1588962712
+ikskuh
+yeah
+
+1588962713
+ikskuh
+but:
+
+1588962716
+ikskuh
+what is better:
+
+1588962732
+Xavi92
+`const int3 = 0xcc; try self.code.append(0xcc);`
+
+1588962735
+ikskuh
+const X86_RET_OPCODE = 0xC3;
+
+1588962740
+ikskuh
+try self.code.append(X86_RET_OPCODE);
+
+1588962746
+Xavi92
+Sorry, `const int3 = 0xcc; try self.code.append(INT3);`
+
+1588962762
+ikskuh
+or try self.code.append(0xC3); // x86 ret
+
+1588962766
+ikskuh
+one clutters namespace
+
+1588962767
+Xavi92
+Don't mind about my stupid typing mistakes
+
+1588962772
+ikskuh
+one does not
+
+1588962785
+ikskuh
+both have exactly the same transportation of semantics
+
+1588962794
+Xavi92
+ikskuh: one does rely on a comment, and I don't usually trust comments
+
+1588962806
+ikskuh
+it's an invariant anyways
+
+1588962811
+ikskuh
+it will never change
+
+1588963009
+Xavi92
+Don't feel like bike-shedding, honestly. It's just personal taste
+
+1588963151
+Xavi92
+What's important here is the fact porting zig to other targets looks straightforward
+
+1588963164
+Xavi92
+And that's a good thing!
+
+1588963287
+ikskuh
+andrewrk: looks like the current design will only support register machines?
+
+1588964158
+andrewrk
+ikskuh, after I get a bit further on this I would love to have a discussion with you about weird architectures and see if you can break the design :)
+
+1588964439
+oats
+does llvm do much optimization in the IR -> machine code process?
+
+1588964463
+oats
+if so, will zig lose the benefit of those optimizations?
+
+1588964519
+tdeo
+llvm isn't going away
+
+1588964521
+tdeo
+i believe
+
+1588964722
+oats
+gotcha
+
+1588964809
+andrewrk
+oats, yes llvm will always be better at zig for runtime optimizations
+
+1588964819
+andrewrk
+but we can get 80% of the way there with 20% of the effort
+
+1588964828
+oats
+I like the sound of that
+
+1588964836
+oats
+is that just a result of llvm's size and complexity?
+
+1588964847
+andrewrk
+yes and money
+
+1588965200
+Xavi92
+Is LLVM causing much hassle to you contributors?
+
+1588965306
+fengb
+At bare minimum, we can have much improved compile speed
+
+1588965922
+andrewrk
+Xavi92, look at the 2 pinned issues on github...
+
+1588966038
+oats
+yikes, that's not great
+
+1588966371
+Xavi92
+Oh, I see :/
+
+1588967279
+ikskuh
+andrewrk, you're welcome. i'm asking because of .NET/JVM output
+
+1588967282
+ikskuh
+which would be awesome
+
+1588967744
+fengb
+And wasm? 🙃
+
+1588967807
+ikskuh
+well, you know wasm
+
+1588967820
+ikskuh
+but would be awesome to just target
+
+1588967838
+ikskuh
+.NET? yeah sure... Java? Yep. ARM? Yep! Web? ack
+
+1588968077
+fengb
+I think it'd make closer to wasm tbh. How would you sidestep the GC on .NET or JVM?
+
+1588968112
+fengb
+I suppose you could make a custom mmap backed with bytes so maybe I'm talking out of my ass :P
+
+1588968229
+ikskuh
+fengb: we don'T have to sidestep the allocator :D
+
+1588968231
+ikskuh
+GC
+
+1588968263
+ikskuh
+gc_allocator would be an alloc() { new arra[] }
+
+1588968268
+ikskuh
+and free() { }
+
+1588968295
+ikskuh
+fengb: note that msvc has a obscure mode for C++/CLI
+
+1588968305
+ikskuh
+
+
+1588968364
+fengb
+free() doesn't map to the GC though. Although I do remember emscripten working around the GC by having a fixed buffer for the "memory"
+
+1588968398
+ikskuh
+fengb: if the code is done right, freeing in a GC allocator is a no-op
+
+1588968408
+ikskuh
+as the GC will just be happy with that
+
+1588968558
+fengb
+Hmm
+
+1588968601
+ikskuh
+i think it's wort a try
+
+1588968695
+ikskuh
+oh, and daurnimator could built a lua bytecode backend
+
+1588970080
+oats
+zig JS target when
+
+1588970133
+oats
+ikskuh: haha, love it
+
+1588970140
+oats
+I would totally try to find a use for that
+
+1588970302
+ikskuh
+coding lua with zig? :D
+
+1588970346
+oats
+lua's fun
+
+1588970369
+oats
+there's already a handful of neat little languages that transpile to it
+
+1588970373
+oats
+moonscript, fennel, etc
+
+1588974522
+cow-orker
+andrewrk: in src-self-hosted/codegen.zig - if (amount <= std.math.maxInt(u8)) .... but 0xEB (short jmp) takes a i8 (-128..127)
+
+1588974617
+andrewrk
+good catch
+
+1588978008
+pmwhite
+I just learned about the -ggdb option to gcc. I'm guessing there is no way to achieve the same effect with the zig compiler, but it would be nice right now.
+
+1588982315
+daurnimator
+ikskuh: better to target lua itself. the lua bytecode is implementation specific.
+
+1588982335
+ikskuh
+ah
+
+1588982360
+fengb
+Not a spec?
+

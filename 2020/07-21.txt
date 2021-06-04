@@ -1,0 +1,3552 @@
+1595312687
+antaoiseach
+Hello, folks ... I'm trying to build on macOS 10.14 with the -DZIG_WORKAROUND_4799=ON flag, but running into some weird errors (looks like some problem withe the C++ compiler?) I'd appreciate it if someone could take a quick peek at the errors (one page long) -
+
+1595312715
+antaoiseach
+For reference, my g++ version is `++-10 (Homebrew GCC 10.1.0) 10.1.0`
+
+1595312735
+antaoiseach
+(Note, also tried it with the builtin clang compiler that's bundled with macOS, but no luck)
+
+1595312753
+antaoiseach
+My LLVM version is homebrew installed - 10.0.0
+
+1595312756
+daurnimator
+antaoiseach: what version(s) of clang do you have installed?
+
+1595312779
+antaoiseach
+daurnimator: clang version shows
+
+1595312780
+antaoiseach
+$ clang --version
+
+1595312780
+antaoiseach
+Target: x86_64-apple-darwin18.7.0
+
+1595312780
+antaoiseach
+Thread model: posix
+
+1595312780
+antaoiseach
+clang version 10.0.0
+
+1595312799
+antaoiseach
+But I'm using GCC installed via homebrew
+
+1595312855
+daurnimator
+antaoiseach: its fine to compile zig with gcc; zig just uses libllvm and libclang... 10.0.0 should be fine
+
+1595312883
+antaoiseach
+daurnimator: yeah, that's what I thought as well ... tried removing GCC and using the builtin compiler - identical errors
+
+1595312901
+antaoiseach
+Can't figure out what the problem is! Searching on llvm forums is an exercise in brain damage for me
+
+1595312906
+daurnimator
+antaoiseach: I'm wondering if you have more than one version of clang/llvm installed and its getting confused between them
+
+1595312925
+daurnimator
+like, you have 10.0.0 from brew; but then you have some version from xcode as well
+
+1595312950
+antaoiseach
+daurnimator: What do you suggest I do - try uninstalling the GCC one and try with the Xcode version?
+
+1595312981
+daurnimator
+antaoiseach: no...
+
+1595313024
+daurnimator
+try and see if you have more than one clang/llvm installed
+
+1595313065
+antaoiseach
+daurnimator: Okay, will check that and get back... thanks!
+
+1595348972
+pixelherodev
+Someone mentioned in one of the stage1 memory PRs that they were able to eke out more performance by never freeing memory, right?
+
+1595350544
+pixelherodev
+Off-hand proposal (hence here, and not GH): stash semantic analysis results per-file with the hash
+
+1595350561
+pixelherodev
+This means that e.g. `zig build && zig build test` can cache a lot of the results from one build to use with the other
+
+1595350577
+pixelherodev
+Or if you change optimization modes (and nothing else), it doesn't need to re-analyze anything
+
+1595351154
+pixelherodev
+Oh yeah, stage1 is fully single-threaded, right?
+
+1595351568
+pixelherodev
+Woot, with buildbuddy I can do stage2 work much, much faster - building self-hosted + running all stage2 tests + testing SPU-II backend takes 60 seconds locally, 20 via SSH :D
+
+1595353204
+gpanders[m]
+Hi all, what is the difference between using `comptime T: type` and `anytype` to define generic functions? Do these work the same way in practice? Do they generate the same code?
+
+1595353252
+ikskuh
+hey gpanders[m]!
+
+1595353253
+pixelherodev
+`type` only takes in `types`
+
+1595353260
+pixelherodev
+That is, `u8`, `void`, `[]const u8`, etc
+
+1595353267
+Nypsie
+`comptime T: type` accepts a Type, `anytype` accepts any variable/reference/etc
+
+1595353271
+pixelherodev
+`anytype` means a
+
+1595353334
+gpanders[m]
+So does the usage of `anytype` obviate the `comptime T: type` pattern? After all, can't I use (in the function body) `const T = @TypeOf(x)` where x is a variable of `anytype` ?
+
+1595353346
+ikskuh
+gpanders[m]: ah. no, not really
+
+1595353353
+ikskuh
+it's a matter of safety what you want to do
+
+1595353360
+ikskuh
+anytype is less strict
+
+1595353379
+pixelherodev
+`T: type` means I want a type
+
+1595353385
+pixelherodev
+`T: anytype` means I want any value
+
+1595353391
+fengb
+Generally the rule of thumb is, use `comptime T: type` when you can, `anytype` if you're solving a problem
+
+1595353408
+pixelherodev
+e.g. 3 and "Hello" are valid for `anytype`, but not for `type`
+
+1595353463
+pixelherodev
+Should stage1 be rebuilt if I update src-self-hosted files?
+
+1595353467
+leeward
+Along those lines, "u32" and "[]const u8" are valid values of type "type".
+
+1595353614
+leeward
+This is a good point though. `anytype` is kinda confusing in context next to `type`.
+
+1595353659
+gpanders[m]
+Right, but I can get the type of an `anytype` variable using `@TypeOf(x)`, which is evaluated at compile time (?), so what's unclear to me is why I shouldn't just do that instead of using the `comptime T: type` pattern
+
+1595353689
+leeward
+gpanders[m]: because users of your function won't know what to do.
+
+1595353710
+pixelherodev
+more to the point, because there
+
+1595353717
+pixelherodev
+e.g. std.ArrayList(u8)
+
+1595353728
+pixelherodev
+Passing in e.g. `1` makes no sense whatsoever
+
+1595353773
+gpanders[m]
+pixelherodev: that's a good example that makes sense to me. But what about something like std.mem.dupe where I pass in both the type and the value to be duplicated. In that case, why can't the type be inferred directly from the value I pass in?
+
+1595353790
+gpanders[m]
+using @TypeOf
+
+1595353797
+fengb
+Typically stdlib works with `comptime T: type`, and only switches to `anytype` when there's more than 1 type or if the type definitions are atrocious (like readers/writers)
+
+1595353802
+leeward
+Unless that's not the case. For example, std.testing.expectEqual does use @TypeOf because it gets 2 values of any type, as long as they're the same type.
+
+1595353835
+fengb
+You can do that yes, but the signature doesn't make it obvious what's going on
+
+1595353850
+pixelherodev
+It's also because it makes it easier for the compiler to catch errors
+
+1595353856
+fengb
+At the end of the day, you can probably use `anytype` for all the function signatures. But I wouldn't recommend it
+
+1595353876
+pixelherodev
+e.g. `blah(T: type, a: T, b: T)` - if you give it `3, "hello"`, the compiler will immediately know it's wrong because it doesn't match the signature
+
+1595353899
+gpanders[m]
+fn myfunc(comptime T: type, some_var: T) T
+
+1595353903
+pixelherodev
+With `a: anytype, b: anytype`, the function has to do comptime logic - which is currently interpretd
+
+1595353905
+pixelherodev
+interpreted*
+
+1595353906
+gpanders[m]
+fn myfunc(some_var: anytype) @TypeOf(some_var)
+
+1595353919
+gpanders[m]
+are these equivalent, with the exception that one requires one fewer parameter?
+
+1595353931
+pixelherodev
+They might be equivalent in meaning, but not in perception
+
+1595353941
+ikskuh
+gpanders[m]: anytype hides the function signature and doesn't create type mismatch errors
+
+1595353947
+pixelherodev
+` * Favor reading code over writing code.`
+
+1595353953
+ikskuh
+so for example:
+
+1595353965
+pixelherodev
+That's part of the Zen of Zig - making you write out the type is annoying while writing, but easier for readers later on
+
+1595353970
+ikskuh
+fn(comptime T: type, data: []const T) is way more explicit than fn(data: anytype)
+
+1595354039
+leeward
+It's also impossible to call the second version with some immediate values. Say I want it to return u7 but I have "3" to pass in. That means I have to call myfunc(@intCast(u7, 3))
+
+1595354059
+gpanders[m]
+leeward: Ah!
+
+1595354061
+ikskuh
+leeward: @as(u7, 3)
+
+1595354063
+ikskuh
+but yeah
+
+1595354071
+leeward
+sure
+
+1595354079
+gpanders[m]
+that makes sense
+
+1595354079
+leeward
+I never remember @as exists.
+
+1595354085
+gpanders[m]
+the @as(u7, 3) is awkward
+
+1595354112
+ikskuh
+u7(3) was better imho but i understand why it was changed
+
+1595354118
+gpanders[m]
+and pixelherodev I like your explanation too, I agree with you (and the Zen of Zig) about prioritizing reading over writing
+
+1595354163
+leeward
+For what it's worth, I think the self-documenting properties are the best reason.
+
+1595354178
+pixelherodev
+Multiple good reasons exist, who cares which one's "best?"
+
+1595354180
+pixelherodev
+:)
+
+1595354195
+fengb
+I care
+
+1595354239
+leeward
+Well if the smartest person around cares, that's all the justification I need.
+
+1595354254
+fengb
+B)
+
+1595354336
+pixelherodev
+Hmm, I might have to challenge that
+
+1595354345
+pixelherodev
+Are we sure fengb is a person?
+
+1595354369
+leeward
+I've seen video. It could be a next generation deep fake, but...occam's razor suggests it isn't.
+
+1595354395
+ikskuh
+feng b)
+
+1595354402
+leeward
+Of course, I could be a bot written by fengbot to allay suspicion.
+
+1595354450
+pixelherodev
+Hmm, that's true, but occam's razor suggests that principles are incapable of making suggestions... I'm not sure where I was going with that joke :P
+
+1595354482
+leeward
+Excuse me, chairman of pedantic society. "Application of occam's razor suggests..."
+
+1595354519
+ikskuh
+way more cyberpunk
+
+1595354547
+pixelherodev
+It also makes it harder for people to make stupid shaving jokes
+
+1595354548
+ikskuh
+(also, occam's lazor is a band which does nice synthwave)
+
+1595354568
+pixelherodev
+It took me a good chunk of time just to sift through them all
+
+1595354602
+leeward
+I think that's occam's laser.
+
+1595354604
+ikskuh
+waaaait. where do all these PRs come from?!
+
+1595354660
+pixelherodev
+One from pfgithub, one from luukdegram, one from vexu
+
+1595354672
+pixelherodev
+I'm still working on my SPU-II one
+
+1595354672
+ikskuh
+floats is a nice one
+
+1595354679
+fengb
+I feel like I should start contributing again
+
+1595354698
+Nypsie
+If float gets merged I could add it the substraction pr
+
+1595354707
+Nypsie
+it to the*
+
+1595354713
+ikskuh
+andrewrk: how's stage2 work going?
+
+1595354740
+andrewrk
+swiftly
+
+1595354747
+pixelherodev
+We're moving very quickly, it's awesome
+
+1595354766
+fengb
+Wait... Nypsie == Luuk?
+
+1595354772
+Nypsie
+Yes
+
+1595354772
+andrewrk
+it's starting to become more contributor friendly
+
+1595354833
+pixelherodev
+andrewrk: should RAM/ROM/etc specification be part of std.Target?
+
+1595354839
+pixelherodev
+I was looking in Options for a good place to put it
+
+1595354863
+ikskuh
+pixelherodev: how is that specification looking?
+
+1595354903
+pixelherodev
+My current plan is to just have an array of Ranges, where a Range is `readable`, `writable`, `executable` (bools) plus `start` and `end`
+
+1595354908
+ikskuh
+hm
+
+1595354916
+ikskuh
+because that sounds like stuff is currently in the linker script
+
+1595354924
+pixelherodev
+nope
+
+1595354929
+pixelherodev
+there is no linker script
+
+1595354929
+ikskuh
+huh?
+
+1595354936
+ikskuh
+well,
+
+1595354939
+pixelherodev
+Stage2 doesn't support linker scripts, and probably never will
+
+1595354945
+andrewrk
+pixelherodev, get something working and we'll shape it into place. think of it like working with clay
+
+1595354960
+pixelherodev
+We're trying to find better alternatives for functionality exposed by linker scripts
+
+1595354965
+ikskuh
+yeah, i know
+
+1595354972
+pixelherodev
+assuming I'm remembering random threads correctly, at least ;:
+
+1595354976
+ikskuh
+linker scripts aren't powerful enough yet
+
+1595355029
+ikskuh
+so the plan is to give zig a configurable/scriptable linking stage
+
+1595355057
+andrewrk
+I don't think there is a plan yet other than the vague sense that linker scripts are possibly the wrong solution
+
+1595355063
+ikskuh
+:D
+
+1595355076
+ikskuh
+what you
+
+1595355084
+ikskuh
+separate memory target location and memory linking location
+
+1595355120
+andrewrk
+elaborate?
+
+1595355137
+ikskuh
+how do you initialize your ram with pointers when you cannot store persistent data in ram?
+
+1595355146
+ikskuh
+it's common in embedded to have the following layout in flash:
+
+1595355157
+ikskuh
+{ .boot, .text, , rodata, .data }
+
+1595355174
+ikskuh
+and on boot, you copy everything from .data into the corresponding RAM sections
+
+1595355189
+ikskuh
+so you link against 0x8000, but the actual data is at 0x3456 in the binary
+
+1595355208
+ikskuh
+storage position != linked address
+
+1595355234
+andrewrk
+so far this is the same as "normal" targets such as x86_64-linux
+
+1595355275
+ikskuh
+it is?
+
+1595355276
+pixelherodev
+ahhh, not quite
+
+1595355284
+pixelherodev
+Wait, hmm, maybe
+
+1595355285
+ikskuh
+i didn't see the copying code for .data in _start for linux
+
+1595355313
+ikskuh
+there are three things locations for a symbol:
+
+1595355316
+pixelherodev
+No yeah, with freestanding you might need to shadow ROM -> RAM etc
+
+1595355322
+ikskuh
+1. location in RAM during execution
+
+1595355337
+ikskuh
+2. location in ROM for persistence
+
+1595355343
+ikskuh
+3. location in the binary file (elf)
+
+1595355357
+ikskuh
+for linux, #2 does not exist.
+
+1595355361
+ikskuh
+you mmap 3 → 1
+
+1595355375
+ikskuh
+but for embedded, you flash 3 → 2, then load 2 → 1 at boot time
+
+1595355437
+ikskuh
+which is also important if you want several versions of the same function. you link all variants of the function against 0x8120, but they reside at 0x1000, 0x2000, 0x3000 and you copy the right function for your hardware to 0x8120
+
+1595355463
+ikskuh
+which would be a viable option for the "select correct function for SSE/AVX/…" for PC as well
+
+1595355537
+pixelherodev
+That can come later
+
+1595355546
+pixelherodev
+For now, I'm assuming a single HW target
+
+1595355560
+pixelherodev
+that'll need separate work anyways, since it'll need to work for all platforms
+
+1595355564
+andrewrk
+vexu working on stage2 is 🔥 🔥 🔥
+
+1595355596
+ikskuh
+pixelherodev: yeah, that's something for later. but it's just an application of the problem i've talked about
+
+1595355615
+pixelherodev
+it's a quare?
+
+1595355618
+pixelherodev
+square?
+
+1595355626
+ikskuh
+square?
+
+1595355632
+pixelherodev
+vexu working on stage2
+
+1595355667
+ikskuh
+i think you're using something slang right now? :D
+
+1595355675
+pixelherodev
+no
+
+1595355685
+ikskuh
+oh.
+
+1595355686
+ikskuh
+oh!
+
+1595355687
+pixelherodev
+`14:17:46        andrewrk | vexu working on stage2 is 🔥 🔥 🔥 ` <-
+
+1595355692
+ikskuh
+those are flames :D
+
+1595355694
+ikskuh
+fix your system.
+
+1595355695
+pixelherodev
+ahhh
+
+1595355698
+pixelherodev
+lol
+
+1595355709
+leeward
+Get more unicodes.
+
+1595355711
+ikskuh
+get something that can display proper emojis
+
+1595355731
+pixelherodev
+meh
+
+1595355742
+pixelherodev
+I think SPU II is more important than my fonts lol
+
+1595355795
+ikskuh
+you're in zig community. you're officially required to be able to see emoji. otherwise it's 💩💩💩💩
+
+1595355805
+ikskuh
+i don't see correlation between those two :D
+
+1595355810
+pixelherodev
+I can see
+
+1595355820
+ikskuh
+good.
+
+1595355821
+pixelherodev
+Also, there
+
+1595355823
+pixelherodev
+;)
+
+1595355825
+ikskuh
+i know :D
+
+1595355836
+fengb
+Unicode tofu is best tofu
+
+1595355857
+ikskuh
+but how else could you ever interpret PSV-Data?
+
+1595355858
+leeward
+trust on first use?
+
+1595356795
+pixelherodev
+Do we have a keyword to mark functions as always-comptime?
+
+1595356809
+andrewrk
+
+
+1595356820
+pixelherodev
+That's what I thought
+
+1595356828
+pixelherodev
+Was going to comment in there but wanted to make sure it didn't already exist
+
+1595358480
+ikskuh
+ifreund: i kinda like the idea of the tag enum literals for logging
+
+1595358493
+ikskuh
+but i'm kinda lost with what i should put in there…
+
+1595358578
+ifreund
+ikskuh: depends on the scale of your codebase really, if it's relatively small you might just put the name of your program
+
+1595358585
+ikskuh
+hmm
+
+1595358589
+ikskuh
+i'm using .app right now
+
+1595358595
+ikskuh
+for libraries, i use the lib name
+
+1595358598
+pixelherodev
+stage2 uses e.g. liveness, linker, analysis
+
+1595358623
+ifreund
+for river I use different scopes for different subsystems
+
+1595358642
+pixelherodev
+FOr smaller projects, that might be out of scope though (pun intended)
+
+1595358659
+ifreund
+e.g. .xdg_shell, .layer_shell, .keyboard, .cursor, etc.
+
+1595358688
+ifreund
+for a lib I think you generally just want to use the lib name yeah
+
+1595358692
+andrewrk
+ikskuh, re: .data - the linux kernel does it for you, but it's the same concept
+
+1595358735
+ikskuh
+not 100% sure
+
+1595358777
+pixelherodev
+The difference is that you have to do it yourself for freestanding
+
+1595358784
+pixelherodev
+For some hardware at least
+
+1595358787
+ikskuh
+ELF itself doesn't allow to reflect this
+
+1595358796
+pixelherodev
+I think the code itself should do it
+
+1595358816
+pixelherodev
+We should maybe expose certain symbols - e.g. `code_begin` / `data_end` / etc
+
+1595358826
+ikskuh
+you store the data in another memory segment
+
+1595358829
+pixelherodev
+And let the code handle it
+
+1595358867
+ikskuh
+the kernel loads data from the executable into RAM (which is for me the equivalent of flashing the µC)
+
+1595358895
+ikskuh
+then runtime code in the application itself performs some memory movement from one memory area to another
+
+1595359037
+andrewrk
+ikskuh, how not? it has the sections with names. the kernel just maps it into place
+
+1595359059
+pixelherodev
+The running code needs to know the sections
+
+1595359063
+pixelherodev
+Where they are, and all that
+
+1595359129
+andrewrk
+sounds like we need a builtin for fetching offset and length of link sections
+
+1595359272
+ikskuh
+.data : AT (0x1000) { *(.data) } >0x2000
+
+1595359276
+ikskuh
+is the thing we need to model
+
+1595359331
+ikskuh
+"collect all symbols from .data, assign them addresses starting at 0x2000, store them at 0x1000"
+
+1595359331
+pixelherodev
+open a proposal?
+
+1595359359
+andrewrk
+
+
+1595359431
+ikskuh
+andrewrk: the kernel doesn't actually know about the 0x2000 thingy
+
+1595359445
+ikskuh
+when loading a ELF file linked like this, it will just happily put the data to 0x1000
+
+1595359449
+ikskuh
+and is done
+
+1595359450
+andrewrk
+I see, you're talking about the other features that linker scripts provide
+
+1595359472
+ikskuh
+yeah and those are
+
+1595359579
+pixelherodev
+We use something similar for KnightOS
+
+1595359589
+andrewrk
+the minimal thing we need is a way for code to access the start and end virtual address of link sections
+
+1595359604
+pixelherodev
+All initialized values get placed in their own section, and the crt0 copies them into place on application launch
+
+1595359617
+pixelherodev
+Yeah, that's really all it is
+
+1595359627
+ikskuh
+andrewrk: that won't help here. because the virtual adress is not initialized in that case
+
+1595359648
+andrewrk
+how would the startup code initialize .data in this case?
+
+1595359684
+ikskuh
+memcpy from flash (stored address) to ram (linked address, which i consider the virtual address the linker assigned the variable)
+
+1595359691
+pixelherodev
+It needs to basically copy all .data from some other arbitrary address in persistent s - imp'd
+
+1595359728
+pixelherodev
+We also need a way to get the physical address, then
+
+1595359749
+pixelherodev
+We don't necessarily need a way to specify (we can let Zig make that decision), just a way to retrieve it
+
+1595359787
+ikskuh
+yeah and a way to group and
+
+1595359798
+pixelherodev
+Why?
+
+1595359803
+pixelherodev
+Different use case?
+
+1595359864
+ikskuh
+you want to batch-copy all symbols and don't generate code to copy each symbol alone
+
+1595359895
+ikskuh
+also sorting/grouping symbols might be required for different memory shenanigans
+
+1595359988
+pixelherodev
+Here's an idea: how about a builtin e.g. @shadow which automatically does all that?
+
+1595360012
+pixelherodev
+e.g. `@shadow(.data)` will automatically generate code to `memcpy` from the stored addr to virtual?
+
+1595360014
+ikskuh
+no, this stuff should be super-explicit
+
+1595360023
+ikskuh
+no hidden control flow
+
+1595360028
+pixelherodev
+Fair
+
+1595360035
+ikskuh
+you might need to do patching and stuff
+
+1595360042
+pixelherodev
+Could be a utility function in std at least, it should be nearly identical per platform
+
+1595360050
+ikskuh
+yeah, that's true
+
+1595360057
+pixelherodev
+But that still needs some data exposed
+
+1595360062
+ikskuh
+std.embedded.initSection(".data");
+
+1595360069
+pixelherodev
+Yeah, exactly
+
+1595360088
+pixelherodev
+Bonus: a soft-reset can just call that again, reset sp, and jump to _start
+
+1595360140
+ikskuh
+yep :D
+
+1595360144
+ikskuh
+that's how you soft-reset
+
+1595360201
+pixelherodev
+We could reasonably have std.embedded.reset
+
+1595360218
+pixelherodev
+"might need to do patching" <- why's this?
+
+1595360265
+andrewrk
+I remember playing some old sega genesis games, and after you beat the game, you could press the soft reset button, and yet there was something special about the game, some bonus content. it broke my brain, I did not understand how that was possible
+
+1595360266
+ikskuh
+arm cortex with an NVIC requires you to have one "ISR" to be a checksum
+
+1595360300
+pixelherodev
+Mind elaborating?
+
+1595360308
+pixelherodev
+Why does this need more than a memcpy?
+
+1595360315
+pixelherodev
+Won't that set it up correctly anyways?
+
+1595360320
+pixelherodev
+Does it need a specific address or something?
+
+1595360344
+ikskuh
+you need to copy the ISR table
+
+1595360352
+pixelherodev
+... huh?
+
+1595360353
+ikskuh
+and then change things in it to let it point to the right address again
+
+1595360358
+ikskuh
+yeah, weird stuff :D
+
+1595360369
+ikskuh
+relative addressing is lovely :D
+
+1595360383
+pixelherodev
+but if you know all addresses, relative addressing doesn't matter
+
+1595360393
+ikskuh
+AVR for example does not have ISR pointers
+
+1595360395
+pixelherodev
+My JIT uses relative addressing 99.99% of the time anyways
+
+1595360395
+ikskuh
+it has ISR routines
+
+1595360406
+ikskuh
+which are instructions :D
+
+1595360423
+ikskuh
+so a non-implemented ISR is not "0x0000", but "iret"
+
+1595360424
+pixelherodev
+so would that be `std.embedded.init... ; asm volatile("blah");`?
+
+1595360434
+pixelherodev
+Right, that's one of the z80 modes too IIRC
+
+1595360440
+ikskuh
+nah, that stuff is super-platform-specific
+
+1595360466
+pixelherodev
+So for that specific platform, you'd need more work, and wouldn't want the convenience func at all?
+
+1595360512
+ikskuh
+yep
+
+1595360530
+ikskuh
+something like "common platform helpers" aren't bad
+
+1595360560
+ikskuh
+but architectures are weird and you cannot really map all platform initialization to the same generic interface
+
+1595360578
+ikskuh
+for example, it might be better to first crank up your PLL,
+
+1595360580
+ikskuh
+because it's faster :D
+
+1595360620
+ikskuh
+
+
+1595360631
+ikskuh
+btw, i made a improved note for the issue
+
+1595360637
+ikskuh
+with a hexdump example to make clear what should happen
+
+1595360645
+leeward
+Fun with translate-c: #define FOO ((some_type_t)-1) -> pub const FOO some_type_t - 1; integer value 1 can't be coerced into type 'type'
+
+1595360750
+pixelherodev
+It doesn't detect casts within macros?
+
+1595360776
+leeward
+It does not.
+
+1595360786
+ikskuh
+oh, that's a cast :D
+
+1595360787
+ikskuh
+lol
+
+1595360800
+ikskuh
+i didn't detect the cast as well
+
+1595360826
+leeward
+Turns out C's grammar is confusing for more than just Zig.
+
+1595360846
+ikskuh
+well
+
+1595360854
+ikskuh
+it's undecidable what it semantically is
+
+1595360858
+ikskuh
+it might be a cast
+
+1595360862
+ikskuh
+it might be a subtraction
+
+1595360878
+leeward
+Who needs context free grammars?
+
+1595360893
+leeward
+Aren't people always saying context is key?
+
+1595360908
+pixelherodev
+Hmm, no, I'm 99% sure that's always a cast
+
+1595360917
+ikskuh
+no, it's not
+
+1595360919
+pixelherodev
+`(T)literal` is always a cast, no?
+
+1595360928
+ikskuh
+but it isn't a literal ;)
+
+1595360935
+pixelherodev
+It's written out as -1
+
+1595360938
+pixelherodev
+That's literally a literal
+
+1595360938
+ikskuh
+it's a unary or binary operator -
+
+1595360943
+ikskuh
+no
+
+1595360951
+ikskuh
+-1 is "unary minus applied to 1"
+
+1595360954
+ikskuh
+so
+
+1595360956
+pixelherodev
+Ahhh, gotcha
+
+1595360957
+ikskuh
+((5)-1)
+
+1595360961
+ikskuh
+is totally legit ;)
+
+1595360975
+pixelherodev
+But
+
+1595360982
+pixelherodev
+That sounds like a job for CFE ;)
+
+1595361000
+ikskuh
+Assertion failed at /deps/zig/src/ir.cpp:28803 in ir_analyze_instruction_check_switch_prongs. This is a bug in the Zig compiler.
+
+1595361001
+ikskuh
+:(
+
+1595361129
+ikskuh
+oh
+
+1595361131
+ikskuh
+LOL
+
+1595361139
+ikskuh
+switch(foo) { bar => {}, bar => {} }
+
+1595361197
+pixelherodev
+zheh
+
+1595361200
+pixelherodev
+heh*
+
+1595361372
+leeward
+Hey, you found a bug in the Zig compiler that's easy to replicate!
+
+1595361389
+leeward
+That is the best kind.
+
+1595361535
+ikskuh
+:D
+
+1595361544
+ikskuh
+i don't know if it's that easy to replicate
+
+1595362225
+ikskuh
+btw, andrewrk: i noticed that zig is the first language that really makes me program defensive
+
+1595362258
+ikskuh
+the idea that you cannot ignore errors is great :)
+
+1595362475
+ifreund
+what, you're not the type to add supreflous NULL checks to your C?
+
+1595362511
+leeward
+What percentage of mallocs would you say have `if (ptr == NULL)` after them? I would guess less than 30.
+
+1595362553
+ifreund
+honestly that's fairly optimistic
+
+1595362567
+ifreund
+there's a lot of bad code out therer
+
+1595362572
+leeward
+You're probably right.
+
+1595362725
+ikskuh
+how many C++ new() do check for bad_alloc?
+
+1595362730
+ikskuh
+or any exception at all?
+
+1595362739
+leeward
+I would guess much less than 1%
+
+1595362741
+Akuli
+does it bubble up in c++?
+
+1595362747
+leeward
+Yeah, it throws.
+
+1595362793
+leeward
+It has to, since null references aren't a thing.
+
+1595362813
+leeward
+I think that's why, anyway...it's been a while.
+
+1595362896
+shakesoda
+i definitely don't null check all my mallocs in my c, despite feeling like i usually do
+
+1595362921
+shakesoda
+i also work on games where the failure mode is halt and catch fire anyways if something like a malloc is gonna fail
+
+1595362933
+shakesoda
+not that they should not be checked
+
+1595362939
+fengb
+I mean, most languages have decided memory allocation can’t fail right? >_>
+
+1595362955
+pixelherodev
+Fun fact: new() can actually abort() or return NULL
+
+1595362960
+pixelherodev
+It's not a language thing, it's a stdlib thing
+
+1595362962
+fengb
+Hardware problem! Next!
+
+1595362988
+andrewrk
+it's really convenient to assume unlimited resources
+
+1595362989
+leeward
+Oh, right, it's because constructors.
+
+1595362991
+shakesoda
+zig doesn't give me a choice so if my error checking hygiene is going to be bad i have to work for it lol
+
+1595363011
+leeward
+See also: oomkiller and overcommit.
+
+1595363051
+leeward
+`try allocate()` is basically the same as an uncaught `new` though. Kick it upstairs.
+
+1595363069
+leeward
+I mean, it sucks less than exceptions, but that's a different issue.
+
+1595363086
+fengb
+I feel like Zig is exceptions done right
+
+1595363088
+shakesoda
+it isn't the same though, in a pretty simple way
+
+1595363105
+leeward
+Zig really is exceptions done right. It's what Go's multiple return values wishes it were.
+
+1595363106
+pixelherodev
+leeward: to be fair, overcommit has valid reasons to exist
+
+1595363107
+shakesoda
+which is that c++ doesn't make you actually handle it anywhere
+
+1595363108
+Akuli
+one annoyance with zig's errors is that i can't attach arbitrary data with them
+
+1595363111
+pixelherodev
+I don't say the same for oomkiller
+
+1595363117
+fengb
+Or at least, the upsides of exceptions without the downsides
+
+1595363117
+shakesoda
+zig at
+
+1595363122
+companion_cube
+leeward: that, or Result
+
+1595363122
+leeward
+pixelherodev: I'm aware. Doesn't mean I leave overcommit on.
+
+1595363141
+Akuli
+if reading a file fails and i want to bubble up an error, then whatever handles that error must figure out which part of the file has the error in it
+
+1595363144
+shakesoda
+so you don't have some interior thing doing uncaught exceptions without you knowing about it. ever.
+
+1595363146
+pixelherodev
+My ideal OOM killer: suspend any process that asks for more memory while we're out, and use pre-reserved memory to switch to a TTY and ask the user what to do
+
+1595363151
+leeward
+See also: Either and Maybe monads.
+
+1595363165
+companion_cube
+either being a bad name though, result is better
+
+1595363168
+pixelherodev
+Best case: a program proceeds to release memory. Worst case: user gets to decide what to kill
+
+1595363184
+leeward
+companion_cube: Totally agreed. I like Maybe but can never remember what Either is called.
+
+1595363201
+shakesoda
+for the most part if a task is eating all my memory i want it to be killed
+
+1595363209
+pixelherodev
+I might not
+
+1595363212
+shakesoda
+it usually happens when i have screwed up profoundly
+
+1595363215
+pixelherodev
+True
+
+1595363228
+shakesoda
+so, i'm fine with that being a default behavior
+
+1595363229
+fengb
+On phones it can get tricky
+
+1595363232
+pixelherodev
+But if a ZIg compilation is using a lot of RAM in stage1, I'd rather let it finish as long as it doesn't ask for more
+
+1595363233
+leeward
+If a task is eating all my memory it's Oxygen Not Included and I've left it running for too long.
+
+1595363238
+pixelherodev
+Or, kill other stuff to make room
+
+1595363254
+shakesoda
+if a compiler is taking up so much ram it's going to oom my machine, well, that's really awful and should be fixed :D
+
+1595363255
+leeward
+The best is when oomkiller takes out ssh.
+
+1595363272
+shakesoda
+that includes you, zig stage1!
+
+1595363277
+leeward
+shakesoda: I know of no compilers that would do that. What a ridiculous hypothetical scenario.
+
+1595363310
+pixelherodev
+shakesoda: true
+
+1595363335
+shakesoda
+leeward: i've made a lot of technical decisions through recent years just to avoid things like this
+
+1595363362
+leeward
+shakesoda: things like having something eat all your RAM?
+
+1595363370
+shakesoda
+i am willing to sacrifice a good amount of runtime performance to not have to wait on builds or have things eat all my ram
+
+1595363386
+leeward
+ah
+
+1595363396
+shakesoda
+which is to say i have explicitly moved things onto jits/interpreters that are lighter on resources for this
+
+1595363401
+fengb
+omnomnom
+
+1595363410
+pixelherodev
+Smarts
+
+1595363410
+fengb
+Wait, jits are lighter on memory?
+
+1595363415
+pixelherodev
+They can be
+
+1595363426
+shakesoda
+than stuff like c compilers? god yes
+
+1595363447
+pixelherodev
+False
+
+1595363451
+pixelherodev
+GCC / Clang
+
+1595363455
+pixelherodev
+Those aren't C compilers.
+
+1595363461
+leeward
+Most of my compilation targets don't have enough flash for my computer to spend much time building code for them.
+
+1595363462
+shakesoda
+okay, fine, monsters.
+
+1595363469
+pixelherodev
+
+
+1595363473
+leeward
+Are you calling GCC a fake scotsman?
+
+1595363481
+shakesoda
+no we're calling it a monster
+
+1595363485
+fengb
+GNU C Compiler
+
+1595363486
+pixelherodev
+no. I'm calling it a real monster.
+
+1595363490
+pixelherodev
+Nope
+
+1595363494
+pixelherodev
+GNU Compiler
+
+1595363494
+leeward
+GNU Compiler Collection
+
+1595363501
+fengb
+I don't care that they renamed
+
+1595363503
+pixelherodev
+It can technically compile C, but that's like saying that it can technically assemble
+
+1595363521
+leeward
+To be fair, gcc calls gas when it wants to assemble.
+
+1595363527
+pixelherodev
+`gcc blah.c` is like `gcc blah.asm`
+
+1595363532
+pixelherodev
+It's just a terrible idea, and there's better ways to do it
+
+1595363567
+shakesoda
+leeward: on the targets i usually use, luajit is a viable option and it's a lot less of a time and resource sink than gcc et al would be for similar work
+
+1595363573
+leeward
+I don't know about you, but I really like having the C preprocessor when compiling my assembler code.
+
+1595363581
+shakesoda
+that said, i'm here, so it's not like i'm totally averse to using a compiler
+
+1595363605
+shakesoda
+i just have lots and lots of stuff pushed away from needing aot compilation
+
+1595363622
+pixelherodev
+My solution to that is to have lighter compilers :P
+
+1595363637
+leeward
+Optimizing for programmer time makes tons of sense. I think everyone should do it as much as they can.
+
+1595363648
+shakesoda
+i await zig being the fastest compiler in the west
+
+1595363657
+shakesoda
+maybe even the east, too.
+
+1595363692
+fengb
+Nah, Zen has that covered 🙃
+
+1595363720
+leeward
+shakesoda: Do you use Go at all?
+
+1595363744
+pixelherodev
+Go has much better resource consumption than other compilers I've used IIRC
+
+1595363764
+shakesoda
+no, haven't been compelled to do so
+
+1595363766
+fengb
+Go compiler is pretty fast
+
+1595363769
+leeward
+It's a design goal for the language.
+
+1595363791
+pixelherodev
+Go is a C-ish language which has a pretty good compiler, might be worth giving it a shot (if it supports Pi)
+
+1595363806
+leeward
+gccgo supports everything.
+
+1595363812
+pixelherodev
+but is gcc.
+
+1595363814
+leeward
+meh
+
+1595363819
+fengb
+Go has native arm support
+
+1595363823
+pixelherodev
+phew
+
+1595363829
+fengb
+I think that's the extent of native support though
+
+1595363829
+pixelherodev
+oh and
+
+1595363831
+pixelherodev
+leeward: false
+
+1595363834
+fengb
+Arm and x86
+
+1595363837
+pixelherodev
+GCC doesn't support "everything"
+
+1595363839
+pixelherodev
+Not by a long shot
+
+1595363860
+pixelherodev
+GCC + LLVM put together have
+
+1595363875
+ifreund
+doesn't support the SPU II for one :D
+
+1595363876
+leeward
+pixelherodev: Weren't we talking about raspberry pi? I didn't intend to claim GCC supports building for rocks.
+
+1595363885
+shakesoda
+the coverage between them is quite a lot more than hardware i actually own
+
+1595363891
+fengb
+lol rocks
+
+1595363897
+pixelherodev
+leeward: "gccgo supports everything"
+
+1595363908
+leeward
+Yes, context sometimes matters when communicating with humans.
+
+1595363910
+pixelherodev
+Okay, both of them, but only because I can't just raise *one*, it doesn't work like that
+
+1595363912
+fengb
+I think last time I cross compiled a Go program to my arm box just fine
+
+1595363914
+shakesoda
+i generally assume "everything" to mean the usual suspects
+
+1595363934
+shakesoda
+mips/arm/x86/maybe power
+
+1595363940
+pixelherodev
+Anyways, going to spend about 90 minutes on stage2 now :D
+
+1595364013
+pixelherodev
+Really just need to define the address space, I think
+
+1595364032
+leeward
+I love how easy it is to use optionals with C code. Zig really nailed that.
+
+1595364045
+pixelherodev
+Definitely
+
+1595364121
+ifreund
+yeah, i just do `orelse return error.Crap;` after every C call that might return null
+
+1595364805
+pixelherodev
+hmm, the question is how to decide default memory model
+
+1595365199
+pixelherodev
+andrewrk: should I have @import("builtin") have a memory model the same way it has CPU / OS / etc, or is it better to define it manually in std.Target per-architecture (or per-triple?)?
+
+1595365347
+pixelherodev
+gah, I need to stop the bikeshedding, it cna be changed later, better to just have something in place now
+
+1595365439
+andrewrk
+I can't really answer a lot of these questions without a deep dive into the code, which I will have to do anyway for pull requests. so better to guess the answer, come up with something that works, and type up a nice explanation in the PR
+
+1595366896
+pixelherodev
+I'm really starting to hate stage1
+
+1595366905
+pixelherodev
+Memory usage is
+
+1595367027
+pixelherodev
+I have 8GiB of RAM, stage1 is the only program that has
+
+1595367069
+pixelherodev
+I average ~6.5GiB free at any given moment, the worst case I have outside stage1 is
+
+1595367183
+leeward
+I find it amazing that we've found something to do with our gigabytes of RAM. Software is a gas.
+
+1595367210
+shakesoda
+chrome regularly eats >90% of my 16gb
+
+1595367222
+shakesoda
+it fills to eat as much as is possible
+
+1595367236
+pixelherodev
+Hence, I don't use Chrome :P
+
+1595367239
+leeward
+gas: expands to fill container
+
+1595367241
+shakesoda
+firefox does it too
+
+1595367246
+shakesoda
+less severely, granted
+
+1595367247
+leeward
+Firefox is worse.
+
+1595367247
+pixelherodev
+I use qutebrowser
+
+1595367247
+andrewrk
+pixelherodev, well, you could backport the new decl based memory management model to stage1 if you want :P
+
+1595367249
+pixelherodev
+Which is chromium-based
+
+1595367253
+companion_cube
+slack is the worst
+
+1595367260
+pixelherodev
+But I've never even hit 1GiB
+
+1595367266
+shakesoda
+nah, firefox doesn't eat ram quite as bad as chrome does... but it's not really that far off
+
+1595367274
+leeward
+Slack is definitely the worst.
+
+1595367274
+shakesoda
+in my usage, that is
+
+1595367285
+pixelherodev
+How many tabs do you guys typically have open?
+
+1595367291
+shakesoda
+"a lot"
+
+1595367301
+leeward
+Nope, not happening. Many.
+
+1595367302
+shakesoda
+tabs are my external memory
+
+1595367306
+pixelherodev
+andrewrk: no thanks, I'd rather get CBE up to the point where we can have "stage 1" be as good as a binary blob
+
+1595367311
+shakesoda
+the internal memory doesn't work so well :D
+
+1595367314
+pixelherodev
+See, I have, at *most*, five tabs open at a time
+
+1595367315
+pixelherodev
+Tops.
+
+1595367321
+shakesoda
+yeah i can't even function with only 5 tabs
+
+1595367323
+pixelherodev
+If I need to remember something, I mark it down in a plain text file
+
+1595367330
+shakesoda
+i think i currently have around 100
+
+1595367336
+pixelherodev
+Well, don't complain that your browser is using too much RAM then
+
+1595367338
+pixelherodev
+:P
+
+1595367346
+shakesoda
+why wouldn't i? it's ridiculous that it can't handle that
+
+1595367356
+pixelherodev
+That's a hundred pages of HTML + DOM + potentially
+
+1595367359
+shakesoda
+my computer has such an obscene amount of resources versus the needs of such a list
+
+1595367365
+pixelherodev
+Not really
+
+1595367367
+shakesoda
+and the browser can unload things at will
+
+1595367370
+leeward
+46 tabs on this window...5 windows open, one of which only has a few. Call it 200?
+
+1595367379
+pixelherodev
+There's probably hundreds of malware scripts abusing your computer right now :P
+
+1595367381
+shakesoda
+also, i run noscript
+
+1595367411
+pixelherodev
+on chrome?
+
+1595367413
+pixelherodev
+huh
+
+1595367414
+shakesoda
+yes
+
+1595367415
+leeward
+chromium
+
+1595367421
+pixelherodev
+Same difference
+
+1595367426
+pixelherodev
+It's not all that degoogled
+
+1595367448
+leeward
+It may as well be opera or edge or safari.
+
+1595367462
+shakesoda
+fwiw, safari handles this same type of load dramatically better than either chrome or ff
+
+1595367481
+shakesoda
+(ipados safari, slightly more specifically)
+
+1595367504
+pixelherodev
+See, I don't even have a web browser open all that often
+
+1595367506
+shakesoda
+it has no problems whatsoever either keeping track of hundreds.
+
+1595367508
+leeward
+Yeah, a gigabyte is way more than any but the video tabs should ever need.
+
+1595367513
+shakesoda
+s/either//
+
+1595367516
+pixelherodev
+I often just use w3m
+
+1595367521
+pixelherodev
+So make a simpler browser
+
+1595367542
+pixelherodev
+If you're not bothering with 100% compatibility, you can probably get decent support by taping together existing components
+
+1595367545
+pixelherodev
+e.g. Duktape for JS
+
+1595367551
+leeward
+My time is worth more than my RAM.
+
+1595367553
+companion_cube
+quickjs
+
+1595367561
+leeward
+Like, a lot more.
+
+1595367589
+pixelherodev
+Heck, if you only support HTML4 + older JS + older CSS, you can probably actually make one in a reasonable time frame, and tell all the new standards to a*##$*&@(! off
+
+1595367602
+shakesoda
+i'm not making a damned browser lol
+
+1595367605
+pixelherodev
+Heh
+
+1595367608
+shakesoda
+been there done that
+
+1595367611
+pixelherodev
+You'd have to pay me to make one
+
+1595367617
+pixelherodev
+Like, I'm insane, but not
+
+1595367631
+pixelherodev
+I'm low-level insane, not high-level abstraction BS insane
+
+1595367639
+shakesoda
+i implemented a decent subset of one some years ago before scrapping it for being not worth the trouble
+
+1595367679
+shakesoda
+i suspect what i actually want is to just run chrome in a ram limited container
+
+1595367688
+shakesoda
+or firefox in the same
+
+1595367696
+pixelherodev
+Hmm, I wonder how hard it'd be to go back and fork an older Firefox / Chromium, backport security fixes, optimize for performance, and then only ever backport security fixes?
+
+1595367711
+leeward
+hard
+
+1595367712
+shakesoda
+that's just palemoon
+
+1595367719
+leeward
+like, more work than I want to put in
+
+1595367724
+pixelherodev
+Yeah no, it'd be easier to just support HTML4 and call it a day
+
+1595367735
+pixelherodev
+Heck, it'd probably be easier to convince people to switch to Gemini lo
+
+1595367738
+pixelherodev
+lol*
+
+1595367740
+Sahnvour
+you probably wouldn't go very far with old html/css/js on the modern web, unfortunately
+
+1595367812
+leeward
+Pages
+
+1595367818
+andrewrk
+I just ran out of 32GiB of RAM trying to link a llvm 11 debug build with `ninja`
+
+1595367819
+shakesoda
+i wish tree style tab weren't nerfed on modern versions of firefox :(
+
+1595367841
+shakesoda
+top tabs blow
+
+1595367842
+pixelherodev
+I wish e.g. seamonkey was actually
+
+1595367845
+companion_cube
+the serenityOS guy does his own browser 🙃
+
+1595367854
+pixelherodev
+Yeah, I pity him
+
+1595367859
+pixelherodev
+Wastes so much of his life...
+
+1595367864
+pixelherodev
+says me.
+
+1595367864
+andrewrk
+waste?
+
+1595367866
+Sahnvour
+andrewrk: lld ?
+
+1595367872
+andrewrk
+Sahnvour, nah I'm using system ld
+
+1595367878
+pixelherodev
+Writing your own browser is a waste of time IMO, but I also have no room to talk
+
+1595367887
+Sahnvour
+ha
+
+1595367895
+pixelherodev
+And thus given up the right to ever seriously say anything about wasting time :P
+
+1595367914
+shakesoda
+to be sure, andrewrk wrote his own language
+
+1595367920
+shakesoda
+wasted so much time that we're even USING IT
+
+1595367936
+leeward
+Sahnvour: Actually, Dillo renders my quick sample pretty well.
+
+1595367937
+andrewrk
+we didn't ask to be born, and nobody gave us a purpose. it's up to us to decide what to do with our own time
+
+1595367954
+pixelherodev
+... leeward: I misread that for a second. Very, very misread that.
+
+1595367962
+ifreund
+and nothing matters, which is awesome
+
+1595367963
+pixelherodev
+andrewrk: for sure!
+
+1595367967
+Sahnvour
+I wish I had time to "waste" doing stuff like the serenity os guy :)
+
+1595367968
+pixelherodev
+Optimistic nihilism woot!
+
+1595367974
+shakesoda
+i'm not really much a believer in the concept of time being wasted just you did something for interest rather than need
+
+1595367991
+pixelherodev
+... hmm, I think my ZLS is broken :(
+
+1595368005
+pixelherodev
+sadface
+
+1595368037
+Sahnvour
+leeward: didn't know about Dillo, seems unmaintained though ?
+
+1595368040
+shakesoda
+i only update every now and again
+
+1595368050
+shakesoda
+it works right now, so i'm not touching it
+
+1595368072
+leeward
+Sahnvour: Not sure maintenance matters on a browser with basically no features, but...it's still in Debian so there must be someone keeping the package going.
+
+1595368114
+pixelherodev
+I didn't update either
+
+1595368116
+Sahnvour
+depends on the level of finish of the project I guess
+
+1595368116
+pixelherodev
+:(
+
+1595368120
+pixelherodev
+I tried to but couldn't lol
+
+1595368140
+pixelherodev
+leeward: Dillo?
+
+1595368165
+leeward
+Description-en: Small and fast web browser
+
+1595368178
+pixelherodev
+Real description: not usable?
+
+1595368213
+leeward
+Usable enough to browse wikipedia.
+
+1595368214
+companion_cube
+fast and simple C++ compiler
+
+1595368269
+leeward
+Its installed size is less than 500k.
+
+1595368397
+pixelherodev
+hmm
+
+1595368409
+pixelherodev
+So, graphical w3m?
+
+1595368416
+leeward
+basically
+
+1595368423
+companion_cube
+the css support is indeed quite limited :D
+
+1595368469
+leeward
+If your web site is browsable with dillo, it might be ok with a screen reader.
+
+1595368498
+companion_cube
+it's not so bad indeed!
+
+1595368562
+ifreund
+there's also Netsurf which is actively developed
+
+1595368579
+leeward
+Isn't that the BeOS browser, but ported?
+
+1595368631
+leeward
+Great, found a heisenbug. When I try to step to it in the debugger things work fine. Run it normally and it deadlocks.
+
+1595368673
+pixelherodev
+I hate those.
+
+1595368684
+shakesoda
+classic
+
+1595368686
+ifreund
+don't think so? it seems to be targeted at RISC OS primarily
+
+1595368742
+andrewrk
+leeward,
+
+1595368743
+pixelherodev
+hmm
+
+1595368747
+andrewrk
+I've been using this lately and it rocks
+
+1595368755
+leeward
+Oh, I'm thinking of NetPositive.
+
+1595368758
+pixelherodev
+Here's a new problem: what should be done with multiple, distinct RAM sections?
+
+1595368769
+ikskuh
+pixelherodev: ah nice :D
+
+1595368770
+andrewrk
+the learning curve is gentle, it's really easy to use
+
+1595368773
+pixelherodev
+Should probably track ranges within the linker as well, per-section
+
+1595368782
+ikskuh
+multi-ram-ranges are funky :D
+
+1595368798
+Sahnvour
+does rr handle multi-threaded programs ?
+
+1595368820
+leeward
+andrewrk: Ooh, time travel...
+
+1595368838
+pixelherodev
+ooh, chaos mode
+
+1595368840
+pixelherodev
+rr looks neat
+
+1595368847
+pixelherodev
+Someone ping me `rr` tomorrow at some point lol
+
+1595368862
+pixelherodev
+ikskuh: should be fine
+
+1595368877
+pixelherodev
+For now, I'm testing what happens if I don't bother actually specifying any ranges
+
+1595368885
+ikskuh
+pixelherodev: afaik linker scripts will fail with this
+
+1595368892
+andrewrk
+pixelherodev,
+
+1595368893
+leeward
+Definitely trying this. I don't know why I haven't already.
+
+1595368899
+ikskuh
+you as a programme have to decide in which bucket you put your symbols
+
+1595368913
+ikskuh
+andrewrk: that's another topic again :D
+
+1595368953
+ikskuh
+LPC1786 for example has two RAM areas a 32k
+
+1595368987
+ikskuh
+one at 0x10000000, one at 0x2007C000
+
+1595369025
+leeward
+Hmm, got a backtrace in rr...not sure I want to debug the debugger.
+
+1595369108
+leeward
+And of course it succeeds when I run it under rr. It also works while running under valgrind.
+
+1595369136
+leeward
+yup, bug still there
+
+1595369223
+pixelherodev
+leeward: does the chaos mode thing help?
+
+1595369256
+pixelherodev
+Hmm, you doing something multithreaded?
+
+1595369295
+leeward
+pixelherodev: very multithreaded, and will try
+
+1595369363
+pixelherodev
+eugh, I have no more advice. I don't do multithreaded stuff when I can avoid it
+
+1595369386
+leeward
+Can't be avoided here.
+
+1595369399
+pixelherodev
+I didn't say it could :P
+
+1595369449
+leeward
+Yeah, I'm very slightly tempted to try implementing this particular library in Rust, but...ugh.
+
+1595369463
+companion_cube
+what are the threads for?
+
+1595369495
+leeward
+This particular case is a test. It's a library that needs to be usable in multithreaded code.
+
+1595369502
+Sahnvour
+woke up to a multithread bug last night ... leeward do it ! don't let these mess with your sanity :P
+
+1595369634
+pixelherodev
+Yes, switching languages upon encountering a bug is a reasonable solution :P
+
+1595369691
+companion_cube
+'tis going to end up being in erlang
+
+1595369694
+Sahnvour
+only if switching for rust, or so I'm told
+
+1595369712
+pixelherodev
+Why not Ada? :P
+
+1595369714
+leeward
+Hey, chaos mode found it in under 40 tries.
+
+1595369715
+shakesoda
+rust drives me a bit mad :(
+
+1595369726
+pixelherodev
+Nice!
+
+1595369731
+shakesoda
+it's just very misaligned with my values for the most part
+
+1595369736
+pixelherodev
+Same
+
+1595369746
+shakesoda
+zig, on the other hand, is most of the way aligned
+
+1595369781
+pixelherodev
+also same :)
+
+1595369785
+ifreund
+what is chaos mode?
+
+1595369788
+leeward
+Ada doesn't have a borrow checker, and beam is way too big of a dependency to bring to any target that would benefit from this library.
+
+1595369799
+leeward
+rr record -h <- chaos mode
+
+1595369808
+leeward
+h for hard
+
+1595369815
+leeward
+because nobody ever needs help
+
+1595369816
+pixelherodev
+nondeterministic testing, or something
+
+1595369831
+leeward
+It fiddles with the scheduler.
+
+1595369839
+ifreund
+oh that's neat
+
+1595369860
+ifreund
+that actually sounds super handy
+
+1595369879
+pixelherodev
+
+
+1595369887
+leeward
+Yeah, it managed to reproduce my bug in a way that lets me attach a debugger...I'm very pleased.
+
+1595369906
+shakesoda
+rr looks pretty amazing
+
+1595369941
+fengb
+Zig is aligned because it’s a part of the type 🙃
+
+1595369965
+leeward
+Isn't there a setting for @align(shakesoda)?
+
+1595370015
+shakesoda
+given how zig syntax is that'd probably be a .shakesoda would it not
+
+1595370026
+shakesoda
+depending on what i truly am
+
+1595370033
+companion_cube
+shakesoda: where is it not aligned?
+
+1595370078
+pixelherodev
+fengb: heh
+
+1595370097
+ifreund
+idk, i'd expect it to be something like `const shakesoda = 42; ... @align(shakesoda);`
+
+1595370107
+shakesoda
+ifreund: reasonable
+
+1595370117
+pixelherodev
+That doesn't really make sense
+
+1595370124
+pixelherodev
+You can't
+
+1595370131
+ifreund
+align taking an enum literal would be strange :P
+
+1595370152
+pixelherodev
+@align
+
+1595370155
+shakesoda
+companion_cube: various minor syntax things (some of which are slated to be solved, such as 1717), i've got a bit more of a distaste for generics and the standard library has massively more than i can keep track of
+
+1595370157
+shakesoda
+that kind of stuff
+
+1595370161
+pixelherodev
+You can't retroactively change a value's alignment
+
+1595370164
+pixelherodev
+That doesn't make sense
+
+1595370168
+pixelherodev
+You'd have to reallocate it in memory
+
+1595370170
+fengb
+@alignCast(shakesoda, a_value)
+
+1595370177
+ifreund
+oh yeah @align() totally isn't a thing
+
+1595370178
+pixelherodev
+That changes that alignment of a
+
+1595370195
+pixelherodev
+Rather, it treats the pointed value as a different alignment
+
+1595370201
+pixelherodev
+It doesn't actually change the alignment
+
+1595370211
+fengb
+@alignCast(pedantic, phd)
+
+1595370215
+companion_cube
+shakesoda: I meant for rust
+
+1595370231
+pixelherodev
+In release mode, it's a nop.
+
+1595370249
+pixelherodev
+fengb: I'm not
+
+1595370252
+pixelherodev
+:P
+
+1595370277
+ikskuh
+var pixelherodev: std.human pedantic = undefined;
+
+1595370297
+pixelherodev
+Hmm, I'm not sure pedantic is a valid keyboard
+
+1595370302
+pixelherodev
+(sorry, I can't help but play into the joke)
+
+1595370310
+pixelherodev
+s/board/word
+
+1595370421
+shakesoda
+companion_cube: uh that's gonna be too big for an irc message but the very ground it stands on is things i do not want in my life. i don't want the borrow checker, it has lots of cryptic constructs, i largely don't like the ecosystem, it's just extremely too complex etc
+
+1595370437
+shakesoda
+it is not without good ideas i can get behind, but it's really not my thing
+
+1595370476
+shakesoda
+i just outright do not like using it.
+
+1595370495
+companion_cube
+ah well, ok
+
+1595370544
+companion_cube
+personally I like the defensive style and the expression-based aspect
+
+1595370576
+shakesoda
+i really, really hate the common patterns of chaining a bunch of stuff
+
+1595370589
+companion_cube
+you mean x.f().g()?
+
+1595370592
+shakesoda
+yeah.
+
+1595370606
+companion_cube
+oh.
+
+1595370673
+shakesoda
+i'm generally fine with defensive coding, although rust is
+
+1595370689
+shakesoda
+zig's the right amount of defensive for me
+
+1595370716
+leeward
+Zig strikes a nice balance. It's easy to ensure that errors lead to crashes without spending mental effort.
+
+1595370756
+leeward
+Rust is really obsessed with a particular class of error, which most languages don't even consider.
+
+1595370765
+ifreund
+^
+
+1595370774
+ifreund
+it doesn't even handle OOM
+
+1595370812
+shakesoda
+leeward: it's also a particular class of error that barely even registers on what i actually have to deal with day to day
+
+1595370824
+companion_cube
+you never have race conditions?
+
+1595370843
+companion_cube
+leeward: I really disagree
+
+1595370857
+companion_cube
+it's obsessed with memory errors, which most languages are shielded from because they have a GC
+
+1595370860
+ifreund
+rust does not solve race conditions in general, only data races
+
+1595370869
+companion_cube
+sure, that's a lot of races
+
+1595370878
+shakesoda
+i certainly run into them sometimes, but they're
+
+1595370880
+leeward
+companion_cube: disagree that most languages don't consider it?
+
+1595370900
+companion_cube
+yes, it's more that most languages don't have the problem because they are too high level
+
+1595370919
+leeward
+GC doesn't solve data races. It's easy enough to make one in Python, for example.
+
+1595370922
+companion_cube
+rust is aimed at the kind of problem where you use C++, and there, memory errors are plenty
+
+1595370934
+shakesoda
+i write c and c++
+
+1595370966
+shakesoda
+the things rust obsesses over are not even close to the level of relevance to me that its design would lead you to believe they could be
+
+1595370969
+leeward
+The problems Rust is obsessed with are problems that arise from state that's both shared and mutable. GC doesn't have anything to do with those.
+
+1595370994
+companion_cube
+it's also a question of memory layout, leeward
+
+1595371014
+shakesoda
+they certainly exist, and rusts certainly solves the lion's share of them, but the amount of brain space they occupy is almost nonexistent when i don't use rust, heh
+
+1595371014
+companion_cube
+if you have flat memory layouts + references it becomes hairy
+
+1595371021
+companion_cube
+most GC languages don't give you that
+
+1595371038
+companion_cube
+shakesoda: I certainly appreciate not to have to use gdb :)
+
+1595371057
+companion_cube
+(most of the time)
+
+1595371086
+shakesoda
+races are hardly the only issue a debugger is helpful for
+
+1595371105
+shakesoda
+but honestly i usually print debug first
+
+1595371126
+leeward
+I'm not convinced. Iterator invalidation is a thing you can do in most GC'd languages.
+
+1595371129
+shakesoda
+depending on if what i'm debugging is going to give me a million lines of output or not if i do that
+
+1595371211
+leeward
+I find print debugging to be strictly inferior to gdb, but I go through a lot of effort to make sure I can use gdb really easily.
+
+1595371233
+shakesoda
+of course it's inferior, but it's usually fast/easy/adequate
+
+1595371253
+leeward
+I mean on the fast/easy axes too.
+
+1595371281
+companion_cube
+depends on what kind of bug you're tracking
+
+1595371286
+leeward
+It might also be related to the kinds of programs I debug.
+
+1595371290
+companion_cube
+print debugging is nice for logic errors
+
+1595371307
+companion_cube
+shakesoda: I only use gdb for segfaults, tbh
+
+1595371308
+shakesoda
+almost all real issues i need to spend time with are logic/math errors
+
+1595371324
+companion_cube
+and  there I find rust is very nice, with sum types and everything
+
+1595371328
+companion_cube
+(it's not just the borrowchecker)
+
+1595371335
+companion_cube
+but then I'm used to ML…
+
+1595371356
+shakesoda
+companion_cube: i fire up debuggers whenever it's going to be less effort to start stepping through a problem than it will be to just print a couple values
+
+1595371399
+companion_cube
+assuming the problem arrives quickly enough, yeah
+
+1595371414
+leeward
+I appreciate the amount of stuff Rust took from the FP world, but it's hard to argue that it exists is anything but the borrow checker.
+
+1595371420
+andrewrk
+skipping the recompilation step can be a big deal if compilation is slow
+
+1595371445
+andrewrk
+self-hosted zig's fast recompilation will be a boon for printf-style debugging
+
+1595371447
+shakesoda
+absolutely
+
+1595371460
+companion_cube
+leeward: well, given that C++ still isn't there for these features …
+
+1595371465
+leeward
+I will be approximately 0 shocked if C++25 has a borrow checker.
+
+1595371466
+shakesoda
+companion_cube: i'm not too into fancy types
+
+1595371472
+leeward
+C++ has sum types (they're awful to use)
+
+1595371473
+companion_cube
+sum types are not fancy :/
+
+1595371489
+shakesoda
+c's types are most of what i want to begin with (dumb views of bytes)
+
+1595371515
+companion_cube
+sometimes that's all you need, sure
+
+1595371526
+companion_cube
+like if you write interpreters or disassemblers :p
+
+1595371550
+shakesoda
+that sometimes is almost all of my practical usage
+
+1595371590
+ifreund
+the one thing I miss in C is nice tagged unions. Zig solves that
+
+1595371602
+companion_cube
+yeah, zig and rust
+
+1595371607
+companion_cube
+C++ still doesn't afaik :s
+
+1595371636
+companion_cube
+currently the only 1.0 lang that I know of and that has this kind of convenience, is rust…
+
+1595371653
+leeward
+I'm pretty sure C++ does...
+
+1595371662
+companion_cube
+safe tagged unions? wut
+
+1595371670
+ifreund
+yes c++ has std::variant
+
+1595371681
+shakesoda
+i think the only thing zig doesn't have as far as types is something equivalent to haxe's abstracts. i think rust also has an equivalent
+
+1595371689
+leeward
+companion_cube: "safe" and C++ are incompatible words.
+
+1595371690
+shakesoda
+in zig i have to use a single data member struct
+
+1595371700
+companion_cube
+ifreund: but you don't have an explicit tag, do you?
+
+1595371709
+companion_cube
+you have to test if the variant you expect is in there
+
+1595371722
+companion_cube
+like, if you can't switch on it, it's unbearable :p
+
+1595371734
+companion_cube
+leeward: yeah
+
+1595371743
+leeward
+Like I said, awful to use but it exists.
+
+1595371785
+companion_cube
+tagged by integers… that's just too terrible
+
+1595371866
+companion_cube
+(seems like std::variant is enough, indeed; it's c++17 which i never looked at too much)
+
+1595371892
+shakesoda
+i have yet to move beyond c++11
+
+1595371902
+leeward
+You mean C++0xb?
+
+1595371908
+ifreund
+companion_cube: you're also forgetting e.g. haskell
+
+1595371914
+leeward
+That joke used to be way funnier.
+
+1595371918
+companion_cube
+ifreund: I mean, low level.
+
+1595371924
+companion_cube
+otherwise I have ocaml, thank you very much :p
+
+1595371927
+leeward
+OCaml?
+
+1595371928
+leeward
+Yeah
+
+1595371941
+shakesoda
+ocaml is terrifying
+
+1595371961
+shakesoda
+i can't even vaguely comprehend it
+
+1595371969
+leeward
+My biggest speed bump with ocaml is the completely empty standard library.
+
+1595371979
+companion_cube
+variants cannot hold void <--- ugh.
+
+1595371985
+shakesoda
+my biggest speed bump is every single aspect of it
+
+1595371994
+leeward
+I don't want to implement max myself.
+
+1595371999
+companion_cube
+leeward: it's not that empty, and you have stdlib extensions
+
+1595372004
+companion_cube
+(max is there though?!0
+
+1595372017
+shakesoda
+i can more readily understand foreign languages i do not know than any logic in ocaml
+
+1595372025
+leeward
+I didn't find it last time I looked, but that was many years ago.
+
+1595372027
+companion_cube
+shakesoda: what's so bad?
+
+1595372037
+shakesoda
+companion_cube: it's incomprehensible
+
+1595372042
+shakesoda
+it isn't even a specific thing
+
+1595372046
+shakesoda
+it's like trying to read wingdings
+
+1595372049
+leeward
+FP is for the differently brained?
+
+1595372054
+companion_cube
+leeward: Stdlib.max :)
+
+1595372069
+companion_cube
+shakesoda: well you have functions and values, and you can apply functions to values
+
+1595372101
+shakesoda
+companion_cube: i think you're a few steps short on the level of incomprehensible it is to me
+
+1595372114
+companion_cube
+:D
+
+1595372122
+shakesoda
+of course there are functions and values. it is a seemingly random jumble of symbols
+
+1595372129
+companion_cube
+ah, the syntax.
+
+1595372130
+shakesoda
+it is clearly organized somehow
+
+1595372134
+shakesoda
+i have yet to determine how
+
+1595372147
+companion_cube
+well, you have `let x = … in …` as the core way of doing local bindings
+
+1595372148
+leeward
+companion_cube: Maybe I'll look at it again. You're obviously right about max.
+
+1595372154
+companion_cube
+it's like `const x = …; …`
+
+1595372183
+leeward
+Shouldn't there be {}s in that const example?
+
+1595372185
+companion_cube
+leeward: I have my own stdlib extension, though, cause as you said the standard one is not too big (but not incredibly small either)
+
+1595372196
+companion_cube
+possibly, it does create a scope for each `let`
+
+1595372293
+shakesoda
+side note: i like that this is one of the only places around where several people can disagree about languages without it also causing heated arguments/flamewars
+
+1595372342
+companion_cube
+shakesoda: also, Reason is an alternative syntax that might look less alien (kind of javascripty) but still maps to it 1-to-1
+
+1595372405
+shakesoda
+companion_cube: yeah, that's quite significantly less alien
+
+1595372472
+rom1504
+it's quite useful to learn a functional language, to broaden your view on languages, even if you're not going to really use it for anything
+
+1595372484
+leeward
+Civil discourse ftw!
+
+1595372496
+companion_cube
+\o/
+
+1595372505
+shakesoda
+it's not like i'm ideologically opposed to fp languages. ocaml is just alien runes :D
+
+1595372547
+leeward
+Personally, I think Erlang is a great way to dip a toe into the FP waters without getting overwhelmed with category theory.
+
+1595372577
+companion_cube
+category theory really is only a thing for some haskellers who want to believe they're mathematicians
+
+1595372580
+companion_cube
+no one else cares
+
+1595372605
+fengb
+Erlang is very different from Haskell/ML
+
+1595372722
+companion_cube
+(now, erlang has a weird syntax!)
+
+1595372737
+leeward
+I don't mind Erlang's syntax.
+
+1595372780
+leeward
+It's easy to learn, just comes from a different family.
+
+1595372793
+fengb
+Or learn Elixir :P
+
+1595372847
+companion_cube
+I'm kind of waiting for gleam :-°
+
+1595372851
+shakesoda
+elixir looks ruby-esque
+
+1595372851
+companion_cube
+I want my types
+
+1595372879
+shakesoda
+severely enough that it is
+
+1595372888
+fengb
+It’s not
+
+1595372890
+pixelherodev
+My list of languages all programmers should learn currently consists of C, Forth, Java, Lua, and Assembly - mostly because each offers a unique enough (compared to the others) set of idioms
+
+1595372902
+fengb
+Jose Valim was a former Ruby dev
+
+1595372908
+pixelherodev
+It makes it much,
+
+1595372929
+pixelherodev
+I still need to make a Cyclopropatriene Forth :P
+
+1595372933
+shakesoda
+lua is, without question, my favorite language
+
+1595372941
+pixelherodev
+... that name is still so much more fun than Tricarbon but I really shouldn't use it
+
+1595372949
+companion_cube
+wait, you know lua and can't learn OCaml, shakesoda?
+
+1595372962
+companion_cube
+I mean, you already have all the crazy lexical scoping and lamdas in lua
+
+1595372970
+companion_cube
+so it's really just syntax, hmm
+
+1595372974
+fengb
+Huh? Lua syntax is very straightforward
+
+1595372983
+companion_cube
+I mean, the concepts
+
+1595372999
+fengb
+And it’s just a JavaScript in disguise :P
+
+1595373005
+companion_cube
+if you're used to juggle `function` and `local` everywhere, it's the same as OCaml's `fun` and `let`!
+
+1595373117
+leeward
+pixelherodev: Add a lisp variant to that list, and something designed for concurrency.
+
+1595373140
+companion_cube
+dump lua, add scheme!
+
+1595373181
+pixelherodev
+leeward: good call
+
+1595373185
+shakesoda
+i think lua's a good one for the list, though
+
+1595373197
+shakesoda
+aside from it being my favorite, the way you interact with data is very unique to lua
+
+1595373207
+shakesoda
+as tables do not give a crap about anything
+
+1595373210
+shakesoda
+it just works
+
+1595373256
+shakesoda
+also, lua's really small (standard library and all)
+
+1595373266
+leeward
+Python is ubiquitous. Hard to avoid
+
+1595373266
+companion_cube
+scheme even more, everything is lists
+
+1595373283
+companion_cube
+(I'd say it's nice to learn at least one language where recursion is the natural way of doing things)
+
+1595373354
+shakesoda
+pixelherodev: which assembly
+
+1595373366
+shakesoda
+the experience will be very different depending on the answer
+
+1595373367
+fengb
+x86
+
+1595373371
+shakesoda
+oh those poor souls
+
+1595373375
+fengb
+Go big or go home :P
+
+1595373425
+pixelherodev
+Hmm.. SPU II ;)
+
+1595373425
+companion_cube
+I should write a wasm interpreter some day
+
+1595373427
+pixelherodev
+z80 is nice, too
+
+1595373442
+pixelherodev
+companion_cube: hmm, is there a good WASM JIT in Zig yet?
+
+1595373452
+pixelherodev
+Maybe I'll tricarbon one
+
+1595373459
+pixelherodev
+This is English, so I can verb that
+
+1595373495
+companion_cube
+I have no idea
+
+1595373498
+fengb
+Speaking of which, maybe I should actually get my interpreter working
+
+1595373501
+pixelherodev
+Heh
+
+1595373513
+fengb
+I verified it runs noop correctly
+
+1595373519
+pixelherodev
+lol, nice
+
+1595373526
+pixelherodev
+Hmm, is there a good wasm spec?
+
+1595373529
+fengb
+1 instruction ought to be enough for everyone
+
+1595373538
+pixelherodev
+SUBLEQ or GTFO
+
+1595373571
+shakesoda
+reminds me of, i think was doom, recompiled to use only mov
+
+1595373587
+pixelherodev
+Yep
+
+1595373587
+fengb
+I have a few docs as reference
+
+1595373590
+pixelherodev
+movfuscator or something
+
+1595373593
+pixelherodev
+fengb: link me?
+
+1595373609
+fengb
+As usual the official spec is pretty unreadable
+
+1595373621
+pixelherodev
+Ugh, really?
+
+1595373624
+pixelherodev
+Worse than x86?
+
+1595373631
+pixelherodev
+(Intel manuals, rather)
+
+1595373740
+fengb
+
+
+1595373766
+fengb
+These are old in-progress docs. I can't understand the new official ones
+
+1595373797
+fengb
+
+
+1595373886
+fengb
+Semantics and Binary Encoding are what I hop between
+
+1595374201
+leeward
+x86 is awful. Nobody needs to be subjected to that.
+
+1595375450
+pixelherodev
+... I didn't think this was possible
+
+1595375456
+pixelherodev
+This is harder to understand than the Intel manuals
+
+1595375544
+companion_cube
+the wasm spec?
+
+1595375747
+pixelherodev
+Yep
+
+1595375754
+pixelherodev
+It's actually really,
+
+1595375762
+fengb
+Maybe I should write up some stuff
+
+1595375812
+companion_cube
+ah, I kind of like it actually :s
+
+1595375816
+companion_cube
+well, it could do with fewer JS
+
+1595375820
+companion_cube
+less JS*
+
+1595375873
+pixelherodev
+companion_cube: I'm not talking about
+
+1595375876
+pixelherodev
+I'm talking about the
+
+1595375878
+pixelherodev
+spec*
+
+1595375883
+pixelherodev
+fengb: if you do, link me :P
+
+1595375960
+companion_cube
+yes, the spec isn't too bad?
+
+1595375980
+companion_cube
+(well it's full of notation, but why not)
+

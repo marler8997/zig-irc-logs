@@ -1,0 +1,1968 @@
+1581126809
+pixelherodev
+Up to line 1267 (from ~850 last night), and rapidly counting :)
+
+1581128039
+pixelherodev
+Sorry, did I say 1267? I meant *3336*!
+
+1581128058
+pixelherodev
+Can now lex ~5% of its own IR :D
+
+1581128298
+pixelherodev
+Okay, I'm going to just stop bragging here, because it's up to 14,750 and I think at this point I should just wait ~10 minutes and then brag that it's fully functional :)
+
+1581129390
+jaredmm
+It has been more than 10 minutes.
+
+1581129653
+pixelherodev
+And it's now up to 44,097
+
+1581129659
+pixelherodev
+Out of ~60K
+
+1581129664
+andrewrk
+what is this?
+
+1581129674
+pixelherodev
+LLVM lexer :)
+
+1581129678
+andrewrk
+are you self-hosting something?
+
+1581129687
+pixelherodev
+Testing it on itself
+
+1581129694
+pixelherodev
+Via `zig build-exe --emit llvm-ir`
+
+1581129705
+pixelherodev
+Then running `zig build run ./test.ll`
+
+1581129731
+pixelherodev
+For now, I only plan on targeting a toy architecture with it
+
+1581129751
+pixelherodev
+But eventually, the goal is to add amd64/ARM/RISC-V/etc support
+
+1581130013
+andrewrk
+that's quite a project!
+
+1581130033
+pixelherodev
+Yeah
+
+1581130039
+pixelherodev
+First time, I was able to get hello world working
+
+1581130045
+pixelherodev
+But it was exceedingly fragile and unmaintainable
+
+1581130068
+pixelherodev
+So I redesigned it, wrote the test program that uses the API and had all API functions generate errors, and then started implementing
+
+1581130071
+pixelherodev
+Just about done with the lexer
+
+1581130075
+wilsonk
+Hello all, just watching the stream and there was a question asked by veggiecode about the profit margin on the merch sold via the Zig teespring shop. There is approximately a %50 profit on each item sold (so $10 per $20 sold is profit for Andrew). Just thought I would let everybody know. If anyone knows veggiecode and can get them this answer, that would be great. Also, if anyone else has any questions you can certainly DM me here. Happy
+
+1581130163
+pixelherodev
+Also, this version is tested on
+
+1581130183
+pixelherodev
+Which
+
+1581130199
+pixelherodev
+I also plan on testing it on at least five random Zig projects from GitHub before moving on to the backend
+
+1581130296
+pixelherodev
+The
+
+1581130320
+pixelherodev
+And long term it's tedious but simple to remove that and insert all the actual values
+
+1581131071
+wilsonk
+pixelherodev: is that on github?
+
+1581131179
+pixelherodev
+Not yet
+
+1581131185
+pixelherodev
+The original version is on SourceHut
+
+1581131189
+pixelherodev
+This one will be once the lexer's done
+
+1581131283
+wilsonk
+ah, ok cool
+
+1581131630
+pixelherodev
+Okay,
+
+1581131656
+pixelherodev
+Closer to sixty minutes than ten, but still, Got the support up from 800 lines to >60K in a relatively short time
+
+1581131756
+wilsonk
+nice
+
+1581131826
+pixelherodev
+Of course, now I need another refactor to fix a major performance issue caused by allocating memory for *every single token*'s source string instead of just storing indices into the original file
+
+1581131897
+pixelherodev
+After regenerating its IR after tonight's work, it's IR has grown from ~60K lines to ~90K lines, but no changes were needed for lexing that to succeed :)
+
+1581133206
+pixelherodev
+Using a bufferedinstream improves performance by ~70%, from ~6s to ~2s, but I want to get that down to less than 1s before I publish this...
+
+1581133681
+andrewrk
+total shot in the dark, but maybe you can take advantage of SIMD
+
+1581133711
+pixelherodev
+Maybe, but there's some low hanging fruit for now
+
+1581133724
+pixelherodev
+For instance, ~15% of program time is spent reallocating the token ArrayList
+
+1581133740
+pixelherodev
+Starting with a high capacity (~10K) should offset that
+
+1581133784
+andrewrk
+or using less memory in general
+
+1581133846
+pixelherodev
+True, but that wouldn't help enough; it's already pretty low
+
+1581133857
+pixelherodev
+Or, to put it differently, I can't reduce token quantity
+
+1581133863
+pixelherodev
+Though I might be able to reduce token
+
+1581133986
+pixelherodev
+Can probably remove a usize (by replacing line_number + column with index), which will improve performance when given valid input and slow things down when invalid input is received
+
+1581134098
+pixelherodev
+Given that there's 800K tokens, that's definitely worth it
+
+1581134125
+pixelherodev
+That reduces RAM usage by ~3.2MB, but doesn't help with the
+
+1581134130
+pixelherodev
+ArrayList growth simply isn't meant for this
+
+1581134160
+pixelherodev
+Might submit a PR shortly allowing for comptime tweaking of ArrayList growth
+
+1581134188
+pixelherodev
+e.g. ArrayList(T, .Linear) or ArrayList(T, .Exponential) would be neat
+
+1581134208
+pixelherodev
+Linear would retain the current strategy, providing low RAM usage and good performance for small lists
+
+1581134252
+pixelherodev
+Exponential would, as the name implies, double/triple in size whenever increasing capacity, offering better performance for large lists but with unneeded capacity more often
+
+1581134292
+seoushi
+for my c data structures library all of my things that can grow take a function pointer  like fn(currentSize, newMinSize) newSize
+
+1581134329
+pixelherodev
+Yeah, improving the strategy - or more accurately, cheating and initializing with a capacity of 1M tokens - reduces time by around 0.1ms
+
+1581134554
+seoushi
+another difference from my std to zigs is there were two ways to create structs. a standard create which will do a malloc then an init or just an init. So you can pass in a pointer a block of memory so you can layout things how you want for cache improvements etc. Seems like that is missing from the zig std tho I might be overlooking something.
+
+1581134645
+pixelherodev
+Simply rearranging the order in which tokens are tested to account for which tokens are most frequent will probably provide a nice boost also; a laaarge portion of time is wasted comparing against strings which don't match
+
+1581134663
+pixelherodev
+std.mem.eql makes up 25% of program time :P
+
+1581134683
+seoushi
+how are you profiling this btw?
+
+1581134690
+pixelherodev
+valgrind
+
+1581134693
+pixelherodev
+Well, callgrind
+
+1581134728
+seoushi
+haven't messed with callgrind. will check it.
+
+1581134735
+pixelherodev
+Then, `gprof2dot --format=callgrind --output=tmp.dot callgrind.out*;dot -T png tmp.dot -o callgrind.png;rm tmp.dot callgrind.out.* -f;$IMAGE_EDITOR callgrind.png;rm -f callgrind.png`
+
+1581134795
+seoushi
+cool.. added that to my notes.
+
+1581134800
+pixelherodev
+Or, now that the image has grown a lot bigger, `kcachegrind callgrind.out.* ;rm callgrind.out.* -f`
+
+1581134824
+pixelherodev
+KCacheGrind is meant for KDE, but it's also the only interactive program I know of for visualizing callgrind output
+
+1581134828
+seoushi
+what about checking for memory leaks? I think I remeber hearing something about a special allocator you can use or something?
+
+1581134861
+pixelherodev
+Normally I use valgrind
+
+1581134870
+pixelherodev
+But valgrind doesn't work with Zig
+
+1581134874
+pixelherodev
+Might be out of date
+
+1581134881
+pixelherodev
+Well, it's not
+
+1581134887
+pixelherodev
+Might be missing a patch or something though
+
+1581134910
+seoushi
+yeah I usualy use valgrind too but it doesn't work for me.. I think because zig doesn't use malloc in the same way and valgrind just basically replaces malloc
+
+1581134925
+pixelherodev
+Should work with std.heap.c_allocator though
+
+1581134936
+pixelherodev
+... oh, maybe I should switch to that and see if that helps perf
+
+1581135001
+pixelherodev
+Yep!
+
+1581135008
+seoushi
+nice
+
+1581135009
+pixelherodev
+Brings down time from 2.5 to ~1.9s
+
+1581135047
+pixelherodev
+Given that this is
+
+1581135089
+seoushi
+are you writing your own language then I take it?
+
+1581135093
+pixelherodev
+Nah
+
+1581135104
+pixelherodev
+Hoping to make a zig backend for LIMN and z80
+
+1581135118
+seoushi
+oh ok. that's cool
+
+1581135124
+pixelherodev
+(LIMN is a toy 32-bit CPU, z80 is an 8-bit CPU used in e.g. TI calculators)
+
+1581135140
+seoushi
+I knew of the z80. not lumn tho
+
+1581135146
+seoushi
+limn
+
+1581135169
+pixelherodev
+Not surprised; AFAIK I'm one of two people to actually use it, and the other is the creator :P
+
+1581135245
+pixelherodev
+It's a nice arch for playing around with kernel concepts because it doesn't have the hardware complexity of modern CPUs, but of the two implementations (the original in Lua, and my C interpreter) there's one that's fastish (mine) and one that actually matches the up-to-date spec (not mine) :P
+
+1581135256
+seoushi
+maybe sometime in the future I will make something simular to 0x10c (a game where you program a space ship to do things for you). I wrote a partial compile a long while ago
+
+1581135311
+pixelherodev
+I think this is good enough for the first public release
+
+1581135425
+seoushi
+yeah, it's very easy to get caught up with performance. I have to stop myself and just write backlog tickets otherwise no visable progress will be made hah
+
+1581135488
+pixelherodev
+I mean, I already improved it by about 71% in ~30 minutes, so I'm happy
+
+1581135497
+pixelherodev
+6.6 -> 1.9 is not bad at all
+
+1581135505
+seoushi
+yeah for sure
+
+1581135631
+andrewrk
+pixelherodev, huh, I thought it was already exponential, giving an amortized O(1) time
+
+1581135661
+andrewrk
+pixelherodev, yes it's already exponential
+
+1581135670
+andrewrk
+1.5 growth factor
+
+1581135703
+andrewrk
+it
+
+1581135705
+pixelherodev
+No it's not
+
+1581135710
+seoushi
+better_capacity += better_capacity / 2 + 8;
+
+1581135711
+pixelherodev
+It's `self.capacity() / 2 + 8`
+
+1581135718
+pixelherodev
+... oh wait, `+= `
+
+1581135723
+andrewrk
+that's 1.5x + constant
+
+1581135728
+pixelherodev
+Yeah okay, I see that now
+
+1581135747
+pixelherodev
+That's just still too slow for this because it starts at the default and grows to nearly 1 million
+
+1581135772
+andrewrk
+check that assumption - I'm pretty sure it gets to 1 million in surprisingly small reallocations
+
+1581135777
+shachaf
+Do Zig allocators have an interface like malloc_usable_size that tells you the real allocated size when you request some number of bytes?
+
+1581135777
+andrewrk
+s/small/few/
+
+1581135798
+seoushi
+@align ?
+
+1581135890
+shachaf
+I mean, when you malloc(n), malloc might give you n+k bytes instead because it prefers certain sizes of allocations.
+
+1581135906
+shachaf
+And a thing like a dynamic array can just use that extra space if it's there.
+
+1581135941
+andrewrk
+1.5x + 8 => over 1 million in 28 steps
+
+1581135945
+pixelherodev
+28 s - yeah
+
+1581135946
+andrewrk
+2x => over 1 million in 20 steps
+
+1581135956
+pixelherodev
+Did a quick script to check
+
+1581135960
+pixelherodev
+That's not bad at all
+
+1581135970
+andrewrk
+oh, I did it manually in python repl :)
+
+1581135975
+pixelherodev
+I did the exact same :P
+
+1581135990
+pixelherodev
+I was inspired by your stream earlier
+
+1581136011
+pixelherodev
+`a = 0;b = 0;while (a < 1000000):a = a*1.5 + 8;b = b + 1` then inspect b (but w/ proper formatting and separation ofc)
+
+1581136036
+andrewrk
+shachaf, no but the allocator interface has both "realloc" and "shrink" that have important different properties
+
+1581136036
+shachaf
+i,i length . takeWhile (<=1e6) . iterate (\x -> x*1.5+8) $ 1
+
+1581136075
+andrewrk
+when an array list attempts to grow larger, the allocator can take advantage of its extra bytes. so that's no problem. but for shrinking:
+
+1581136108
+andrewrk
+it calls "realloc" rather than "shrink" which is allowed to fail *even when shrinking*. so ArrayList handles this failure by hanging onto the additional capacity
+
+1581136138
+pixelherodev
+What's the default enum tag?
+
+1581136139
+andrewrk
+I considered this carefully and believe it to fully address the use case you are hinting at, but open minded to suggestions
+
+1581136143
+pixelherodev
+That is, what's the size of an untagged enum?
+
+1581136152
+andrewrk
+0, same as comptime_int
+
+1581136153
+shachaf
+There are two things you might want to do that realloc doesn't let you do.
+
+1581136165
+pixelherodev
+Wait what?
+
+1581136172
+pixelherodev
+I mean, if I store that enum in a structure
+
+1581136173
+shachaf
+One is ask realloc how much you're allowed to grow without moving the existing allocation.
+
+1581136178
+pixelherodev
+How much space does it require?
+
+1581136187
+andrewrk
+pixelherodev, at runtime, 0 bytes
+
+1581136198
+pixelherodev
+That makes no sense whatsoever
+
+1581136210
+pixelherodev
+Because this is running at runtime, and the value is completely correct...
+
+1581136221
+shachaf
+The other is ask how much "wasted space" is at the end of your allocation which is accounted to it anyway, that you can use even without asking (this is malloc_usable_size in glibc or _msize on Windows).
+
+1581136223
+andrewrk
+an anonymous enum literal must be comptime known. therefore 0 bytes at runtime are needed for it
+
+1581136239
+andrewrk
+pixelherodev, it probably got casted to an actual enum which has a nonzero size
+
+1581136246
+pixelherodev
+... oookay
+
+1581136271
+pixelherodev
+So if I have `const a = enum{ A, B, C}; const b = struct { field: a };`, what's the size of b?
+
+1581136286
+andrewrk
+sorry I thought you were specifically asking about the anon enum literal type. e.g. `@sizeOf(@TypeOf(.foo))` (try it)
+
+1581136296
+pixelherodev
+Or, rather, the size of field
+
+1581136304
+pixelherodev
+Nah it's fine, I realized the confusion and thus rephrased the question :)
+
+1581136343
+pixelherodev
+Optional bool I'm guessing is two bits (and thus one byte), so size of one token is now 25 + N (where N is the size of that field) bytes
+
+1581136364
+pixelherodev
+My guess is either 26 (minimal possible) or 33 (default to usize)
+
+1581136397
+andrewrk
+optional bool is currently 2 bytes
+
+1581136403
+pixelherodev
+Ah
+
+1581136429
+pixelherodev
+Then size will probably go down from 27MB to 19MB with the next optimization, which is still kind of insane for something this simple...
+
+1581136431
+andrewrk
+one proposal that I haven't made explicit, would be to essentially make the "non_null_bit" field of an optional, align(0)
+
+1581136445
+andrewrk
+that would allow optional bools to be 1 bit
+
+1581136447
+andrewrk
+*1 byte
+
+1581136455
+pixelherodev
+I'm thinking it might be best to
+
+1581136470
+pixelherodev
+Maybe something like making the parser `async`
+
+1581136481
+pixelherodev
+And then consuming tokens on an as-available basis
+
+1581136504
+pixelherodev
+That should reduce peak memory consumption, but it still needs to lex them all, so at the moment it'd still take the same amount of time...
+
+1581136529
+andrewrk
+shachaf, it would be interesting, in the case of ArrayList, to know how much capacity it could take up without requiring a reallocation. but it would be a bit of a feedback loop. e.g. the allocator chooses an allocation strategy based on how much ArrayList wants. ArrayList chooses how much it wants based on how much Allocator has available... at somepoint, somebody has to make a decision
+
+1581136581
+andrewrk
+pixelherodev, you know about @compileLog, @TypeOf, and @sizeOf, yeah?
+
+1581136603
+andrewrk
+and comptime{} top level blocks
+
+1581136605
+shachaf
+andrewrk: You can have a realloc variant that fails if it can't grow in-place.
+
+1581136608
+pixelherodev
+Yeah... but I also know that the current sizes aren't necessarily going to remain (as in the case of `?bool`)
+
+1581136620
+pixelherodev
+Was more interested in what the size is
+
+1581136625
+pixelherodev
+Thinking a bit more long term here :)
+
+1581136635
+shachaf
+Then the ArrayList can request linear growth in-place and exponential growth if it requires moving.
+
+1581136647
+andrewrk
+shachaf, how would ArrayList take advantage of that? in the append() function?
+
+1581136655
+andrewrk
+(or any user of the allocator, nevermind ArrayList)
+
+1581136665
+andrewrk
+ah
+
+1581136673
+shachaf
+Yep, when you need to grow the memory block, you can just try to grow it by a fixed size in-place at first.
+
+1581136682
+andrewrk
+that's a neat idea
+
+1581136685
+shachaf
+You only need to worry about amortizing when you copy memory.
+
+1581136736
+andrewrk
+shachaf, really, what ArrayList wants, is to ask for a "minimum" amount of memory, and possibly be given extra
+
+1581136737
+pixelherodev
+C allocator would have to refuse to give information
+
+1581136780
+pixelherodev
+So maybe have a comptime allocator function that says whether or not it can give you that info?
+
+1581136798
+pixelherodev
+That way, an ArrayList can at comptime decide whether to try doing that
+
+1581136815
+fengb
+Maybe the allocator interface can return the “block size”
+
+1581136825
+andrewrk
+allocAllowExtra()
+
+1581136835
+fengb
+And then we can expose a few more functions to use that extra space
+
+1581136862
+shachaf
+I mean, how much extra is something that ArrayList knows and the allocator doesn't.
+
+1581136888
+fengb
+Allocator details can toss in extra space just because
+
+1581136899
+andrewrk
+shachaf, I mean that ArrayList could ask for, e.g. 100 bytes, and receive 200. ArrayList can handle this perfectly; set capacity to 200
+
+1581136922
+shachaf
+Sure, but some people really only need 100 and have no use for the other 100.
+
+1581136941
+fengb
+ZeeAlloc only allows perfectly aligned 2^n memory chunks so I’ve been lying by giving back exact amounts
+
+1581136945
+shachaf
+I guess you can have an interface where you specify a minimum and a maximum, and you want the minimum in case of in-place growth and the maximum otherwise.
+
+1581136958
+andrewrk
+this could be implemented simply by relaxing the restriction that an allocator implementation of realloc() must return a slice with the same length as requested
+
+1581136971
+andrewrk
+it would mean allowing to return a larger slice
+
+1581136977
+shachaf
+fengb: Right, that's the thing I meant by malloc_usable_size() (which is a different but related issue).
+
+1581137007
+andrewrk
+shachaf, the whole point here, is that the allocator allocates the requested size, but might have "free" "extra bytes" right?
+
+1581137042
+andrewrk
+the allocator interface can always pretend it got back fewer bytes than the implementation actually returned
+
+1581137043
+shachaf
+There are two different cases: One where the allocator has extra bytes that it's not going to use anyway, and one where it might be able to use them for other allocations.
+
+1581137203
+pixelherodev
+Comptime == <3
+
+1581137501
+andrewrk
+shachaf, I argue that second case does not exist. remember that the API user has requested a specific size
+
+1581137542
+shachaf
+The second case is the classic use case for realloc.
+
+1581137569
+shachaf
+Where you just happen to have free address space after the allocation, for whatever reason (it's a classic sbrk-based allocator and it was your last allocation, or whatever).
+
+1581137878
+pixelherodev
+Proposal: ArrayList growth should be `if (current_cap < 100K) existing else 2 * current_cap`?
+
+1581137897
+pixelherodev
+That is, 1.5 * current + 8 until it hits some threshold at which point it increases to 2 * current?
+
+1581137965
+pixelherodev
+That only reduces steps for my case to 26, but I'm also thinking more generally than my case
+
+1581138028
+andrewrk
+I suspect this is not the area to focus on for perf gains for your project
+
+1581138035
+pixelherodev
+Definitely not
+
+1581138045
+pixelherodev
+I think that might be generally useful though
+
+1581138056
+shachaf
+If your array is going to grow a lot you can just start it off bigger.
+
+1581138061
+pixelherodev
+I already do
+
+1581138066
+pixelherodev
+Problem is, that's not a really good solution
+
+1581138080
+pixelherodev
+A simple hello world can probably get by in <5K tokens
+
+1581138087
+pixelherodev
+The lexer right now is ~800K
+
+1581138092
+shachaf
+In some cases it is? Address space is pretty cheap.
+
+1581138096
+pixelherodev
+A larger program would likely be much much larger
+
+1581138105
+pixelherodev
+Problem is, there's no number that really avoids the problem
+
+1581138110
+pixelherodev
+The growth rate is huge
+
+1581138228
+pixelherodev
+If I go too small, large compilations suffer; too large, startup time becomes larger
+
+1581138246
+seoushi
+can you base it off the size of the file(s)?
+
+1581138254
+pixelherodev
+I think that going large is better though, because a single allocation of 1M tokens is trivial, but a dozen reallocations is costly
+
+1581138259
+pixelherodev
+That's not a bad idea
+
+1581138277
+pixelherodev
+For the sake of performance, I'm requiring the input stream to be a file anyways
+
+1581138291
+pixelherodev
+As anything else is terrible perf-wise
+
+1581138297
+pixelherodev
+(in terms of altered design requirements)
+
+1581138350
+pixelherodev
+The IR for the lexer is 6MB, so doing `file size / 6` is probably okay
+
+1581138367
+pixelherodev
+Might be better to get a bit more data (test average token size in a bunch of projects and use that as the base line)
+
+1581138493
+shakesoda
+for the case of `[_][3]foo { [_]foo{ 1, 2, 3 }, [_]foo{ 1, 2, 3 } }`, can zig infer the elements or must i write the type out so many times
+
+1581138526
+shakesoda
+it's already written on the outside, so it seems kind of extra
+
+1581138567
+andrewrk
+shakesoda,
+
+1581138600
+shakesoda
+oh, i can do this with anonymous lists? i was looking at the multidimensional array section
+
+1581138603
+shakesoda
+thanks
+
+1581138953
+pixelherodev
+There a way to reduce slice length type from usize?
+
+1581138976
+pixelherodev
+e.g. if I have a buffer of len 255, is it possible to have `buf.len` be of type u8 without casting it?
+
+1581139074
+pixelherodev
+Nah, that'd be too easy :P
+
+1581139110
+seoushi
+I was wondering that as well. I was going to test that out by using the range syntax.. items[0..10] and see what @size prints
+
+1581139150
+seoushi
+oh nm I missread that
+
+1581139346
+pixelherodev
+...hah! The reason it's taking so long? This is in debug mode!
+
+1581139352
+pixelherodev
+In release mode, it now takes ~0.4 seconds
+
+1581139358
+seoushi
+lol
+
+1581139360
+shakesoda
+:)
+
+1581139397
+pixelherodev
+On the bright side, I probably wouldn't have release speeds this low if I hadn't been annoyed by perf in debug mode :)
+
+1581139415
+shakesoda
+debug perf matters, regardless
+
+1581139426
+pixelherodev
+True
+
+1581139430
+shakesoda
+can't have your program driving you insane while making it
+
+1581139436
+pixelherodev
+Also, the page_allocator is sufficiently fast now :)
+
+1581139452
+pixelherodev
+Now that the capacity is defaulted to a large number
+
+1581139457
+pixelherodev
+Instead of taking 28 reallocs
+
+1581139546
+shakesoda
+andrewrk: zig tetris makes for great example code (fun, too)
+
+1581140386
+daurnimator
+mq32: pacman groups are generally seen as a bad idea. we're moving to metapackages
+
+1581140507
+daurnimator
+shakesoda: ooo, idea for deprecation: `std.meta.deprecated` that uses a build-time option to either be a @compileError or just allowed.
+
+1581140652
+pixelherodev
+How does that work?
+
+1581140654
+pixelherodev
+Example usage?
+
+1581140772
+daurnimator
+pixelherodev: for a function you could wrap it? that would be easier with functions-as-expressions. or perhaps on the return value?
+
+1581140800
+daurnimator
+Could also have only certain code paths in a function deprecated
+
+1581141517
+andrewrk
+shakesoda, one thing interesting about the tetris codebase is that it worked a long, long time ago, early into zig's development cycle, and has basically remained unchanged
+
+1581141632
+pixelherodev
+daurnimator, ah, you mean that you just call `std.meta.deprecated();` to mark a path as, well, deprecated?
+
+1581141637
+pixelherodev
+I like that
+
+1581141663
+daurnimator
+pixelherodev: yep
+
+1581141673
+daurnimator
+possibly passing a reason/comment
+
+1581141966
+andrewrk
+daurnimator, neat idea!
+
+1581142869
+daurnimator
+I was thinking it would be: `pub fn deprecated(val: var, comptime reason: []const u8) @typeOf(val) { if (!build_options.allow_deprecated) @compileError("deprecated: " ++ reason); return val; }
+
+1581142901
+daurnimator
+or actually just @compileLog
+
+1581142975
+pixelherodev
+What would be neat is if you could make it non-fatal
+
+1581142982
+pixelherodev
+So it prints the deprecation message even if it compiles
+
+1581142996
+daurnimator
+pixelherodev: zig doesn't allow that
+
+1581143000
+pixelherodev
+I know
+
+1581143003
+pixelherodev
+That's what I was saying
+
+1581143079
+pixelherodev
+Does the hashmap type work at comptime? Had an idea
+
+1581143114
+daurnimator
+no
+
+1581143121
+daurnimator
+allocators currently can't work at comptime
+
+1581143132
+pixelherodev
+Right, that's what I thought
+
+1581143177
+pixelherodev
+Whelp, I won't be able to automate this refactor...
+
+1581143218
+andrewrk
+non-fatal messages are inherently problematic, especially when you consider caching
+
+1581143407
+pixelherodev
+I mean, you could cache the messages?
+
+1581143412
+pixelherodev
+But yeah I see your point
+
+1581143427
+daurnimator
+I like the idea that people would have to explicitly ask to use deprecated functions
+
+1581143489
+pixelherodev
+What would be nicer was if it was on a per-function / per-module basis...
+
+1581143509
+daurnimator
+Yeah you could do that
+
+1581143533
+pixelherodev
+Huh, yeah; could require a comptime block that accepts a specific deprecation string
+
+1581143569
+pixelherodev
+e.g. `comptime { std.meta.allow_deprecated("std"); } `, and in zag code, it'd do `std.meta.deprecated("std", "deprecation message");`
+
+1581143648
+daurnimator
+var allowed = false; inline for (mem.separate(u8, build_options.allow_deprecated, ",")) |option| if (option == @typeName(val)) allowed = true; } if (!allowed) @compileError("deprecated: " ++ reason ++ ", pass -Dallow_deprecated=" ++ @typeName(val) ++ " to ignore."); return val; }
+
+1581143683
+pixelherodev
+Doesn't mem.separate use an allocat - oh wait no, it uses an iterator
+
+1581143761
+pixelherodev
+Are `.{}` comptime known?
+
+1581143799
+daurnimator
+yeah that was a rough approximate. you'd need to use mem.eql too
+
+1581143809
+pixelherodev
+I figured
+
+1581143893
+pixelherodev
+`comptime magics = .{ "target datalayout", "target triple", "source_filename" };` gives "undefined value causes undefined behavior" :(
+
+1581143904
+pixelherodev
+Going to try updating Zig and hoping this is a bug that's been fixed alread
+
+1581143906
+pixelherodev
+y
+
+1581144110
+pixelherodev
+Whoops, it's the actual
+
+1581144114
+pixelherodev
+but it happens on trunk
+
+1581144369
+pixelherodev
+I can get it working if I change all instances to slices manually, which is a pain but probably necessary to clean this up
+
+1581145364
+pixelherodev
+There a better way to get comptime usable `[]const []const u8` than `([_][]const u8{"","",""})[0..]`?
+
+1581145375
+daurnimator
+&
+
+1581145379
+pixelherodev
+`.{"",""}` freaks out
+
+1581145385
+pixelherodev
+I tried that, going to try it again
+
+1581145462
+pixelherodev
+`Okay, yeah, I put it in the wrong spot the first time
+
+1581145467
+pixelherodev
+`&.{}` still fails
+
+1581145473
+pixelherodev
+But `&[_][]const u8` works fine
+
+1581145710
+pixelherodev
+Oh wait, I can regex this!
+
+1581145734
+daurnimator
+andrewrk: just caught up on stream now
+
+1581145785
+daurnimator
+andrewrk: is
+
+1581146495
+andrewrk
+does that test pass for you locally?
+
+1581146624
+daurnimator
+andrewrk: yes
+
+1581151251
+daurnimator
+Re: CPU features and if we want to use them:
+
+1581151276
+daurnimator
+According to that article AMD Zen supports the PEXT instruction; but its super slow.
+
+1581151303
+daurnimator
+This would be a reason to check the model name and dispatch to the relevant function; rather than dispatching on features alone
+
+1581151556
+mikdusan
+"up to 289 cycles"
+
+1581153330
+pixelherodev
+Wowzers
+
+1581153814
+pixelherodev
+Why even bother?
+
+1581153821
+pixelherodev
+Why not just, not microcode it?
+
+1581153828
+pixelherodev
+Leave it unsupported?
+
+1581153870
+mikdusan
+botched hardware?
+
+1581153880
+pixelherodev
+The hardware's fine
+
+1581153908
+pixelherodev
+They basically just programmed the CPU to decode PEXT into a bunch a bunch of other, better supported instructions
+
+1581153925
+pixelherodev
+On a different note, while embracing comptime might speed this up, compilation speed has gone down the toilet :(
+
+1581153948
+mikdusan
+what if they hardwired it and botched that. then forced to do microcode impl
+
+1581154217
+pixelherodev
+Maybe...
+
+1581163632
+betawaffle
+is it possible/feasible to link with objective-c and/or swift libraries? how about without some sort of intermediary C code?
+
+1581163729
+mq32
+betawaffle, i don't think it's reasonable to provide links to other languages that don't use C ABI
+
+1581163770
+betawaffle
+yeah, that was my assumption. i don't get why they don't have a C api
+
+1581163782
+mq32
+because it's hard to map language features to C abi
+
+1581163798
+daurnimator
+betawaffle: I've been saying we need good zig<>objective C bindings
+
+1581163805
+daurnimator
+it should actually be a fun project
+
+1581163825
+betawaffle
+what does objective-c's abi look like?
+
+1581163838
+betawaffle
+isn't it just weird naming of symbols or something?
+
+1581163852
+daurnimator
+you need to use the objective C runtime
+
+1581163857
+betawaffle
+uhg
+
+1581163860
+daurnimator
+which apple deleted the docs of a couple of years ago
+
+1581163869
+daurnimator
+so you have to use the wayback machine to look at the docs....
+
+1581163875
+betawaffle
+so stupid
+
+1581163947
+betawaffle
+i wish all OSes had stable syscall APIs
+
+1581164027
+betawaffle
+daurnimator: ok, so just confirming, i can't realistically play with Metal from zig, right?
+
+1581164047
+daurnimator
+windows is an interesting case.... they provide a preloaded dll (sort of like a vdso) that contains stubs that call the actual syscall ABI where the syscall numbers change with every minor release
+
+1581164059
+daurnimator
+betawaffle: I've never looked at Metal before
+
+1581164095
+daurnimator
+that preloaded dll (ntdll) is pretty stable; only really changing at quite major releases.
+
+1581164104
+daurnimator
+and even then the changes are minior
+
+1581164508
+daurnimator
+betawaffle: but if its a normal objective C api... I don't see why you couldn't
+
+1581164521
+betawaffle
+how do you link against objc?
+
+1581164542
+betawaffle
+it's got classes and those weird colon argument things
+
+1581164785
+daurnimator
+betawaffle: you start with e.g. objc_getClass
+
+1581164806
+betawaffle
+oh interesting
+
+1581165075
+daurnimator
+betawaffle: you would start by @cImport-ing objc/runtime.h
+
+1581165213
+betawaffle
+ok, this seems doable. thanks!
+
+1581165266
+betawaffle
+does obj-c code actually compile down to invocations of these functions?
+
+1581165448
+daurnimator
+betawaffle: IIRC it goes via a function `objc_msgSend` which is actually inline assembly?
+
+1581165508
+daurnimator
+you might find
+
+1581165600
+daurnimator
+oh you are meant to call it in the dynamic library
+
+1581165605
+betawaffle
+and what do i need in my build.zig to link with the objc runtime library?
+
+1581165620
+daurnimator
+other misc articles:
+
+1581165622
+daurnimator
+
+
+1581165650
+betawaffle
+"Objective-C runtime library support functions are implemented in the shared library found at /usr/lib/libobjc.A.dylib."
+
+1581165656
+daurnimator
+betawaffle: I think you just need to link against /usr/lib/libobjc.dylib
+
+1581165673
+betawaffle
+right, i'm not super familiar with build.zig's stuff yet
+
+1581165681
+daurnimator
+I'm not familiar with OSX :P
+
+1581165727
+daurnimator
+betawaffle: I think you might use `linkSystemLibraryName("libobjc")` ?
+
+1581165769
+daurnimator
+uh, without the "lib"
+
+1581166030
+betawaffle
+heh, [*c].cimport:1:20.struct_objc_class
+
+1581166089
+betawaffle
+is there some way i can see what zig code my cImport actually generates?
+
+1581166434
+daurnimator
+betawaffle: sure, just run `zig translate-c yourfile.h`
+
+1581166441
+daurnimator
+betawaffle: alternatively you can poke around in zig-cache...
+
+1581166829
+betawaffle
+found it
+
+1581167085
+betawaffle
+is there a proper way to convert a [*c]something into a ?*something?
+
+1581167095
+daurnimator
+betawaffle: it should coerce with @as
+
+1581167133
+betawaffle
+maybe i need a wrapper to do the type inference...
+
+1581167237
+daurnimator
+betawaffle: hmm? you'll need to share what you're doing/getting
+
+1581167264
+betawaffle
+ok, so `pub const Class = [*c]struct_objc_class;`
+
+1581167283
+daurnimator
+betawaffle: maybe just pastebin the entire output?
+
+1581167290
+betawaffle
+sure, sec
+
+1581167313
+betawaffle
+
+
+1581167333
+daurnimator
+betawaffle: FWIW I'm bored and killing time. happy to pair with you for 30mins to an hour if you want
+
+1581167361
+betawaffle
+so, i could do ?*struct_objc_class, but that name is kind of an implementation detail
+
+1581167383
+betawaffle
+(and it's generated, so i'm a bit weary to "rely" on it)
+
+1581167419
+betawaffle
+daurnimator: that's basically what i'm doing right now :P
+
+1581167421
+daurnimator
+why does this matter?
+
+1581167464
+daurnimator
+So have you been able to e.g. run `const NSString: objc.class = objc.objc_getClass("NSString");`?
+
+1581167477
+betawaffle
+yeah
+
+1581167499
+betawaffle
+do you think it might be a better idea to take this generated zig code, and just strip it down and fix types by hand?
+
+1581167512
+daurnimator
+no. you shouldn't need to
+
+1581167512
+betawaffle
+or should i just try to work with the [*c] types
+
+1581167524
+daurnimator
+You should be fine just working with the [*c] types.
+
+1581167531
+daurnimator
+you should essentially be none-the-wiser
+
+1581167581
+betawaffle
+can i use a [*c] as if it's an optional pointer? in if () and such?
+
+1581167652
+daurnimator
+I..... think so? though I'm not 100% sure
+
+1581168114
+metaleap
+so you have a StringHashMap(T). when i put(k,v) i get "the old KV". same with remove(k).
+
+1581168132
+metaleap
+now for `remove` i'd clearly `alloc.free` the key and value just removed, that's trivial
+
+1581168155
+metaleap
+same for put BUT not sure about the freeing `KV.key` !
+
+1581168261
+metaleap
+in some cases "old" and "new" key will point to the same addr, in others not.
+
+1581168461
+metaleap
+so i checked and the newkey gets stored and the oldkey returned, for put. i guess caller must compare addrs of newkey/oldkey before freeing the oldkey (that might also be the newkey). luckily not in my current use case :P
+
+1581168630
+daurnimator
+metaleap: yeah. in http/headers.zig I do a .get() and if nothing returned, do a .put()
+
+1581168874
+metaleap
+ack. http/headers.zig looks sufficient to run a zig proggie behind CGI or today's equivalent. sth to play with one of these days
+
+1581168887
+daurnimator
+metaleap: it's not and shouldn't be...
+
+1581168898
+metaleap
+aw
+
+1581168910
+daurnimator
+metaleap: http/headers.zig is just a tiny piece of what should become a proper http client/server
+
+1581168923
+daurnimator
+it just wasn't blocked on any external factors; so I sent the PR for it early
+
+1581168939
+daurnimator
+betawaffle: how are you going?
+
+1581168962
+betawaffle
+good, trying to convert c strings to slices
+
+1581168984
+daurnimator
+mem.toSliceConst ?
+
+1581169056
+betawaffle
+looks like it worked, thanks
+
+1581170896
+betawaffle
+ooo, it's snowing here
+
+1581171759
+daurnimator
+betawaffle: I'm thinking you could end up with something like:
+
+1581171808
+betawaffle
+neat
+
+1581171826
+daurnimator
+that's all written off the top of my head
+
+1581171829
+daurnimator
+so there's going to be errors :p
+
+1581171841
+daurnimator
+maybe even uncover a few zig bugs/missing features
+
+1581181661
+BaroqueLarouche
+(small test just ignore)
+
+1581181673
+BaroqueLarouche
+good Matrix bridge works again
+
+1581183064
+pixelherodev
+Gah, comptime
+
+1581183077
+pixelherodev
+I have a function that takes a comptime string and returns the corresponding token type
+
+1581183089
+pixelherodev
+Has a bunch of if (std.mem.eql)/else branches
+
+1581183122
+BaroqueLarouche
+you should retry it when the comptime will be properly coded and optimized
+
+1581183153
+pixelherodev
+I know, but for now I'm going to just keep pushing the backwards branches quota higher until it compiles again :P
+
+1581184714
+metaleap
+pixelherodev: so.. a "comptime string" is a comptime-known string. and your std.mem.eqls also happen at comptime? so you're comparing 2 comptime-known string literals per eql, logically?
+
+1581184736
+metaleap
+cant you uh enumify these fully-well-known-comptime-strings
+
+1581184774
+metaleap
+at least for passing around and the cmp-ing, then stringify at the last necessary moment or sth+
+
+1581184895
+pixelherodev
+I fo
+
+1581184897
+pixelherodev
+do*
+
+1581184899
+pixelherodev
+Well
+
+1581184962
+pixelherodev
+Okay, better explanation: I have a function LexingIterator.substr_match(comptime str_list: [][]const u8. criteria: AcceptableMatch) which checks if any of the strings in the list match the given criteria
+
+1581184984
+pixelherodev
+If one does, it's passed via a comptime call to a function which returns the token type
+
+1581185286
+metaleap
+sounds pretty meta  °^°
+
+1581185577
+pixelherodev
+I mean, I'm pretty sure there's a performance boost at runtime (but it's hard to tell because it's erroring out after the first 70k lines now because the refactor isn't complete), and the code is definitely cleaner and easier to read, so... worth it?
+
+1581186383
+metaleap
+in that case i'd say yup
+
+1581187218
+plumm
+andrewrk: for the dump analysis feature, do you think its stable/feature full enough to use in a language server? I'm writing one right now and it's really hard to navigate / tell what things are (under the decls object)
+
+1581187347
+andrewrk
+plumm, it's the best we're going to get in stage1
+
+1581187375
+andrewrk
+I recommend to look at lib/std/special/docs/main.js to understand how the data layout works
+
+1581187396
+andrewrk
+this is the code that renders the auto generated documentation. it uses that very same json dump
+
+1581188444
+jaredmm
+Is that the third or fourth language server being developed? Who's going to win!
+
+1581188517
+andrewrk
+plumm, you can also use firefox to view large json files with a tree gui
+
+1581189546
+plumm
+andrewrk: thanks for the tips
+
+1581191548
+jaredmm
+If I wanted to say an array of u8 was an array of u16, would that be @bitCast([]u16, type)?
+
+1581191715
+andrewrk
+@bytesToSlice
+
+1581191739
+andrewrk
+this is probably deprecated in favor of some userland std.mem function
+
+1581193717
+andrewrk
+oh shit!! guess who just ran behavior tests, all passing with --test-evented-io ?
+
+1581193733
+betawaffle
+you?
+
+1581193738
+andrewrk
+good guess
+
+1581193742
+betawaffle
+CI?
+
+1581193765
+BaroqueLarouche
+man 0.6 release is gonna kick ass for those not tracking master
+
+1581193858
+andrewrk
+let's see if I can get std lib tests passing in evented I/O mode
+
+1581194285
+andrewrk
+error: '@Frame(atomic.queue.S.dumpRecursive)' depends on itself
+
+1581194299
+andrewrk
+yep. it sure does
+
+1581195385
+andrewrk
+std lib tests with --test-evented-io is finding all the recursion...
+
+1581195773
+plumm
+mikdusan: do you have recorded steps for compiling zig on mac os? I can't get static zig and even without it i run into some odd errors. I've uninstalled everything and tried both ways in the readme and the ci file, but no dice
+
+1581195800
+andrewrk
+
+
+1581195992
+andrewrk
+why do you want static zig?
+
+1581196000
+andrewrk
+
+
+1581196041
+plumm
+andrewrk: i dont, but i was trying every recorded method of building
+
+1581196063
+andrewrk
+I recommend to follow the readme instructions
+
+1581196085
+andrewrk
+
+
+1581196591
+plumm
+andrewrk: followed those but i get a linker error when linking zig0
+
+1581196845
+plumm
+theres gotta be something im doing wrong because brew install zig --HEAD compiles just fine, so I wonder whats wrong with my environment
+
+1581196868
+andrewrk
+here is a flow chart for solving the problem: 1. follow the recommended path 2. when asking for help, provide enough details so people can troubleshoot
+
+1581196909
+andrewrk
+if I would have started talking about static zig on macos without questioning why you wanted it, we'd be off on a red herring
+
+1581197961
+plumm
+andrewrk: i started from scratch and followed those steps, this is what happened:
+
+1581198094
+andrewrk
+plumm, can you verify that the same compiler is used to build the homebrew package and zig?
+
+1581198188
+andrewrk
+this looks like C++ ABI mismatch between what was used to build the homebrew packages and zig
+
+1581198232
+plumm
+andrewrk: from looking at the homebrew formula it seems to just be calling cmake and make, nothing special i dont think, ill try and see
+
+1581198299
+andrewrk
+you can always build llvm/clang from source if homebrew packages don't work for you
+
+1581198345
+plumm
+homebrew packages DO work, I just tried making some local modifications
+
+1581198860
+mikdusan
+I think andrew's right -- "verify that the same compiler is used to build the homebrew package and │ daurnimator
+
+1581198861
+mikdusan
+│                         | zig?yes
+
+1581198870
+mikdusan
+oops garbled
+
+1581198917
+mikdusan
+so at end link error "___gxx_personality_v0" ref'd by (some LLVM symbols)... looks like brew's LLVM was built with gcc and/or libstdc++
+
+1581199320
+plumm
+3
+
+1581200542
+pixelherodev
+Yep! Performance
+
+1581200572
+pixelherodev
+In debug mode, takes ~1.65 seconds (down from ~1.9)
+
+1581200765
+fengb
+Spill harder XD
+
+1581200854
+pixelherodev
+In release mode, perf increase is smaller, but still present (now takes ~0.43 seconds, down from ~0.45-~0.5)
+
+1581202605
+pixelherodev
+Make that 0.41-0.42 :)
+
+1581203690
+pixelherodev
+And, as if to prove the code is simpler, the IR shrunk by a good chunk also :)
+
+1581203707
+pixelherodev
+(though I suppose that really just reflects the increased focus on comptime which isn't fundamentally simpler so...)
+
+1581203875
+seoushi
+just got done watching the last live stream.. wish I would of watched it live, could of helped a quite a bit on what sdl functions to use. I do disagree with the frame based approach tho. All the games I have worked on are frame independent. Basically you use delta time to apply things. So you can render your game at 60 fps, 120fps or whatever the rate of the monitor is and the speed of the animations are the same.
+
+1581203895
+pixelherodev
+Delta time is nice :)
+
+1581203905
+seoushi
+yeap
+
+1581203913
+pixelherodev
+It's how I made my emulator pretend to be fast when running as WASM
+
+1581203914
+BaroqueLarouche
+deltaTime FTW
+
+1581203929
+pixelherodev
+Which reminds me, I should take that down
+
+1581203941
+pixelherodev
+It was a fun experiment, but I'm
+
+1581203943
+BaroqueLarouche
+if you use variable delta time, it will work even if you use vsync or not
+
+1581203953
+seoushi
+yeah
+
+1581203983
+plumm
+pixelherodev: why?
+
+1581204023
+seoushi
+I did learn about embedding files into the binary tho. that is cool. I do wonder if it makes compile times larger if you have a large data set or not tho. Seems like a nice way to package everything together tho
+
+1581204521
+plumm
+seoushi: try `@embedFile("/dev/urandom")` :)
+
+1581204528
+seoushi
+lol
+
+1581204562
+BaroqueLarouche
+@embedFile is so useful for platforms without a filesystem like the GBA
+
+1581204724
+pixelherodev
+plumm, because the modern web is a freaking mess and WASM is like trying to put a band aid on a missing limb?
+
+1581204730
+pixelherodev
+Or, rather, on extra limbs that just grew out of nowhere?
+
+1581204749
+fengb
+Sigh wasm isn’t the web and has almost nothing to do with it
+
+1581204751
+pixelherodev
+I mean,
+
+1581204772
+pixelherodev
+Rephrase then: I'm not going to encourage usage of Emscripten / "webapps"
+
+1581204773
+seoushi
+BaroqueLarouche, when I did 3ds programming we basically had a program that would take an image and create a c file for resource embedding.
+
+1581204782
+pixelherodev
+You mean `xxd -i`? :P
+
+1581204788
+pixelherodev
+Or `convert`?
+
+1581204792
+BaroqueLarouche
+seoushi: homebrew or commercial ^
+
+1581204795
+BaroqueLarouche
+?
+
+1581204799
+seoushi
+BaroqueLarouche, commercial
+
+1581204803
+BaroqueLarouche
+nice!
+
+1581204820
+BaroqueLarouche
+commerially I only worked on PS3, Xbox 360, PS4, Xbox One, Switch and PS Vita
+
+1581204831
+BaroqueLarouche
+*commercial
+
+1581204850
+seoushi
+I only have done 3ds and mobile (ios, android and brew)
+
+1581204945
+seoushi
+sorry I mean ds.. the 3ds wasn't around back then hah
+

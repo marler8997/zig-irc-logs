@@ -1,0 +1,2228 @@
+1606265604
+KIMI
+hi, is someone have example for "reader interface" i don't understand how to use to read a file line by line
+
+1606265707
+ifreund
+KIMI: sounds like you might want Reader.readUntilDelimiterAlloc() or similar using '\n' as the delimiter
+
+1606265768
+KIMI
+i cann it directly?
+
+1606265771
+KIMI
+call
+
+1606265902
+KIMI
+i don't understand there is no Reader.readUntilDelimitedAlloc
+
+1606265949
+KIMI
+it is hard to read a file
+
+1606265951
+KIMI
+xD
+
+1606265993
+ifreund
+look in std/io/reader.zig where the Reader interface is defined
+
+1606266016
+ifreund
+line #125
+
+1606266049
+KIMI
+but i don't understand it is inside a function inside struct
+
+1606266065
+KIMI
+is there an example of code to use it?
+
+1606266066
+ifreund
+if you're asking how to get a Reader from a File, just use my_file.reader()
+
+1606266088
+KIMI
+i need read file line by line
+
+1606266093
+KIMI
+what is my_file?
+
+1606266105
+KIMI
+i need code example to understand how to do it
+
+1606266106
+ifreund
+whatever file you want to read?
+
+1606266134
+KIMI
+what is type of my_file in your example?
+
+1606266140
+ifreund
+std.fs.File
+
+1606266162
+KIMI
+can you show me full example i am lost xD
+
+1606266272
+ifreund
+const f = try std.fs.cwd().openFile("foo.txt", .{}); const line = try f.reader().readUntilDelimiterAlloc(allocator, '\n', 1024);
+
+1606266345
+KIMI
+thanks
+
+1606266350
+KIMI
+how to get next line?
+
+1606266467
+ifreund
+call readUntilDelimiterAlloc() again, you probably want to use a while loop
+
+1606266617
+KIMI
+why it can't find file in parent folder?
+
+1606266685
+ifreund
+cwd() gives you the current working directory when you run the program, that's where it looks
+
+1606266726
+KIMI
+how to read in a parent folder?
+
+1606266732
+KIMI
+this is hard :(
+
+1606267075
+andrewrk
+it's a legitimately hard problem and the API is not yet stable. the functions that exist were only added in order to unblock a different project. the API hasn't seen any intentional effort spent on it yet
+
+1606267306
+ifreund
+KIMI: you can pass a relative path, i.e. "../foo.txt"
+
+1606267380
+KIMI
+that is what i write ../data/font.fnt but i get: Unable to dump stack trace: FileNotFound
+
+1606267819
+g-w1
+iirc it (".." in file path) doesn't work on windows
+
+1606267985
+KIMI
+yes i am on windows
+
+1606268045
+KIMI
+what should i do?
+
+1606268072
+g-w1
+you could do openFileAbsolute if you know the absolute path
+
+1606268102
+KIMI
+but if i move exe it wont work anymore
+
+1606268129
+KIMI
+if path change
+
+1606268185
+KIMI
+i can use fopen?
+
+1606268189
+KIMI
+i found C example
+
+1606268253
+KIMI
+i will keep on C i think for the moment i need to learn it properly
+
+1606268276
+g-w1
+I think std.fs.realpath gives you the absolute path, im not on windows so I can't really test it. sry. fopen will probably work.
+
+1606268278
+KIMI
+but i don't like headers :(
+
+1606268321
+andrewrk
+marler8997, I eliminated one thing as a possible cause of failure
+
+1606268376
+andrewrk
+
+
+1606268421
+andrewrk
+this plus the fact that musl-based void linux is having a crash (somewhere else) seemingly due to lack of running start code, leads me to believe that is the next place to look
+
+1606268642
+KIMI
+why i cant use string on fopen? i get an error msg  error: expected type '[*:0]const u8', found '[]const u8'
+
+1606268834
+KIMI
+i can't open a file since yesterday xD
+
+1606268861
+ziguana[m]
+andrewrk: in case you haven't seen it
+
+1606268911
+ziguana[m]
+the TLS part was surprising to me in particular, didn't know that it needs special constructors and destructors
+
+1606268953
+KIMI
+i will stick with C i think sorry :(
+
+1606269072
+andrewrk
+KIMI, try again closer to 1.0 :)
+
+1606269134
+KIMI
+when is it released?
+
+1606269158
+andrewrk
+years into the future
+
+1606269182
+KIMI
+i will try again later someone on telegram told me to try zig for easier C, but i'm not very good even in C
+
+1606269925
+andrewrk
+marler8997, sorry to keep pinging you, I'm using you as a rubber duck and to give little progress updates
+
+1606269959
+andrewrk
+next thing I discovered: the crash is in glibc main thread initialization code. it's doing pd->tid = INTERNAL_SYSCALL_CALL (set_tid_address, &pd->tid);
+
+1606269992
+andrewrk
+but the address it is using comes from THREAD_SELF and it ends up being 0x2d1 which is an invalid pointer. So something is wrong with THREAD_SELF
+
+1606270277
+andrewrk
+for x86_64 it's this:
+
+1606270298
+andrewrk
+which makes sense since this is the crash:
+
+1606270316
+andrewrk
+ok so the fs register is not set up properly
+
+1606270394
+andrewrk
+hmm I bet LemonBoy would know the answer here
+
+1606270420
+andrewrk
+zig sets the fs register in start code, but it looks like glibc did not like the value we set it to
+
+1606270653
+andrewrk
+I see the problem. here are the last few syscalls the glibc dynamic loader does before entering zig's _start code, followed by the 1st syscall that zig's _start code does:
+
+1606270671
+andrewrk
+basically zig's start code is clobbering the fs register value from glibc's start code
+
+1606270695
+andrewrk
+since we didn't actually link with libc, zig thought we were in charge of the start code
+
+1606270706
+andrewrk
+s/the start code/initializing TLS/
+
+1606270817
+andrewrk
+yooo I got a window
+
+1606270855
+ziguana[m]
+git push when
+
+1606270928
+andrewrk
+it's with this patch to zig, which I can't just push, I need to think about how to make this work for normal use cases too:
+
+1606271005
+ziguana[m]
+cool! is there an issue where I can catch up with what this is for?
+
+1606271023
+andrewrk
+no but here's the repo:
+
+1606271034
+andrewrk
+I'm planning to do a nice blog post on this soon
+
+1606271037
+ziguana[m]
+sweet, thanks
+
+1606271044
+andrewrk
+what distro do you use?
+
+1606271070
+g-w1
+are there any other types of errors besides @compileLog that don't stop analysis?
+
+1606271074
+ziguana[m]
+the glorious nixos
+
+1606271083
+andrewrk
+you wanna try my binary?
+
+1606271102
+ziguana[m]
+yeah, let me get to a pc
+
+1606271107
+g-w1
+could I try it? I use arch.
+
+1606271180
+ziguana[m]
+ok, got a nix-shell or something?
+
+1606271188
+g-w1
+I also have nix though
+
+1606271191
+ziguana[m]
+man, nvm i'm on llvm10 still for zig, sorry
+
+1606271229
+andrewrk
+ziguana[m], that's the thing, you don't need anything, you can run it without installing anything
+
+1606271244
+ziguana[m]
+i'm kind of scared about this project tbh, aren't you going to end up reimplementing a good portion of dynamic linking? that'd be a can of worms and a half...
+
+1606271248
+ziguana[m]
+oh right, static binary
+
+1606271267
+andrewrk
+ziguana[m],
+
+1606271295
+andrewrk
+run that in a terminal so you can ctrl+c it and tell me what it does instead of opening a window like it is supposed to
+
+1606271297
+ziguana[m]
+it just werkz holy hell
+
+1606271301
+andrewrk
+:-O
+
+1606271322
+g-w1
+is it supposed to work on any linux?
+
+1606271333
+andrewrk
+that's the goal but there are some TODOs
+
+1606271345
+andrewrk
+I'm about to try a musl-based linux
+
+1606271345
+g-w1
+yeah i get illegal instruction
+
+1606271361
+ziguana[m]
+you on x86-64, right?
+
+1606271368
+g-w1
+yes
+
+1606271428
+andrewrk
+g-w1, I need to get master branch patched up so that this doesn't depend on my local dirty tree, and then if you're interested to join the effort, you could try building from that zig-window repo and you could help figure out what patches might be needed to make it additionally work on your system
+
+1606271466
+ziguana[m]
+looking forward to that blog post, i'm really curious about what exactly you did
+
+1606271486
+ziguana[m]
+looks like manually dlopen'ing x11 libs and doing the vulkan loading too
+
+1606271489
+andrewrk
+I am curious about where that illegal instruction is. My best guess is UBSAN found a bug in Vulkan-Loader
+
+1606271509
+g-w1
+I am interested! This seems like a very good learning oppurtunity for me to learn about lower level stuff. I am using a 2013 cpu so maybe ur cpu just has more instructions
+
+1606271516
+andrewrk
+oh!
+
+1606271525
+andrewrk
+hang on yeah that's a native build - let me change to baseline
+
+1606271529
+andrewrk
+:D
+
+1606271556
+ziguana[m]
+too much mtune?
+
+1606271623
+andrewrk
+when you compile for the native CPU, zig takes advantage of the native CPU features. you have to intentionally cross compile to do something different
+
+1606271653
+andrewrk
+all I'm doing differently now is adding `-target x86_64-linux` to the build, which will then select the "baseline" CPU features
+
+1606271686
+andrewrk
+
+
+1606271690
+andrewrk
+g-w1, ^
+
+1606271716
+g-w1
+IT WORKED
+
+1606271726
+ziguana[m]
+haha this one dies for me, but only some of the time
+
+1606271731
+andrewrk
+whaaat
+
+1606271753
+ziguana[m]
+actually getting killed by the sanitizer, "memory leak detected"
+
+1606271761
+g-w1
+when i resize the window this happens:
+
+1606271776
+ziguana[m]
+error: VulkanOutOfDate..wh..what'
+
+1606271788
+ziguana[m]
+yep, that's what i see
+
+1606271790
+andrewrk
+I'm sure the "hello world triangle" code I wrote has a bug in it
+
+1606271793
+andrewrk
+I see the same thing
+
+1606271804
+andrewrk
+that's not really the point of this demo though :)
+
+1606271819
+ziguana[m]
+don't worry, we're still impressed
+
+1606271831
+andrewrk
+ok so we have arch and nixos in the bag
+
+1606271833
+andrewrk
+who's next?
+
+1606271834
+andrewrk
+:D
+
+1606271845
+g-w1
+lemme try debian rn
+
+1606271887
+andrewrk
+damn, I gotta go in a minute, I promised to help with chores at 6pm and it's 6:38 now
+
+1606271964
+andrewrk
+I'm getting a segfault inside musl on void linux
+
+1606271994
+waleee-cl
+works fine on clearlinux (I assume the triangle in static-window4 is unmoving?)
+
+1606272056
+andrewrk
+yep it's unmoving. wow nice! that's quite a few linuxes already!
+
+1606272064
+andrewrk
+no musl based linuxes yet tho
+
+1606272070
+g-w1
+ill leave you with this cryptic error on debian:
+
+1606272116
+andrewrk
+I know how to solve that
+
+1606272150
+andrewrk
+we need to detect what the proper soname for libdl.so is. right now it is hard coded to libdl.so.2
+
+1606272250
+andrewrk
+ok so basically the patch to zig we need is to be able to disable the call to initStaticTLS() in start.zig. or we need to have it runtime detect that it does not need to run that code
+
+1606272291
+ziguana[m]
+does the static TLS collide with something?
+
+1606272341
+ziguana[m]
+or is it just that register?
+
+1606272346
+ziguana[m]
+ok, i can wait for the blog post
+
+1606272901
+Snektron
+wowie, ziguana has come to life
+
+1606272919
+waleee-cl
+a friend running slackware were 'meh' about testing the demo binary
+
+1606272981
+andrewrk
+yeah that's fair
+
+1606272995
+andrewrk
+I mean the source is available if they don't trust it
+
+1606272995
+Snektron
+andrewrk: your binary disconnects my monitor
+
+1606273001
+andrewrk
+o.O
+
+1606273037
+Snektron
+Its not your fault, i noticed this on my own example as well, so at least i know it didn't do anything wrong especially
+
+1606273044
+Snektron
+or we made the same mistake, which is entirely possible
+
+1606273061
+Snektron
+I thought the issue was already fixed since it didn't trigger on my own example
+
+1606273088
+Snektron
+basically my monitor turns black and then tells me there is no signal
+
+1606273114
+Snektron
+not really sure what to do about it...
+
+1606273451
+Snektron
+Now it works fine (glibc void)
+
+1606273480
+andrewrk
+what was it before?
+
+1606273529
+Snektron
+Same OS, i just rebooted
+
+1606273568
+Snektron
+I suspect some other application interacts with it somehow, or maybe my driver is somehow unstable
+
+1606273573
+Snektron
+im not sure how to trigger it
+
+1606273627
+waleee-cl
+soneone else running musl void also got a segfault
+
+1606273642
+andrewrk
+I'm able to repro that
+
+1606273645
+andrewrk
+will debug it soon
+
+1606273743
+andrewrk
+gotta go, see ya
+
+1606276781
+marler8997
+so if I understand correctly, we need some way to know whether or not we were loaded by ld, so we can know whether or not to initialize tls?
+
+1606277144
+KIMI
+hi, i want to try again, how to convert [*]const u8 in to  [*:0]const u8?
+
+1606277171
+KIMI
+i got [*]const u8 by doing path.ptr (path is a []const u8)
+
+1606277203
+KIMI
+i can't give up this easy i need finish it lol
+
+1606277223
+g-w1
+try std.cstr
+
+1606277259
+KIMI
+how to use it?
+
+1606277300
+KIMI
+how it is with llocator
+
+1606277302
+KIMI
+oh
+
+1606277374
+g-w1
+std.cstr.addNullByte
+
+1606277524
+KIMI
+one question why it is different than on C? on C i can just "the path" without 0 at the end
+
+1606277542
+KIMI
+is on C automatic?
+
+1606277628
+KIMI
+wit haddNullByte it work thanks
+
+1606277663
+KIMI
+it is possible to not have to use allocator and make it transparent like in C?
+
+1606277693
+KIMI
+i am trying this example
+
+1606277757
+KIMI
+it work fine too if i put the path directly like in the example
+
+1606277803
+KIMI
+i have my code on a function like thjis fn load(a: *Allocator, path: []const u8) !FontData
+
+1606278097
+KIMI
+i think my message is a confusing because i don't explain all, i call load(allocator, "the path")  <= how to make it so this is directly passed into fopen(path) like i would do with fopen("the path")
+
+1606278410
+KIMI
+i ask this because i don't think i should allocate just to add a 0
+
+1606278985
+KIMI
+ok i read api of fopen require null terminated string since there is no size parameter, that is why it ask [:0], so i need make my function too that require [:0] anyways
+
+1606279103
+KIMI
+[:0] is what i needed all from the start xD
+
+1606279121
+KIMI
+fn load(a: *Allocator, path: [:0]const u8) !FontData
+
+1606279343
+KIMI
+now another problem, there is no getline in c.zig
+
+1606279544
+marler8997
+if you share the zig code you have now, should be easy to help
+
+1606279591
+KIMI
+
+
+1606279727
+marler8997
+missing definition for fontdata
+
+1606279741
+marler8997
+how about just send all your code?
+
+1606279757
+KIMI
+why?
+
+1606279767
+KIMI
+i just want read file xD
+
+1606279773
+KIMI
+line by line
+
+1606279778
+marler8997
+because the code you sent me is missing code I need to compile it
+
+1606279814
+marler8997
+also, not sure why you are using fopen
+
+1606279829
+KIMI
+just create text file and call code to load fopen
+
+1606279858
+KIMI
+because with reader i can't load file in parent folder on windows
+
+1606279861
+KIMI
+apparently
+
+1606279882
+KIMI
+i try this
+
+1606279901
+marler8997
+do you just need zig code that reads a file line by line?
+
+1606279907
+KIMI
+yes
+
+1606279918
+KIMI
+the file is in parent folder
+
+1606279983
+KIMI
+i am here with fopen because reader dosn't work on windows for parent folder  with"../"
+
+1606279998
+KIMI
+i forgot who told me that, but it is in this chat
+
+1606280008
+KIMI
+i get file not found when i tried
+
+1606280045
+marler8997
+ok give me a minute
+
+1606280054
+KIMI
+ok thanks for trying to help me
+
+1606280288
+marler8997
+
+
+1606280338
+KIMI
+thanks
+
+1606280373
+KIMI
+reader is what i tried
+
+1606280386
+KIMI
+it doesn't work on windows with path "../" for file in parent folder
+
+1606280396
+KIMI
+i will try ur code
+
+1606280506
+KIMI
+yes same error: Unable to dump stack trace: FileNotFound
+
+1606280563
+marler8997
+that means the file you are trying to open and read doesn't exist
+
+1606280572
+marler8997
+FileNotFound
+
+1606280591
+KIMI
+the file exist
+
+1606280609
+KIMI
+it works with fopen
+
+1606280616
+KIMI
+it find the file
+
+1606280620
+marler8997
+you must have path or cwd incorrect
+
+1606280627
+marler8997
+how are you running it?
+
+1606280636
+KIMI
+like the other person said on this chat on windows it doesn't work with path "../"
+
+1606280643
+KIMI
+that is why i said i will use C
+
+1606280643
+marler8997
+let me try that
+
+1606280649
+KIMI
+with fopen and getline
+
+1606280666
+marler8997
+"../test.txt" works for now
+
+1606280672
+marler8997
+*works for me
+
+1606280675
+marler8997
+what OS are you on?
+
+1606280678
+KIMI
+i run the test zig test font.zig
+
+1606280681
+KIMI
+windows
+
+1606280692
+marler8997
+oh..that's why
+
+1606280706
+KIMI
+yes xD
+
+1606280717
+marler8997
+there's a bug:
+
+1606280753
+KIMI
+so what should i do?
+
+1606280762
+marler8997
+to workaround, you could get the absolute pathname, and strip off the last directory
+
+1606280781
+KIMI
+but it is allocating
+
+1606280795
+marler8997
+what is allocating?
+
+1606280815
+KIMI
+i tried that too, i need allocate to get absolute path
+
+1606280882
+KIMI
+or it was for the addbyte i forgot
+
+1606280955
+marler8997
+to get absolute path, you can either allocate, or use MAX_PATH with a global/stack buffer
+
+1606281495
+KIMI
+can you show me how to do this to get the file in parent directory
+
+1606281502
+marler8997
+yeah, writing a function for you
+
+1606281509
+KIMI
+thanks you
+
+1606281819
+marler8997
+
+
+1606281825
+pixelherodev
+KIMI: the null byte isn't automatic in Zig; it's only needed when interacting with C code. The default "string" type in Zig uses a length tracker instead of a null byte
+
+1606281946
+KIMI
+thanks marler8997
+
+1606281969
+KIMI
+i could have never figured that code by myself
+
+1606282000
+marler8997
+you'll get there eventually if you keep at it
+
+1606282045
+pixelherodev
+^
+
+1606282061
+KIMI
+what i put as depth?
+
+1606282062
+pixelherodev
+(Positive) experience is the key determiner for code quality
+
+1606282073
+marler8997
+that's the number of ".." you want
+
+1606282076
+pixelherodev
+Of course, if most of the code you've worked with is bad, you'll learn to write bad code :(
+
+1606282124
+marler8997
+so long as you are vigilant with self evaluation and keep yourself to high quality standards you will get better
+
+1606282256
+pixelherodev
+Yeah, though knowing what quality is can be difficult if you haven't seen it :)
+
+1606289908
+andrewrk
+marler8997, the tls initialization problem is solved in the most recent commit I pushed to zig master branch (assuming it passes CI)
+
+1606289925
+marler8997
+checking
+
+1606289940
+andrewrk
+"All checks have failed" => oh.
+
+1606289980
+andrewrk
+ugh that's just the stack traces test needing line numbers of start.zig to be in the test cases
+
+1606290029
+marler8997
+good
+
+1606290090
+andrewrk
+yeah. major progress today!!
+
+1606290105
+marler8997
+how far are you getting now?
+
+1606290137
+andrewrk
+did you try the binary?
+
+1606290155
+andrewrk
+check the bottom of the readme of zig-window
+
+1606290198
+marler8997
+oh headless still getting Vulan Extension not present error, trying on virtualbox
+
+1606290225
+KIMI
+about the code someone gave me why fn load(allocator: *std.mem.Allocator, reader: anytype) !void reader is anytype
+
+1606290232
+andrewrk
+I think we are already getting the correct output for headless
+
+1606290255
+KIMI
+why is it anytype and not Reader?
+
+1606290276
+marler8997
+VulkanInitializationFailed :(
+
+1606290285
+marler8997
+got to "opening window"
+
+1606290298
+andrewrk
+KIMI, because of
+
+1606290316
+KIMI
+thanks i will look
+
+1606292885
+andrewrk
+marler8997, hmm I think it will be interesting to see what failed. perhaps something to do with X11?
+
+1606295112
+mitchk
+HI All, I'm having some trouble. Building on a brand new fedora 33 install. I've installed clang-devel,llvm-devel,lld-devel all 11.x. When I run "cmake .." I get an error "Could NOT find clang (missing: CLANG_LIBRARIES) " Is there a env variable I should set to define that?
+
+1606295124
+mitchk
+Build the zig project that is.
+
+1606295743
+dutchie
+andrewrk: i also see VulkanInitializationFailed
+
+1606295761
+dutchie
+
+
+1606295801
+dutchie
+i'm on wayland, but xwayland should be working
+
+1606307956
+g-w1
+mitchk: I think you are experiencing this:
+
+1606309345
+g-w1
+regarding my bug on debian where it couldn't find the .so file for static-window, /lib64 is just ld-linux-x86-64.so.2 (only thing in it) so anything it ties to load from there (libdl.so.2) just doesn't exist. libdl is here for me on debian /usr/lib/x86_64-linux-gnu/libdl.so.2
+
+1606312038
+shynoob
+hey I am new here..
+
+1606312047
+shynoob
+any pointers to where to get started
+
+1606312326
+dutchie
+
+
+1606314315
+shynoob
+when will zig be production ready?
+
+1606314339
+shynoob
+sorry I mean when will zig 1.0 be released?
+
+1606314624
+karchnu
+shynoob: I guess we will have to wait until the self-hosted compiler will be ready, and when API will be stable and generic for all architectures.
+
+1606314629
+karchnu
+This could be years from now.
+
+1606314702
+shynoob
+uh oh
+
+1606314855
+karchnu
+Maybe this will be sooner than that, self-hosted compiler wasn't really a thing a few months ago and now it is still experimental but in the 0.7.0 release.
+
+1606314994
+karchnu
+I bet that the zig language and most of the standard library will be (kinda) stable in less than a year.
+
+1606315891
+wilsonk
+quit
+
+1606316583
+fengb
+Don't quit us :o
+
+1606316607
+shynoob
+lol
+
+1606317249
+marler8997
+andrewrk, I ran with "xtrace" which said Authentication Rejected: None of the authentication protocols specified are supported and host-based authentication failed
+
+1606317857
+mq32
+karchnu, shynoob: i guess that zig can be "production ready" in roughly 2 years from now on for the major platforms (x86_64, arm64, linux,windows, mac)
+
+1606318137
+marler8997
+andrewrk, scratch my last response (was running with xtrace from glibc).  actual X11 xtrace doesn't show much, I see setup/CreateWindows and a couple InternAtom comands
+
+1606326352
+andrewrk
+marler8997, hmm, does this example work?
+
+1606326359
+andrewrk
+01 - Triangle
+
+1606326386
+marler8997
+trying...
+
+1606326989
+marler8997
+it also fails...which is good I guess :)
+
+1606327035
+marler8997
+vkEnumeratePhysicaDevices fails
+
+1606327045
+marler8997
+could be virtualbox doesn't have a GPU
+
+1606327090
+marler8997
+I have an ubuntu machine with a monitor attached I can try as well
+
+1606327261
+marler8997
+oh...looks like the ubuntu loader doesn't support the "--preload" parameter
+
+1606327274
+g-w1
+same thing on debian that happened to me
+
+1606327340
+andrewrk
+same thing on WSL
+
+1606327365
+marler8997
+I think LD_PRELOAD is more widely supported
+
+1606327432
+fengb
+Hasn’t 1.0 been “2 years from now” for about 5 years now? :P
+
+1606327455
+andrewrk
+for at least 2 years yeah haha
+
+1606327458
+marler8997
+probably better to use LD_PRELOAD, then if we want, we can remove the values we added on the second invocation
+
+1606327658
+TheLemonMan
+andrewrk, yo, have you seen my comment on the TLS changes?
+
+1606327667
+andrewrk
+not yet! looking for it now
+
+1606327680
+g-w1
+I am a little confused. Wasn't the project to compile it into a static binary? Why is there a dynamic linker being used? Is it being used to make the static bianry and then run it?
+
+1606327704
+andrewrk
+TheLemonMan, ah. yeah I didn't really think this through very well
+
+1606327734
+TheLemonMan
+ABI compatibility is a huuuge problem
+
+1606327778
+andrewrk
+want to brainstorm how to get further on the graphics window problem? we made more progress yesterday, and have a binary that runs on a few different distros:
+
+1606327815
+andrewrk
+it's almost as if we would need builtin.link_libc to be a runtime value
+
+1606327816
+TheLemonMan
+doesn't run here (debian/x86_64)
+
+1606327822
+ifreund
+g-w1: linking mesa statically isn't really viable
+
+1606327844
+andrewrk
+oh yeah I think debian is blocking on the dyld not supporting --preload, so we need to switch to using LD_PRELOAD
+
+1606327849
+g-w1
+ah, because it is so close to the hardware?
+
+1606327851
+andrewrk
+code base is here:
+
+1606327900
+andrewrk
+g-w1, if I recall correctly, not because of any sensible reason, just because of accidental complexity in the way it is set up
+
+1606327913
+ifreund
+yeah, that's my understanding as well
+
+1606327916
+g-w1
+ok
+
+1606328040
+marler8997
+I should have a PR for LD_PRELOAD soon
+
+1606328052
+andrewrk
+TheLemonMan, we
+
+1606328143
+andrewrk
+it would add more complexity to the std lib
+
+1606328163
+andrewrk
+but this is a pretty obviously valuable use case
+
+1606328172
+TheLemonMan
+more is an understatement, we're already drowning in complexity
+
+1606328188
+andrewrk
+valid concern
+
+1606328198
+andrewrk
+what do you think, should we give up on this?
+
+1606328317
+TheLemonMan
+the idea is cool, trying to use a single executable as dynamic and static at the same time is the biggest problem
+
+1606328382
+TheLemonMan
+maybe if you stick to statically linked glibc/musl and try to run it with a matching dynamic loader... dunno
+
+1606328429
+TheLemonMan
+on a related note, do you remember why `resizeFn` has a `buf_align` parameter?
+
+1606328538
+TheLemonMan
+bfredl, ping
+
+1606328869
+andrewrk
+TheLemonMan, the idea is that the client is responsible for tracking all the allocation metadata, including pointer, length, and requested alignment
+
+1606328919
+TheLemonMan
+but `buf_align` can be simply obtained by the slice ptr, and it'd be even correct if the user down-aligned the slice
+
+1606328985
+TheLemonMan
+eg. a []align(16) u32 can be safely thrown around as a []align(4) u32, trying to free the latter will call `resizeFn` with `buf_align` of 4 instead of 16
+
+1606329070
+marler8997
+I think the point of buf_align isn't to know the alignment of the pointer, but to be used in something like an alignment lookup table
+
+1606329125
+marler8997
+there are cases where an allocator could use it, however, I might argue that the use cases would be rare, and in the cases where it is useful, the allocator could manage that information itself
+
+1606329135
+andrewrk
+I'm not strongly in favor of defending the idea. As far as I'm concerned, client tracking of length and alignment, and the thing where you can get more bytes than requested are all experimental
+
+1606329155
+andrewrk
+IMO if we can't show some real data on perf improvements or debugging experience being better, we should simplify the interface and remove those things
+
+1606329178
+marler8997
+this decision is what my generic allocator design addresses, it doesn't specify who owns allocation metadata, it can be managed by the caller or the allocator
+
+1606329190
+TheLemonMan
+the C allocator may make use of that info and choose between plain malloc and posix_memalign
+
+1606329234
+TheLemonMan
+I hesitated because of this possible problem, picking the wrong function here means a runtime crash so it's pretty critical
+
+1606329239
+ifreund
+hrm, can't figure out how to work around or isolate this stage1 compiler crash I've found :/
+
+1606329275
+andrewrk
+ifreund, are you able to get a gdb stack trace?
+
+1606329283
+andrewrk
+marler8997, yeah we should test the perf of your generic allocator with one that does its own tracking and see if we can use that to justify the interface
+
+1606329301
+ifreund
+andrewrk: yeah poked around with gdb a bit already, one sec
+
+1606329312
+marler8997
+andrewrk, yeah that's a good idea
+
+1606329422
+TheLemonMan
+andrewrk, annnd, what do you think of the proposal in #6870 ?
+
+1606329432
+TheLemonMan
+marler8997, what's this generic allocator thing?
+
+1606329449
+ifreund
+andrewrk:
+
+1606329450
+marler8997
+
+
+1606329541
+ifreund
+by using @compileLog and print in gdb I've tracked it down to this code:
+
+1606329610
+ifreund
+but I haven't managed to create a minimal reproducer or figure out a way to sidestep the crash
+
+1606329676
+TheLemonMan
+marler8997, looks nice but a bit too convoluted for my taste
+
+1606329700
+marler8997
+The idea would be to implement all the allocators in the generic interface, but keep the runtime allocator interface
+
+1606329708
+ifreund
+and Obj is this when it crashes:
+
+1606329747
+TheLemonMan
+two nested `inline for`, you're really pushing your luck here
+
+1606329781
+andrewrk
+TheLemonMan, I'm in favor of breaking {} and forcing people to be in the habit of using {s} to force string interpretation. I already think in status quo, {} is a footgun
+
+1606329784
+ifreund
+yeah, though it's been working alright till now :/
+
+1606329845
+TheLemonMan
+andrewrk, awesome!
+
+1606329868
+andrewrk
+was that the only open question?
+
+1606329906
+TheLemonMan
+yeah, unless you don't like the brackets I've used :P
+
+1606329932
+andrewrk
+for representing slices?
+
+1606329973
+TheLemonMan
+yeah, both slices and arrays now print as `{ x, xx, xxx, ... }`
+
+1606329996
+andrewrk
+I'm fine with that
+
+1606330038
+TheLemonMan
+ifreund, try `up 5` and `p source_node->src()`
+
+1606330060
+TheLemonMan
+finding and replacing all the stray `{}` is gonna take a while
+
+1606330146
+ikskuh
+andrewrk: i agree on forcing {s} for strings :)
+
+1606330193
+ikskuh
+annoying, but we still have writeAll :)
+
+1606330260
+ikskuh
+well, "annoying"
+
+1606330261
+ikskuh
+:D
+
+1606330264
+ikskuh
+typing one character more
+
+1606330265
+ifreund
+TheLemonMan: that points me to line 71 of the code I linked
+
+1606330266
+ikskuh
+let vs const again! :D
+
+1606330277
+fengb
+5076
+
+1606330282
+ifreund
+(I had to go up a little more than 5)
+
+1606330385
+TheLemonMan
+awesome, what's the result of `p val->data` in the `ir_resolve_const_type` frame?
+
+1606330484
+TheLemonMan
+I'm afraid it's tripping up that assertion because of the `destroy: void` field
+
+1606330495
+ifreund
+l1x:
+
+1606330506
+ifreund
+oops, wrong ping entirely :/
+
+1606330553
+TheLemonMan
+hmm, the data payload is completely zeroed... what's `p val->special` ?
+
+1606330580
+ifreund
+ConstValSpecialStatic
+
+1606330590
+TheLemonMan
+and `p val->type->special` ?
+
+1606330644
+ifreund
+"there is no memeber named special"
+
+1606330665
+TheLemonMan
+arr, `p val->type->id`
+
+1606330674
+ifreund
+ZigTypeIdMetaType
+
+1606330750
+TheLemonMan
+can I reproduce the crash by pulling the zig-wayland repo?
+
+1606330776
+ifreund
+no, you'll need my WIP branch of river
+
+1606330787
+andrewrk
+TheLemonMan, we
+
+1606330800
+ifreund
+Give me a second and I'll push my current local changes
+
+1606330808
+andrewrk
+similar to how you have to put `: anytype` in a parameter instead of leaving it blank
+
+1606330829
+ikskuh
+"{?}"
+
+1606330854
+andrewrk
+yeah something like that
+
+1606330857
+TheLemonMan
+that's an interesting idea, people may not want to type that extra character tho
+
+1606330886
+andrewrk
+I agree. however right now we do have a footgun that C printf doesn't have. in printf you get a compile error if you do %s and put a non-string. in zig you get incorrect output at runtime
+
+1606330915
+ikskuh
+↑
+
+1606330924
+TheLemonMan
+#1358 reserved "{?}" for the debug output format, makes sense
+
+1606330962
+ikskuh
+which is kinda a "just give me *something*"
+
+1606331001
+ifreund
+TheLemonMan: you should be able to reproduce on this branch with a zig build after initing the submodules:
+
+1606331025
+TheLemonMan
+ikskuh, let's make it print a random string!
+
+1606331068
+ikskuh
+haha :D
+
+1606331072
+andrewrk
+tangentially related, it would be nice if there were an easy way to do a path separator in a format string without " ++ foo ++ "
+
+1606331076
+ikskuh
+"these numbers are here for debugging"
+
+1606331090
+ikskuh
+"{/}"
+
+1606331091
+ikskuh
+:D
+
+1606331115
+andrewrk
+that seems reasonable
+
+1606331175
+marler8997
+LD_PRELOAD PR here:
+
+1606331201
+TheLemonMan
+ifreund, gimme a few minutes, gotta compile wlroots
+
+1606331202
+seatodawn
+hello, this is gonna be HELLA dumb, but how would I go about opening a file in zig?
+
+1606331229
+ifreund
+TheLemonMan: thanks for giving it a look :)
+
+1606331239
+ifreund
+seatodawn: std.fs.cwd().openFile()
+
+1606331241
+ikskuh
+seatodawn: std.fs.cwd().openFile("path", .{});
+
+1606331260
+seatodawn
+god IM DUMB
+
+1606331281
+seatodawn
+i was just reading the documentation and couldnt figure it out for the life of me, THANK YOUUU
+
+1606331322
+ifreund
+no problem, and I don't think that means you're dumb. The documentation isn't too great yet
+
+1606331332
+seatodawn
+be back later boyos, probably with a different name 😁
+
+1606331340
+ifreund
+o7
+
+1606331345
+seatodawn
+ahh i guess, still :^(
+
+1606331361
+seatodawn
+hope u guys dont mind me being a bby noob and asking questions
+
+1606331925
+TheLemonMan
+ifreund, works fine here? I've just built the river.o object (couldn't link it because of some missing libs)
+
+1606331969
+ifreund
+TheLemonMan: huh? are you on the master branch or the zig-wlroots branch?
+
+1606331997
+TheLemonMan
+on the wrong one, of course
+
+1606332153
+andrewrk
+
+
+1606332162
+andrewrk
+we have 1 report of ubuntu working with this
+
+1606332226
+marler8997
+dang, vulkan extension not present, my ubuntu probably too old
+
+1606332304
+g-w1
+same for me on debian
+
+1606332350
+andrewrk
+ok there is one more thing to try, can you find the location of where your vulkan .so files are?
+
+1606332377
+andrewrk
+for me it is /run/opengl-driver/lib/ and I hard coded that but maybe we need to detect a different path for that
+
+1606332384
+g-w1
+
+
+1606332386
+andrewrk
+e.g. /run/opengl-driver/lib/libvulkan_intel.so
+
+1606332407
+andrewrk
+ok yeah let me double check if we look in /usr/lib/x86_64-linux-gnu/
+
+1606332491
+marler8997
+locate vulkan gives me 888 entries...lol
+
+1606332527
+marler8997
+looks like I don't have vulkan installed
+
+1606332537
+andrewrk
+look for libvulkan.so, or libvulkan_intel.so, or libvulkan_radeon.so
+
+1606332565
+marler8997
+none of it, all my '.so's are from my yocto repositories, none installed nativealy on the system
+
+1606332580
+ifreund
+heh, your static window thing crashed river :D
+
+1606332605
+ifreund
+I should probably look into that, my xwayland stuff is pretty sloppy as I don't care much about it
+
+1606332612
+marler8997
+ifreund, how did it connect? does river have an XServer?
+
+1606332639
+ifreund
+yeah, it has decent suppport for X programs through Xwayland
+
+1606332655
+andrewrk
+ifreund, heh yeah well we will also add wayland support too :D
+
+1606332668
+ifreund
+it can be buggy though depending on how weird the clients are though
+
+1606332671
+marler8997
+cool, I was able to use Xwayland to get doom over X to run on our printers that use wayland
+
+1606332819
+andrewrk
+g-w1, actually, look for something like this:
+
+1606332840
+andrewrk
+maybe something in "share" ?
+
+1606332881
+g-w1
+hmm. maybe I dont have
+
+1606332943
+andrewrk
+g-w1, you can try fiddling with the path here:
+
+1606332960
+g-w1
+ok, ill try that
+
+1606332968
+andrewrk
+if you figure out something that works we can add runtime logic to detect it
+
+1606332990
+segmentationfaul
+wait
+
+1606333068
+segfaults
+there we go
+
+1606333222
+TheLemonMan
+ifreund, the problem is in deps/zig-wayland/generated/zriver_status_v1_server.zig, the Request type is generated multiple times with different bodies
+
+1606333234
+TheLemonMan
+removing the extra definitions fixes the crash
+
+1606333432
+ifreund
+TheLemonMan: they are generated in different namespaces though, shouldn't that be fine?
+
+1606333477
+TheLemonMan
+yeah, but that's the quickest workaround I thought of :)
+
+1606333547
+ifreund
+interesting
+
+1606333555
+TheLemonMan
+ok, the problem are the zero-sized enums
+
+1606333588
+ifreund
+the ones with just destroy: void?
+
+1606333592
+TheLemonMan
+yeah
+
+1606333654
+ifreund
+well it makes sense why nobodies hit this yet, it's not something that would come up in non-generated code
+
+1606334072
+g-w1
+I now got to VulkanInitalizationFailed by just installing more vulkan packages from apt. (I think a mesa package did the trick)
+
+1606334845
+TheLemonMan
+I really hate when writing a small test case takes more time than fixing the problem :(
+
+1606334927
+ifreund
+heh, I'm curious what you came up with. My attempts at a small test case didn't reproduce the crash
+
+1606334939
+g-w1
+Oh, I think my gpu driver is just bad (debian foss stuff). Im like 80% sure it's not zig-window's fault
+
+1606335107
+ifreund
+static-window6 works using something other than river on void/glibc by the way
+
+1606337040
+segfaults
+is there an argc equivalent in zig?
+
+1606337045
+segfaults
+i could only find argv
+
+1606337056
+marler8997
+argv.len?
+
+1606337069
+segfaults
+i-
+
+1606337074
+segfaults
+t-thank u
+
+1606337094
+segfaults
+im not used to zig, my 21 yo boomer ass stuck in C mentality
+
+1606337123
+marler8997
+if you're a boomer what does that make my 32 yo ass?
+
+1606337152
+segfaults
+a relic of days past, bless us with your knowledge
+
+1606337190
+marler8997
+lol
+
+1606337206
+segfaults
+lmaooo im sry <3
+
+1606339035
+andrewrk
+TheLemonMan, in my experience that's most of the time
+
+1606339089
+TheLemonMan
+ifreund, a patch is up, let me know if it solves your problem
+
+1606339115
+TheLemonMan
+if you manage to write a small test case I'd really appreciate it
+
+1606339134
+TheLemonMan
+andrewrk, this time the test case is something like 3-4 projects heh
+
+1606339158
+andrewrk
+we need a zig equivalent of creduce :)
+
+1606339288
+marler8997
+dlang had one that I think was pretty generic? dustmite
+
+1606339320
+g-w1
+does it just work by reducing stuff until the compiler doesn't crash smartly?
+
+1606339332
+andrewrk
+g-w1, yes
+
+1606339603
+pixelherodev
+Does creduce not work on Zig?
+
+1606339648
+pixelherodev
+I thought it was just generic enough and Zig
+
+1606339703
+pixelherodev
+csmith-for-zig would be neat too
+
+1606339717
+pixelherodev
+Have a server spent a constant 1% of CPU finding compiler bugs for instance :P
+
+1606339780
+pixelherodev
+heck, csmith + import-c might be able to work
+
+1606339786
+ikskuh
+is it a known problem that windows crosscompilation doesn't work?
+
+1606339812
+marler8997
+pixelherdev, I was not aware of csmith...looks cool
+
+1606339861
+ikskuh
+for release builds it is
+
+1606339887
+marler8997
+cross compiling on windows to something else, or to windows?
+
+1606339965
+segfaults
+im trying to use std.os.argv[0..] but it says slice of undefined, am i doing something wrong or is this not allowed?
+
+1606339981
+segfaults
+im trying to print it right now, to test
+
+1606340010
+g-w1
+is the error at runtime or compile time?
+
+1606340020
+segfaults
+compile time
+
+1606340037
+segfaults
+because if i use std.os.argv[1] it does work
+
+1606340121
+g-w1
+this is because argv is set to undefined in std/os.zig at compile time and then populated at runtime. it is probably a bug in zig.
+
+1606340132
+segfaults
+gotcha, thank you
+
+1606340133
+ikskuh
+marler8997: linux → windows, x86_64-windows, Release***
+
+1606341345
+ikskuh
+marler8997: lld-link: error: could not open 'libcmt.lib': No such file or directory
+
+1606341351
+ikskuh
+that's the error i get for all release modes
+
+1606341576
+TheLemonMan
+ikskuh, try with x86_64-windows-gnu
+
+1606341587
+TheLemonMan
+libcmt.lib is part of MSVC sdk iirc
+
+1606341602
+ikskuh
+ah!
+
+1606341610
+ikskuh
+well, that's one weird error :D
+
+1606341644
+ikskuh
+but right, i link libc in release modes as _sincos is missing in release without libc :D
+
+1606341778
+TheLemonMan
+open a ticket for that, it shouldn't be hard to add
+
+1606341798
+ikskuh
+yeah, i'll do
+
+1606341816
+ikskuh
+but thanks to you, i now have this:
+
+1606341849
+g-w1
+is the thing that happened earlier with std.os.argv[0..] not working because it was undefined a bug?
+
+1606342454
+ifreund
+TheLemonMan: that fixed it, thanks so much
+
+1606342466
+ifreund
+I will try and get a test case worked out
+
+1606342630
+andrewrk
+Congrats to alexnask[m] who is now a part time paid contractor for ZSF! 🎉
+
+1606342638
+pixelherodev
+Congrats alexnask[m] !
+
+1606342654
+pixelherodev
+andrewrk: unrelated, I think emit-h PR is ready :)
+
+1606342665
+andrewrk
+nice
+
+1606342675
+pixelherodev
+It was mostly tetsuo, I just provided the test harness
+
+1606342779
+karchnu
+Congrats alexnask[m]!!
+
+1606342909
+ikskuh
+oh, alex is now paid to solve my problems? NICE
+
+1606342968
+pixelherodev
+That's totally true! :D
+
+1606342975
+ikskuh
+<3
+
+1606343120
+alexnask[m]
+Thanks ppl!
+
+1606343812
+wilsonk
+congrats Alex
+
+1606344582
+KIMI
+hi, i make some progress today but i find some issues
+
+1606344584
+KIMI
+
+
+1606344595
+KIMI
+it never print the 1st character
+
+1606344596
+ikskuh
+andrewrk, alexnask[m]: is there platform-independent file mapping tool in std?
+
+1606344598
+KIMI
+|< erning first=86  second=44  amount=-1
+
+1606344603
+KIMI
+it should print:
+
+1606344626
+KIMI
+>| kerning first=86  second=44  amount=-1 |<
+
+1606344635
+andrewrk
+ikskuh, I don't think so
+
+1606344638
+pixelherodev
+ikskuh: going to ping Alex with every question now? :P
+
+1606345017
+KIMI
+i think is because on windows new line is different
+
+1606345131
+KIMI
+yes that is that, i switched to LF and now it is printing right line
+
+1606345147
+KIMI
+i fix my own bug, i make progress indeed xD
+
+1606345211
+KIMI
+how to make it so it accept both LF and CRLF? with delimiter?
+
+1606345225
+ifreund
+const foo: void = undefined;
+
+1606345240
+ifreund
+is this the same as const foo: void = {}; ?
+
+1606345345
+ikskuh
+pixelherodev: sure thing! :D
+
+1606345348
+ikskuh
+<andrewrk> ikskuh, I don't think so
+
+1606345349
+ikskuh
+ah dang
+
+1606345354
+ikskuh
+i remember something std.fs.MapOfFile
+
+1606345388
+ikskuh
+time to implement that!
+
+1606345483
+andrewrk
+ifreund, ha funny you should ask that, our Specs Meeting last week answered exactly that question
+
+1606345522
+andrewrk
+ifreund,
+
+1606345523
+ifreund
+guess I should pull up the minutes :D
+
+1606345542
+andrewrk
+I think SpexGuy typed up the respective github issues too
+
+1606345583
+ifreund
+cool, that makes my code easier to write
+
+1606345783
+ifreund
+gotta say, taking steps towards a proper spec makes me excited
+
+1606345792
+ikskuh
+yeah, me too
+
+1606347837
+andrewrk
+I think the LemonBoy PR I just merged is going to make some people happy
+
+1606347924
+marler8997
+KIMI, after you read the line and check it isn't null, you can strip the "\r" character off the end
+
+1606347930
+marler8997
+stripRight or trimRight probably
+
+1606347968
+andrewrk
+ifreund, is  #7205 a candidate for 0.7.1?
+
+1606348010
+pixelherodev
+Specs meeting?
+
+1606348044
+pixelherodev
+Neat
+
+1606348055
+karchnu
+I just saw the last loris's video on async/await, thanks so much for that.
+
+1606348071
+pixelherodev
+I think given the removal of the stage1 emit-h, re-adding it in for 0.7.1 with the CBE makes sense
+
+1606348115
+pixelherodev
+But I contributed to it so I'm probably biased, and I'd generally say that the minor releases should have as few changes as possible
+
+1606348131
+andrewrk
+it's a bug fix release, so it should have only bug fix releases
+
+1606348140
+andrewrk
+*only bug fixes
+
+1606348189
+pixelherodev
+andrewrk: "emit-h stopped working in 0.7.0 after working fine in 0.6.0" ;)
+
+1606348207
+pixelherodev
+I kid
+
+1606348546
+andrewrk
+it was part of stage1 though. adding it to stage2 won't actually restore the same functionality
+

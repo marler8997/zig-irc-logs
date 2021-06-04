@@ -1,0 +1,612 @@
+1604218060
+tsujp69
+does anyone have a configuration for building zig on nixos 20.09?
+
+1604218063
+tsujp69
+HEAD of zig*
+
+1604218108
+dominikh
+tsujp69: I pretty much just take the nix file from nixpkgs and change the version to the commit on master I want to build.
+
+1604218119
+tsujp69
+I did that and it doesnt build for me
+
+1604218143
+tsujp69
+expected LLVM 11.x ut found 7.1.0
+
+1604218202
+dominikh
+how are you building the derivation? you'll need to let it fetch dependencies from unstable nixpkgs, too
+
+1604218225
+tsujp69
+ah
+
+1604218228
+dominikh
+to get a recent enough LLVM
+
+1604218238
+tsujp69
+I straight up just copied the nixpkgs one and replaced the rev and sha256
+
+1604218245
+tsujp69
+did you have yours handy by chance?
+
+1604218258
+dominikh
+do you use home-manager?
+
+1604218289
+tsujp69
+I do not, just got onto nixos about.. 1 hour ago
+
+1604218478
+dominikh
+okay, so the easiest, hackiest approach is editing the zig/default.nix inside your nixpkgs checkout, and then something like `nix run -f /path/to/nixpkgs zig` will get you a shell with that zig active. if you don't want to edit nixpkgs itself, you'll want to tweak the nix file slightly and have it import your local nixpkgs checkout (to get a recent LLVM) instead of using the system nixpkgs
+
+1604218542
+dominikh
+can probably use nix-env instead of nix run for something more permanent, too, but I don't really know nix-env much.
+
+1604218638
+tsujp69
+hmm, im trying to get this done within the configuration.nix file itself, well specifically a copy-paste of the nixpkgs zig file
+
+1604218676
+tsujp69
+As in, I've copied the nixpkgs zig.nix and am using it in my environment.systemPackages with of course this LLVM error happening
+
+1604218732
+tsujp69
+I want it there until zig 0.7.0 for use accross various systems, nix-env outside of that deterministic set
+
+1604218832
+dominikh
+so you have like a callPackage call in your configuration.nix?
+
+1604218920
+tsujp69
+I do yeah
+
+1604218947
+dominikh
+try and see if callPackage ./zig.nix { llvmPackages = llvmPackages_11; }; works – I have no idea if 20.09 ships with that. if not, you'll want to import unstable nixpkgs (e.g. your checkout) and use its llvmPackages_11
+
+1604218954
+tsujp69
+its calling a copy-paste (only channged the `rec` and `sha256` from the nixpkgs zig expression file), unsure how/where to put in llvm_11
+
+1604218969
+tsujp69
+20.09 has the literal `llvm_11` in the package list
+
+1604218978
+dominikh
+well, try that callPackage invocation then
+
+1604219001
+tsujp69
+Ack, trying now
+
+1604219039
+tsujp69
+where does `llvmPackages` come from if it's called `llvm` in the package list?
+
+1604219092
+dominikh
+(might have to be llvmPackages = pkgs.llvmPackages_11 if you're not in a with pkgs block) – `nix search llvmPackages`, as for how I deduced that name: the zig.nix has llvmPackages in its list of inputs
+
+1604219109
+dominikh
+llvmPackages defaults to llvm 9, but llvm 10 and 11 are available, too
+
+1604219119
+tsujp69
+building so far, at 99%
+
+1604219144
+tsujp69
+my callPackage is within a pkgs block so should be g
+
+1604219165
+tsujp69
+what I mean is where does `pkgs.llvmPackages` come from?
+
+1604219185
+tsujp69
+is there cmakePackages, zigPackages etc?
+
+1604219225
+tsujp69
+the `xxxPackages` bit confuses me as to where nix exposes/generates/blahs that
+
+1604219256
+dominikh
+no. it's just something LLVM in nixos specific. if you want to look at how it's defined, check out nixpkgs/pkgs/top-level/all-packages.nix and grep for 'llvmPackages_11 = '
+
+1604219288
+tsujp69
+gotcha
+
+1604219327
+tsujp69
+well I got to `Built target zig` and then `error: AccessDenied`, no indication of where logs are printed though.. any ideas there
+
+1604219336
+dominikh
+ugh, right
+
+1604219377
+dominikh
+IIRC it's enough to set doCheck = false in the zig.nix – this is
+
+1604219771
+tsujp69
+tried setting an env var for XDG_CACHE_HOME inside the derivation and that didnt work, will try doCheck=false now
+
+1604219782
+dominikh
+yeah I gave up on setting the env var
+
+1604220682
+tsujp69
+eyy it worked
+
+1604220686
+tsujp69
+with doCheck set to false
+
+1604220694
+tsujp69
+not ideal I guess but hey..
+
+1604220780
+tsujp69
+hooo boy now some other commands don't work, ruh roh lmfao
+
+1604220885
+dominikh
+good luck
+
+1604220996
+tsujp69
+in other news hows that lanlord fiasco going?
+
+1604221007
+tsujp69
+Andrews' scummy landlord and Hulu
+
+1604233552
+dominikh
+what's the actual compilation unit in Zig?
+
+1604233875
+ifreund
+there's only one
+
+1604234080
+dominikh
+then my follow-up questions are 1) what kind of data gets cached to make incremental builds fast 2) if a file makes use of anyerror, will it have to be built from scratch every time a new error gets introduced in the program?
+
+1604234205
+dominikh
+I guess
+
+1604241239
+g-w1
+I can't find a way to unsafely cast a usize to i64, is there a way?
+
+1604241404
+alexnask[m]
+@truncate will work for both 32bit and 64bit usize I think
+
+1604241409
+g-w1
+thanks
+
+1604241550
+g-w1
+it says expected signed integer type, found 'usize' when trying to convert a usize to an i64
+
+1604241556
+g-w1
+using truncate
+
+1604241597
+alexnask[m]
+How are you calling it? @truncate(i64, <the usize>) should work
+
+1604241618
+g-w1
+this is the error: ./src/lib.zig:63:33: error: expected signed integer type, found 'usize'
+
+1604241620
+g-w1
+mem[0] = @truncate(i64, @ptrToInt(&mem));
+
+1604241631
+alexnask[m]
+Huh, weird. Let me test this
+
+1604241741
+alexnask[m]
+Ah mb ofc the signedness matters >.> I guess you probably want bitCast in this case but it will fail when usize is 32 bit
+
+1604241769
+g-w1
+ok. im programming to interface with x86_64 assembly so usize will be 64 bit. thanks
+
+1604241950
+kristoff_it
+hello, quick Q: I know that types expose some properties, like if T is an array type, you can do T.len. My question is then, are the types exposing all the properties of their @typeInfo counterpart, or it's just something ad-hoc that doesn't have anything to do with @typeInfo?
+
+1604242003
+alexnask[m]
+Most of these existed before typeInfo
+
+1604242028
+alexnask[m]
+I believe all the superfluous special fields were recently removed by tdeo
+
+1604242051
+kristoff_it
+oh, so no more T.len?
+
+1604242080
+kristoff_it
+like I believe you could also to something like OptionalT.child
+
+1604242088
+kristoff_it
+also do*
+
+1604242143
+alexnask[m]
+Yeah I think both of those are gone, let me check what remains
+
+1604242433
+g-w1
+now im getting some weird linker errors when memcpy and memset compiler builtins are used. i think these may belong to compiler-rt, but shouldn't my library be statically linked?
+
+1604242454
+alexnask[m]
+Yes afaict all special field accesses were removed kristoff_it
+
+1604242473
+alexnask[m]
+(for `type`)
+
+1604242517
+g-w1
+should I link against compiler-rt?
+
+1604242592
+kristoff_it
+thanks alexnask[m]
+
+1604242610
+alexnask[m]
+g-w1: What is your target? I believe compiler-rt (and special/c.zig) are only not linked when you are building a static library
+
+1604242612
+alexnask[m]
+Unless you specifically set bund_compiler_rt
+
+1604242617
+alexnask[m]
+bundle*
+
+1604242792
+g-w1
+how do i set that? Im building a static library
+
+1604242861
+alexnask[m]
+looks like its missing from the new CLI but is still in the build system >.>
+
+1604242868
+g-w1
+cool
+
+1604242909
+alexnask[m]
+: P The easiest way is probably to define them yourself for now unfortunately
+
+1604242909
+alexnask[m]
+Ill open an issue for this
+
+1604242956
+g-w1
+ok
+
+1604242966
+alexnask[m]
+Ah,
+
+1604243090
+g-w1
+how would I define it manually? Im not sure I undertsand
+
+1604243166
+alexnask[m]
+`pub extern fn memcpy(noalias dest: [*]u8, noalias src: [*]u8, count: usize) { ... }`
+
+1604243209
+alexnask[m]
+you can copy the definitions from
+
+1604243240
+g-w1
+the memcpy use is coming from the gpa, not my code. will that override it?
+
+1604243283
+alexnask[m]
+Yes, GPA uses the builtin, which results in LLVM generating a call to this symbol
+
+1604243302
+g-w1
+ok so it if i define it will override, thanks!
+
+1604243450
+g-w1
+awesome, it works! thanks so much
+
+1604243480
+alexnask[m]
+Cheers. We should get bundle_compiler_rt back soon :P
+
+1604245513
+kristoff_it
+Zig showtime starts in ~20 mins, the preshow is live
+
+1604251908
+tsujp69
+I've checked zig out against a specific commit and built it but my version numer says `0.6.0` instead of `0.6.0+9ca9819`, is this expected? How else can I test I have compiled zig from commit `9ca9819`?
+
+1604252915
+g-w1
+is the new one in your path, or the old one?
+
+1604253293
+tsujp69
+should be the new one since I am doing this under nixos I am explicitly running the build artifacts it output
+
+1604255450
+waleee-cl
+tsujp69: have you changed the sha256 hash?
+
+1604255497
+tsujp69
+yes but in accordance with fetchFromGitHub
+
+1604255521
+waleee-cl
+is the newly built zig under a new hash in /nix/store/ ?
+
+1604255627
+tsujp69
+it is
+
+1604255658
+tsujp69
+its probably because version isn't set in `meta = stdenv.lib` I guess?
+
+1604255763
+waleee-cl
+not sure. From what I remember the problem was (around 1 year back) that nix doesn't update a variable in the cmake file, which is used for the output of 'zig version'
+
+1604255816
+tsujp69
+I see
+
+1604255818
+tsujp69
+hmm
+
+1604255822
+waleee-cl
+at least when overriding the commit for the zig in the binary cache
+
+1604255881
+tsujp69
+hmm, well it does have the latest files I did a check of the hash and what not
+
+1604255891
+tsujp69
+trying to build something with zig gives me this heinous output
+
+1604255997
+waleee-cl
+this line
+
+1604256115
+waleee-cl
+tsujp69:  you probably need to set a temporary $HOME as in
+
+1604262768
+jayschwa
+Is there a way to get the code size of a function at comptime? sizeOf seems to return the size of the function pointer, nor do I see a relevant field in the TypeInfo.
+
+1604263224
+andrewrk
+jayschwa, no but that's something I think belongs in the language. afaik there is not yet a proposal open for it
+
+1604264348
+jayschwa
+I did not see one either. Created
+
+1604264540
+andrewrk
+thanks
+
+1604266439
+andrewrk
+ifreund, how we looking for the release? do the issues in the 0.7.0 milestone cover all the needs of river?
+
+1604266450
+Xavi92
+Hi, I am bit worried at why would `zig` generated apparently wrong code for this C function (please read my last comment):
+
+1604266559
+Xavi92
+Context: I'm compiling both Zig and C for MIPS I using zig commit 0da8e75ff and llvm10 using the patch mentioned in the issue
+
+1604267093
+Kena
+Hello, please why do put an address-of operator on an array of bytes turns it into an slice of immutable bytes?
+
+1604267136
+andrewrk
+Xavi92, looks like an important issue. feel free to open a corresponding issue on the zig tracker and hopefully we can get the problem narrowed down
+
+1604267151
+alexnask[m]
+I assume you mean taking the address of an array literal right Kena?
+
+1604267151
+andrewrk
+Kena, if you want mutable bytes you have to choose where in memory to put them
+
+1604267190
+Kena
+I do not understand what is happening under the hood during the semantic analysis, or code generaiton (or whatever, i'm not sure about the different steps undertaken by a compiler). I have the following error :  .\async2.zig:14:28: error: expected type '[]const u8', found '[9]u8'
+
+1604267217
+Xavi92
+andrewrk: thanks a lot! First I'll ensure it still can be reproduced on newest zig and write up an issue
+
+1604267307
+Kena
+At the snippet code available at
+
+1604267349
+Kena
+And when i put the `&` in front of seq_points, it turns the [9]u8 into a []const u8, why it does that ?
+
+1604267359
+g-w1
+it is a type coercion
+
+1604267410
+Kena
+Yes alexnask[m]!
+
+1604267503
+alexnask[m]
+As Andrew said, if you want a slice to mutable data, you have to control where the memory of the array lives
+
+1604267503
+alexnask[m]
+When you take the address of the literal, the data will live in a constant data segment in your executable so the resulting slice will have to be mutable
+
+1604267509
+alexnask[m]
+Does that answer your question?
+
+1604267520
+alexnask[m]
+s/mutable/const**
+
+1604267623
+Kena
+wow! It wasn't mentionned in the doc, you're kind. Thanks alexnask[m], g-w1, andrewrk.
+
+1604267880
+Xavi92
+andrewrk: does latest Zig require llvm 11.x? If so, I will need a few hours to compile llvm and friends so I won't be able to write the issue until tomorrow or later
+
+1604267921
+alexnask[m]
+It does
+
+1604267935
+bfredl
+llvm distribute binaries also
+
+1604267959
+g-w1
+in codegen.zig, what exactly is a MCValue, and what does MC stand for?
+
+1604267959
+Xavi92
+bfredl: I need a very specific patch for MIPS I load delay slots that (AFAIK) has not been merged into upstream yet
+
+1604267982
+alexnask[m]
+g-w1: It stands for memory cell
+
+1604267994
+g-w1
+it can also be a register though?
+
+1604268005
+alexnask[m]
+(I believe)
+
+1604268009
+g-w1
+cool. thanks
+
+1604269496
+ifreund
+andrewrk: thanks for checking in, river's not really being held back by any zig issues currently as the libc version thing is fixed on master
+
+1604269544
+andrewrk
+ok great so I'll just do a little test to make sure when a new glibc comes out zig will do the right thing (I already coded it, just need to test it)
+
+1604269562
+ifreund
+#131 is certainly annoying but I can work around it by using C code with zig-wayland
+
+1604269583
+andrewrk
+ahh yes 131
+
+1604269613
+ifreund
+and right now my build breaks on musl cause of translate-c not liking bitfields, but I'm about to replace that with zig-wlroots anyways
+
+1604269664
+ifreund
+yeah I tried to implement a hacky workaround for #131 in stage1 but hit a brick wall
+
+1604269691
+ifreund
+I think it should wait for stage2, and would certainly be easier to implement if kept in mind early on
+
+1604272174
+g-w1
+what is the best opcode reference for developing/reading the self-hosted compiler?
+
+1604272439
+andrewrk
+g-w1, for x86?
+
+1604272519
+andrewrk
+I use
+
+1604274181
+Kena
+Sorry to bother you again alexnask[M] but when you said that "taking  the address of the literal, the data will live in a constant data segment in your executable so the resulting slice will have to be constant". But is the constant data segment the same than the array or is it another memory address?
+
+1604274228
+g-w1
+yeah, i mean for x86, thanks
+
+1604274829
+Kena
+I mean is the segment data redefined or does a pointer copy the data to stores the value at another memory location?
+
+1604275035
+andrewrk
+Kena, you have 3 choices for a mutable array: (1) variable on the stack (2) global variable (3) heap allocate it
+

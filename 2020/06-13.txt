@@ -1,0 +1,428 @@
+1592009457
+leeward
+So...I need to cast away a const (because I'm calling a C function, and it's poorly specified). Am I hosed?
+
+1592009620
+leeward
+Hmm, looks like @bitCast handled it.
+
+1592010151
+Xavi92
+leeward: yeah, many C libraries around do not handle const-correctness, unfortunately
+
+1592010162
+leeward
+Don't I know it.
+
+1592010223
+leeward
+It's disappointing, but at least I can wrap it up in something that looks like Zig code.
+
+1592010229
+Xavi92
+yeah
+
+1592010324
+leeward
+I find wrapping C libraries in Zig pretty fun. I can take the awkward error handling and turn it into something sensible, and take the awkward array passing and turn it into slices.
+
+1592013346
+leeward
+I want to return a `!struct{foo:u32}`, but my `return .{.foo = 7}` fails with an error because error unions don't support struct initialization syntax. Is there a way to do this with anonymous structs?
+
+1592020760
+pixelherodev
+Second LLVM bug with JITs that I've had.
+
+1592020762
+pixelherodev
+Ugh.
+
+1592020773
+pixelherodev
+Going to have to run an
+
+1592022276
+leeward
+There are worse things.
+
+1592022347
+pixelherodev
+I know
+
+1592022349
+pixelherodev
+Also
+
+1592022351
+pixelherodev
+Ha, workaround
+
+1592022372
+pixelherodev
+Now to actually focus on perf
+
+1592022376
+pixelherodev
+callgrind, away!
+
+1592022416
+leeward
+whee
+
+1592022427
+pixelherodev
+Improving generated codegen is, as expected, the single most important factor
+
+1592022433
+pixelherodev
+s/generated codegen/codegen
+
+1592022538
+pixelherodev
+Some low-hanging fruit though :)
+
+1592022859
+pixelherodev
+... oh. wow.
+
+1592022871
+pixelherodev
+cache checking is ~40% of CPU time
+
+1592023319
+leeward
+hooray for measuring
+
+1592023426
+pixelherodev
+yeah
+
+1592023431
+pixelherodev
+Going to try a different strategy
+
+1592023435
+pixelherodev
+Most-recently-used, maybe?
+
+1592023456
+pixelherodev
+hmm, size-limiting it to 8 or something like that might help too
+
+1592033883
+Tharro
+Is using return; in a for () || {} loop not supported?
+
+1592034245
+Tharro
+Never mind, something else goes terribly wrong.
+
+1592034577
+Tharro
+Got a condition if (!object.bool) { ... } else { ... } and it always seemed to execute the else {} branch regardless of the value of the bool. When I reverse the statement if (object.bool) {} else {} it seems to execute properly (zig 0.6.0 on linux x86_64).
+
+1592040946
+dch
+leeward: that sounds like a very useful blog post (walking through wrapping a c library)
+
+1592045695
+ifreund
+I feel like I've seen a proposal for removing implicit copying of structs but can't find the link
+
+1592045706
+ifreund
+anyone remember something like that?
+
+1592054843
+bsrd
+Is pointer arithmetic in imported c lib illegal?
+
+1592054915
+ifreund
+bsrd: should be allowed, you might need to @ptrCast() first though
+
+1592054999
+ifreund
+or just do like const my_ptr: ?[*]u32 = that_c_ptr; ([*c] pointers will coerce to zig pointers)
+
+1592055049
+bsrd
+ifreund: It's a zig pointer given to c lib that keeps complaining about this line
+
+1592055083
+ifreund
+hmm, could I see your zig code?
+
+1592055124
+bsrd
+The exact run fail:
+
+1592055245
+ifreund
+bsrd: could you try passing @ptrCast([*]u8, &buf) ?
+
+1592055276
+ifreund
+&buf will be a *[1024]u8 which is a pointer-to-one not a pointer-to-many
+
+1592055381
+bsrd
+Yeah, it failed
+
+1592055571
+ifreund
+huh, what OS are you targeting?
+
+1592055602
+bsrd
+Just running 'zig build run' in a x86-64.
+
+1592055887
+ifreund
+ok I'm not sure what's going wrong here, would you mind opening an issue?
+
+1592055922
+ifreund
+seems like a possible ABI compatibility bug
+
+1592055925
+FireFox317
+You are hitting an illegal instruction, which is what clang does when it detects undefined behavior in c.
+
+1592055931
+FireFox317
+That is probably what is happening here
+
+1592055945
+ifreund
+Is adding pointers UB though?
+
+1592055998
+FireFox317
+I have no idea, i'm not a c expert, I just know that we enable these illegal instructions in debug mode for building c code.
+
+1592056049
+bsrd
+Ran their test
+
+1592056092
+ifreund
+yeah I don't think there's any UB in this C code
+
+1592056150
+FireFox317
+try compiling it in release-fast, do you get the same error?
+
+1592056184
+FireFox317
+i thought that disables the checks, but i might be wrong there
+
+1592056211
+FireFox317
+or `zig -fno-sanitize-c`
+
+1592056587
+bsrd
+
+
+1592056687
+bsrd
+How do I set '-fno-sanitize-c' in a 'zig build run'?
+
+1592057286
+FireFox317
+Hmm, so it segfaults in release fast it looks like. in build.zig you can do b.disable_sanitize_c = true
+
+1592057306
+alexnask
+(its on the LibExeObjStep, not the builder)
+
+1592057323
+FireFox317
+whoeps, my bad
+
+1592057725
+KoljaKube
+How do I write slice literals?
+
+1592057865
+greenfork
+KoljaKube: slices are just pointers, there are no literals for slices. you can write array literal and take a slice of it
+
+1592057964
+KoljaKube
+Ah, ok
+
+1592058006
+KoljaKube
+When I think about it, since you can take slices of slices, slices can not own their memory
+
+1592058025
+bsrd
+FireFox317: That actually got me further ^^ Thanks a lot!
+
+1592058050
+KoljaKube
+That also explains why I can't slice array literals I guess
+
+1592058057
+dermetfan
+KoljaKube: the closest thing would probably be a slice of a comptime array ([_]u32{1, 2, 3})[1..]
+
+1592058079
+bsrd
+ifreund: FYI setting 'exe.disable_sanitize_c = true;' in build.zig did the trick.
+
+1592058106
+ifreund[m]
+weird, i wonder where the UB is hiding
+
+1592058171
+bsrd
+And somehow running their test with `zig cc` runs just fine....
+
+1592058180
+KoljaKube
+dermetfan: I'll keep that in mind, thanks
+
+1592058186
+bsrd
+With is using clang.
+
+1592058193
+bsrd
+*Which
+
+1592058208
+FireFox317
+Yeah it is defintely weird bsrd
+
+1592060489
+bsrd
+What should my zig type be when a c imported function required a [*c][*c]u8 and what should I cast it to? Right now I set it to `[*c][*c]` in zig, but it segfaults when it runs `*method = NULL;` in the c lib. I tried adding ? to the type, but now it can't compile with `./src/main.zig:37:54: error: expected type '[*c][*c]u8', found '?[*c][*c]u8'` and I can't seem to cast the optional away.
+
+1592061672
+FireFox317
+bsrd, So in zig a pointer cannot be a nullptr, it always point to one object. In c that is obviously not the case, and a pointer can point to one, many or none. So in zig we have a [*]T for a type that point to a unknown length of items or just *T for one item. Now to handle the case where the pointer can be null we wrap it in an optional.
+
+1592061714
+FireFox317
+So a char* would be a ?[*]u8 in zig
+
+1592062153
+bsrd
+Ty ^^ I had to add an extra ?[*]u8, i.e. use ?[*]u8?[*]u8 as type.
+
+1592066371
+ifreund
+note that zig also has sentinal terminated pointers, which may be more appropriate when working with c-style strings: [*:0]u8
+
+1592066900
+marler8997_
+anyone familair with invoking build.zig files from other build.zig files, is that a thing?
+
+1592067011
+alexnask
+You should be able to import another build file and call its build function
+
+1592067052
+marler8997_
+ok I'll play with that
+
+1592067069
+alexnask
+You can even create a separate builder and pass that one in
+
+1592067074
+alexnask
+If you want to for some reason
+
+1592067187
+marler8997_
+Hmmm, this may not be the right way to accomplish what I'm doing
+
+1592067209
+marler8997_
+build.zig is in another repo, which I'm assuming is outside my current repo, so it doesn't allow me to import because it's outside my package path
+
+1592067271
+alexnask
+Hm I dont think you can circumvent this actually, I was assuming the second build file lived in a subdirectory
+
+1592067327
+marler8997_
+Maybe you have a better suggestion for how I can use a dependency from another repo?
+
+1592067365
+marler8997_
+In the past, I just add the dependencies "index file" (the main zig file) as a package
+
+1592067387
+marler8997_
+but now I'd like to take the settings from it's build.zig file, so I don't have to duplicate them
+
+1592067428
+alexnask
+Right. I think the dependency should provide a way to set settings if you have to do more than add the main zig file
+
+1592067432
+alexnask
+I realize this doesnt help :P
+
+1592067485
+alexnask
+For example bearssl-zig provides a linkBearSSL function that takes your exe step and target and sets up the C file compilation
+
+1592067488
+marler8997_
+that's alright, I think in the end, the zig build system would probably download the dependency into the zig-cache
+
+1592067538
+marler8997_
+for now I'll just make it work without referencing the dependencie's build.zig file
+
+1592069942
+greenfork
+can I create a hashmap at comptime? I want it to be created on stack, which allocator should I use?
+
+1592070029
+ifreund
+greenfork: see this PR
+
+1592070086
+ifreund
+and this one if you want just strings
+
+1592070170
+greenfork
+ifreund: thanks!
+
+1592070192
+marler8997_
+greenfork: out of curiosity are the keys strings or some other type?
+
+1592070214
+greenfork
+marler8997_: they are strings
+
+1592070327
+ifreund
+no problem!
+
+1592073626
+leeward
+dch: Made.
+
+1592073637
+leeward
+I might should put that on reddit or something.
+
+1592085841
+shcv
+is there a base16 encoder?
+
+1592085845
+shcv
+or just base64?
+

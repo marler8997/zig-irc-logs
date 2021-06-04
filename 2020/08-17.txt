@@ -1,0 +1,1692 @@
+1597624181
+eleanor-nb
+I'm trying to cast a union whose variants are all 32-bit packed structs to a u32, but the tag is part of it in safe builds and it ends up being size 5. Anyone know how to extract just the payload?
+
+1597624221
+Snektron
+You could make it extern
+
+1597624260
+Snektron
+That removes the tag even in safe builds, and gives it a defined layout
+
+1597624291
+pixelherodev
+Alternately, you can get the specific type and cast that
+
+1597624336
+pixelherodev
+e.g. if it's a union(enum) of a and b, where a and b are both 32-bit packed structs, you could do something like `switch (val) { .a => |v| @bitCast(u32, v)...}`
+
+1597624488
+eleanor-nb
+Extern did not work. Will try switch.
+
+1597625380
+Snektron
+Broken packed structs were the cause
+
+1597626329
+eleanor-nb
+@intCast(u32, v.opcode) + (@intCast(u32, v.imm11) << 7) + (@intCast(u32, v.imm1_4) << 8) + (@intCast(u32, v.funct3) << 12) + (@intCast(u32, v.rs1) << 15) + (@intCast(u32, v.rs2) << 20) + (@intCast(u32, v.imm5_10) << 25) +     (@intCast(u32, v.imm12) << 31)
+
+1597626355
+eleanor-nb
+We seriously need to fix those.
+
+1597626379
+pixelherodev
+?
+
+1597626386
+pixelherodev
+ahhh
+
+1597626405
+pixelherodev
+the "fix" here is to get stage2 finished :P
+
+1597627203
+ky0ko_
+is there an easy way that i can grab things like the target arch, host os, and build date as strings in zig
+
+1597636025
+daurnimator
+ky0ko: build date is evil
+
+1597639517
+andrewrk
+holy pull requests, batman!
+
+1597639529
+andrewrk
+ya'll have been busy today
+
+1597641597
+andrewrk
+pixelherodev, yes that's exactly right
+
+1597641629
+andrewrk
+daurnimator, my personal opinion is that I'm fine with `inline` when the person has done performance testing
+
+1597641654
+andrewrk
+which it appears is the case for frank's pr
+
+1597641695
+daurnimator
+andrewrk: it didn't make a difference in release-fast; but did in release-safe
+
+1597641711
+daurnimator
+he wants to leave it in there so that release-safe is fast
+
+1597641714
+daurnimator
+is that.... reasonable?
+
+1597641715
+andrewrk
+that's good enough for me
+
+1597641811
+andrewrk
+it's possible for that to actually sabotage perf in a theoretical other implementation of the zig language, but it's also possible that it would be reasonable in all cases
+
+1597641908
+andrewrk
+it's a bit of a smell because it actually limits what the compiler is allowed to do, possibly sabotaging a really sophisticated optimizing compiler. but that's all just theoretical vaporware, and it's pretty easy to adjust the code in the future if necessary. so personally, my policy is no inline, unless you need it semantically to elide call frames, or if you've tested perf and it measurably helps
+
+1597641932
+andrewrk
+on the other hand there could be a possible argument about release-small getting worse
+
+1597641998
+andrewrk
+I think in this specific case we should let jedist1 have his preference
+
+1597642078
+andrewrk
+alright I for sure need to do a pull request merging day tomorrow
+
+1597663528
+KoljaKube
+Is there a way to generate a function call? I have all information about the function at comptime, except the argument values.
+
+1597663550
+ifreund
+@call()?
+
+1597663593
+KoljaKube
+I can't seem to construct the tuple correctly
+
+1597663668
+ifreund
+can't really help there without some context
+
+1597663710
+KoljaKube
+Heh, sorry, give me a second
+
+1597663881
+KoljaKube
+This is a mix of various trials, callProxy2 is probably the most relevant part:
+
+1597663948
+daurnimator
+I don't think `args = args ++ ` works unless it was fixed?
+
+1597663971
+KoljaKube
+I was surprised that didn't give me a compile error
+
+1597664002
+KoljaKube
+Currently the code reaches the unreachable in line 35
+
+1597664012
+KoljaKube
+printing "AT = []const u8" before that
+
+1597664037
+daurnimator
+did you mean to switch on AT rather than T?
+
+1597664066
+KoljaKube
+Yes, yes I did
+
+1597664097
+daurnimator
+if args = args ++ works then
+
+1597664100
+KoljaKube
+OK,
+
+1597664145
+KoljaKube
+Hehe, seems like we are doing something similar ;-)
+
+1597664154
+daurnimator
+that code isn't new ;)
+
+1597664163
+ifreund
+args = args ++ x; can't work, the type of args would change
+
+1597664195
+daurnimator
+ifreund: what if args was `anytype`?
+
+1597664199
+KoljaKube
+Yeah, that's what I thought. I just tried it to see what the error would be
+
+1597664229
+daurnimator
+anyway, the way I solved it (as I linked above) is with comptime recursion to build args
+
+1597664247
+ifreund
+daurnimator: not sure what the intended semantics are there.
+
+1597664271
+ifreund
+maybe that would be ok, but it feel strange to me
+
+1597664279
+daurnimator
+
+
+1597664478
+ifreund
+hmm, I can't init an anytype to an empty tuple
+
+1597664618
+daurnimator
+ifreund: even with a value in there I get error: array access of non-array type '(anytype)'
+
+1597664708
+ifreund
+daurnimator: got it working
+
+1597664775
+ifreund
+I kinda hate it though :D
+
+1597664799
+daurnimator
+ifreund: cannot store runtime value in compile time variable
+
+1597664809
+daurnimator
+^ if you use something non-comptime known
+
+1597664852
+ifreund
+hmm, yeah that would make sense
+
+1597664935
+daurnimator
+ifreund:
+
+1597664970
+ifreund
+oh, nice idea
+
+1597665187
+daurnimator
+
+
+1597665230
+ifreund
+I think that does it no?
+
+1597665251
+daurnimator
+yep; that works
+
+1597665259
+daurnimator
+hacks on hacks :P
+
+1597665279
+ifreund
+hey why you givind ikskuh the credit in the issue? :P
+
+1597665286
+daurnimator
+oh whoops
+
+1597665289
+daurnimator
+you both start with i
+
+1597665301
+ikskuh
+:D
+
+1597665387
+daurnimator
+I wonder if I should actually commit that to autolua
+
+1597665445
+ifreund
+I guess it's cleaner than the recursive way
+
+1597665468
+ifreund
+I wonder how andrewrk will feel about it
+
+1597665504
+daurnimator
+with any luck he'll make it so all the 'magic' there gets made redundant
+
+1597665519
+ifreund
+also, it makes a decent argument for allowing anytype variables outside of structs
+
+1597665520
+daurnimator
+e.g. why can't you put the type in directly as an initialiser?
+
+1597665531
+daurnimator
+why do you need a struct member of anytype instead of an actual variable of type anytype?
+
+1597665537
+daurnimator
+^ yeah exactly
+
+1597665555
+ifreund
+maybe we can even get the ++= proposal
+
+1597665583
+daurnimator
+I wonder if its too much sending a PR to std.meta to add that AnyType? :P
+
+1597665686
+ifreund
+I think if it's not considered an antipattern it would indeed belong in std
+
+1597665702
+ifreund
+It certainly has a real use case for language bindings
+
+1597666226
+KoljaKube
+I can't figure out how to fill that ArgType tuple :-/
+
+1597666648
+daurnimator
+KoljaKube: what do you mean?
+
+1597666842
+KoljaKube
+Assigning the tuple fields in a loop, using their respective types
+
+1597667491
+daurnimator
+hmm yeah you're right
+
+1597667498
+daurnimator
+I keep getting "cannot assign to constant"
+
+1597667652
+KoljaKube
+Me too
+
+1597667693
+KoljaKube
+autolua does not have license. Is it OK to "borrow" wrap?
+
+1597668063
+ifreund
+hmm, I get the same error, but I don't see why
+
+1597668604
+daurnimator
+KoljaKube: sure
+
+1597668663
+KoljaKube
+Thanks!
+
+1597669396
+ifreund
+rip, casting around the const segfaults
+
+1597669476
+ifreund
+with --release-fast it doesn't crash but instead prints garbage
+
+1597671233
+pixelherodev
+In C, if I have a struct, the address of the first member is defined as the address of the struct, so I can ptrCast between them at will - but Zig structs don't have defined layouts, right?
+
+1597671383
+pixelherodev
+andrewrk: do we have any concrete plans for an abstraction over the various allocations in link.zig?
+
+1597671396
+pixelherodev
+If not, I'm about to make the situation
+
+1597672275
+daurnimator
+pixelherodev: your first statement there is correct
+
+1597672307
+daurnimator
+pixelherodev: *however*, currently zig structs do layout in order; doing it in optimized order/adding things for debugging is an open TODO
+
+1597672335
+daurnimator
+ifreund's error message suggests to me that tuples with comptime known members get 0 runtime size
+
+1597672381
+fengb
+They do. It takes quite a bit of effort to build a dynamic tuple type
+
+1597672741
+fengb
+
+
+1597672775
+fengb
+Gotta convince the compiler the value is not comptime known so this escapes with a "stack variable"
+
+1597672942
+pixelherodev
+daurnimator: that's not defined though.
+
+1597672967
+pixelherodev
+It's behavior that exists presently in the
+
+1597673002
+daurnimator
+well yeah
+
+1597673012
+daurnimator
+that's what I said
+
+1597673039
+pixelherodev
+Point being that we should act as if that's not present for now
+
+1597673050
+pixelherodev
+
+
+1597673065
+daurnimator
+it was used as a (failed) hack around a compiler bug
+
+1597673070
+fengb
+Let’s randomize the layout :P
+
+1597673080
+daurnimator
+use one bug to fight another
+
+1597673090
+fengb
+Although that might be tricky with incremental compilation
+
+1597673157
+daurnimator
+fengb: use the buildid as a seed
+
+1597673428
+pixelherodev
+I think it's worth defining the first member as at the same address as the struct itself, and optimizing everything
+
+1597673444
+pixelherodev
+There's a number of useful tricks that allows that make it easier to write cleaner code
+
+1597674145
+pixelherodev
+A good example is with multiple struct types with a shared interface (e.g. link.File in stage2)
+
+1597674199
+pixelherodev
+If we had such a definition, its `destroy` function could become `base.deinit();base.allocator.destroy(base):` instead of a switch requiring three lines for each possible link file type
+
+1597674216
+pixelherodev
+Though the destruction might be trickier, since the size would be different...
+
+1597676245
+daurnimator
+ooo
+
+1597676359
+pixelherodev
+Nice
+
+1597681410
+KoljaKube
+I hate compiler crashes :-/
+
+1597684103
+pixelherodev
+ifreund, andrewrk: ping
+
+1597684700
+ifreund
+pong
+
+1597684790
+pixelherodev
+For wasm codegen, did you handle debug info?
+
+1597684797
+pixelherodev
+s/codegen/updateDecl
+
+1597684929
+pixelherodev
+Hmm, doesn't look like it (found the PR :)
+
+1597684967
+pixelherodev
+Ah, I see what you did
+
+1597684970
+pixelherodev
+Drats, doesn't help me
+
+1597685486
+ifreund
+sorry to disappoint :P
+
+1597685555
+pixelherodev
+no worries :P
+
+1597685563
+pixelherodev
+I'm just going to end up generating debug info and then discarding it, apparently
+
+1597690295
+pixelherodev
+andrewrk, ifreund, alexnask[m]: proposal, after talking with ikskuh elsewhere re: spu-ii backend. Instead of adding a HEX backend, a PE backend, a MACH-O, etc; we refactor link.File.Elf into an "abstract binary" output - that is, fully separate codegen from linking. We produce raw code + debug info into an in-memory structure, and then have a separate structure containing either ELF, PE, HEX, etc.
+
+1597690297
+pixelherodev
+This should still be doable incrementally with miniscule or no overhead, and simplifies the logic drastically. I pinged you all because IIRC you're all working on relevant components which would be affected by such work (DWARF, PE, etc)
+
+1597690412
+pixelherodev
+It means a lot of code deduplication as well, since we don't need e.g. TextBlock logic per link file type
+
+1597690425
+pixelherodev
+Thoughts?
+
+1597691056
+ifreund[m]
+probably won’t work for wasm, from what I’ve seen of elf
+
+1597691085
+ifreund[m]
+could be a very good move for the rest though
+
+1597691394
+ikskuh
+ifreund[m], can you explain the differences required for wasm (and thus: other target types as well)
+
+1597691413
+ikskuh
+there is also JVM and .NET formats to consider
+
+1597691431
+ikskuh
+which require even more metadata than Wasm
+
+1597691709
+ifreund[m]
+well, for wasm the codegen is very closely tied to how things are laid out in the binary. Even with the indirection used for function calls many other things rely on indexes into arrays of items in the binary
+
+1597691738
+ifreund[m]
+I don’t seem a way to make a good abstraction over that way of doing things and elf
+
+1597691884
+pixelherodev
+ifreund[m]: how's that different from the GOT?
+
+1597691947
+ifreund[m]
+well, there’s no way to do indirection for globals in wasm for example
+
+1597692011
+pixelherodev
+Ahh, so you
+
+1597692088
+ifreund[m]
+not for everything
+
+1597692103
+ifreund[m]
+for functions there’s a way to do it
+
+1597692151
+ifreund[m]
+i have a vague idea of how we might be able to just not use globals, but not too sure about that yet
+
+1597693225
+pixelherodev
+Even if it's not good for WASM, it can still simplify ihex, PE, ELF, etc
+
+1597693400
+pixelherodev
+andrewrk, alexnask[m]: would love to hear your thoughts when you have a chance
+
+1597693740
+ifreund
+pixelherodev: so to make sure I'm clear on the proposal, the idea is to codegen into a buffer in memory and the rewrite the file on every update from this memory, saving the in-memory generated code across compilations?
+
+1597693768
+ifreund
+Thinking about this a bit more and I think it could work for wasm, we just have to be a bit smarter
+
+1597693816
+ifreund
+could actually simplify things a good deal and would certainly lead to smaller generated file sizes
+
+1597693899
+ifreund
+the idea would be that we use some custom escape sequence in the wasm codegen which we could check for when writing from the in-memory buffer to the file and replace with the proper index for that round of generation
+
+1597694032
+pixelherodev
+ifreund: for wasm, it could also separate wasm the
+
+1597694042
+pixelherodev
+You could more tightly integrate wasm codegen with the normal pipeline
+
+1597694055
+pixelherodev
+It wouldn't be rewriting the file fully on every update
+
+1597694065
+pixelherodev
+For ELF, it would basically maintain all the info we have currently
+
+1597694073
+pixelherodev
+So it
+
+1597694074
+andrewrk
+pixelherodev, this is too complicated for IRC, if you want this idea to happen, I suggest to open a proposal on the issue tracker. the better you explain things, the better the chance of it happening
+
+1597694096
+pixelherodev
+andrewrk: makes sense, I'll do so at some point today, a bit busy with Coyote rn
+
+1597694101
+andrewrk
+fair enough
+
+1597694109
+pixelherodev
+Give me an hour or two :)
+
+1597694186
+ifreund
+pixelherodev: I'm not sure you can separate wasm the architecture from wasm the format, they are very tightly coupled
+
+1597694224
+pixelherodev
+ifreund: the more I hear about WASM, the more I wish they'd just used something like RISC-V with a custom ABI
+
+1597694230
+ifreund
+I don't think there any other format for the wasm "architecture" and you certianly cant put any random byte code in the wasm format
+
+1597694253
+pixelherodev
+Wasm byte code can still exist in a ArrayList(u8) separate from the file though
+
+1597694268
+pixelherodev
+The only thing special about wasm is the fact that people actually agreed to use it
+
+1597694274
+ifreund
+true
+
+1597694281
+pixelherodev
+Any ISA would've been good for that, if people would just agree on it
+
+1597694293
+companion_cube
+wasm doesn't have the limitations a real ISA does, does it?
+
+1597694297
+companion_cube
+like number of registers
+
+1597694308
+ifreund
+nope you get infinite
+
+1597694321
+pixelherodev
+You could also do that with e.g. LLVM IR
+
+1597694325
+companion_cube
+so it's higher level
+
+1597694326
+ifreund
+and its also inherently sandboxed
+
+1597694326
+pixelherodev
+Or any other SSA form
+
+1597694333
+companion_cube
+pixelherodev: LLVM IR is what NaCl was
+
+1597694340
+companion_cube
+and it's bad because it's unstable
+
+1597694342
+pixelherodev
+I didn't mean
+
+1597694349
+pixelherodev
+Of course LLVM IR is a terrible choice for it lol
+
+1597694361
+pixelherodev
+There's a reason I've largely ditched my LLVM backend
+
+1597694434
+pixelherodev
+TBH, Wasm amuses me greatly
+
+1597694441
+pixelherodev
+It's a technical solution to a social problem :P
+
+1597694644
+companion_cube
+it's great that there is such a solution
+
+1597695524
+ifreund
+pixelherodev: your proposal is also the only way I see to reasonably apply multithreading to wasm
+
+1597695701
+fengb
+The web was the only place to get a bunch of devs to agree on any standard >_>
+
+1597695765
+fengb
+And by a bunch, I really just mean Emscripten + Google + Mozilla. I'm not sure how they strongarmed Safari into it
+
+1597695857
+pixelherodev
+fengb: POSIX. SystemV. RISC-V. I can keep going :P
+
+1597695861
+Sahnvour
+andrewrk: have you had a chance to look at #5999 ?
+
+1597695873
+fengb
+None of those are widespread binary standards
+
+1597695939
+andrewrk
+Sahnvour, breifly - planning to do a deeper dive today. I agree with your conclusion that there is use for both implementations
+
+1597695944
+fengb
+I'd love to see RISCV develop further, but adoption hasn't really taken off yet
+
+1597696085
+Sahnvour
+okay
+
+1597696155
+companion_cube
+oh god, apparently in C you can use `-1` as a literal for an unsigned integer?
+
+1597696163
+companion_cube
+to express "all bits to one"?!
+
+1597696179
+ifreund
+companion_cube: yeah that's a common pattern
+
+1597696190
+companion_cube
+that's… horrible
+
+1597696195
+Sahnvour
+life is too short to type all those FF
+
+1597696201
+companion_cube
+(and people say C is simple, lol)
+
+1597696205
+ifreund
+it is
+
+1597696229
+ifreund
+though zig is simpler
+
+1597696279
+companion_cube
+I don't call these kinds of smartassery "simple" :p
+
+1597696314
+fengb
+Simple for the bits. Your semantics be damned
+
+1597696334
+ifreund
+It's easier than counting out all the F's
+
+1597696353
+ifreund
+the semantics are simple: overflow is well defined for unsigned integers
+
+1597696368
+ifreund
+well, underflow in this case but you get the point
+
+1597696424
+ifreund
+I guess one could argue that MAX_INT or whatever should be used instead
+
+1597696428
+companion_cube
+in rust you write `!0` apparently
+
+1597696452
+ifreund
+not as nice as std.math.maxInt(u32) though
+
+1597696453
+companion_cube
+yeah, max int would be more logical
+
+1597696463
+companion_cube
+I mean, a
+
+1597696500
+jayschwa
+~0 seems clearer in my opinion
+
+1597696501
+fengb
+!0 is max?
+
+1597696513
+companion_cube
+jayschwa: yeah anyway, bitwise not
+
+1597696514
+fengb
+Ah I like ~0
+
+1597696561
+ifreund
+~0 is better indeed
+
+1597696580
+fengb
+Although... are literals defined as ints? short max isn't the same as ~int
+
+1597696637
+pixelherodev
+companion_cube: `0 - 1` is valid for unsigneds
+
+1597696639
+pixelherodev
+(in C)
+
+1597696701
+andrewrk
+~0 works in zig but you have to give an integer type
+
+1597696701
+ikskuh
+writing "~0" in c is equivalent to "-1"
+
+1597696708
+andrewrk
+~@as(T, 0)
+
+1597696726
+andrewrk
+i wish @as was syntactically cleaner
+
+1597696746
+ikskuh
+andrewrk: I think the function call syntax was cleaner
+
+1597696759
+ikskuh
+~T(0)
+
+1597696770
+ikskuh
+but i understand why it was removed
+
+1597696782
+companion_cube
+pixelherodev: 0 - 1 is not the same as `-1`
+
+1597696793
+companion_cube
+(or so I hope)
+
+1597696906
+ikskuh
+companion_cube: why should that be different?
+
+1597696921
+companion_cube
+one is a literal, a raw value; the other one is an expression
+
+1597696925
+companion_cube
+(which underflows)
+
+1597696935
+companion_cube
+so I'd say `0-1` should be allowed
+
+1597696951
+companion_cube
+but `-1` in an unsigned type is like allowing `42` in the bool type
+
+1597696989
+ikskuh
+well, for C it's the same outcome anyways
+
+1597696992
+ikskuh
+for zig as well
+
+1597697006
+ikskuh
+"0-1" is evaluated to "comptime_int -1"
+
+1597697010
+KoljaKube
+Why was the function call syntax removed? Language simplicity?
+
+1597697013
+ikskuh
+so it's the same as writing "-1"
+
+1597697033
+ikskuh
+KoljaKube: yeah, it removed the ambiguity of "func(foo)" and "cast(foo)"
+
+1597697044
+ikskuh
+soo "foo(bar)" is
+
+1597697059
+KoljaKube
+Mhkay
+
+1597697096
+KoljaKube
+It
+
+1597697102
+ikskuh
+yeah
+
+1597697116
+ikskuh
+i also like `as` as a binary operator:
+
+1597697118
+ikskuh
+"10 as i32"
+
+1597697139
+ifreund
+the you need parens though
+
+1597697163
+ifreund
+(10 as i32) + 5 vs @as(i32, 10) + 5
+
+1597697178
+ikskuh
+same number of parens :D
+
+1597697184
+ifreund
+unless you make it super high precedence, but then it lookes weird
+
+1597697197
+ikskuh
+nah i think it should bind quite tight
+
+1597697213
+ifreund
+so 5 + 10 as i32
+
+1597697232
+ikskuh
+hm
+
+1597697253
+ikskuh
+there#s the ambiguity proposal with the operator precedence parens enforcement thingy
+
+1597697270
+ikskuh
+which would enforce parens anyways
+
+1597697286
+pixelherodev
+ikskuh: it's always a wat?
+
+1597697288
+pixelherodev
+;)
+
+1597697289
+ikskuh
+so you could do "(5 + 10) as i32" or "5 + (10 as i32)"
+
+1597697292
+pixelherodev
+"function cast" ;)
+
+1597697324
+ikskuh
+oh
+
+1597697458
+KoljaKube
+TypeInfo.ErrorUnion is the type of !foo, right?
+
+1597697474
+pixelherodev
+Not quite
+
+1597697479
+pixelherodev
+!foo
+
+1597697502
+pixelherodev
+TypeInfo.ErrorUnion is the type of @typeInfo(!foo) IIRC
+
+1597697520
+pixelherodev
+Or possible @typeInfo(!foo).ErrorUnion ?
+
+1597697520
+KoljaKube
+OK, yeah, I misspoke
+
+1597698295
+pixelherodev
+Time for the Great Writeup.
+
+1597698298
+pixelherodev
+This will be fun
+
+1597699580
+pixelherodev
+andrewrk: filed as #6079 :)
+
+1597700610
+ifreund
+you know, it would be kinda useful to have slices with u32 len instead of usize for wasm stuff
+
+1597700629
+ifreund
+I don't like having all the @intCasts
+
+1597701043
+andrewrk
+yeah I know
+
+1597701130
+ifreund
+good news is that I fixed that problem I commented about
+
+1597701157
+ifreund
+just need to figure out how to fit my commit message summary in 50 chars then i will push it :D
+
+1597701463
+fengb
+"did stuff"
+
+1597701569
+ifreund
+I guess the next thing to do is to figure out how to write wasm test cases
+
+1597701595
+ifreund
+incremental compilation works for my trivial code
+
+1597701601
+andrewrk
+nice!
+
+1597701610
+ikskuh
+\o/
+
+1597701618
+pixelherodev
+Nicely done!
+
+1597701674
+pixelherodev
+I got progress on ihex backend today, but I need to wait for the results of the proposal before I go further
+
+1597701692
+pixelherodev
+What I might do instead is work on an ELF loader so I can do SPU II work w/o an ihex backend
+
+1597701710
+pixelherodev
+Doesn't even need an
+
+1597701744
+ifreund
+how bad would it be to keep all the code generated in memory and rewrite the output file from the in memory code on each update?
+
+1597701962
+andrewrk
+ifreund, main idea there is to reduce memory usage
+
+1597702016
+companion_cube
+ifreund: sounds like a job for memory-map :p
+
+1597702036
+andrewrk
+it's very difficult to handle errors properly with memory mapping files
+
+1597702049
+ifreund
+yeah that's the downside. This would make things significantly simpler for wasm and is the only reasonable thing I've currently thought up to make multithreading possible
+
+1597702053
+andrewrk
+ifreund, that being said, even zig with llvm compiled in, stripped, is 122MiB. so maybe it's worth considering
+
+1597702080
+andrewrk
+I would be on board with exploring this approach for wasm
+
+1597702096
+ifreund
+the idea would be to do codegen in parallel inserting some custom escape sequence for function ids
+
+1597702128
+ifreund
+then write all the code to the file replacing the escape sequences with the right ids
+
+1597702189
+andrewrk
+makes sense
+
+1597702190
+ifreund
+goes for all the stuff wasm uses indexes for really, not just functions
+
+1597702233
+andrewrk
+so flush would be doing a lot of work, but mostly copying already-computed bytes
+
+1597702237
+andrewrk
+right?
+
+1597702246
+ifreund
+yeah that's right
+
+1597702253
+andrewrk
+yeah that's perfectly reasonable
+
+1597702261
+ifreund
+we'd also generate much smaller binaries
+
+1597702278
+andrewrk
+if that's the case it might actually be faster compiler perf
+
+1597702302
+andrewrk
+it's planned anyway to have a way to serialize the in-memory state so that you don't have to keep the compiler alive to do incremental compilation. so this strategy I think is in line with the design
+
+1597702321
+ifreund
+yeah, there'd also be no copying around data within the output file
+
+1597702361
+andrewrk
+elf is unusually flexible; before diving into it I was expecting to have to do a strategy like you are describing, having the incrementally updated thing be a bespoke file format that zig uses
+
+1597702417
+andrewrk
+the bespoke file format being the thing that zig serializes its in-memory data between compilations
+
+1597702429
+ifreund
+yeah makes sense
+
+1597702499
+ifreund
+we could also potentially write this data to disk right away and then copy between files in low-memory situations
+
+1597702816
+andrewrk
+yep I think it's a reasonable design path to go down
+
+1597702868
+Snektron
+Whats an allocFn's len_align supposed to be when @sizeOf(T) > 1<<29?
+
+1597702879
+Snektron
+What was the reasoning for u29 anyway?
+
+1597702968
+andrewrk
+
+
+1597702968
+ifreund
+alright so I guess I'll see this initial wasm PR through to the end (just need test cases) and then I'll get to work on the redesign :D
+
+1597703009
+andrewrk
+Snektron, len_align should almost always be 0
+
+1597703075
+andrewrk
+ifreund, if you do `./zig build test-stage2 -Denable-wasmtime` then it should already be hooked up to run them
+
+1597703081
+ifreund
+oh lol, andrewrk's fancy new allocator just reminded me that I forgot to deinit() my new ArrayList
+
+1597703096
+andrewrk
+get rekt
+
+1597703107
+fengb
+I need to update zee_alloc yet again :(
+
+1597703117
+fengb
+Bit rot is real
+
+1597703120
+ifreund
+andrewrk: sweet, the challenge will just be reading and understanding the test harness then
+
+1597703150
+andrewrk
+ifreund, you might be able to just add a case to test/stage2/compare_output.zig and not really worry about the harness
+
+1597703165
+Snektron
+andrewrk: it seems like the len_align is calculated regardless
+
+1597703171
+Snektron
+For large allocations that results in an overflow
+
+1597703185
+Snektron
+I'd fix it, but i don't know the exact intention
+
+1597703191
+ifreund
+andrewrk: that looks promising, do you know if I can pass args to wasmtime?
+
+1597703206
+ifreund
+right now I'm testing with wasmtime --invoke main
+
+1597703305
+andrewrk
+ifreund, rebase to after 96a27557e2ef53b8d1d3132f02c83b716c966277 which I just pushed
+
+1597703335
+ifreund
+will do
+
+1597703354
+andrewrk
+I believe that wasmtime will invoke _start by default
+
+1597703359
+andrewrk
+can you just name your function _start?
+
+1597703459
+ifreund
+oh I think you're right, will see if it also prints the return value of the function once I resolve conflicts with the macho stuff which touched adjacent lines
+
+1597703893
+andrewrk
+Snektron, hmm that's an important bug find, thanks for reporting. have you looked at the doc comments on mem.Allocator? they explain the purpose of len_align
+
+1597703992
+Snektron
+yes, but what i mean is what len_align is supposed to be for those large allocations
+
+1597704008
+Snektron
+If its fixed to always be 0, a part of the interface is lost
+
+1597704050
+pixelherodev
+andrewrk: I have no issue with waiting for you to do it :)
+
+1597704126
+pixelherodev
+It does mean that ihex is on hold
+
+1597704127
+andrewrk
+Snektron, if it's a large allocation of u8 then it would be len_align=1 so no problem there
+
+1597704135
+pixelherodev
+So I
+
+1597704140
+pixelherodev
+a good way to do a *
+
+1597704156
+Snektron
+A right, i was trying to allocate a large buffer with static size
+
+1597704156
+andrewrk
+the problematic situation we're talking about would be a struct whose abi size was greater than 1 << 29 which is pretty wild
+
+1597704159
+ifreund
+I was gonna say, that might be hard to find :D
+
+1597704167
+Snektron
+[1024][1024][1024]u8
+
+1597704202
+andrewrk
+in this case the existence of len_align is pure overhead
+
+1597704218
+andrewrk
+the only problem it is supposed to solve is allowing allocators to return more bytes than requested
+
+1597704267
+andrewrk
+but the problem is if you request an array of 10 Foos you don't want the allocator to give you 10.5 Foos back
+
+1597704304
+pixelherodev
+I mean, I'd be impressed if it did. Especially if a Foo was a u1 :P
+
+1597704307
+Snektron
+Why not? can't the extra memory be used for something else
+
+1597704328
+pixelherodev
+no
+
+1597704333
+pixelherodev
+Not really
+
+1597704337
+pixelherodev
+[10.5]u8
+
+1597704339
+pixelherodev
+??
+
+1597704345
+pixelherodev
+What are you going to use the rest of the memory for, a u4?
+
+1597704359
+Snektron
+Not in that case obviously
+
+1597704394
+pixelherodev
+you mean e.g. [10.5]u16 storing an extra u8?
+
+1597704396
+Snektron
+Hm, i suppose i'm mixing up between the user interface of an allocator and its implementation
+
+1597704399
+pixelherodev
+There's no real reason to do that though
+
+1597704412
+pixelherodev
+The cost of handling that in code would exceed any gains
+
+1597704438
+Snektron
+No, what i was thinking of was allocator A requesting memory from allocator B, where B returns extra memory which in turn can be used by A
+
+1597704444
+pixelherodev
+ahh
+
+1597704447
+Snektron
+but in that case you'd request an u8 anyway i suppose
+
+1597704453
+pixelherodev
+Huh
+
+1597704461
+pixelherodev
+That's a pretty good reason for allocators to always request u8s :P
+
+1597704463
+Snektron
+slice of u8*
+
+1597704718
+andrewrk
+len_align is irrelevant to u8s
+
+1597704725
+andrewrk
+it matters for structs which have >1 abi size
+
+1597704766
+andrewrk
+I think I should do some perf testing with ArrayList and GeneralPurposeAllocator and if removal of len_align doesn't really impact anything then it should be removed
+
+1597704805
+andrewrk
+it would be a shame to overengineer allocators for nothing
+
+1597705304
+Snektron
+Its an interesting point on how to handle stuff like that
+
+1597705329
+Snektron
+I assume the main effect you want to create is returning an array close to page_size when allocating an ArrayList from a PageAllocator
+
+1597705339
+andrewrk
+yeah that was one of the motivating use cases
+
+1597705362
+Snektron
+I've thought about that before, the simplest solution i could think of involved adding a simple '
+
+1597705370
+Snektron
+'preferred size' field to the allocator
+
+1597705382
+Snektron
+But i imagine that it can benefit from having that be decided dynamically
+
+1597705382
+pixelherodev
+I'm thinking for Thor 0.2 (rewriting it now!) I should load raw RISC-V and remove the builders entirely, and take a page from stage2's book and generate machine code directly instead of overengineering and using a builder + assembler again...
+
+1597705405
+Snektron
+One situation i can imagine is having a node-based allocator return the extra space if theres some extra space left
+
+1597705421
+Snektron
+but the problem becomes how to decide to return that vs keep it and manually performing the extra allocation
+
+1597705438
+Snektron
+i mean saving that memory for other allocation calls
+
+1597705458
+pixelherodev
+allow_extra: bool
+
+1597705460
+pixelherodev
+?
+
+1597705476
+pixelherodev
+Basically, the caller tells the allocator whether the caller has a use for any extra memory
+
+1597705537
+Snektron
+Yes, but then you run into the issue of returning [10.5]Foo
+
+1597705550
+Snektron
+So i suppose thats what len_align is for now
+
+1597705576
+Snektron
+(with len_align = 0 for allow_extra = false)
+
+1597705622
+pixelherodev
+andrewrk: idea for codegen: all the various gen* functions should call genAsm with comptime-known arguments instead of generating raw bytes. This means genSetReg would turn into genAsm("mov", .{blah}) for instance
+
+1597705637
+pixelherodev
+This makes the source much more readable and removes the need for a lot of the comments that are currently in place
+
+1597705653
+pixelherodev
+Or, at the least, consolidates them all in one place
+
+1597705661
+pixelherodev
+This one I'm happy to tackle if you think it's a good idea
+
+1597705675
+andrewrk
+I'd like to avoid comptime string manipulation here
+
+1597705750
+pixelherodev
+It wouldn't really be manipulation, it'd be exact comparison (e.g. all forms of mov would have
+
+1597705762
+Snektron
+Wouldn't that just result in a giant switch on the name in genAsm?
+
+1597705767
+pixelherodev
+basically, yeah
+
+1597705769
+pixelherodev
+That's the idea
+
+1597705779
+Snektron
+Sounds like overengineering to me
+
+1597705790
+pixelherodev
+Not quite - this is purely for readability
+
+1597705801
+pixelherodev
+to avoid having, say, `0x49, 0x83, 0x19`
+
+1597705812
+pixelherodev
+That'd become `genAsm("blah")`
+
+1597705826
+pixelherodev
+I don't really care how we achieve it, I just think it'd be useful to make it more readable
+
+1597705833
+ifreund
+I mean, comments can go a long way
+
+1597705849
+pixelherodev
+Yes, but they're duplicated
+
+1597705853
+pixelherodev
+e.g. x64 REX comments
+
+1597705853
+ifreund
+or just a namespace filled with constants
+
+1597705891
+pixelherodev
+We do stuff like `SOME_CONSTANT | (@as(u8, reg.id()) << 3) | @as(u8, r2.id()`
+
+1597705899
+pixelherodev
+)
+
+1597706042
+Snektron
+I'd extract into functions which do exactly that
+
+1597706064
+Snektron
+and just return a [N]u8
+
+1597706579
+andrewrk
+remember every problem you solve is opportunity cost for other problems
+
+1597706611
+andrewrk
+and there are some important problems left to solve in stage2
+
+1597706645
+pixelherodev
+True
+
+1597706781
+pixelherodev
+Are astgen structs blocked on anything?
+
+1597706948
+ifreund
+when does link.File.file get set to null?
+
+1597706984
+ifreund
+it's happening between my test cases but not during manual incremental updates with --watch
+
+1597707045
+pixelherodev
+grep for it?
+
+1597707048
+pixelherodev
+I can look if you want
+
+1597707058
+pixelherodev
+Ahh
+
+1597707061
+pixelherodev
+It happens in makeExecutable
+
+1597707082
+pixelherodev
+It has to close it (and then set it to null) so it can be run - but makeExecutable shouldn't be called for wasm...
+
+1597707108
+pixelherodev
+ifreund: you need to change makeExecutable into a nop for wasm
+
+1597707115
+pixelherodev
+link.File.makeExecutable
+
+1597707121
+ifreund
+yeah that's totally it, thanks
+
+1597707136
+pixelherodev
+Np :)
+
+1597707140
+pixelherodev
+Always happy to help
+
+1597707532
+ifreund
+now the real question is why wasmtime outputs what I assume is floats interpreted as integers instead of formatting the float
+
+1597707548
+ifreund
+e.g. 1109917696 instead of 42.0 as a f32
+
+1597707566
+ifreund
+(it's not my code that's causing this, happens with handwritten wasm as well)
+
+1597707688
+ifreund
+and yep just checked. that's the IEEE-754 representation of 42.0 interpreted as an unsigned integer
+

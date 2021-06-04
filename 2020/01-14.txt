@@ -1,0 +1,2888 @@
+1578961865
+Snektron
+Is there any way to tame zig-cache
+
+1578961884
+Snektron
+in my experience it generates quite a lot of files that are only used a single time
+
+1578961894
+mikdusan
+yeah rm -fr :)
+
+1578961912
+Snektron
+thats my current approach yes
+
+1578962136
+andrewrk
+planned is auto gc with a configurable-with-reasonable-default maximum total file size
+
+1578962150
+andrewrk
+stage1 will probably never have this
+
+1578962186
+rageoholic
+Hey I got an idea for a function to add to std.math
+
+1578962202
+rageoholic
+Can I just write it up write a test and submit a pull request?
+
+1578962510
+Snektron
+rageoholic, yes
+
+1578962514
+rageoholic
+nice
+
+1578962543
+daurnimator
+frmdstryr: here's a lua one:
+
+1578962761
+frmdstryr
+thanks
+
+1578962806
+daurnimator
+frmdstryr: basic idea is: a 'scheduler' object 2 linked lists: 'polling' and 'pending'. when a thread wants to wait on something, it puts itself into the polling linked list. When the scheduler wants to do something it pulls off the pending list.
+
+1578962892
+frmdstryr
+makes sense
+
+1578963002
+fengb
+andrewrk: I seem to be getting extra crashes with the new `ir-clean-up-vars` branch
+
+1578963454
+fengb
+Oh it's the probably the same one that's crashing CI. Ignore me!
+
+1578964405
+daurnimator
+fengb: I don't like that the generator form requires a copy...
+
+1578964499
+fengb
+Which copy?
+
+1578964999
+daurnimator
+fengb: I was looking at your godbolt link
+
+1578965058
+daurnimator
+==> line 1050
+
+1578965140
+fengb
+How would you load it directly without a callback?
+
+1578965226
+fengb
+
+
+1578965272
+daurnimator
+hmm okay
+
+1578965324
+fengb
+I need to figure out why it's performing so bad. I have some ideas, but maybe it's just the async spill bleeding everywhere
+
+1578965337
+daurnimator
+funnily enough, this dilemma is one of the things LinearFifo solves
+
+1578965342
+fengb
+Because the callback version is probably fully inlined, while LLVM doesn't understand all these suspends
+
+1578965385
+daurnimator
+==> sometimes you want to copy from e.g. a constant in the .data section; sometimes you want a destination to write to directly because you're generating at runtime
+
+1578966440
+frmdstryr
+How do I initialize an array of optional types to all null?
+
+1578966467
+daurnimator
+frmdstryr: `[_]?u8{null} ** N` ?
+
+1578966482
+frmdstryr
+ah, ok I had the ** inside
+
+1578966556
+daurnimator
+frmdstryr: you question does scare me though: if its related to a scheduler, you don't want to run out of room or require allocations: that's why you use an intrusive linked list
+
+1578966647
+frmdstryr
+Didn't get to start on the event loop yet, stil working on getting the hardware timers working
+
+1578967272
+andrewrk
+fengb, I just now got the behavior tests passing in that branch, and there are still a bunch of std lib test failures. I wouldn't try it yet
+
+1578967298
+andrewrk
+but it's been easier to debug in this branch, so that's a plus. this should make it a bit more straightforward to fix result location bugs
+
+1578967449
+lunamn_
+question about sentinel-terminated pointers: how do I proceed to going from [*]T to []T if something like std.mem.len only allows [*:0]T?
+
+1578967490
+daurnimator
+lunamn_: where did you get the [*]T from?
+
+1578967528
+daurnimator
+(and how do you know its null terminated?)
+
+1578967623
+lunamn_
+daurnimator: context, libexpat allows callbacks, i wrote them in zig (export fn), and the compatible type for a parameter that is [*c]const u8 in the callback's declaration is ?[*]const u8
+
+1578967639
+fengb
+Ah cool, I have some major performance problems that I can fiddle with. I think part of it is that suspend is slow :/
+
+1578967670
+daurnimator
+lunamn_: sounds like your callback should take a `?[*:0]const u8` instead
+
+1578967751
+lunamn_
+daurnimator: yeah, that was my thought, and well, "expected type 'fn(...[*c]const u8, ...) callconv(.C) void', found 'fn(...?[*:0]const u8...) callconv(.C) void'"
+
+1578967772
+lunamn_
+they don't seem to be compatible
+
+1578967779
+daurnimator
+andrewrk: ^ missing implicit cast rule?
+
+1578967788
+daurnimator
+lunamn_: I guess you'll need to @ptrCast for now
+
+1578967806
+andrewrk
+fengb, in theory suspend shouldn't be slow. it's just `return`. but in practice, llvm's optimizations have been over-fitted to C, which does not have async functions
+
+1578967829
+andrewrk
+as an example llvm doesn't have the ability to remove fields from structs even though it's legal in zig
+
+1578967846
+fengb
+I’ll do some analysis to figure out where all the instructions are going. It looks pretty foreign to me atm
+
+1578967860
+andrewrk
+but yeah I can imagine there are patterns where unfortunately llvm does not optimize well
+
+1578967879
+andrewrk
+hopefully rust community will land some patches to improve it, since they have similar async codegen :)
+
+1578967911
+andrewrk
+I'd be curious to ask rust devs if they have experienced similar problems trying to get llvm to optimize async functions
+
+1578967923
+daurnimator
+andrewrk: "ability to remove fields from structs"?
+
+1578967981
+andrewrk
+fengb, oh! one more thing I thought of. zig uses atomic instructions for `return` in async functions when not using --single-threaded. in the case of using them for std.fmt.format, atomic instructions are not needed. it is related to optimization to avoid using atomic instructions
+
+1578968006
+andrewrk
+this might be another reason to do generators
+
+1578968032
+andrewrk
+because since you couldn't do `await` on a generator, zig would know to not use atomic instructions for `return` (or `yield`)
+
+1578968078
+andrewrk
+hmm doesn't seem to change much in your godbolt example
+
+1578968098
+andrewrk
+daurnimator, llvm optimizations will never remove unused fields from structs
+
+1578968117
+andrewrk
+and zig generates async functions with all local variables as a struct
+
+1578968151
+andrewrk
+so while llvm is able to remove local variables from functions, it is not able to remove local variables from async functions
+
+1578968163
+lunamn_
+daurnimator: ptrCast did the trick, thank you
+
+1578968194
+andrewrk
+lunamn_, was there an compile error note attached to that error?
+
+1578968282
+lunamn_
+andrewrk, well, yes, but it wasn't helpful? it said that the cast wasn't possible, and that destination pointer requires the sentinel, but I stayed confused on what could I do
+
+1578968438
+andrewrk
+I just wanted to make sure that was there - so yes the compiler is incorrect; it should allow the cast. thanks
+
+1578968464
+lunamn_
+should I open an issue to keep track of it or?
+
+1578968511
+andrewrk
+yes please if you would
+
+1578968620
+lunamn_
+gotcha
+
+1578969157
+lunamn_
+weird. I'm trying to create a test case that doesn't involve all of libexpat and it's weirdly.. working?
+
+1578969615
+lunamn_
+nvm, got it
+
+1578976812
+pixelherodev
+Is `if (a) |unwrapped| { a = null; // do something with unwrapped }` valid?
+
+1578976831
+pixelherodev
+That is, is the unwrapped value dependent on the wrapped variant?
+
+1578976848
+pixelherodev
+Wait no, that's definitely fine
+
+1578977570
+daurnimator
+pixelherodev: no that's not okay
+
+1578977633
+daurnimator
+pixelherodev:
+
+1578977896
+pixelherodev
+... well then
+
+1578977898
+pixelherodev
+This is weird
+
+1578977900
+pixelherodev
+Not sure why it's working
+
+1578977920
+pixelherodev
+Ah wait, had the `= null` afterwards because I was fixing up something else before making that switch
+
+1578977923
+pixelherodev
+daurnimator, thanks!
+
+1579008788
+epmills
+hey, all!
+
+1579008824
+mq32
+hey epmills
+
+1579009137
+epmills
+i know it's early days for http clients but does anyone have experience reading JSON from a REST service?
+
+1579009139
+epmills
+nothing complicated like oauth just passing a client id and secret and getting bytes back.
+
+1579009268
+mq32
+i don't think we have a working HTTP client in the language yet
+
+1579009274
+mq32
+at least not to my knowledge
+
+1579009283
+mq32
+but daurnimator did something regarding HTTP headers some time ago
+
+1579009478
+epmills
+thanks, @mq32
+
+1579009519
+epmills
+i was wondering about: std.net::tcpConnectToAddress(address: Address) !fs.File
+
+1579009536
+mq32
+that should open a TCP connection
+
+1579009543
+mq32
+but you can go ahead and start to implement a HTTP client on top of that
+
+1579009601
+epmills
+cool - i'm gonna give that a shot.  really digging zig a ton.  many of my pet projects involve reading JSON from an API, parsing and spitting out some result.
+
+1579009634
+bheads
+if your on windows you could try the winhttp apis
+
+1579009670
+epmills
+ah, i'm on macos but using an existing lib's an interesting way to go.  cheers.
+
+1579009761
+mq32
+would be cool though to have a zig-only solution for HTTP
+
+1579009796
+fengb
+That’s on hold until async IO is a bit more robust
+
+1579009800
+bheads
+I think that is the plan
+
+1579009852
+fengb
+I’m trying to get async OutStream working and there’s some library improvements but it’s slowly getting there
+
+1579009871
+bheads
+is that the generator version of streams?
+
+1579009879
+fengb
+Yeah
+
+1579009887
+bheads
+nice!!!
+
+1579009926
+bheads
+is this a formal zig language supported generators or just abusing async for now?
+
+1579009974
+fengb
+Abusing async. I think andrewrk is coming around to adding it but the userland version isn’t too bad
+
+1579010029
+fengb
+Unfortunately I perf tested it and it’s noticeably slower. I’m hoping a deeper dive can explain why
+
+1579014498
+betawaffle
+is there any plan to expose the result location of a function inside the function body? or more specifically, the ability to detect if the result location is void/ignored or not?
+
+1579014533
+mikdusan
+
+
+1579014611
+mikdusan
+on the last part I don't recall seeing any PR for "detect if result loc is void/ignored" in fn body
+
+1579014667
+betawaffle
+i guess the question becomes: is it even possible to "ignore" a return value in a meaningful way?
+
+1579014673
+mikdusan
+do you have a use-case in mind?
+
+1579014720
+betawaffle
+no, i'm just thinking about if someone can implicitly/accidentally ignore the return of something that allocates a resource the caller is responsible for
+
+1579014749
+bheads
+ownership issue
+
+1579014756
+mikdusan
+yes, with `_ = call();` syntax
+
+1579014768
+betawaffle
+but that's not accidental nor implicit
+
+1579014769
+mikdusan
+sorry that's explicitly .
+
+1579014771
+betawaffle
+which is fine
+
+1579014780
+betawaffle
+i'm fine with explicit ignoring
+
+1579014784
+bheads
+still a footgun
+
+1579014800
+betawaffle
+and in that case, presumably the _ is still an actual location in memory the result is written to
+
+1579014813
+betawaffle
+even if the caller doesn't use it later
+
+1579014831
+betawaffle
+such as the location of the frame in _ = async foo()
+
+1579014852
+betawaffle
+(which is can make sense if the callee uses @frame)
+
+1579014858
+betawaffle
+s/is//
+
+1579014879
+mikdusan
+I think it has to be an actual location in memory, otherwise compiler would need to emit 2 calling conventions for the same fn body?
+
+1579014892
+betawaffle
+i was reading this
+
+1579014907
+betawaffle
+and i want to understand that more
+
+1579014948
+betawaffle
+my understanding is something like `defer async foo()` would be a compile error but `defer _ = async foo()` would not be
+
+1579015014
+betawaffle
+basically what the issue is saying is that situations where a void result location is provided can only have expressions that
+
+1579015016
+betawaffle
+right?
+
+1579015055
+betawaffle
+like... the result location is the location of a `void` value, and type-checks as such
+
+1579015230
+mikdusan
+I don't really follow
+
+1579015248
+betawaffle
+which part?
+
+1579015452
+mikdusan
+my (limited) understanding is usually the callsite would provide the void result location. but because "defer" is added to a list, the call-site of defer is not appropriate for the void result location.
+
+1579015474
+mikdusan
+thus defer
+
+1579015492
+mikdusan
+err i should say defer is a statemen site.
+
+1579015509
+betawaffle
+well but void is zero-length, so anywhere should be sufficient
+
+1579015523
+mikdusan
+there could be tricks like that but those are impl details I think
+
+1579015575
+fengb
+async foo() returns a frame, not zero size
+
+1579015599
+betawaffle
+right, which is why `defer async foo()` would be a compile error, presumably
+
+1579015735
+dingenskirchen
+I'm trying to have both a dynamic library and a regular executable depending on it, both in pure zig. When I don't link against libc, however, the executable will segfault, and ldd doesn't list the interpreter. The file can still be run by calling the interpreter with the binary as an argument.
+
+1579015762
+dingenskirchen
+Is that intentional behavior/do I need to link against libc to have dynamic libraries?
+
+1579015791
+betawaffle
+i would imagine so, yes
+
+1579015811
+betawaffle
+you can't load dynamic objects into a static executable, afaik
+
+1579016076
+companion_cube
+is there a rationale behind this? :)
+
+1579016090
+companion_cube
+I'd imagine dlopen is stable, or is it not?
+
+1579016158
+betawaffle
+companion_cube: you asking me or dingenskirchen?
+
+1579016183
+companion_cube
+any of you, I know little about what's a stable syscall and what's libc-specific
+
+1579016189
+pixelherodev
+I think you can link a dynamic executable w/o libc though...
+
+1579016203
+betawaffle
+well, stability of syscalls is OS-specific
+
+1579016216
+mikdusan
+also there is libdl.a
+
+1579016219
+betawaffle
+linux is basically completely stable, but macos and some others are definitely not
+
+1579016228
+companion_cube
+yeah I was indeed thinking of linux
+
+1579016240
+pixelherodev
+Wait, shouldn't executables be dynamic by default for Linux?
+
+1579016247
+pixelherodev
+Since they link against glibc?
+
+1579016254
+pixelherodev
+Unless musl is the default
+
+1579016267
+companion_cube
+musl is default on alpine at least
+
+1579016301
+betawaffle
+linking against libc is recommended (or not, depending on who you ask)
+
+1579016340
+betawaffle
+for one, it can make your binary smaller, and use less memory for code
+
+1579016351
+fengb
+BSD and macOS only guarantees ABI stability in the C dynamic library
+
+1579016383
+betawaffle
+and stuff like solaris don't even have a syscall ABI at all
+
+1579016500
+fengb
+Linux syscalls are stable, and you can build against musl to guarantee a static executable, but I think the "native" for most systems would be glibc
+
+1579016528
+pixelherodev
+Eh, I've only ever linked Zig with libc when necessary
+
+1579016548
+pixelherodev
+Mostly when using a C-based library that requires the C allocator
+
+1579016630
+fengb
+Hmm good point. For some reason I assumed (poorly) that debug.warn would go through glibc
+
+1579016664
+betawaffle
+i think it does if you're already linking with libc for some other reason
+
+1579016675
+pixelherodev
+I... don't think that's true
+
+1579016679
+betawaffle
+really?
+
+1579016685
+pixelherodev
+Going to double check
+
+1579016698
+pixelherodev
+But I'm 99% sure it's just `try getStdOut().write`
+
+1579016703
+betawaffle
+i think for all the syscall-level parts, it uses libc if you're linking with libc
+
+1579016723
+betawaffle
+like, the write syscall, for example
+
+1579016729
+betawaffle
+but maybe i'm wrong
+
+1579016730
+pixelherodev
+Nope
+
+1579016733
+pixelherodev
+I mean yes
+
+1579016741
+pixelherodev
+That is, it doesn't ever go through libc
+
+1579016778
+fengb
+
+
+1579016783
+pixelherodev
+It's four lines in std/debug.zig, acquiring a mutex and then printing straight to the stream
+
+1579016808
+pixelherodev
+Which, yes, eventually hits that linked backend under Linux
+
+1579016818
+pixelherodev
+Well, I say "eventually"
+
+1579016827
+pixelherodev
+But it's like one function call in between
+
+1579016856
+fengb
+We sometimes use C if it's linked in, but by default I don't think we ever require it
+
+1579016875
+pixelherodev
+And it's not
+
+1579016883
+fengb
+
+
+1579016908
+betawaffle
+yeah, so anywhere that `os.system` is used, then
+
+1579016949
+pixelherodev
+... I honestly completely forgot about that
+
+1579016963
+pixelherodev
+Yeah, I take that back, it
+
+1579016971
+pixelherodev
+That's... odd
+
+1579016983
+betawaffle
+doesn't seem that odd to me
+
+1579017008
+betawaffle
+it also allows the user to override `system` with their own stuff too, it looks like
+
+1579017024
+pixelherodev
+Yeah, but that's unrelated
+
+1579017476
+pixelherodev
+Huh - the glibc write implementation was annoying to fully grok, but the macro seems to resolve straight into a write() syscall, making it 100% identical to the Zig-native Linux backend
+
+1579017495
+pixelherodev
+And TBH it was mostly annoying because Github sucks
+
+1579017576
+scientes
+pixelherodev, i recommend looking at musl over glibc
+
+1579017577
+scientes
+glibc loves to take you through 4 files before you fine the actual code
+
+1579017587
+pixelherodev
+Sure, but that's not the point
+
+1579017598
+pixelherodev
+I was curious specifically about glibc's implementation
+
+1579017611
+pixelherodev
+I expect musl's implementation to be a lot nicer, I was curious if glibc had extra overhead
+
+1579017719
+companion_cube
+pixelherodev: doesn't github have jump-to-def now? (although maybe it doesn't like C with macros)
+
+1579017989
+fengb
+C doesn't even like C macros
+
+1579018329
+betawaffle
+that's literally one of the reasons zig is even a thing
+
+1579018381
+pixelherodev
+C macros are proof that life is meaningless
+
+1579018394
+pixelherodev
+Okay maybe that's a slight exaggeration but only slight
+
+1579018451
+companion_cube
+and C++ still didn't get their mess cleaned with #include
+
+1579018544
+pixelherodev
+C++ is just C but with more bad stuff thrown on top
+
+1579018567
+pixelherodev
+Actually, it's worse - C++ is the
+
+1579018624
+scientes
+pixelherodev, and they haven't stopped making it woorse!
+
+1579018704
+pixelherodev
+Templates and the C++ standard library alone suck
+
+1579018713
+pixelherodev
+I like Torvald's rant on C++
+
+1579018719
+scientes
+but there are SOOOO many c++ features
+
+1579018722
+betawaffle
+link?
+
+1579018725
+pixelherodev
+s/suck/suck worse than most entire languages I've used/
+
+1579018728
+pixelherodev
+Yeah one sec
+
+1579018741
+pixelherodev
+
+
+1579018800
+betawaffle
+good 'ol 07 linus
+
+1579018827
+pixelherodev
+Then there's
+
+1579018835
+pixelherodev
+A buuunch of fun quotes
+
+1579018884
+scientes
+betawaffle, yeah, he lost his pizazz
+
+1579018909
+companion_cube
+he became a human being with empathy, I find it better
+
+1579018934
+betawaffle
+he still tells it like it is, just with less fanfare
+
+1579018954
+companion_cube
+less gratuitous insults
+
+1579018972
+pixelherodev
+Yeah, he tends to rip into the mistakes more than the people now from what I've seen
+
+1579018975
+betawaffle
+i mean, calling people who use C++ is wholly unnecessary
+
+1579018980
+fengb
+C++ is an ~octopus~ centipede made by stapling legs to a dog
+
+1579018984
+companion_cube
+exactly
+
+1579018986
+pixelherodev
+Anyways, favorite quote from that: If you think C++ is not overly complicated, just what is a protected abstract virtual base pure virtual private destructor and when was the last time you needed one?
+
+1579019022
+scientes
+or even a thunk
+
+1579019038
+scientes
+because C doesn't need thunks
+
+1579019049
+fengb
+I use thunks all the time in JS. I hate it every time >_>
+
+1579019055
+pixelherodev
+Though the one that most accurately reflects why I personally dislike C++ is this one: `Whenever the C++ language designers had two competing ideas as to how they should solve some problem, they said, “OK, we’ll do them both”.`
+
+1579019060
+Snektron
+Whats a thunk?
+
+1579019075
+pixelherodev
+`a subroutine used to inject an additional calculation into another subroutine`
+
+1579019082
+pixelherodev
+According to a quick duck :)
+
+1579019114
+betawaffle
+haskell uses the term to mean a strict evaluation, as opposed to a lazy one
+
+1579019153
+companion_cube
+otoh RAII seems pretty useful to me
+
+1579019167
+betawaffle
+or rather that a lazy evaluation results in a thunk that is then resolved later
+
+1579019189
+fengb
+Thunk is bastardized continuation passing style
+
+1579019195
+Snektron
+I see
+
+1579019237
+Snektron
+Also, don't forget how you're supposed to know an encyclopedia's worth of undefined behaviour cases
+
+1579019245
+fengb
+Instead of returning the value, you return a function that will evaluate the value later. Lets you set up lazy eval whenever and chain control flows, but it's really hideous to do anything useful
+
+1579019376
+Snektron
+pixelherodev, whenever i read virtual base i shiver
+
+1579019400
+Snektron
+especially when combined with pure virtual destructor
+
+1579019430
+Snektron
+Anyone using that must have written such an unholy mess it would call up cthulhu from the depths
+
+1579019652
+mq32
+the ability to break any block in Zig is just awesome and makes a lot of code much easier to maintain
+
+1579020001
+betawaffle
+Hah: "I think maybe the guy who invented C++ doesn’t know the difference between increment and excrement."
+
+1579020417
+mikdusan
+:P. and I mean even the language creator goofed. ++C is more efficient
+
+1579020614
+mq32
+mikdusan, C++ is actually more efficient on a PDP-11 than ++C
+
+1579020628
+mq32
+that's why it was introduced in C
+
+1579020629
+mq32
+:D
+
+1579020762
+mikdusan
+hey is that actually true trivia?
+
+1579020832
+companion_cube
+I think C++ with a very small subset of features is still less bad than
+
+1579020834
+companion_cube
+C
+
+1579020855
+scientes
+no
+
+1579020875
+fengb
+Nobody agrees on the same subset
+
+1579020888
+mq32
+mikdusan, i can tell you first-hand that the PDP-8 has "fetch and increment memory" as a single instruction
+
+1579020909
+fengb
+Although a lot of people are with you companion_cube, hence even Zig is in C++
+
+1579020914
+companion_cube
+well, basic templated containers sure beat void* for me
+
+1579021046
+mikdusan
+mq32: neat. I was looking at
+
+1579021047
+mq32
+mikdusan: and as the original PDP-11 also used core memory as storage, such an operation is a trivial op as you have to write-back to memory every read you do
+
+1579021075
+mq32
+core memory is a crazy technology
+
+1579021079
+mq32
+reading it destroys the content
+
+1579021084
+mq32
+so every read-op is also a write-ip
+
+1579021118
+mikdusan
+I think everyone in compsci should be made to thread their own magnetic core memory. at least once.
+
+1579021141
+mq32
+hehe
+
+1579021256
+mikdusan
+write-after-read sounds so much better than refresh for capacitors
+
+1579021269
+mq32
+and a lot slower ;)
+
+1579021286
+mq32
+i think it's a good idea to teach people that the current CPU model isn't "god given", but has evolved over time with a lot of side branches that never made it into the present time
+
+1579021320
+companion_cube
+if you want to teach stuff, at least teach useful/promising tech like risc-v :p
+
+1579021325
+companion_cube
+pdp11 is dead and can stay dead
+
+1579021389
+mq32
+companion_cube: it's always good to know what didn't work as well ;)
+
+1579021421
+mq32
+imho it's much more valuable to have bad experience shared than good experience, so you can rule out bad ideas much earlier in dev
+
+1579021437
+mq32
+nice example for "actually cool, but other tech has evolved faster":
+
+1579021502
+mikdusan
+what? is that like a mini-tape ?
+
+1579021540
+mq32
+imagine a tape where you don't move the tape but the data
+
+1579021553
+mikdusan
+ah
+
+1579022544
+companion_cube
+mq32: I'm not too interested in hardware, really :p
+
+1579022551
+companion_cube
+as long as the compiler can generate decent code for it…
+
+1579022648
+mq32
+^^
+
+1579022653
+mq32
+and then you have to fix your compiler…
+
+1579022662
+mq32
+got to go
+
+1579025655
+fengb
+I think all of these suspends cause indirect calls and prevent LLVM from optimizing well
+
+1579025717
+andrewrk
+that's unfortunate
+
+1579025794
+andrewrk
+I wonder if rust generators have solved this problem or not
+
+1579025827
+fengb
+A dirt simple suspend gets optimized away, but trying to store any value seems to confuse it
+
+1579025863
+andrewrk
+when doing these tests are you using --single-threaded ?
+
+1579025899
+fengb
+That speeds up execution by 10-50%
+
+1579025919
+fengb
+But the instructions are about the same. It does remove the atomic lock so there's a benefit
+
+1579025926
+andrewrk
+I see
+
+1579025974
+andrewrk
+if zig recognized generators in the language, we would be able to avoid atomic instructions
+
+1579026046
+andrewrk
+there should in theory be a way to communicate async functions to the optimizer to make it behave a lot better. this is an unfortunate limitation of llvm
+
+1579026053
+fengb
+Or overload the noasync keyword: `noasync async foo()` 🙃
+
+1579026201
+pixelherodev
+andrewrk, what do you mean it's a limitation of LLVM? What's stopping that?
+
+1579026222
+andrewrk
+it's looking at some IR and not seeing a bunch of optimizations it could be doing
+
+1579026264
+andrewrk
+whatever hints it would need to see the optimizations, zig has available, but there is no way to communicate it
+
+1579026360
+pixelherodev
+Hmm...
+
+1579026367
+pixelherodev
+Could it be added as metadata?
+
+1579026397
+pixelherodev
+If so, if I fix up my parser, I can probably write a self-hosted optimizer step that takes advantage of Zig-specific information
+
+1579026484
+andrewrk
+unrelated: apparently creduce supports (or at least handles) zig
+
+1579026493
+pixelherodev
+creduce?
+
+1579026507
+andrewrk
+
+
+1579026520
+andrewrk
+creduce is a project that takes a large code sample and reduces it to a small test case
+
+1579026609
+pixelherodev
+ohhhh, I was reading that as cred-ooce; not C Reduce, so I had no idea what i was seeing
+
+1579026617
+pixelherodev
+That's awesome
+
+1579026652
+andrewrk
+also happy Windows 7 EOL day
+
+1579026701
+companion_cube
+I'm happier about python2 EOL 2 weeks ago
+
+1579026753
+andrewrk
+good riddance
+
+1579026762
+pixelherodev
+`if I fix up my parser` -> you know what, once I do that (get it able to successfully parse and generate an AST for all valid LLVM inputs) I'll ask again :P
+
+1579027235
+andrewrk
+std lib is now allowed to unconditionally depend on windows 8.1 APIs even if they are not available in windows 7
+
+1579027253
+andrewrk
+although I suspect there's not really anywhere to take advantage of this
+
+1579027857
+fengb
+Guh, not a fan of Rust syntax :/
+
+1579027883
+companion_cube
+why not? it's pretty cool
+
+1579027888
+epmills
+i've had success cross-compiling one target at a time using 'zig build-exe'...
+
+1579027890
+companion_cube
+(I mean, turbofish is kinda weird)
+
+1579027912
+metaleap
+good evening all! my understanding of unions: no matter what tag is active, the overall memory cost for
+
+1579027912
+metaleap
+3 thus all `Expr` values are no larger than necessary.
+
+1579027915
+metaleap
+BUT --- am I missing something? I can tell from here
+
+1579027916
+metaleap
+"first throw, WIP" status
+
+1579027938
+fengb
+Syntax overload. e.g. match captures look like function calls but they're not
+
+1579027941
+epmills
+can someone point me to the syntax for multiple targets in a single build.zig?  tia.
+
+1579027968
+metaleap
+above: thats #L33 not #L3 (IRC split it) --- ie
+
+1579027990
+companion_cube
+fengb: wut, what do you mean?
+
+1579027998
+fengb
+I guess it's more ML like, at the cost of syntatically looking like C
+
+1579027998
+companion_cube
+function calls are pretty explicit in rust afaik
+
+1579028008
+companion_cube
+(I mean except for the infix ops)
+
+1579028012
+fengb
+
+
+1579028026
+fengb
+`GeneratorState::Yielded(y)` looks like a function call, but the y is a pattern matched variable
+
+1579028037
+companion_cube
+to me it just looks like a pattern
+
+1579028042
+companion_cube
+but I'm indeed used to ML
+
+1579028049
+companion_cube
+(and it's awesome)
+
+1579028081
+fengb
+That's ML if it had a bastard child with C syntax :P
+
+1579028140
+companion_cube
+heh, have you heard of reasonML ? :D
+
+1579028157
+companion_cube
+anyway, if you can think of a better syntax for sum types I'd love to hear about it
+
+1579028166
+fengb
+Also, Rust unstable generators have the same problem that I'm encountering in Zig
+
+1579028186
+fengb
+So... problem solved! :P
+
+1579028322
+Snektron
+i'd say the ugly part is that generators return a union even though its a language feature
+
+1579028334
+Snektron
+Theres nothing wrong with match statements in itsefl though
+
+1579028367
+fengb
+I'm accustomed to Zig's "if it looks like a function call, it is a function call"
+
+1579028389
+fengb
+And I don't think Rust activates the ML side of my brain like it should since it looks vaguely C-like
+
+1579028416
+companion_cube
+if it looks like a function call in a pattern position, then it's a pattern ;)
+
+1579028698
+fengb
+"The 6502 gives you 256 bytes of stack" I think we're spoiled in the modern age
+
+1579028769
+metaleap
+so 2 doublecheck: if I read this `union` correctly
+
+1579028821
+fengb
+Oh sorry, I missed your question
+
+1579028848
+metaleap
+dont be =)
+
+1579028866
+fengb
+Normal unions have no defined memory. So it can be however big it wants
+
+1579028942
+metaleap
+oh so a `var someunionval : MyUnion` is variable-sized depending on the active-tag? neat. some langs the union is guaranteed to occupy tag+max no matter the active tag
+
+1579028965
+fengb
+The union is fixed size, but the compiler can reserve any space for it
+
+1579029011
+fengb
+So you can't rely on it having any fixed size other than figuring out at compile time
+
+1579029021
+metaleap
+ok i'm more pondering the worst-case --- fat struct (array / objmap) vs pointer-thus-also-usize like the int/float/ident cases
+
+1579029027
+fengb
+e.g. @sizeOf(union) is guaranteed to be consistent in one run, but not across runs
+
+1579029051
+fengb
+If you want fixed memory, you can do packed union, which will be sized according to the largest field
+
+1579029053
+metaleap
+if it pads further i dont care but in designing a union, do people tend to keep it tight or just "go wild"
+
+1579029091
+fengb
+It depends. Bare unions are useful because the compiler inserts safety checks for you and helps catching errors on using the inactive field
+
+1579029107
+fengb
+But if memory is a concern or you want to cast data types using a union, that's why a packed union exists
+
+1579029124
+fengb
+Packed unions also have no safety
+
+1579029160
+metaleap
+ah ok yeah makes sense. so any values typed `std.json.Value` could be "whatever size" (no guarantees) but WILL be at least ObjectMap size, lets face it? that much is unavoidable I must presume?
+
+1579029186
+fengb
+Yep
+
+1579029239
+metaleap
+whereas if the array/obj tags were pointer-typed, it would shrink to 1 or 2 words no matter the active tag? ok just wanted to be sure i have the correct understanding, thanx!
+
+1579029246
+plumm
+has anyone succeeded in passing function pointers to c functions?
+
+1579029434
+plumm
+uhh nvm
+
+1579029635
+epmills
+success, plumm?
+
+1579030192
+plumm
+epmills: yeah *void
+
+1579030231
+plumm
+im wondering now how to curn *c_void back into what i originally had it as
+
+1579030243
+plumm
+trying a simple @ptrCast complains that it increases alignment
+
+1579030373
+fengb
+You can toss an @alignCast around that (probably to 16)
+
+1579031084
+plumm
+thanks fengb
+
+1579031775
+metaleap
+have a recursive func `foo` that returns `!Foo`. the inner `try foo(` subcall compiler-errors with: "cannot resolve inferred error set '@TypeOf(foo).ReturnType.ErrorSet': function 'foo' not fully analyzed yet"
+
+1579031789
+metaleap
+here i need to spell out the error set in full I gather?
+
+1579031804
+metaleap
+ah sorry for the noise, pointless question really :D
+
+1579031964
+fengb
+metaleap:
+
+1579032066
+epmills
+did anyone have thoughts on a sample build.zig that supports multiple targets (e.g. build to darwin, arm and linux in single zig build command)?
+
+1579032083
+plumm
+fengb: im trying to get a c *void to []u8 in zig, i have the cast down but im unsure on how to read the data from the pointer (i have the size). any ideas?
+
+1579032092
+metaleap
+fengb: thx, just `anyerror!Foo` does it for me, very handy.
+
+1579032106
+plumm
+epmills:
+
+1579032134
+fengb
+Hmm, maybe @ptrCast([*]u8, *void)[0..size]?
+
+1579032151
+fengb
+Cast to a multi pointer and then manually slice it
+
+1579032323
+plumm
+oh i didnt know multi pointers existed
+
+1579032329
+plumm
+tysm that worked
+
+1579032462
+fengb
+
+
+1579032518
+fengb
+I think one of the hidden costs of C is that nobody really notices multi-pointer and single pointer. I wasn't even aware of this problem until tinkering with Zig
+
+1579032586
+plumm
+thanks ill read that
+
+1579032594
+plumm
+also, have you encountered broken LLVM module found: Duplicate integer as switch case's ?
+
+1579032607
+plumm
+its switching on all values of an i32 but idk why
+
+1579032616
+plumm
+wait, maybe i do, 1sec
+
+1579032637
+metaleap
+Q: one member in a union type is an anon-struct-ptr aka: `const U = union(enum) { Ptr = *struct { foo: bar } }` --- there's no notation to initialize that other than extracting the struct-part out into its own identifier, or is there? like just saying `var u = U { .Ptr = &.{ .foo = ... } }` finds the 2 anon structs incompatible even if nominally / value-wise equiv
+
+1579032713
+fengb
+plumm:
+
+1579032735
+plumm
+yup, sounds like it
+
+1579032748
+plumm
+and before you send that i was using intToEnum and etc
+
+1579032885
+terinjokes
+anyone know if llvm's libfuzzer is usable outside of C? if so, would it make sense to add support to the zig compiler?
+
+1579033506
+plumm
+fengb: when you call a c function with a literal string, what is the type of that string?
+
+1579033552
+fengb
+You should probably be using null terminated strings: [*:0]const u8
+
+1579033581
+plumm
+ah thats probably why
+
+1579033587
+plumm
+sorry new to this c interop stuff
+
+1579033677
+fengb
+It's a recent concept so it hasn't been propagated everywhere yet.
+
+1579033726
+fengb
+Yeah we're planning on having the compiler help, but most of the signatures are still [*]u8, which is easy to get wrong
+
+1579033735
+plumm
+how2 zig []const u8 -> [*]u8?
+
+1579033836
+pixelherodev
+.ptr
+
+1579033859
+plumm
+thx
+
+1579033859
+fengb
+That will probably crash C land though, since C usually expects null terminated
+
+1579033872
+pixelherodev
+Zig strings default to null terminated
+
+1579033873
+plumm
+will you be surprised if i said it worked
+
+1579033876
+pixelherodev
+Well, literals
+
+1579033880
+pixelherodev
+I'm not
+
+1579033886
+pixelherodev
+I'm doing the same thing as we speak :)
+
+1579033889
+plumm
+the string is from fmt.allocPrint
+
+1579033892
+pixelherodev
+One thing worth noting though
+
+1579033894
+pixelherodev
+Oh never mind
+
+1579033900
+pixelherodev
+I'm surprised it worked
+
+1579033901
+plumm
+well what was the note
+
+1579033902
+plumm
+lol
+
+1579033903
+bheads
+you could be getting lucky
+
+1579033912
+fengb
+
+
+1579033913
+pixelherodev
+Things formatted using std.fmt functions aren't null terminated
+
+1579033929
+bheads
+[:0]u8 is the correct way
+
+1579033938
+pixelherodev
+^
+
+1579033978
+pixelherodev
+A slice of type `[]const u8`.ptr gives you a `[*]const u8`; a slice of type `[:0]const u8`.ptr gives you a `[*:0]const u8`
+
+1579033983
+pixelherodev
+The latter is what C expects
+
+1579034002
+pixelherodev
+A pointer terminated by zero to an unknown number of `const u8`s
+
+1579034076
+plumm
+so arr[0..:0].ptr ?
+
+1579034093
+pixelherodev
+If that compiles, then I think so :)
+
+1579034098
+plumm
+ya, and it worked
+
+1579034098
+plumm
+neat
+
+1579034100
+pixelherodev
+Not 100% sure though, I haven't been using zero-terminated
+
+1579034106
+pixelherodev
+Nice!
+
+1579034114
+pixelherodev
+And thanks for reminding me to do the same :P
+
+1579034116
+fengb
+That also double checks to amke sure it's properly null terminated
+
+1579034123
+pixelherodev
+Not sure that I need to though, I'm mostly using literals
+
+1579034145
+fengb
+Yeah literals are guaranteed to be null terminated
+
+1579034722
+metaleap
+is that recent with null-terminated literals? i seem to recall in some vids the `c"literal"` notation. good for non-C-interopers to keep in mind that NULs occur, especially when concating lits with dyn strs........ (aka weirds me out as sth having to constantly keep in check)
+
+1579034729
+BaroqueLarouche
+there's also
+
+1579035104
+plumm
+i thought c"" got removed
+
+1579035105
+pixelherodev
+metaleap, that notation
+
+1579035111
+plumm
+o
+
+1579035119
+pixelherodev
+So yeah, `c""` is no longer around
+
+1579035142
+pixelherodev
+Now, all string literals can automatically decay into any of `[]const u8`, `[*c]const u8`, `[*:0]const u8`, etc.
+
+1579035151
+pixelherodev
+So `c"'` isn't needed anymore
+
+1579035234
+metaleap
+pixelherodev: so that means everyone who never C-interops needs to chop the NUL off or the mentioned "decay" means that it's auto-dropped at compile-time depending on any sort of non-sentinel destination type?
+
+1579035273
+fengb
+No, we store the length without the null
+
+1579035278
+fengb
+So it just works™
+
+1579035281
+metaleap
+noice
+
+1579035285
+metaleap
+thx
+
+1579035298
+fengb
+Except the literal has an extra byte at the end so it'll be slightly annoying if you're space optimizing
+
+1579035345
+metaleap
+so much implicit magic behind this i-assumed-low-level lang :D but still a fan -- so far
+
+1579035384
+metaleap
+pretty ergonomic when one knows the rules, to be sure
+
+1579035409
+fengb
+It was a tradeoff to make literals work with C without having a separate string type
+
+1579035427
+fengb
+We used to have c"" for that, but it's a weird detail
+
+1579035433
+metaleap
+yeah actually quite a neat design given that constraint
+
+1579035469
+pixelherodev
+Yeah, but I'm still disappointed at the extra bytes :P
+
+1579035479
+pixelherodev
+Though, to be honest, even on the embedded platform I'm using it hardly matters
+
+1579035487
+andrewrk
+idk if I'd call it magic. zig and c string literals are exactly the same; zig just has more type information attached to them
+
+1579035500
+andrewrk
+C says, "idk it's a pointer I guess"
+
+1579035513
+andrewrk
+zig says, "it's a single-item pointer to an array of exactly N bytes, followed by a 0 sentinel"
+
+1579035583
+pixelherodev
+Technically, you could write a C compiler that gives you the same options
+
+1579035591
+pixelherodev
+e.g. an additional primitive type for slices
+
+1579035602
+pixelherodev
+But that would be nonstandard
+
+1579035628
+metaleap
+fair game :D if there's no pitfalls with the occasional mem.copy etc it should be dandy, and i guess here folks use the `.len`s at hand anyway
+
+1579035629
+pixelherodev
+It'd be interesting if compilers tracked that info anyways without exposing it for error checks
+
+1579035657
+pixelherodev
+So that e.g. character pointers would receive an implicit size
+
+1579035686
+pixelherodev
+I don't think it'd be easy, but doable and worthwhile, almost definitely
+
+1579035731
+fengb
+I mean, C should have been designed with fat pointers since the beginning :P
+
+1579035869
+companion_cube
+C should have been designed entirely differently from the beginning ;)
+
+1579035877
+mikdusan
+`fn allocPrintz(comptime term: u8, ...) AllocPrintError![:term]u8`
+
+1579035887
+mikdusan
+i wonder if something like that works and makes sense
+
+1579035891
+pixelherodev
+Nah, C was designed for a specific purpose and it fit that purpose well
+
+1579035919
+pixelherodev
+Works, sure, but unless you have a use for that sentinel, there's no real point
+
+1579035919
+companion_cube
+yeah, the purpose in
+
+1579035949
+leeward
+C's purpose was to take over the world, and it succeeded.
+
+1579035968
+companion_cube
+yeah, it's pretty sad
+
+1579035978
+companion_cube
+there were better languages than it before it was created
+
+1579036019
+leeward
+Better is a pretty subjective term.
+
+1579036030
+companion_cube
+better designed, less unsafe :)
+
+1579036047
+BaroqueLarouche
+man the C++ one " Bjarne Stroustrup bolts everything he's ever heard of onto C to create C++. The resulting language is so complex that programs must be sent to the future to be compiled by the Skynet artificial intelligence. Build times suffer. Skynet's motives for performing the service remain unclear but spokespeople from the future say "there is nothing to be concerned about, baby," in an Austrian accented
+
+1579036047
+BaroqueLarouche
+monotones. There is some speculation that Skynet is nothing more than a pretentious buffer overrun."
+
+1579036062
+fengb
+C unsafeness is one of the reasons it won
+
+1579036099
+leeward
+C's ease of implementation is probably the biggest reason it won.
+
+1579036116
+fengb
+Especially when hardware was so limited, "stop helping" was really important
+
+1579036118
+leeward
+There's a C compiler for that chip you're using.
+
+1579036139
+pixelherodev
+`1972 - Dennis Ritchie invents a powerful gun that shoots both forward and backward simultaneously. Not satisfied with the number of deaths and permanent maimings from that invention he invents C and Unix.` oh my
+
+1579036141
+pixelherodev
+This is amusing
+
+1579036158
+companion_cube
+glad at least one person got to discover this post
+
+1579036252
+plumm
+i seem to be getting an issue using that ptr trick, unsure of what could be the issue, but when using arr[0..:0].ptr, it seems to include another item allocated on the stack? i wonder why that is
+
+1579036309
+plumm
+actually wait no
+
+1579036405
+plumm
+well, i still dont know if arr[0..:0].ptr is the way to go, seems to be including things that normally arent supposed to be there
+
+1579036413
+pixelherodev
+Wait
+
+1579036418
+pixelherodev
+plumm, is this still generated by std.fmt?
+
+1579036424
+plumm
+yeah
+
+1579036431
+pixelherodev
+Add a `\x00` to the end of your format string
+
+1579036433
+plumm
+same alloactor to
+
+1579036443
+pixelherodev
+std.fmt still isn't null terminated
+
+1579036450
+plumm
+ok that worked lol
+
+1579036457
+plumm
+oh i thought doing the :0 would do that for me
+
+1579036459
+pixelherodev
+... that should be runtime erroring beforehand though
+
+1579036461
+andrewrk
+mikdusan, I could see it being useful. the implementation could be as simple as: const full = try allocPrint(allocator, format ++ "\x00", args); return full[0..full.len - 1 : 0];
+
+1579036494
+pixelherodev
+Because if there's no sentinel, trying to slice and verify the sentinel should fail
+
+1579036497
+andrewrk
+well you could make it generic across the sentinel if you wanted I suppose
+
+1579036610
+plumm
+fengb: what do i do if that aligncast fails (incorret alignment) ?
+
+1579036824
+andrewrk
+pixelherodev, yes and there is safety for this and covered by tests:
+
+1579036836
+pixelherodev
+which is why i'm confused
+
+1579036871
+andrewrk
+oh I missed the first thing you said, " that should be runtime erroring beforehand though" - why do you think that?
+
+1579036903
+pixelherodev
+it's not zero terminated
+
+1579036924
+pixelherodev
+before the `\x00` was added
+
+1579036926
+andrewrk
+the safety is on the slice syntax; it asserts that `full[full.len - 1] == 0`. which it does, because we appended "\x00" to the format string
+
+1579036943
+pixelherodev
+But before that, it wasn't crashing, it was just giving the wrong result
+
+1579036953
+andrewrk
+before that we're calling allocPrint, nothing to do with sentinels
+
+1579036975
+pixelherodev
+Right, but slicing that non zero-terminated result should have failed
+
+1579036982
+pixelherodev
+Since it was being sliced with `:0`
+
+1579037000
+pixelherodev
+Oh wait I see
+
+1579037009
+pixelherodev
+It was being sliced with `[0.. :0]`
+
+1579037013
+pixelherodev
+No length specified
+
+1579037030
+andrewrk
+idk where you're looking, but my example code is  return full[0..full.len - 1 : 0];
+
+1579037062
+plumm
+so instead of hardcoding the null term in the format string, i should do what andrew did?
+
+1579037236
+mikdusan
+plumm: err close. hardcoding the null term makes it legit to slice rv[0..rv.len-1:0]
+
+1579037274
+pixelherodev
+Hardcoding is needed regardless
+
+1579037286
+Snektron
+I just realized that if a language disallows logical and and or on non-boolean types, you could use | and & instead
+
+1579037302
+plumm
+ook
+
+1579037303
+pixelherodev
+andrewrk, I'm saying that what plumm was doing was slicing with `[0.. :0]`, which has no length parameter, whereas I
+
+1579037307
+Snektron
+It seems really logical to use that, but on the other hand its also less readable
+
+1579037355
+andrewrk
+Snektron, that's related to simd, where you might have vectors of bools
+
+1579037383
+pixelherodev
+Summary: you need to have a null at the end. std.fmt doesn't do that, so you need to add it to the format string. Slicing a pointer from `[0.. :0]` slices from the beginning until a zero and marks that as the length. Slicing from `[0.. len :0]` would slice until len and assert that there was a terminating zero.
+
+1579037434
+pixelherodev
+So, what you want is to hardcode the zero in the format string so C knows the string's length, and if you know the length of the string, slice with that as a parameter so the language can assert the terminating zero is in the right place
+
+1579037443
+Snektron
+andrewrk, the semantics would be exactly equal to `and` and `or`, so if those can be applied to vectors | and & would be too
+
+1579037468
+Snektron
+Im surprised i don't know any language that uses bitwise operators for logical operators
+
+1579037474
+Snektron
+it seems like such a straight forward choice
+
+1579037508
+companion_cube
+well, doesn't work for negation, does it?
+
+1579037522
+andrewrk
+Snektron, `and` and `or` cannot apply to vectors of bools because control flow depends on the value of the LHS. but with a vector of bools you do not have a bool to look at the value of. it requires additional information: how to reduce the vector into a scalar
+
+1579037547
+Snektron
+a you make a good point, i didn't think of shortcutting
+
+1579037560
+Snektron
+That explains why nobody does it like that
+
+1579037604
+Snektron
+Do you think theres a case to be made for | and & on regular booleans, considering SIMD?
+
+1579037647
+pixelherodev
+... wait what?
+
+1579037655
+pixelherodev
+How would that even work?
+
+1579037667
+pixelherodev
+If there's two booleans, SIMD isn't really applicable...
+
+1579037675
+pixelherodev
+mikdusan, what?
+
+1579037678
+pixelherodev
+logo? turtle?
+
+1579037686
+mikdusan
+programming lang
+
+1579037703
+leeward
+Wait, have you not heard of logo?
+
+1579037716
+plumm
+wow, it's been a while since ive heard that
+
+1579037736
+leeward
+pixelherodev, are you under 25?
+
+1579037746
+plumm
+im 19 so no ageism
+
+1579037759
+leeward
+I had a hypothesis. It's been falsified.
+
+1579037768
+Snektron
+pixelherodev, consider @Vector(bool, N)
+
+1579037789
+pixelherodev
+Wait, you mean to quickly `&`/`|` together a large number of bools?
+
+1579037794
+pixelherodev
+leeward, 18, actually :)
+
+1579037802
+pixelherodev
+Not that I think it's entirely relevant
+
+1579037813
+pixelherodev
+Experience matters far more than age
+
+1579037847
+leeward
+Well, Logo was taught in schools when I was in school so it seems like maybe that's changed.
+
+1579037854
+fengb
+Spoken like a kid 🙃
+
+1579037911
+andrewrk
+Snektron, yes and that's planned if not already implemented
+
+1579037924
+Snektron
+great
+
+1579037941
+andrewrk
+and then @reduce for getting from a vector to scalar
+
+1579037946
+Snektron
+Logo was taught in my high school but the course was full
+
+1579037997
+pixelherodev
+Actually, now that I'm thinking about I do have some recollections of a turtle from towards the end of elementary school, but I don't remember all that much from back then :P
+
+1579038016
+leeward
+I remember making a little turtle robot move around when I visited the Boston Science Museum.
+
+1579038019
+plumm
+probably the python turtle package
+
+1579038054
+leeward
+Python had barely been invented the last time I used Logo.
+
+1579038130
+plumm
+i thought pixelhero was talking
+
+1579038155
+pixelherodev
+Here's an interesting one
+
+1579038162
+pixelherodev
+And I don't
+
+1579038176
+pixelherodev
+I remember using Processing, and I think LEGO Mindstorms for a bit
+
+1579038183
+pixelherodev
+but not much more than that
+
+1579038211
+Snektron
+I programmed in the visual mindstorms editor when i was about 11 or 12 i think
+
+1579038215
+fengb
+Back in my day, I held a magnetic needle in my hand and poked at spinning platters
+
+1579038217
+Snektron
+probably my first programming experience
+
+1579038229
+plumm
+my grandmother used to program punch cards but thats about it for my history lol
+
+1579038253
+Snektron
+My dad installed NQC but i didn't get it at the time, i could only copy paste statements
+
+1579038304
+leeward
+fengb, Platters? We used drums.
+
+1579038330
+plumm
+fengb im getting an incorrect alignment error (panic?) but @alignOf(...) reports 8 (which is what im using)
+
+1579039212
+plumm
+for the future: i just had to check the align and only if it didnt match recast
+
+1579039218
+plumm
+but im sure thats not the solution
+
+1579039452
+pixelherodev
+that's... what?
+
+1579039465
+pixelherodev
+Can you paste the non-working code somewhere?
+
+1579039518
+plumm
+this is in the function for the libcurl WRITEDATA opt
+
+1579039571
+plumm
+pixelherodev:
+
+1579039591
+fengb
+I'm not familiar with C function pointers. I remember hearing about manual workarounds :/
+
+1579039664
+plumm
+yeah the workaround was getting the const* stuff away to cast to *c_void, but thats just unsoundness in the c api iirc
+
+1579039688
+pixelherodev
+C function pointers I can help with
+
+1579039705
+plumm
+daurnimator: did you ever get the automatic json stuff merged? seems not :/
+
+1579039799
+pixelherodev
+Wait... what?
+
+1579039809
+pixelherodev
+That
+
+1579039810
+pixelherodev
+makes
+
+1579039812
+pixelherodev
+no sense whatsoever
+
+1579039827
+plumm
+the bottom function would throw with incorrect alignment
+
+1579039828
+pixelherodev
+Wait a second
+
+1579039840
+pixelherodev
+Why are you ptrcasting it again after aligncasting?
+
+1579039862
+plumm
+can i just preface by saying idk what im doing
+
+1579039875
+plumm
+i threw some example into translate-c and extracted whatever i needed to get it to work
+
+1579039885
+pixelherodev
+No need to ptrCast(T, @alignCast(N, K)) where @TypeOf(K) == T
+
+1579039895
+pixelherodev
+Gotcha
+
+1579039905
+plumm
+well, K != T in this case
+
+1579039907
+plumm
+its a *c_void
+
+1579039908
+pixelherodev
+alignCast `returns the same type as ptr except with the alignment adjusted to the new value`
+
+1579039919
+pixelherodev
+No it's not.
+
+1579039939
+plumm
+oh?
+
+1579039949
+pixelherodev
+`@ptrCast([*]u8, @alignCast(8, content))[0 .. size * nmemb])`
+
+1579039952
+pixelherodev
+Not talking about the buffer
+
+1579039974
+plumm
+yeah i know
+
+1579039975
+pixelherodev
+content there is  [*]u8
+
+1579039983
+pixelherodev
+So the ptrCast isn't needed
+
+1579039984
+plumm
+look at argContent in the argument
+
+1579039993
+pixelherodev
+But you're not using argContent so that's irrelevant
+
+1579040001
+pixelherodev
+You're alignCasting content, which is [*]u8
+
+1579040006
+plumm
+did i send the wrong code?
+
+1579040007
+pixelherodev
+The result of that aligncast is a [*]u8
+
+1579040012
+pixelherodev
+ptrCasting that is pointless
+
+1579040021
+pixelherodev
+s/that/that to [*]u8
+
+1579040045
+plumm
+/Users/haze/src/zigcord/src/main.zig:16:20: error: expected type '[*]u8', found '*c_void'
+
+1579040049
+plumm
+removed the ptrcast, thats what i got
+
+1579040051
+plumm
+:\
+
+1579040068
+pixelherodev
+Paste that failing code?
+
+1579040080
+plumm
+
+
+1579040086
+plumm
+just remove the ptrcast
+
+1579040091
+plumm
+from line 3
+
+1579040096
+plumm
+and keep the block
+
+1579040100
+pixelherodev
+Wrong ptrcast
+
+1579040105
+pixelherodev
+I said, not talking about the buffer :P
+
+1579040108
+plumm
+oh you meant the further one down
+
+1579040115
+pixelherodev
+line 8, yeah
+
+1579040145
+plumm
+oh thats just an artifact
+
+1579040151
+plumm
+i wrote that line before the other one
+
+1579040188
+pixelherodev
+Actually
+
+1579040192
+pixelherodev
+Why are you aligncasting?
+
+1579040247
+pixelherodev
+Why do you need those pointers to be 64-bit aligned?
+
+1579040253
+pixelherodev
+Cache optimizations or something?
+
+1579040254
+plumm
+something was complaining that the align was off and feng said to throw an aligncast(8) around it
+
+1579040261
+pixelherodev
+What was complaining?
+
+1579040275
+plumm
+*c_void had an align of 1 and [*]u8 (or []u8 dont quite understand the diff yet) was 8
+
+1579040294
+pixelherodev
+Ah
+
+1579040298
+pixelherodev
+...
+
+1579040317
+pixelherodev
+Ah, okay
+
+1579040344
+pixelherodev
+One sec, going to paste a slightly cleaned up version
+
+1579040365
+plumm
+ok :D
+
+1579040476
+pixelherodev
+
+
+1579040525
+plumm
+that fails with the incorrect alignment thing i was talking about
+
+1579040534
+plumm
+on the var content line
+
+1579040542
+pixelherodev
+... really? Interesting...
+
+1579040603
+pixelherodev
+Wait, at comptime?
+
+1579040606
+pixelherodev
+Or at runtime?
+
+1579040633
+plumm
+runtime
+
+1579040640
+pixelherodev
+Ahhh
+
+1579040708
+pixelherodev
+But wait a minute
+
+1579040715
+pixelherodev
+Without aligncast it fails
+
+1579040720
+pixelherodev
+With aligncast it fails
+
+1579040731
+pixelherodev
+With aligncast *if alignment isn't already correct*, it works?
+
+1579040767
+pixelherodev
+Wait a second, that shouldn't need to be aligned anyways...
+
+1579040792
+pixelherodev
+What if you remove, the alignCast from the var content line? Just ptrcast that?
+
+1579040811
+pixelherodev
+[*u8] shouldn't require a specific alignment AFAIK
+
+1579040847
+plumm
+hat works lol
+
+1579040860
+pixelherodev
+Yay!
+
+1579040885
+pixelherodev
+Four lines shorter, some unnecessary casts removed, and more readable. I call that a win!
+
+1579040892
+pixelherodev
+And also it works. That's important too :P
+
+1579040930
+pixelherodev
+Question
+
+1579040937
+pixelherodev
+plumm, is that string null terminated?
+
+1579040941
+pixelherodev
+`content` that is
+
+1579040962
+pixelherodev
+If so, you should add `:0` to the slice
+
+1579041061
+pixelherodev
+Also, since the size is known, maybe change the type of content to `*[size * nmemb :0]`?
+
+1579041078
+plumm
+ok, will do
+
+1579041079
+pixelherodev
+Then you can change the slice range to `[0..]` and the rest should be implicit
+
+1579041091
+pixelherodev
+Though I'm not sure if that type is valid if the size isn't comptime known
+
+1579041110
+plumm
+size is not comptime known
+
+1579041137
+pixelherodev
+Yeah, never mind on that second suggestion then :P
+
+1579041158
+pixelherodev
+`[*:0]u8` should be good though
+
+1579041259
+plumm
+slice of pointer must include end value
+
+1579041321
+pixelherodev
+?
+
+1579041326
+pixelherodev
+Ag
+
+1579041327
+pixelherodev
+Ah*
+
+1579041350
+pixelherodev
+Right no, if you can't change the type you need the slice to be `[0 .. size * nmemb]`
+
+1579041393
+pixelherodev
+Though you
+
+1579041617
+plumm
+that works too, but im unsure why i'd to that
+
+1579041700
+pixelherodev
+It ensures that the string is null terminated
+
+1579041726
+pixelherodev
+Assuming you're dealing with null terminated data, it's a useful safety check
+
+1579041927
+pixelherodev
+`Assertion failed at /home/noam/Documents/Development/Builds/zig/src/ir.cpp:17795 in ir_get_var_ptr. This is a bug in the Zig compiler.` NOOOOOO
+
+1579042000
+plumm
+yeah, iktf
+
+1579042398
+pixelherodev
+This compiler is really manipulative. Everytime I open my heart, it crushes it, only to turn its soulful eyes on me and feign regret
+
+1579042403
+pixelherodev
+Or maybe that's a cat
+
+1579042442
+epmills
+lol
+
+1579042465
+pixelherodev
+Ahh, it's a bug in my code that's not being detected. Of course.
+
+1579042478
+pixelherodev
+Was trying to use a variable in a nested function
+
+1579042527
+pixelherodev
+So naturally I'm going to use a function generator instead :P
+
+1579042611
+plumm
+i need partially applied functions
+
+1579042627
+pixelherodev
+Oh wait, function generators require comptime arguments :(
+
+1579042768
+leeward
+Is there a Zig equivalent of
+
+1579042776
+leeward
+grep-fu?
+
+1579042912
+pixelherodev
+@ThisFunc() would be nice, but I don't think so
+
+1579042962
+leeward
+This is my surprised face.
+
+1579042975
+leeward
+I don't see it in the bif list.
+
+1579042991
+andrewrk
+leeward, what would you use it for?
+
+1579043000
+leeward
+There's @memberName, which explicitly says it's not for functions.
+
+1579043007
+leeward
+I want to genericize my error messages.
+
+1579043016
+pixelherodev
+I have a couple functions that call another function with themselves as the argument
+
+1579043028
+pixelherodev
+e.g. `fn wipe() void { .... do_something(wipe); `
+
+1579043042
+pixelherodev
+do_something(@Caller()) would be better as it wouldn't be dependent on the name of the function
+
+1579043144
+leeward
+fn errorMsg(where: []u8, err: ErrorUnion) ErrorUnion!void { std.debug.warn("Error in {}: {}\n", .{where, getErrText()}); return err; }
+
+1579043146
+leeward
+Something like that
+
+1579043171
+leeward
+I want the literal string that is the name of the function I'm calling from.
+
+1579043212
+leeward
+Oh, there's no void required there; it's always going to return an error.
+
+1579043253
+pixelherodev
+Whereas mine is for an error handler that shows a UI option to retry the caller
+
+1579043255
+daurnimator
+plumm: no I haven't had time to finish it off
+
+1579043266
+pixelherodev
+?
+
+1579043302
+frmdstryr
+leeward: Shouldn't the error trace tell you where the error ocurred?
+
+1579043331
+Snektron
+i wonder if ErrorUnion!noreturn is a valid type
+
+1579043350
+pixelherodev
+Wouldn't it just be ErrorUnion?
+
+1579043356
+pixelherodev
+Wait
+
+1579043361
+pixelherodev
+I think that should be ErrorSet
+
+1579043364
+pixelherodev
+Not ErrorUnion
+
+1579043371
+pixelherodev
+It takes an error set and returns a member of it
+
+1579043405
+pixelherodev
+The idea of defining an error union as a type has only just occurred to me, though I'm not sure there's much use outside obfuscation / minimization
+
+1579043427
+leeward
+frmdstryr, I want to log these and move on.
+
+1579043440
+leeward
+and I don't want a full trace in the log
+
+1579043483
+leeward
+And yes, it should have been ErrorSet
+
+1579043607
+daurnimator
+woo, #3699 fixed :D
+
+1579043620
+leeward
+Also, I want to print these in ReleaseFast, where there are no error traces to look at.
+
+1579043627
+leeward
+\o/
+
+1579043679
+frmdstryr
+Was going to suggest using std.debug.printSourceAtAddress but Idk if the debug info is present
+
+1579043981
+plumm
+whats like an ergonomic way to do ?json.Value -> ?Value
+
+1579043993
+plumm
+uhh, where Value is some raw type from the json.Value union
+
+1579044323
+pixelherodev
+@as ?
+
+1579044330
+pixelherodev
+Oh, uh
+
+1579044335
+pixelherodev
+Hmm, it's optional...
+
+1579044346
+pixelherodev
+`@as(?Value, v)` ?
+
+1579044398
+Snektron
+const v: Value = if (value) castToValue(value) else null;
+
+1579044409
+Snektron
+whoops, v: ?Value
+
+1579044479
+pixelherodev
+Uh
+
+1579044480
+pixelherodev
+Okay
+
+1579044499
+pixelherodev
+`const v: ?Value = @as(?Value, value);`
+
+1579044501
+pixelherodev
+Try that?
+
+1579044547
+pixelherodev
+Is json.Value a tagged union?
+
+1579044584
+pixelherodev
+Also, are you sure it's of type Value if not null?
+
+1579044601
+pixelherodev
+You might be thinking of `if (v != null and v.? == .Type)`
+
+1579044768
+plumm
+i ended up doing a default variable and using if () ||  to set it
+

@@ -1,0 +1,680 @@
+1608078138
+leeward
+still weird
+
+1608078772
+jaredmm
+Why yes, I did spend an hour staring at code wondering why it was complaining about expecting a C pointer and ignoring that I was using the index buffer struct instead of the vertex.
+
+1608079094
+jaredmm
+Is there a way to get the error output to say the name of the type that's used for the parameter? That is, if there's a declaration for `pub const SDL_AudioSpec = struct_SDL_AudioSpec;` have the error say SDL_AudioSpec rather than struct_SDL_AudioSpec?
+
+1608084268
+g-w1
+that stream was incredible. I was amazed on how it worked basically first try! Can't wait till it gets merged!
+
+1608084277
+andrewrk
+marler8997, yo
+
+1608084310
+marler8997
+yo
+
+1608084311
+andrewrk
+g-w1, protty is no joke :D
+
+1608084321
+marler8997
+I'm getting a segfault on my 24 core machine with the thread_pool.zig code
+
+1608084325
+marler8997
+I'm trying to root cause
+
+1608084757
+marler8997
+looks like kprotty has fixed it on my machine
+
+1608084807
+marler8997
+need to add a line in the "pop" function for RunQueue:
+
+1608084946
+marler8997
+looks like there's another issue, a deadlock
+
+1608084968
+marler8997
+I produce it by running it in an infinite loop with: while true; do zig run thread_pool.zig; done
+
+1608084993
+marler8997
+my last deadlock took 492 invocations
+
+1608085278
+marler8997
+so I think this is an issue with the design
+
+1608085291
+marler8997
+the implementation depends on each worker calling wg.done()...
+
+1608085308
+marler8997
+so if a worker asserts or exits abnormally, it won't call wg.done() and then we are deadlocked
+
+1608085321
+marler8997
+the implementation needs to be able to detect when a worker has exited whether or not it got a chance to call wg.done()
+
+1608085585
+andrewrk
+marler8997, did you manage to get in contact with protty?
+
+1608085634
+andrewrk
+he's in the Zig Projects Chat (voice chat) in loris's discord server:
+
+1608085640
+marler8997
+yeah
+
+1608085649
+marler8997
+he figured out the first bug
+
+1608085785
+marler8997
+the second bug is just a problem with wait group, basically, with a wait group, if any worker exits without calling WaitGroup.done, then we are in deadlock
+
+1608085812
+marler8997
+the only way I know of to avoid that is to use thread joining
+
+1608085839
+andrewrk
+I think that's an OK limitation
+
+1608085860
+marler8997
+ugh that's a horrible experience
+
+1608085868
+andrewrk
+well I suppose we would want abort() to happen if a thread panics
+
+1608085872
+marler8997
+it means whenever you get a crash, instead of an error the compiler will just hang
+
+1608085902
+andrewrk
+hmm that is already the case actually
+
+1608085906
+marler8997
+in his example, all we do is call std.debug.warn...which apparently will cause this deadlock
+
+1608085924
+andrewrk
+I mean that if a thread panics it will call abort()
+
+1608085927
+marler8997
+sometimes std.debug.warn is causing the program to exit without calling wg.exit
+
+1608085935
+marler8997
+and the main thread stays alive
+
+1608085939
+marler8997
+so you just hang
+
+1608085952
+andrewrk
+I don't understand, how would std.debug.warn cause the program to exit
+
+1608085965
+marler8997
+I'm not sure
+
+1608085994
+marler8997
+I mean, it seems to cause the thread to exit (not the whole program)
+
+1608086029
+marler8997
+but having an intermittent failure builtin to the code is horrible, it results in intermittent deadlock failures that are impossible to debug
+
+1608086035
+marler8997
+I don't see this as acceptable at all
+
+1608086583
+marler8997
+it looks like the fix here is just to remove the wait group
+
+1608086602
+marler8997
+the main thread already waits for all threads to exit from the loop that calls "wait" on all the threads
+
+1608086747
+marler8997
+ok I think all we need to do is remove the reset event from the WaitGroup
+
+1608086765
+marler8997
+after we're done running, instead of calling wg.wait()...we check that the counter is 0
+
+1608086817
+marler8997
+if it's not, then it means a thread has exited abnormally, so instead of deadlocking we can exit
+
+1608087099
+andrewrk
+how do you know the thread is not still running?
+
+1608087178
+andrewrk
+how would you get a deadlock other than if a thread called exit() intentionally?
+
+1608088019
+marler8997
+ok I've narrowed down another bug
+
+1608088036
+marler8997
+andrewrk, (I actually modified the code to call exit to reproduce that bug yes)
+
+1608088057
+marler8997
+the next bug manifests by a thread neve waking up
+
+1608088064
+marler8997
+well, it never gets a task at least
+
+1608088082
+marler8997
+I can see via strace that it gets created and is waiting for an even by waiting on the futex
+
+1608088085
+marler8997
+but it never runs a task
+
+1608088099
+marler8997
+and the main thread exits, and this last thread keeps the main process from exiting
+
+1608088127
+marler8997
+I can reproduce more easily by decreasing the number of tasks as well
+
+1608088509
+marler8997
+interesting, I added a log at the beginning of runWorker, the thread that is keeping the process alive doesn't even print that
+
+1608088820
+marler8997
+FOUND IT
+
+1608088824
+marler8997
+self.is_shutdown
+
+1608088857
+marler8997
+it's not being synchronized, it either needs to be checked inside the mutex, or accessed through an atomic
+
+1608088880
+marler8997
+in runWorker I moved the check inside the mutex and now I seem to be able to run indefninitely
+
+1608089020
+marler8997
+here's the second fix:
+
+1608089130
+marler8997
+don't you just love how 24-core cpus expose all the multi-threaded bugs :)
+
+1608089307
+andrewrk
+thanks :)
+
+1608089354
+marler8997
+potential optimization is to access is_shutdown through an atomic
+
+1608089395
+andrewrk
+the hot path is is_shutdown=false so we may as well aquire the lock IMO
+
+1608089490
+marler8997
+yeah it only optimizes the cold shutdown path as far as I can tell
+
+1608089615
+marler8997
+the only other issue is the deadlock issue, but fix is simple, remove the AutoResetEvent from the wait group, and instead of calling wait, std.debug.assert(wg.count == 0)
+
+1608089673
+marler8997
+I haven't manually reviewed the code yet though, that was just the issue discovered by running the program
+
+1608089845
+marler8997
+my deadlock suggestion about removing AutoResetEvent could be wrong, I'll have to review the code to be sure
+
+1608090538
+andrewrk
+if you assert wg.count == 0 how do you know there is not a worker still running?
+
+1608091104
+marler8997
+based on my understanding, that's after we call thread.wait() on all the worker threads, but I'm not 100% sure
+
+1608091175
+andrewrk
+in update() we're not going to call thread.wait()
+
+1608091200
+andrewrk
+or are you suggesting to create and destroy the thread pool with every update() ?
+
+1608091226
+marler8997
+if that's the case then what I'm saying is nonsensical
+
+1608091265
+marler8997
+if we're keeping threads alive, then we need waitgroup
+
+1608091308
+andrewrk
+yeah we are because the thread pool will be passed to Compilation, it won't be in charge of creating it
+
+1608091370
+marler8997
+an enhancement would be to select on the thread handles and the reset event, so we could handle when a thread exits without notifying the wait group
+
+1608098495
+andrewrk
+marler8997, interesting, it looks like the new thread pool stuff deadlocked on aarch64-linux
+
+1608105606
+Tharro
+getting a compiler error when trying to sort a i64 slice (adapters) using zig 0.7.1, any clue what I´m doing wrong? error: unable to evaluate constant expression
+
+1608105607
+Tharro
+std.sort.sort(i64, adapters, {}, std.sort.asc(i64));
+
+1608107041
+Tharro
+the constant expression it points to is (i64) of the std.sort.asc(i64).
+
+1608108498
+FireFox317
+Tharro, this error message is pretty vague, but you have to put a comptime keyword before the sort function: `comptime std.sort.asc(i64)`
+
+1608108632
+Tharro
+FireFix317: thanks, that did the trick indeed.
+
+1608108651
+Tharro
+*FireFox317
+
+1608108985
+dutchie
+Tharro: see
+
+1608110770
+dch
+in the zig ci jobs, theres a big llvm tarball we fetch from ziglang.org/deps/llvm+clang+lld-11.0.0-x86_64-freebsd-release.tar.xz
+
+1608110801
+dch
+do we
+
+1608110816
+dch
+its much easier to grab llvm11 and ninja from prebuilt ports in this case
+
+1608110868
+dch
+at the risk that periodically llvm11 will become 11vm 11.1 or something and zig might implode
+
+1608110917
+dch
+and if we do need this tarball, where/how is it generated? I'd like to build an aarch64 one
+
+1608112853
+FireFox317
+dch, i think we have this tarball since this provides a static llvm+clang+lld whereas the package managers almost always provide dynamic ones. Im pretty sure these are generated using zig-bootstrap:
+
+1608113888
+dch
+FireFox317: cool - thanks for the url. I think then for at least just testing builds, I can safely use the llvm11 port then.
+
+1608113924
+dch
+`pkg list llvm11 |egrep .a\$ | wc -l` = 262 so freebsd base llvm11 appears to have what's needed anyway
+
+1608113953
+dch
+maybe this was from a time when the latest llvm wasn't available, or zig needed a patched lvvm
+
+1608113996
+ifreund
+yeah if your package manager distributes the .a files you should be good to go with those
+
+1608121380
+dch
+when I'm running zig's own tests, I get an `error: No 'build.zig' file found, in the current directory or any parent directories.`
+
+1608121404
+dch
+pretty sure this is related to not finding appropriate llvm or some cmake-induced mistake on my part
+
+1608121476
+dch
+
+
+1608121505
+ifreund
+dch: you need to cd .. before running zig build test
+
+1608121515
+dch
+any suggestion what I'm getting wrong? I'm not clear on the CMAKE_PREFIX_PATH in particular
+
+1608121529
+ifreund
+though it should find it in the parent directory...
+
+1608121568
+ifreund
+or wait, you need to cd $ZIGSRC
+
+1608121573
+dch
+the ZIGSRC is not disk, not in tmpfs, so they're not parent/sibling dirs
+
+1608121581
+dch
+should I run it from ZIGSRC instead then
+
+1608121596
+ifreund
+zig build looks for a build.zig in the cwd
+
+1608121614
+ifreund
+if it doesn't find it there, it looks in the parent dir and so on
+
+1608121633
+dch
+aah excellent
+
+1608121636
+ifreund
+normally if you have your cmake build dir inside the repo zig build test will find it in the parent dir
+
+1608121645
+dch
+OK I `cd /repos/zig` and its all good.
+
+1608121646
+ifreund
+but you have the cmake build dir outside the repo
+
+1608121742
+dch
+ok, pretty close to having a single "clone the repo & run everything in tmpfs" finally. Didnt expect that to take most of my morning :0
+
+1608121788
+dch
+that finally makes sense, thanks ifreund
+
+1608121827
+ifreund
+no problem!
+
+1608122226
+dch
+so fast to compile 163 files, until the final linker step, takes ages
+
+1608122721
+ifreund
+that's actually the C++ part of the stage1 compiler building the Zig part of the compiler
+
+1608122757
+ifreund
+the C++ implementation has many flaws and is very slow, the WIP self hosted compiler will be much much faster
+
+1608137474
+marler8997
+andrewrk I see another bug
+
+1608138107
+marler8997
+see my comment on the PR, I haven't finished reviewing all the code though but I found that bug from a partial review
+
+1608144253
+FireFox317
+andrewrk, wow it was suprisingly easy to hook up the new llvm stage2 backend to the lld linking code, it just works :O
+
+1608145423
+andrewrk
+FireFox317, brilliant :D
+
+1608146006
+marijnfs
+how do I properly encapsulate a c library?
+
+1608146015
+marijnfs
+I already have issues adding the include directory
+
+1608146025
+marijnfs
+I would like to add libnng and compile it with zig
+
+1608146057
+andrewrk
+marijnfs, there are some nice examples of build.zig you can look at which do this
+
+1608146333
+marijnfs
+andrewrk: yeah that would be the best, does anyone know a good up to date one?
+
+1608146345
+marijnfs
+I've seen you do it, but I need a repo;)
+
+1608146358
+andrewrk
+btw did you mean libpng?
+
+1608146364
+andrewrk
+I think we actually have zig png libraries now FYI
+
+1608146394
+marijnfs
+no nng, it's a reimplementation of nanomsg, so like zeromq
+
+1608146405
+andrewrk
+ahh gotcha :)
+
+1608146414
+marijnfs
+i know zig will have proper networking, but there libraries do work quite well
+
+1608146430
+andrewrk
+this one has a lot of examples
+
+1608146431
+marijnfs
+and can't quite get all the async stuff yet anyway:P
+
+1608146438
+marijnfs
+sweet will have a look
+
+1608146456
+andrewrk
+here's an example of encapsulating SDL2:
+
+1608146469
+marijnfs
+ah nice
+
+1608146493
+andrewrk
+others here have similar projects but I don't remember who off the top of my head
+
+1608146513
+marijnfs
+so addIncludeDir works for both c and zig?
+
+1608146576
+andrewrk
+zig does not have the concepts of include directories - that is only for C/C++ files
+
+1608146579
+marijnfs
+one thing i have is, the build works. But when i 'zig test' a specific file, it doesn't find the cImported include dir anymore
+
+1608146584
+marijnfs
+aha
+
+1608146598
+andrewrk
+well, I mean it does affect @cImport
+
+1608146631
+andrewrk
+a lot of the build configuration is per-build-artifact. so you'll need to put addIncludeDir to the test as well
+
+1608146647
+andrewrk
+this way is more verbose but also much more flexible
+
+1608146657
+marijnfs
+yeah that makes sense. But when I do 'zig test' on a file, how does that know about the includeDir in the build.zig?
+
+1608146687
+marijnfs
+does .dependOn take over the includeDir stuff?
+
+1608146698
+andrewrk
+it doesn't, if you do `zig test` then you need `-I` arg for include dirs
+
+1608146710
+andrewrk
+but you can add zig tests to build.zig and then it would be e.g. `zig build test`
+
+1608146770
+marijnfs
+andrewrk: ah i see, that would be the issue then
+
+1608146801
+marijnfs
+it is a nice workflow to test specific files. I have it in a plugin in sublimeText and it's almost as good as runtime completion
+
+1608146815
+marijnfs
+but then I just have to figure out how to add the -I to the test command
+
+1608146830
+marijnfs
+i thought maybe it looks for a build.zig or somethign
+
+1608146916
+andrewrk
+all of the zig CLI except `zig build` is unaware of build.zig
+
+1608147484
+marijnfs
+yeah makes sense, no 'hidden' behaviour
+
+1608156836
+pixelherodev
+There's a new LLVM backend for stage2?
+
+1608156851
+pixelherodev
+I really haven't been paying as much attention to Zig lately :(
+
+1608157611
+justin_smith
+is there a trick for a function that can error, (via alloc...) and also self calls? - the compiler is complaining that it cannot resolve the inferred error set
+
+1608158296
+justin_smith
+(I worked around it for now by using if (success) |_| {} else |err| { base_case }
+
+1608158444
+andrewrk
+justin_smith, the trick is to use an explicit error set. but it is planned to make this Just Work
+
+1608158483
+leeward
+Ooh, Zig makes the age old ambiguity of I2C slave addresses go away! Just take a u7 and it's clear what the address representation is.
+
+1608158565
+andrewrk
+neat, although it will still let you pass a u7 where a u8 is expected
+
+1608158652
+leeward
+Right, but I can just make my function take a u7 and it'll be fine.
+
+1608159279
+andrewrk
+yep
+
+1608162595
+marler8997
+andrewrk, once we enable multithreading a new class of errors will be enabled.  What do you think about threads having access to stack memory from other threads?  Should we try to avoid this?
+
+1608162643
+andrewrk
+I'm interested in exploring language features to help avoid these classes of errors
+
+1608162682
+marler8997
+woooo, that's a deep topic
+
+1608162689
+andrewrk
+yeah
+
+1608162740
+marler8997
+in the interim though...with the language we have today, do you we should avoid threads accessing memory that lives on the stack of another thread
+
+1608162767
+marler8997
+for example, say the main thread has allocated the ThreadPool metadat on it's stack...should allocate it on the heap instead to avoid this?
+
+1608163161
+andrewrk
+what's the idea behind this?
+
+1608163189
+marler8997
+if a thread dies, it's stack goes away, so any thread that has a reference to it's stack will be using freed memory
+

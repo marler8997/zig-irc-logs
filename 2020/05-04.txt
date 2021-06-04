@@ -1,0 +1,1736 @@
+1588550813
+xackus
+pipes or sockets? i don't have much experience in ipc
+
+1588550886
+dbandstra
+yeah i'm going to try sockets, i have done that in c before at least
+
+1588550909
+xackus
+I'm not sure what is or isn't implemented in zig std lib
+
+1588552022
+dbandstra
+cool, i got a UDP socket working
+
+1588553166
+dbandstra
+code here if someone is curious
+
+1588553953
+foobles
+i just learned about Ropes
+
+1588553957
+foobles
+interesting data structure
+
+1588554630
+Snektron
+Thats not exactly google-able
+
+1588554810
+xackus
+
+
+1588554831
+foobles
+its useful for efficient modificaion of strings
+
+1588554838
+foobles
+indexing is O(log N)
+
+1588554852
+foobles
+but so is concatenation, splitting, insertion, etc
+
+1588554880
+Snektron
+I suppose i should have actually tried to google before i sent that 🤦‍♂️
+
+1588554887
+foobles
+apparently a lot of text editors use them, since they want to avoid those options being linear
+
+1588554913
+xackus
+can someone with commit access take a look at
+
+1588554945
+xackus
+it's a simple stage1 fix
+
+1588559183
+Kingsquee
+I'm trying to override panic, but the documentation regarding Root Source File is pretty TODO-y
+
+1588559204
+xackus
+pub fn panic(msg: []const u8, error_return_trace: ?*@import("std").builtin.StackTrace) noreturn {
+
+1588559210
+Kingsquee
+is the function sig `panic(msg: []const u8) noreturn` or `panic(msg: []const u8, args: var) noreturn`?
+
+1588559220
+Kingsquee
+oh okay that's a new one
+
+1588559229
+pixelherodev
+
+
+1588559252
+pixelherodev
+Example usage of an ISA abstraction for JIT usage
+
+1588560086
+Kingsquee
+are there any examples of build.zig?
+
+1588560429
+pmwhite
+zig init-exe will generate one, in the highly unlikely chance that you didn't already know that.
+
+1588560446
+Kingsquee
+more along the lines of examples of how to do weird things in build.zig
+
+1588560450
+Kingsquee
+like zig cc
+
+1588560485
+Kingsquee
+or "anything that is out of scope of the auto generated one and isn't obvious from rummaging the stdlib source"
+
+1588560512
+pmwhite
+
+
+1588560526
+pmwhite
+Stuff I've been doing ^
+
+1588560538
+pmwhite
+It's kinda messy, but perhaps it will be helpful to you.
+
+1588560567
+Kingsquee
+hmm, thanks
+
+1588560584
+Kingsquee
+def helps, but doesn't seem to be compiling .c code
+
+1588560640
+Kingsquee
+can you just do `addExecutable("foo", "foo.c")` and it works, I wonder? :I
+
+1588560669
+pixelherodev
+Kingsquee: addCSource
+
+1588560693
+pixelherodev
+You can get a quick glimpse of all available functions by scanning the stdlib's build.zig file for `fn`
+
+1588560700
+Kingsquee
+aha!
+
+1588560703
+Kingsquee
+yeah, i've been looking
+
+1588560711
+pixelherodev
+pub fn, rather
+
+1588560716
+Kingsquee
+but it's 2400 lines long
+
+1588560734
+pixelherodev
+`grep "pub fn" /usr/local/lib/zig/std/build.zig` locally gives a mostly complete list
+
+1588560747
+pixelherodev
+116 functions
+
+1588560781
+mikdusan
+`@typeOf(slice.len) == usize` but shouldn't it be std.meta.Int(false, @typeInfo(usize).Int.bits + 1) or `u65` for 64-bit platforms?
+
+1588560807
+pixelherodev
+Why?
+
+1588560843
+mikdusan
+technically slice can't represent full range
+
+1588560855
+pixelherodev
+... arguably, it should be less on x64
+
+1588560865
+pixelherodev
+Since the address bus on amd64 currently is closer to 52 bits IIRC
+
+1588560885
+mikdusan
+that issue is orthoganl
+
+1588561005
+pixelherodev
+But why should it need an extra bit?
+
+1588561040
+Kingsquee
+"error: C pointers cannot point to opaque types" export fn send_on_allocate() [*c] c_void { ... }
+
+1588561046
+mikdusan
+imagine a machine with 8-bits of address space.   slice.len = 256; that's a 9-bit unsigned
+
+1588561085
+pixelherodev
+t... h... w... huh
+
+1588561104
+pixelherodev
+...
+
+1588561123
+pixelherodev
+What happens if you try making a slice like that?
+
+1588561134
+pixelherodev
+With maxInt(usize) + 1 as len?
+
+1588561194
+Kingsquee
+is [*c] c_void the wrong syntax?
+
+1588561202
+xackus_
+i imagine you can't
+
+1588561276
+xackus_
+mikdusan could you review
+
+1588561516
+mikdusan
+pixelherodev: `var slice: []const u8 = undefined; slice.len = 18446744073709551616;`:
+
+1588561518
+mikdusan
+error: integer value 18446744073709551616 cannot be coerced to type 'usize'
+
+1588561551
+daurnimator
+hmmm. does that mean `allowzero` slices need to be bigger in `len` as well?
+
+1588561600
+pixelherodev
+No?
+
+1588561604
+mikdusan
+no
+
+1588561604
+pixelherodev
+Len can still be zero I think
+
+1588561614
+pixelherodev
+Well, depends how this is fixed
+
+1588561625
+pixelherodev
+Slices w/o allowzero could have "zero" set as maxInt(usize) + 1
+
+1588561638
+pixelherodev
+and then allowzero slices have zero as zero and require an extra bit
+
+1588561649
+daurnimator
+pixelherodev: well a length of `maxInt(usize)+1` would only be possible if the pointer was `allowzero`.
+
+1588561660
+pixelherodev
+Why?
+
+1588561661
+mikdusan
+i was trying to model memory and got irked thinking... ok idiom of `while (i < end)` is kinda bad. end has to be size_bits + 1 if we talk full range. and for loops/compares that sucks when it exceeds machine word size
+
+1588561713
+Kingsquee
+`while i > prev_i`
+
+1588561818
+Kingsquee
+although any loop that exceeds machine word size would be quite a loop indeed
+
+1588562030
+mikdusan
+xackus_: O dpm
+
+1588562049
+mikdusan
+xackus_: I don't know if it matters but ZigTypeIdUnreachable,
+
+1588562136
+Kingsquee
+@cInclude("foo") seems to be equivalent to #include <foo>, is there an equivalent to #include "foo"?
+
+1588562138
+mikdusan
+sorry, ZigTypeIdInvalid wasn't in error condition before, now it is
+
+1588562201
+xackus_
+i think you are looking at the wrong switch
+
+1588562228
+xackus_
+i deleted the second one because it was pointless
+
+1588562380
+xackus_
+zig type invalid is checked earlier in the function
+
+1588562431
+Kingsquee
+so there's no current way to include a local file?
+
+1588562673
+xackus_
+mikdusan
+
+1588563536
+pixelherodev
+Kingsquee: you want to addIncludeDir
+
+1588563581
+Kingsquee
+aaaAAA
+
+1588563602
+Kingsquee
+a skinner box
+
+1588564953
+Kingsquee
+well, I've gotten this far
+
+1588564979
+Kingsquee
+"reached unreachable code" re: artifact.kind .Obj
+
+1588565033
+Kingsquee
+can anyone help refine my best guesses?
+
+1588565212
+mikdusan
+`.install()` means from command line what is done during `zig build install`. so takin an artifact and `foo.install()` means foo registers to be installed
+
+1588565219
+pixelherodev
+Don't install the obj I think?
+
+1588565221
+pixelherodev
+Oh impd
+
+1588565223
+pixelherodev
+:P
+
+1588565492
+mikdusan
+zig_layer.run() ... hmm I'm not sure that makes sense.
+
+1588565538
+mikdusan
+not everything is "runnable" . don't equate run to "generic step.make()"
+
+1588565665
+mikdusan
+yes --> "Defines the zig run command?" ; without that "zig build --help" is not going to list any top-level step calle "run"
+
+1588565767
+mikdusan
+each run of an executable is setup as something "run" depends on
+
+1588565776
+mikdusan
+a sub-step
+
+1588565841
+mikdusan
+in turn, the exe.run() step depends on exe being installed (the exe's install step).
+
+1588565860
+mikdusan
+heh I'm thinking the default `zig init-exe` might have a quirk.
+
+1588565967
+mikdusan
+`run_cmd.step.dependOn(b.getInstallStep())` <-- the `run_cmd` is for 1 exe; 1 exe doesn't
+
+1588566659
+Kingsquee
+mikdusan: thanks, I've commented out all the installs, the zig_layer_run, and all depends except the default_step
+
+1588566666
+Kingsquee
+and it seems to be giving me non-build-related errors now
+
+1588566683
+Kingsquee
+looking forward to zigbuild documentation o.o;
+
+1588567275
+Kingsquee
+`const game_start = @import("./../game/start.zig");`, "error: import of file outside package path:"
+
+1588567323
+Kingsquee
+pretty sure I have this relative path right
+
+1588567337
+xackus_
+mikdusan: thanks for the review. you're right, i was kinda lazy with the test
+
+1588567349
+Kingsquee
+is there a limitation imports with parent dirs?
+
+1588567655
+mikdusan
+xackus_: omit "note: referenced here"; they add little value and iirc, the expect-logic for compile-errors can tolerate skipping such things
+
+1588567727
+xackus_
+thanks, i didn't know that
+
+1588567776
+xackus_
+i saw them in other tests
+
+1588567925
+mikdusan
+imo an example of a good note to include in test scraping is "tmp.zig:1:17: note: consider 'union(enum)' here", even "note: Foo declared here" but "reference here" can be noisy
+
+1588567991
+xackus_
+yeah, i agree
+
+1588568003
+xackus_
+thank god for git rebase
+
+1588568020
+mikdusan
+git rebase is magic.
+
+1588568244
+Kingsquee
+went out on a limb ,but addIncludeDir doesn't seem to help
+
+1588568287
+Kingsquee
+so I guess import only works for absolute paths or subdirectories
+
+1588568295
+Kingsquee
+that's a pita
+
+1588568296
+mikdusan
+Kingsquee: @import is based on a main package root location. parents outside do not work. you can adjust main pkg root dir
+
+1588568381
+mikdusan
+Kingsquee: can you paste build.zig somewhere
+
+1588568390
+Kingsquee
+mikdusan: just did
+
+1588568397
+Kingsquee
+but I'll paste latest
+
+1588568479
+Kingsquee
+mikdusan:
+
+1588568680
+mikdusan
+Kingsquee: iirc your something like `main.setMainPkgPath("src");` or "src/engine"
+
+1588568718
+Kingsquee
+
+
+1588568740
+Kingsquee
+hmm
+
+1588568781
+mikdusan
+so just "src"
+
+1588568820
+Kingsquee
+what is it by default?
+
+1588568853
+mikdusan
+in this case you have "src/engine/app/app.zig" as object,
+
+1588568866
+mikdusan
+so default mainpkgpath is "src/engine/app/"
+
+1588568904
+Kingsquee
+mikdusan: so by setting `zig_layer.setMainPkgPath("src")`, I should be able to just write "@import("game/start.zig")", right?
+
+1588568925
+mikdusan
+hmm... I think it has to be c_main.setMainPkgPath
+
+1588568932
+mikdusan
+whatever your main step is
+
+1588568948
+Kingsquee
+as in, the step that defines 'main()'?
+
+1588568953
+Kingsquee
+what's a main step
+
+1588568963
+mikdusan
+addExecutable
+
+1588568984
+Kingsquee
+I'm compiling C code as the executable and linking the zig object to it
+
+1588568993
+mikdusan
+oh wait one sec
+
+1588568993
+Kingsquee
+the @import in question is within the zig object
+
+1588569010
+mikdusan
+yeah it can be Library, Exe or Object. duh.
+
+1588569029
+mikdusan
+try it with zig_layer
+
+1588569035
+Kingsquee
+I've added both c_main.setMainPkgPath("src"); and zig_layer.setMainPkgPath("src");
+
+1588569050
+Kingsquee
+and in app.zig, const game = @import("game/start.zig");
+
+1588569061
+Kingsquee
+and I get "unable to find game/start.zig"
+
+1588569089
+mikdusan
+which file is importing "game/start.zig"
+
+1588569108
+Kingsquee
+app.zig
+
+1588569176
+Kingsquee
+the idea is main.c is the exe entry point, app.zig is the root of the engine-related code on the zig side, game.zig is the root of the game-related code
+
+1588569205
+Kingsquee
+app.zig is compiled to an object, main.c is compiled to an exe which links to the app.zig.o
+
+1588569267
+Kingsquee
+I'm doing it this way since sokol-app defines platform-specific main()'s, so all the zig stuff has to run on callbacks emitted from it
+
+1588569346
+Kingsquee
+I could just nest game/ inside app/, but finagling the filesystem is an odd hiccup to bow to
+
+1588569405
+Kingsquee
+
+
+1588569500
+Kingsquee
+hopefully that's clear :V
+
+1588569574
+mikdusan
+in app.zig, do @import("../../game/start.zig"); and in build.zig do zig_layer.setMainPkgPath("src"); and is pwd is same place as build.zig
+
+1588569620
+Kingsquee
+pwd is project root, just above src
+
+1588569638
+Kingsquee
+also that seems to fix it
+
+1588569644
+Kingsquee
+and I don't know why
+
+1588569660
+mikdusan
+it's the extra "./" i think. I'm seeing some odd behavior with it on my end
+
+1588569675
+Kingsquee
+hmm
+
+1588569707
+mikdusan
+yeah so avoid superfluous ./././
+
+1588569748
+mikdusan
+and also remove c_main.setMainPkgPath
+
+1588569772
+Kingsquee
+alright
+
+1588569786
+Kingsquee
+so what does setMainPkgPath do?
+
+1588569808
+Kingsquee
+I'm conflicted as to whether it should conceptually be "/projectname" or "/projectname/src"
+
+1588569855
+mikdusan
+it depends on your project dir layout
+
+1588569861
+mikdusan
+let's say you do this:
+
+1588569920
+mikdusan
+$PROJECT/src has all your zig sources, and even other stuff
+
+1588569944
+mikdusan
+and none of the contained @import() will ever do relative pathing that falls outside that containment
+
+1588569959
+mikdusan
+then $PROJECT/src is your mainpkgpath
+
+1588569980
+mikdusan
+then you decide to bring in some 3rd-party zig sources
+
+1588569990
+mikdusan
+and place them in $PROJECT/deps
+
+1588570039
+mikdusan
+one 3rd-party is placed in $PROJECT/deps/compressor/
+
+1588570078
+mikdusan
+and your $PROJECT/src starts doing @import("../../../../../../deps/compressor/compressor.zig")
+
+1588570085
+mikdusan
+then $PROJECT/ must be mainpkgroot
+
+1588570113
+mikdusan
+it has to be enough to contain all relative @import()
+
+1588570120
+mikdusan
+it can be more, but that's the minimum
+
+1588570227
+mikdusan
+I'm sure there is a succinct way to describe it in path-parlance; common-root to two trees?
+
+1588570801
+Kingsquee
+mm, I see
+
+1588570830
+Kingsquee
+thanks mikdusan!
+
+1588572087
+Kingsquee
+almost there
+
+1588572104
+Kingsquee
+so with the current build script, zig_layer.o and zig_layer.h are being generated
+
+1588572156
+Kingsquee
+but not c_main, and c_main can't find app.h
+
+1588572187
+Kingsquee
+latter is easy to fix, either rename it zig_layer.h or just make prototype fns
+
+1588572525
+Kingsquee
+okay, it worked
+
+1588572548
+Kingsquee
+output a binary into /zig-cache/o/gobbledegook/untitled_game
+
+1588572614
+Kingsquee
+executing "zig run" in the directory asks for a source file argument though
+
+1588572633
+Kingsquee
+how do I get it to do it automatically via build.zig?
+
+1588572695
+mikdusan
+all build.zig stuff is via `zig build ...`
+
+1588572719
+mikdusan
+`zig run` is a lesser thing altogether. so `zig run` != `zig build run`
+
+1588572726
+Kingsquee
+oh, alright
+
+1588572739
+mikdusan
+if you want to manually run the artifact of a zig build,
+
+1588572766
+mikdusan
+default install location iirc is zig-build/bin/ for executables
+
+1588572770
+Kingsquee
+I just wasn't clear on the difference
+
+1588572781
+Kingsquee
+and yeah, I'm a little perplexed about that right now
+
+1588572786
+mikdusan
+typo --> zig-cache/bin/
+
+1588572792
+Kingsquee
+because it's not putting it in the zig-cache/bin/ dir
+
+1588572802
+Kingsquee
+it's putting it in the zig-cache/o/.../ dir
+
+1588572816
+mikdusan
+the object yes. but how about executable?
+
+1588572821
+Kingsquee
+yes, the executable
+
+1588572833
+mikdusan
+oh. heh; `zig build install`
+
+1588572858
+Kingsquee
+wat
+
+1588572895
+Kingsquee
+nope, no /bin/ dir
+
+1588572923
+Kingsquee
+oh there we go
+
+1588572927
+Kingsquee
+c_main.install();
+
+1588573034
+Kingsquee
+seems funny the exe is in the /o/ dir as well
+
+1588573043
+Kingsquee
+but...I guess this is success? :V
+
+1588573050
+Kingsquee
+swing low sweet documentation
+
+1588573095
+mikdusan
+`zig build install` is like `make install` so it's duty is to always copy
+
+1588573214
+Kingsquee
+seems a bit pointless if all I'm doing is installing it to a peer directory
+
+1588573224
+mikdusan
+micro optimizations like `zig build no-install-run-foo` aren't really a priority yet
+
+1588573251
+Kingsquee
+kk
+
+1588573252
+mikdusan
+s/micro//
+
+1588573305
+Kingsquee
+one last thing, could you explain what stuff like default_step.dependOn implies?
+
+1588573319
+mikdusan
+`zig build` <-- what does that do?
+
+1588573365
+Kingsquee
+one step depending on another seems pretty obvious, but I have b.default-step.dependOn(zig_layer.step) and b.default-step.dependOn(c_main.step), which I would assume means c_main and zig_layer are compiled independently of each other
+
+1588573390
+Kingsquee
+obviously c_main depends on zig_layer completing first, but I haven't described that anywhere
+
+1588573394
+Kingsquee
+and yet it works
+
+1588573410
+mikdusan
+c_main.addObject(zig_layer);
+
+1588573441
+Kingsquee
+it's intelligent enough to detect that dependency?
+
+1588573446
+Kingsquee
+that's...nice
+
+1588573483
+Kingsquee
+that's really nice :V
+
+1588573532
+mikdusan
+and it all takes advantage of zig's caching system;
+
+1588573549
+mikdusan
+zig's caching system is solid... and is pronounced "Chuck Norris"
+
+1588574159
+Kingsquee
+heh
+
+1588574232
+Kingsquee
+so in this case, I have the main.c including sokol.h, which defines the sapp_event struct
+
+1588574272
+Kingsquee
+in app.zig I have a fn to convert that sapp_event struct to an internal type, which means I cInclude sokol.h there as well
+
+1588574292
+Kingsquee
+this games me many redefinition errors
+
+1588574309
+Kingsquee
+(sokol_app.h, to be precise)
+
+1588574387
+mikdusan
+I think what's happening is you are forcing a sep compile of just .zig sources
+
+1588574404
+mikdusan
+which may or may not include c headers
+
+1588574430
+Kingsquee
+sure, but how is that a problem?
+
+1588574473
+Kingsquee
+should I just compile the c headers into their own object files and use them that way, instead of including? :I
+
+1588574494
+mikdusan
+hmm one sec. is .c or .zig responsible for the "main" symbol for executable?
+
+1588574499
+Kingsquee
+.c
+
+1588574510
+Kingsquee
+since they're included as headers in different binary files I didn't really expect conflicts
+
+1588574629
+Kingsquee
+(abstract situation: main.c includes foo.h, bar.zig includes foo.h, bar.zig is compiled into bar.o, main.c is statically linked with bar.o and compiled to main.bin)
+
+1588574688
+mikdusan
+i've done the inverted; .zig for main, and then exe.addCSourceFile to that exe
+
+1588574706
+Kingsquee
+(result is foo.h redefinition errors)
+
+1588574718
+mikdusan
+does c_main.addObject(..., "app.zig") work? and you'd need the c_main.setMainPkgPath too
+
+1588574737
+mikdusan
+oh never mind.
+
+1588574749
+mikdusan
+hmmm... I heard mention of this symbol thing before
+
+1588574768
+Kingsquee
+brb
+
+1588575430
+Kingsquee
+and back
+
+1588575439
+Kingsquee
+...how do I write to stdout again
+
+1588575544
+Kingsquee
+std.debug.warn is invisible in my text editor build output by someone's infinite wisdom
+
+1588578217
+st4ll1
+std.io.getStdOut().outStream().print("{}", .{})
+
+1588578615
+Kingsquee
+std.barf("{}", .{});
+
+1588580332
+marler8997_
+is there anyone online that can approve/merge this?
+
+1588580351
+marler8997_
+I'm a little worried because my "remote work connection" depends on this getting in
+
+1588582008
+xackus_
+you can always use your patched version if it's needed now
+
+1588586438
+ifreund
+is there not a way to call a funtion using a comptime []const u8 name?
+
+1588586776
+ikskuh
+@field()
+
+1588586780
+ikskuh
+@field(Type, name)()
+
+1588586868
+alexnask
+Does anyone use clangd? Is it good or is there some better C++ language server (wanna try them out havent used one til now)?
+
+1588587017
+ifreund
+ikskuh: thanks, i though that was only for data field for some reason
+
+1588587031
+ifreund
+alexnask: i've been using clangd for a while, no real complaints
+
+1588587067
+alexnask
+I just installed it and opened ir.cpp, seems decent enough although it derps with float16_t and float32_t but only in some functions :P
+
+1588587116
+ifreund
+idk what editor you use, but you may need to ensure that there's a compile_commands.json at the project root to get the full effect
+
+1588587122
+tdeo
+i use clangd, it works well, but kak-lsp sends the entire buffer to the server on every keystroke so ir.cpp is pretty slow to use
+
+1588587144
+ifreund
+i usually keep a symlink to my build/compile_commands.json
+
+1588587176
+alexnask
+I'm using the clangd extention on vscode, I will look into compile_commands and what it enables
+
+1588587223
+alexnask
+Ah it seems I can generate it with cmake, nice
+
+1588587226
+ifreund
+could be that vscode does it for you, i use kakoune + kak-lsp
+
+1588605144
+oats
+I found the idea of kakoune really cool, but it was just too different from my cozy vim to make the change quickly and that was enough to send me back :P
+
+1588606636
+oats
+huh, the logo changed a bit :P
+
+1588606728
+oats
+the icon is less squat and the G is stylized
+
+1588606735
+oats
+looks cool
+
+1588607225
+BaroqueLarouche
+which means my tshirt is now vintage
+
+1588607439
+ikskuh
+nooo
+
+1588607671
+ikskuh
+good thing i only printed Zero stickers
+
+1588607827
+Snektron
+hm, riot is still showing the old logo in the preview
+
+1588607838
+Snektron
+I wonder if thats some form of caching or if theres an old logo somewhere
+
+1588608032
+tdeo
+anyone want to review #5268 for me? :) it has a treewide zig fmt, which i hope i don't have to rebase too much
+
+1588608148
+grayhatter
+does zig have runtime introspection?
+
+1588608182
+tdeo
+what do you mean exactly? i don't think so
+
+1588608184
+marler8997_
+tdeo: async a callconv now, is there an associated proposal with that?  If so, could you link to it in the PR?
+
+1588608201
+tdeo
+async callconv was already true
+
+1588608238
+ikskuh
+grayhatter: zig has no hidden types or fields except for debug mode
+
+1588608240
+marler8997_
+ok, so just removing "async fn" syntax, was that also in a proposal?
+
+1588608250
+ikskuh
+so for runtime introosepection, you have to write that in your code
+
+1588608271
+tdeo
+yesterday `19:35 <andrewrk> tdeo, yes it should be removed in favor of callconv(.Async)`
+
+1588608274
+tdeo
+i'll add that to the PR
+
+1588608350
+grayhatter
+can I list the members of a struct without enumerating them?
+
+1588608372
+marler8997_
+in your second example of "extern fn", you also have a function body...was that a typo?
+
+1588608385
+ikskuh
+grayhatter: huh, what do you mean?
+
+1588608391
+alexnask
+grayhatter, zig has compile time introspection, see @typeInfo
+
+1588608394
+tdeo
+yep, that is, thanks
+
+1588608395
+grayhatter
+context; I'm planning to write a lib that will at runtime generate a new binary logging format
+
+1588608431
+alexnask
+
+
+1588608454
+marler8997_
+so, if you specify callconv(.C) and you don't have a function body, how does "extern" further change the function prototype?
+
+1588608477
+tdeo
+i think that was already removed marler8997_
+
+1588608483
+tdeo
+you can't have extern with body anymore
+
+1588608507
+tdeo
+
+
+1588608537
+marler8997_
+so proposal is to remove "extern" as well
+
+1588608559
+tdeo
+no, you still need extern to import functions from c libraries
+
+1588608574
+tdeo
+oh mine
+
+1588608591
+tdeo
+yes, that's removing a feature without a proposal to do so
+
+1588608612
+marler8997_
+why do you still need "extern"?  If you specify callconv(.C) and there's no function body how does "extern" further modify the prototype?
+
+1588608615
+tdeo
+i really don't think it was intended to stay in, after removing nakedcc and stdcallcc
+
+1588608642
+tdeo
+i don't think non-extern functions without a body are accepted
+
+1588608653
+tdeo
+but removing extern and allowing that makes sense imo
+
+1588608662
+marler8997_
+oh I see
+
+1588608666
+marler8997_
+so that woudl be another change
+
+1588608684
+tdeo
+i think i'll make a proposal to just remove extern entirely yeah
+
+1588608695
+marler8997_
+ok that makes sense
+
+1588608706
+marler8997_
+but
+
+1588608715
+marler8997_
+that might make your change ALOT bigger
+
+1588608717
+marler8997_
+harder to review
+
+1588608723
+marler8997_
+and more likely to get merge conflicts
+
+1588608728
+alexnask
+grayhatter, The docs on this are not great, I would suggest looking in builtin.zig for the full definition of TypeInfo and std.meta for example usage
+
+1588608729
+fengb
+Wait for forward function declarations? We have stuff like
+
+1588608730
+tdeo
+yeah, this would be separate
+
+1588608742
+marler8997_
+I would do each removal in a separate PR
+
+1588608746
+marler8997_
+if possible
+
+1588608750
+tdeo
+the extern change in my current PR should be fully uncontroversial
+
+1588608753
+tdeo
+yes, i agree
+
+1588608757
+tdeo
+the ones in my PR are all related though
+
+1588608765
+tdeo
+but i'm not going to add more to it
+
+1588608793
+tdeo
+fengb: yeah, that's extern
+
+1588608796
+tdeo
+can you do that without extern?
+
+1588608804
+fengb
+No
+
+1588608812
+tdeo
+well actually we do need extern for the string literal i guess
+
+1588608817
+fengb
+Extern marks where the function comes from, similar to variables
+
+1588608831
+tdeo
+or it could be replaced with an @import() function
+
+1588608836
+marler8997_
+but if a function doesn't have a body, wouldn't that be the same?
+
+1588608859
+fengb
+Dynamic linked libraries have `extern "libname"`
+
+1588608880
+fengb
+We don't have a place to put the libname if we get rid of extern
+
+1588608889
+marler8997_
+oh right
+
+1588608909
+tdeo
+pub "wasi_snapshot_preview1" fn args_get(argv: [*][*:0]u8, argv_buf: [*]u8) callconv(.C) import("wasi_snapshot_preview1") errno_t; maybe
+
+1588608916
+tdeo
+whoops
+
+1588608922
+tdeo
+ignore the first string literal, meant to remove that
+
+1588608935
+tdeo
+pub fn args_get(argv: [*][*:0]u8, argv_buf: [*]u8) callconv(.C) import("wasi_snapshot_preview1") errno_t
+
+1588608965
+tdeo
+but i think an @import() would be more consistent with the rest of the language
+
+1588608978
+marler8997_
+that would work, is there a benefit to that over extern "..."?
+
+1588608989
+tdeo
+not really
+
+1588609000
+tdeo
+though you wouldn't always need the import
+
+1588609013
+tdeo
+just not having a body would be enough if it's not dynamically linked, which would be simpler
+
+1588611155
+pmwhite
+how do I use a `const [125:0]u8` where a `[*c]const [*c]const u8` is expected?
+
+1588611319
+pmwhite
+taking the address of the first one yields `*const [125:0]u8`, which doesn't coerce to the second one.
+
+1588611330
+pmwhite
+Is @ptrCast all I can do?
+
+1588611602
+alexnask
+assuming 'a' is a [125:0]u8, `&[_][*c]const u8 {&a}` will coerce to `[*c]const [*c] const u8`
+
+1588611681
+alexnask
+I think that is the simplest way
+
+1588611960
+pmwhite
+it works if you remove the inner &
+
+1588611978
+pmwhite
+perhaps because `a` is actually a `const [125:0]u8`
+
+1588612010
+pmwhite
+Ah, I get it, this thing is asking for an array, not a single item.
+
+1588612028
+alexnask
+Yeah
+
+1588612097
+alexnask
+I don't think it should work without the inner '&' (and it doesnt in a simple godbolt example) since 'a' is an array, it cannot coerce into a pointer-to-array
+
+1588612123
+alexnask
+aka error: expected type '[*c]const u8', found '[125:0]u8'
+
+1588614477
+marler8997_
+could we get this one merged?
+
+1588614519
+andrewrk
+marler8997, ah yes thanks for that!
+
+1588614545
+andrewrk
+marler8997, btw, maybe you want release-safe? crashing on unexpected errno is only enabled on debug builds
+
+1588614584
+marler8997_
+thanks for the quick merge
+
+1588614603
+andrewrk
+also I appreciate the explanation of why ETIMEDOUT can happen + story of it happening in the commit - that will be nice later when trying to figure out why certain errors are possible using git blame
+
+1588614604
+marler8997_
+I didn't actually mean crash, I mean, my program can't handle the unexpected errno and recover
+
+1588614625
+marler8997_
+sure thing
+
+1588614649
+andrewrk
+it seems like you're on board with the way zig does error sets and stuff, it's cool to see your project taking advantage of it
+
+1588614652
+marler8997_
+you learn to always include details like that when you've been doing this for over a decade :)
+
+1588614675
+marler8997_
+yeah the error control flow really helps create robust software
+
+1588614691
+andrewrk
+getting the error sets correct at the std.os level is doing the lord's work
+
+1588614702
+marler8997_
+lol
+
+1588614730
+andrewrk
+fuck that `error.Unexpected`, its very existence is a compromise
+
+1588614758
+andrewrk
+IMO the error set of OS syscalls should be part of the ABI
+
+1588614774
+marler8997_
+I'll keep that in mind when I get to writing my own OS :)
+
+1588614784
+andrewrk
+:D
+
+1588614884
+marler8997
+using zig error sets to define the kernel function interface would be interesting, of course, you'd have to use zig
+
+1588614933
+marler8997
+you'd have to define an ABI though...hmmm
+
+1588615045
+marler8997
+by the way, that qemu bug with mremap, been in qemu for 10 years
+
+1588615085
+andrewrk
+wow
+
+1588615086
+fengb
+Maybe it popped into existence retroactively after you found it
+
+1588615109
+marler8997
+It's specific to qemu user-host processes, makes me think it's not a very common usage of qemu
+
+1588615213
+andrewrk
+the zig project has been doing a pretty decent job exposing bugs in LLVM, qemu, wine, WSL...
+
+1588615262
+marler8997
+yeah, zig is actually using these tools.  Before zig, things would just go wrong and no one knows what to do so they just give up
+
+1588615292
+marler8997
+I've had to give up so many times trying to do things with LLVM/qemu/wine/WSL
+
+1588615379
+andrewrk
+marler8997, should ETIMEDOUT be added to the other read functions as well? readv, preadv
+
+1588615398
+andrewrk
+maybe not the pread ones
+
+1588615403
+marler8997
+pread yes
+
+1588615412
+andrewrk
+you can pread from a socket?
+
+1588615460
+marler8997
+For pread I'm just going off docs, it says it can fail, but I've never seen it
+
+1588615475
+marler8997
+haven't used readv/preadv so don't know
+
+1588615517
+tdeo
+what documentation? posix spec says pread can't return the network errors like wouldblock/timedout
+
+1588615527
+marler8997
+
+
+1588615551
+marler8997
+oh sorry you are correct
+
+1588615564
+marler8997
+it specifically excludes pread from ETIMEDOUT and a few others
+
+1588615845
+ifreund
+my man says you can't pread from a socket
+
+1588615877
+marler8997
+yeah to be clear, I was wrong, you cannot call pread on a socket
+
+1588615913
+ifreund
+well, actually I think you technically can with a 0 offset
+
+1588615918
+ifreund
+but it's not really a pread then
+
+1588616113
+fengb
+andrewrk: do the upstream projects appreciate our bug reports? Or do they roll their eyes at us — "oh these guys again"
+
+1588616114
+marler8997
+actually, offset is supposed to be from "start of file", so pread with a 0 offset would be different than a read
+
+1588616174
+marler8997
+which makes it clear why it makes no sense on sockets
+
+1588616243
+andrewrk
+fengb, high quality bug reports with small reductions are seen as valuable contributions
+
+1588616256
+andrewrk
+this is a fairly universal truth afaik
+
+1588616274
+andrewrk
+it's certainly true for zig bug reports
+
+1588616368
+fengb
+I definitely agree Zig welcomes all sorts of bug reports. I've had some mixed results with other projects
+
+1588616460
+marler8997
+I find appreciation to be based on change quality.  Does it explain what problem it's solving?  Is it focused on a single issue?  Has it been tested?
+
+1588616773
+marler8997
+It can also be quite frustrating as a maintainer to waste time reviewing/dealing with poor quality pull requests
+
+1588616822
+fengb
+I have no idea how andrewrk stays sane going through some of the stuff on Zig :P
+
+1588616860
+andrewrk
+plot twist, I was never sane to begin with
+
+1588616909
+marler8997
+"Let's make a new language"...said no sane person ever
+
+1588616931
+fengb
+But... "C++ sucks" says every person ever
+
+1588616931
+tdeo
+posted a new proposal about extern fn
+
+1588616951
+tdeo
+`extern extern fn foo() callconv(.C) void {}` is currently valid zig :)
+
+1588617074
+fengb
+Hmm, with 1717 this probably makes the most sense: `pub extern "c" const foo = fn() allconv(.C) void;`
+
+1588617087
+fengb
+I typoed callconv
+
+1588617097
+tdeo
+still doesn't solve the function pointer problem though :(
+
+1588617106
+fengb
+Oh?
+
+1588617125
+fengb
+Oh shoot I see
+
+1588617141
+tdeo
+i really want 1717 soon
+
+1588617157
+tdeo
+but i don't have a solution to the function pointer problem either
+
+1588617174
+tdeo
+i think changing function pointers to *fn explicitly makes the most sense, but still has some drawbacks as mentioned
+
+1588617180
+tdeo
+in the issue
+
+1588617270
+fengb
+We should do it the C way: `int (*)()` == `int (********)()`
+
+1588617297
+fengb
+All the indirections are the same!
+
+1588617749
+alexnask
+Every subset of C++ that does not match the subset I use is grabage /s
+
+1588623666
+Kingsquee
+so, I'm trying to use the platform-specific main()s defined by sokol_app.h
+
+1588623688
+Kingsquee
+cImport related stuff doesn't seem to work, if only because it doesn't translate properly
+
+1588623725
+Kingsquee
+so I'm trying to find alternate ways of making this work
+
+1588623819
+Kingsquee
+the best solution I've come up with is to make a 'main.c' which just #includes sokol_app.h and forwards the callbacks to 'everythingelse.zig'
+
+1588623851
+Kingsquee
+but 'everythingelse.zig' can't cInclude sokol_app.h without getting redefinition errors
+
+1588623907
+alexnask
+You could try defining SOKOL_NO_ENTRY before the import and using zig's main instead AI think
+
+1588623916
+Kingsquee
+which seems to imply I'll have to wrap all the C types in order to use them from Zig
+
+1588623939
+Kingsquee
+but wrap them using the C abi, so any zig-friendly tagged enums etc would require wrapping them
+
+1588623973
+Kingsquee
+so I'm obviously trying to find another way to do this
+
+1588624007
+Kingsquee
+alexnask: but does zig's main do emscripten and android and ios and all that with zero effort?
+
+1588624050
+Kingsquee
+because that's the desirable result of offloading to sokol_app
+
+1588624101
+Kingsquee
+I've already written some of those before and I'm keen to avoid repeating the experience
+
+1588624205
+alexnask
+Not sure about android but I think the rest works fine. If you look in start.zig you can see all the logic, if you are linking libc zig provides a regular main function that calls into the zig main
+
+1588625049
+Kingsquee
+
+
+1588625070
+Kingsquee
+Wanted: Android Developers Flesh out the standard library for Android. Streamline the process of using Zig to build for Android and for depending on Zig code on Android.
+
+1588625108
+Kingsquee
+so it sounds like zig's android entry point is intended to be minimal-bullshit
+
+1588625121
+Kingsquee
+so guess I'll trust that
+
+1588632533
+Snektron
+<andrewrk "also I appreciate the explanatio"> I think i ran into a case with another syscall that has incorrect handling
+
+1588632543
+Snektron
+let me look it up
+
+1588632869
+Snektron
+oh nevermind, it is handled correctly
+
+1588633877
+Snektron
+<tdeo "still doesn't solve the function"> It seems to me that Spex_Guy's latest comments resolve all problems
+
+1588633892
+kevsmith
+does zig have anything like the
+
+1588633997
+Snektron
+i don't think so
+
+1588634030
+kevsmith
+i didn't see anything in the docs or in code so i thought i'd ask make sure i didn't miss something obvious. thanks!
+

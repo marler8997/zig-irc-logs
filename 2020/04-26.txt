@@ -1,0 +1,1208 @@
+1587867415
+mikdusan
+andrewrk: hmm vim syntax for zir; maybe too much red. globals probably just keep no-color ?
+
+1587867463
+mikdusan
+s/too much red/too many constants/
+
+1587869555
+foobles
+how does ir_analyze_bin_op_bool work? it doesn't seem to introduce any short-circuiting logic itself. and even at comptime, it somehow short circuits even though it unconditionally calls ir_resolve_const on op1 and op2
+
+1587869589
+foobles
+like this works `const x = false and @compileError()`
+
+1587870012
+andrewrk
+foobles, the short circuiting happens in pass 1
+
+1587870028
+foobles
+oh, even for comptime stuff
+
+1587870032
+foobles
+cool
+
+1587870053
+foobles
+and im guessing the runtime short-circuiting is generated as a kind of wrapper around the IrInstSrcBinOp?
+
+1587870060
+foobles
+well i can just look
+
+1587870101
+andrewrk
+pass 1 has no access to types or values
+
+1587870136
+foobles
+so how does it know to short-circuit the `false and @compileError()` at pass 1?
+
+1587870140
+foobles
+if it doesnt have the value
+
+1587871202
+andrewrk
+foobles, it creates basic blocks and ir_build_br
+
+1587871228
+andrewrk
+have a look at ir_gen_bool_and - I think it's pretty readable
+
+1587871500
+redj
+andrewrk: sorry if I missed it on the stream but I was wondering what arch/binary formats are planned for the self-hosted zig compiler with the new zir compiler or whatnot?
+
+1587871645
+redj
+how much you're insisting on "cross platform as a first class use case" for this new work and how soon you think you'll start testing on other platforms?
+
+1587871829
+andrewrk
+all architectures, all binary formats
+
+1587871985
+yrashk
+this is a massive effort indeed
+
+1587872060
+pmwhite
+I haven't kept track of the state of break. Can I break out of an outer loop fr within an inner loop?
+
+1587874356
+foobles
+yeah, just label your loops
+
+1587874384
+foobles
+`outer: for (slice) |x| { while (condition()) { break :outer; } }`
+
+1587874505
+foobles
+pmwhite
+
+1587874575
+pmwhite
+Sweet
+
+1587876178
+foobles
+so if i understand correctly: basic blocks can only cause branching at the end
+
+1587876227
+foobles
+and that is what ir_build_br() does: it goes from one basic block to another
+
+1587876239
+foobles
+and ir_build_br_cond() will jump to different blocks based on a condition
+
+1587876329
+foobles
+if this understanding is correct: then does that mean you should ONLY do ir_build_br() as the last thing in a block?
+
+1587876345
+foobles
+since a block is supposed to just have 1 exit point at the end
+
+1587878126
+andrewrk
+foobles, yes that's all correct
+
+1587878162
+foobles
+great, ok
+
+1587878168
+foobles
+br = break?
+
+1587878184
+andrewrk
+branch
+
+1587878219
+andrewrk
+however note that with the new SSAT form, it will work differently, with different primitives (confusingly, with break instead of branch)
+
+1587878973
+shakesoda
+what does zig expect me to do instead of 1 << i in a loop
+
+1587879035
+shakesoda
+it complains with "LHS of shift must be an integer type, or RHS must be compile-time known" but 1 is definitely an integer and RHS can't be comptime known so that doesn't make sense
+
+1587879089
+shakesoda
+and if I try casting things or telling it what kind of int, it gives me an ever-changing integer type (u5, then u3, etc...)
+
+1587879148
+andrewrk
+shakesoda, it should say "...must be a
+
+1587879274
+shakesoda
+I see
+
+1587879285
+shakesoda
+do i just need to cast both sides so it knows it can't overflow the u32
+
+1587879309
+andrewrk
+ya
+
+1587879311
+foobles
+i think you just need to cast the 1
+
+1587879313
+foobles
+oh?
+
+1587879334
+foobles
+i thought you would need to cast the lhs to a fixed-width tye
+
+1587879340
+foobles
+s/tye/type
+
+1587879380
+shakesoda
+foobles: when i do that it then wants the right side to be a type that cannot possibly contain a value that would shift everything out, i guess
+
+1587879392
+foobles
+aaah, yeah
+
+1587879424
+shakesoda
+feels a bit overboard to me on the requirement but okay, I get it now
+
+1587879444
+shakesoda
+better safe than sorry when bit manipulation is already fickle, i suppose
+
+1587879452
+foobles
+yeah
+
+1587879489
+foobles
+and in other langs where there is UB for over-shifting something, i think its interesting the potential UB shifts to be in the int-cast
+
+1587879493
+andrewrk
+in C it's basically the same, except you get UB instead of compilation errors
+
+1587879677
+foobles
+heh, i just realized you can call `@truncate` to make the type bigger
+
+1587887429
+daurnimator
+foobles: you should use @as for that
+
+1587887439
+daurnimator
+or just keep it small and let it eventually cast...
+
+1587887443
+foobles
+yeah, that would make more sense
+
+1587887449
+foobles
+i just thought it was funny
+
+1587887460
+foobles
+that it isnt checked that it is actually truncating
+
+1587890749
+gonz_
+andrewrk: Nice to see some action in terms of self-hosted
+
+1587890795
+andrewrk
+it's going to be quiet for a couple weeks as I prepare (two!) talks for RedisConf 2020, but you can expect to see a lot of progress on this front in this release cycle :)
+
+1587891012
+gonz_
+Are either or both talks Redis-specific or is kristoff_it doing the redis module specific stuff?
+
+1587891041
+gonz_
+(or whatever they call the pseudo(?)-plugin stuff in redis)
+
+1587891095
+gonz_
+I seem to remember there being two tiers of plugins you can write for it
+
+1587894570
+Invader_Bork
+/join #meson
+
+1587895261
+Snektron
+wrong chat
+
+1587896109
+gonz_
+What tools do we have for analyzing a `fn` returning a generic type?
+
+1587896145
+gonz_
+I don't want to force some evaluation of `f` in order to see the type; I'd like to analyze the returned type in its generic form.
+
+1587896149
+gonz_
+Ideally, I mean.
+
+1587896480
+mikdusan
+isn't the return type of a generic type always going to be `type` or `!type` or some other error union with a type?
+
+1587896601
+gonz_
+Sure
+
+1587896616
+gonz_
+I don't want to qualify the types and analyze the result
+
+1587896623
+gonz_
+(if I can avoid it)
+
+1587896632
+gonz_
+I can give it garbage types and see what type comes out, but this isn't ideal
+
+1587896640
+daurnimator
+gonz_: you can use `@TypeOf(foo(1,2,3))` and it doesn't actually execute it
+
+1587896661
+mikdusan
+that's peer-type resolution
+
+1587896671
+daurnimator
+mikdusan:  ?
+
+1587896674
+gonz_
+This is all comptime stuff regardless so executing it isn't super important
+
+1587896687
+mikdusan
+oh sorry, that's just going to return type
+
+1587896715
+gonz_
+The issue I have is that I'm basically going to have to (as far as I can see) give it u1,u2,u3, etc., and see where these fall in the result.
+
+1587896733
+gonz_
+To determine which generic parameter goes where in the result type
+
+1587896805
+daurnimator
+gonz_: it could be
+
+1587896814
+daurnimator
+gonz_: maybe at this point a better question is: what are you trying to do?
+
+1587896827
+gonz_
+daurnimator: No, generic values can't be *anything*, they correspond to the passed in type in the function.
+
+1587896850
+gonz_
+And if there were two instances of `U`, they are guaranteed to match.
+
+1587896909
+gonz_
+
+
+1587896921
+gonz_
+Look at the README and consider how you'd support generic type translation.
+
+1587896931
+gonz_
+And I think you'll arrive at the same issue.
+
+1587896964
+gonz_
+(or you know of some tool that will allow you to analyze these generic functions returning types, which is what I'm looking for)
+
+1587896983
+gonz_
+Otherwise I'll have to supply known values and look at the type info for the generated type and match them.
+
+1587897014
+gonz_
+Consider `fn (...) type { return struct {v1: T, v2: U, v3: U}; }`
+
+1587897048
+gonz_
+These generic parameters need to be given IDs in some form or another in order to guarantee that the type output corresponds accordingly
+
+1587897059
+gonz_
+If you qualify them, you'll have to give them all different types
+
+1587897078
+gonz_
+So the different types can stand in for type IDs
+
+1587897100
+daurnimator
+gonz_: they could also correspond to values of comptime arguments
+
+1587897168
+gonz_
+What do you mean, exactly?
+
+1587897172
+daurnimator
+fn somefunc(foo: usize, comptime bar: SomeStruct, qux: var) DoSomething(bar.somefield * 2, @TypeOf(qux)) {
+
+1587897283
+gonz_
+Sure, zig types can depend on many things, some of which I'm planning to add
+
+1587897312
+gonz_
+The issue is not (right now) "Can we translate all of these things to all target languages?" but rather "What can we do with zig type analysis atm?"
+
+1587897348
+gonz_
+And right now we're at the very basic scenario of looking at a pretty basic generic struct type and outputting the corresponding TypeScript, PureScript & Haskell one.
+
+1587897366
+mikdusan
+this seems like you have `fn add(a,b) result` and you're asking to see result without running add
+
+1587897405
+gonz_
+Well, what I'm asking is mostly whether or not we've established any tooling for analyzing these types of generic functions yet?
+
+1587897437
+gonz_
+We have type fields for `is_generic`, etc., so it's not outside of the realm of possibility that someone has dealt with this.
+
+1587897457
+gonz_
+And let's not pretend this is some outerworldly scenario
+
+1587897484
+gonz_
+We can do plenty of analysis on types and this is just a natural extension of that.
+
+1587897554
+ifreund
+well that was a fun hack to write
+
+1587897918
+gonz_
+It would also seem that zig currently doesn't analyze generic arguments correctly
+
+1587897942
+gonz_
+A function taking two types and using both of them in a returned struct will analyze as one of them having `is_generic` set to `false`
+
+1587898207
+gonz_
+It also will actually say the type of one of them is `null` and not `type`
+
+1587898252
+gonz_
+I'm going to check on latest `master` to see if this is fixed or not.
+
+1587898778
+daurnimator
+gonz_: the plan is to figure out the allowed types via the test suits
+
+1587898780
+daurnimator
+*suite
+
+1587898809
+daurnimator
+and note that types might entirely change based on target/any comptime available info
+
+1587898821
+daurnimator
+the wonders of a lazy language
+
+1587901178
+mikdusan
+given `fn foo(comptime T0: type, comptime T1: type, comptime T2: type) void`,
+
+1587901227
+mikdusan
+`@typeNAme(@TypeOf(foo))` result --> fn(type,var,var) var
+
+1587901316
+mikdusan
+also only the first `comptime` keyword is required by compiler
+
+1587901407
+mikdusan
+gonz_: I think ^^ is related to inconssitent `is_generic`
+
+1587902864
+pixelherodev
+andrewrk, how stable is ZIR? If I were to implement some work over the current parser, will it be usable in a week?
+
+1587908132
+ifreund
+alright, i've managed to crash the 0.6.0 compiler, but the build im running doesn't have debug symbols
+
+1587908150
+ifreund
+are the tarballs from ziglang.org built with debug syms?
+
+1587908297
+drasko
+Hi all, I am trying to proxy from one socket into another, but readAll() seems to block here:
+
+1587908305
+drasko
+any ideas how to make it non-blocking?
+
+1587908385
+daurnimator
+drasko: don't use readAll... its purpose is to block
+
+1587908406
+daurnimator
+also use a LinearFifo so you don't have to use writeAll
+
+1587908410
+drasko
+But I want to reall all the data available in the socket
+
+1587908427
+drasko
+How to achieve that?
+
+1587908430
+daurnimator
+drasko: readAll means read everything until the socket is closed
+
+1587908448
+drasko
+and how can I read everything that is available?
+
+1587908457
+daurnimator
+oh wait no it doesn't
+
+1587908470
+drasko
+i.e. read all that client sent in one message
+
+1587908476
+drasko
+while still keeping connection open
+
+1587908477
+daurnimator
+there is no such thing
+
+1587908481
+daurnimator
+that's not how TCP works
+
+1587908484
+drasko
+for subsequent messages
+
+1587908508
+daurnimator
+TCP is not message based
+
+1587908516
+daurnimator
+it's one long bidirectional stream
+
+1587908531
+daurnimator
+you need to look at whatever framing your protocol does
+
+1587908543
+daurnimator
+or alternatively: be a dumb pipe and don't care about messages/framing
+
+1587908571
+drasko
+OK, I see
+
+1587908585
+drasko
+So - read() should be used here
+
+1587908591
+daurnimator
+yes
+
+1587908596
+daurnimator
+or... what is your framing?
+
+1587908603
+drasko
+MQTT protocol
+
+1587908609
+drasko
+I will manage it
+
+1587908629
+drasko
+I did notknow that readAll blocks until socket is closed
+
+1587908675
+drasko
+Just one question - will these `pipe()` be executed sequentially or in parallel
+
+1587908700
+drasko
+I need to write from one socket (req) and wtite to another, then read response from this one and write back to previous
+
+1587908701
+daurnimator
+drasko: you will need to read and understand the MQTT framing:
+
+1587908706
+drasko
+and I waould like to do this in parallel
+
+1587908718
+daurnimator
+okay; so more of a dumb proxy?
+
+1587908730
+drasko
+Yes
+
+1587908791
+daurnimator
+so you need a scheduler for that; you can try out the immature one in the zig standard library by doing: `pub const io_mode = .evented;`
+
+1587908797
+drasko
+But I do not know how to launch two functions in parralel - one that reads from `in` proxy and sends it to `out`, and in parallel one that reads responses from `out` and writes them to the `in`
+
+1587908921
+daurnimator
+drasko: `const a = async start_read_loop(); const b = async start_write_loop(); await a; await b;` or something like that
+
+1587909702
+drasko
+Now I am getting: error.FileDescriptorAlreadyPresentInSet => unreachable, // evented writes to the same fd is not thread-safe
+
+1587909730
+drasko
+I am using this code:
+
+1587909911
+drasko
+daurnimator, I tried .evented
+
+1587909915
+drasko
+how to use scheduler?
+
+1587909952
+daurnimator
+drasko: that is non trivial and I don't think anyone has really done it successfully yet...... its more of a concept :P
+
+1587909967
+drasko
+OK, definitly not for me
+
+1587909989
+drasko
+Anyway -  writeAll() is ot blocking, right?
+
+1587909993
+drasko
+or it is as well?
+
+1587910006
+daurnimator
+drasko: writeAll keeps trying to write and doesn't allow partial writes
+
+1587910040
+daurnimator
+however if either write() or writeAll() get EAGAIN then they punt to the scheduler
+
+1587910066
+daurnimator
+so really, non-blocking-ness is more of a question about how you open the socket in the first place (i.e. do you pass O_NONBLOCK)
+
+1587910081
+daurnimator
+the specifics here change per OS; are you on linux?
+
+1587910091
+drasko
+Yes, Linux
+
+1587910112
+drasko
+but I did not pass O_NONBLOCK, I thought that this is happening under the hood
+
+1587910128
+drasko
+when connecting to a server
+
+1587910130
+daurnimator
+looks like it does. I'm not super familiar with the implementation
+
+1587910199
+drasko
+Any ideas about this error.FileDescriptorAlreadyPresentInSet => unreachable, // evented writes to the same fd is not thread-safe
+
+1587910238
+drasko
+I do not understand it, like it won't allow me to write into socket from async function
+
+1587910243
+daurnimator
+I think I've hit it before... I couldn't figure it out
+
+1587910547
+pixelherodev
+Is `const a = struct { const b = struct { usingnamespace a; } };` valid?
+
+1587910639
+ikskuh
+i think so :D
+
+1587910710
+pixelherodev
+and struct invocation syntax is usable normally?
+
+1587910728
+pixelherodev
+e.g. if a contained a function `c` and I have an object `d` of type `b`, I can do d.c() and it'll receive d as the first parameter?
+
+1587910889
+daurnimator
+drasko: this sort of works locally for me:
+
+1587911078
+ikskuh
+pixelherodev:
+
+1587911094
+ikskuh
+hm, try it out! :D
+
+1587911112
+drasko
+daurnimator, let me check this concept of FIFO
+
+1587911409
+daurnimator
+pixelherodev: why do you ask? :P
+
+1587911439
+mikdusan
+pixelherodev: yes and the bound functions brought in by `usingnamespace` need to be public
+
+1587911448
+drasko
+daurnimator, why do we need this linear fifo?
+
+1587911491
+daurnimator
+drasko: because otherwise you end up waiting to write out the current buffer before reading again
+
+1587911536
+drasko
+I see
+
+1587911539
+drasko
+This works nicely
+
+1587911555
+drasko
+let me analyze a bit more, but I tested it and it work :)
+
+1587911559
+drasko
+*works
+
+1587911568
+drasko
+Thaks a lot!
+
+1587911657
+daurnimator
+drasko: btw, it would be sensible to set the linear fifo size to 4096
+
+1587911677
+drasko
+Will do this, makes sense
+
+1587911733
+daurnimator
+(or a multiple of it... depending on how much you want to trade off ram-usage; how big your reads are; bandwidth concerns; etc)
+
+1587912102
+pixelherodev
+daurnimator, had an idea for a quasi-"inheritance" pattern
+
+1587912107
+pixelherodev
+For register definitions
+
+1587912152
+pixelherodev
+Register -> Register{8,16,32,64,XXM,etc}
+
+1587912160
+pixelherodev
+Then some other types that just embed e.g. Register32 for type safety
+
+1587912178
+pixelherodev
+e.g. RegisterAddress / RegisterInt
+
+1587912288
+ikskuh
+pixelherodev: yes, you can usingnamespace functions with the correct first type
+
+1587912298
+ikskuh
+i think both daurnimator and me made an experiment with this
+
+1587912356
+ikskuh
+but you have to use generic structs fr that
+
+1587912357
+ikskuh
+like
+
+1587912361
+ikskuh
+usingnamespace Mixin(@This());
+
+1587912394
+pixelherodev
+Righty, that works fine
+
+1587912406
+pixelherodev
+Logic deduplication is worth it
+
+1587912443
+ikskuh
+yeah
+
+1587912710
+daurnimator
+hmmm.... anyone had an issue where llvm-objcopy keeps making 256MB files?
+
+1587913806
+pixelherodev
+There's no form of multi-initialization, is there?
+
+1587913855
+pixelherodev
+Something like `const a, b: c = .{}, .{};` would be awesome...
+
+1587913879
+ifreund
+imo that hurts readability and isn't really worth it
+
+1587913893
+pixelherodev
+I think it hurts readability less than
+
+1587913894
+pixelherodev
+:P
+
+1587913907
+pixelherodev
+`pub const AL = R8{.id = 0};`
+
+1587913923
+pixelherodev
+8 for R8, 8 for R16, 8 for R32, 16 for R64...
+
+1587913953
+ifreund
+if you have 32 lines of straight up initialization maybe there's some way to restructure things and break it up into smaller tasks
+
+1587913957
+pixelherodev
+There isn't.
+
+1587913962
+pixelherodev
+It's 32 lines of
+
+1587913976
+pixelherodev
+All of which are absolutely required
+
+1587913983
+pixelherodev
+As they are exposed outside the library
+
+1587914345
+pmwhite
+I don't think that's necessarily unreadable. It's just long, which is fine, all other things being equal.
+
+1587914426
+pixelherodev
+It's not
+
+1587914492
+pixelherodev
+Split into four per line would make it easier to read
+
+1587914534
+pystub
+hello everyone, are questions about bootstrap tarball on topic?
+
+1587914542
+pixelherodev
+yeah
+
+1587914582
+pmwhite
+pixelherodev: why would that be more readable?
+
+1587914623
+pmwhite
+I guess readability is subjective.
+
+1587914689
+pmwhite
+But I personally find a 32 item list simpler than an 8 item list of 4 item lists, since that would have a nested rather than flat structure.
+
+1587914708
+pixelherodev
+It wouldn't nested though
+
+1587914720
+pystub
+it compiles all the deps (clang, llvm, lld) but then gets to zig itself and then stops at "Linking CXX executable zig0" with error "lld: error: unable to find library -lclangARCMigrate"
+
+1587914729
+pixelherodev
+In this specific case, it makes sense; the groupings are all logical
+
+1587914752
+pmwhite
+Okay, it would be matrix rather than an array.
+
+1587914760
+pixelherodev
+It's neither
+
+1587914771
+pixelherodev
+it's 32 distinct constants
+
+1587914781
+pixelherodev
+either way, it's 32 distinct constants, logically grouped
+
+1587914805
+pmwhite
+I see more now. A blank line between groups is your current option, then, right?
+
+1587914809
+pixelherodev
+Yeah
+
+1587914826
+pixelherodev
+The only difference is whether the grouping is inter-line (8 lines grouped together) or intra-line (4 sets of 2 grouped lines)
+
+1587914849
+pixelherodev
+s/4 sets of 2 grouped lines/2 grouped lines each containing four definitions
+
+1587914861
+pixelherodev
+pystub, check if it's a known issue?
+
+1587914870
+pixelherodev
+
+
+1587914885
+pixelherodev
+Yeah, it is
+
+1587914885
+pixelherodev
+
+
+1587914895
+pystub
+sorry missed it
+
+1587914930
+pixelherodev
+No worries
+
+1587914995
+pmwhite
+I personally still don't care for multi initialization. One per line would make variables and values line up parallel. I don't get bothered by large line counts either.
+
+1587915052
+pmwhite
+I'm also against using directories for grouping files.
+
+1587915180
+pixelherodev
+Why?
+
+1587916325
+pmwhite
+pixelherodev: they don't semantically improve the structure of a program, and they just add more things for the programmer to manage. They don't really make anything easier.
+
+1587916346
+pixelherodev
+Agree to disagree
+
+1587916370
+pmwhite
+Note, I'm talking mostly about source code, but I also do this with, for example, my Documents folder.
+
+1587916438
+pmwhite
+I'm fine with disagreeing, but I'm curious which points you disagree with.
+
+1587916551
+pixelherodev
+I think having a well thought out directory structure makes it much easier to find a specific component
+
+1587916578
+pixelherodev
+e.g. for my current project `src/emitters/x86/assembler.zig` - if I know what I'm looking for I can find it in seconds, and if I don't it only takes slightly longer
+
+1587916631
+pixelherodev
+Clean separation of components make everything simpler
+
+1587917190
+nephele
+i like using directory structures because semantically grouping helps me find stuff too, and it makes tabcompleteion much easier in some cases
+
+1587917319
+pixelherodev
+Gah, there's going to be way more than 32
+
+1587917332
+pixelherodev
+Forgot that the new 64-bit registers can be used as e.g. r8d, r15w, etc
+
+1587918558
+drasko
+HI all, I am getting this error:
+
+1587918558
+drasko
+reached unreachable code
+
+1587918558
+drasko
+/home/drasko/bin/zig/lib/zig/std/event/loop.zig:473:60: 0x231946 in std.event.loop.Loop.linuxWaitFd (zproxy)
+
+1587918559
+drasko
+^
+
+1587918559
+drasko
+error.FileDescriptorAlreadyPresentInSet => unreachable, // evented writes to the same fd is not thread-safe
+
+1587918571
+drasko
+For a code over here:
+
+1587918630
+drasko
+Any idea what's going on actually, and why this error.FileDescriptorAlreadyPresentInSet => unreachable happens?
+
+1587923030
+andrewrk
+drasko, it's a design flaw in the std lib event loop. the implementation needs to be reworked
+
+1587923046
+andrewrk
+pixelherodev, wait until it has control flow and you see test coverage that covers the kinds of constructs you would be emitting
+
+1587923399
+pixelherodev
+That's what I figured
+
+1587923493
+drasko
+andrewrk, thanks for confirming
+
+1587926436
+r4pr0n
+
+
+1587929616
+yrashk
+is there a straightfoward way to generate a binary for build.zig? I want to cross-compile it and run with qemu
+
+1587929705
+yrashk
+or, to cut to the chase, I want to run all the tests `zig build test` with qemu on a different arch
+
+1587929711
+andrewrk
+yrashk, zig build-exe $ZIGSRC/lib/std/special/build_runner.zig --pkg-begin @build path/to/your/build.zig --pkg-end -target foo
+
+1587929720
+yrashk
+thanks!
+
+1587929741
+yrashk
+any chance we can make this more straightforward in the next release?
+
+1587929742
+andrewrk
+yrashk, glad you followed up with the "cut the chase" because that won't accomplish your goal, and there is a good way to accomplish your goal
+
+1587929765
+andrewrk
+from the zig source build dir, `./zig build test -Denable-qemu`
+
+1587929784
+andrewrk
+
+
+1587929799
+andrewrk
+you might want to combine that with -Dskip-release to save some hours
+
+1587929823
+yrashk
+this will run zig's own tests
+
+1587929851
+andrewrk
+I understand now, you want to run the tests for multiple targets with qemu. yes this is a good use case
+
+1587929922
+andrewrk
+b.standardTargetOptions already accepts a set of valid targets - so the next improvement to make here is adding to build_runner.zig a CLI option to use qemu to run tests for all the specified targets that it can
+
+1587929939
+yrashk
+yeah that'd be most interesting
+
+1587929950
+andrewrk
+contribution welcome, it's a great feature
+
+1587929956
+yrashk
+I'll give it a try
+
+1587929958
+andrewrk
+most of the machinery is already there
+
+1587929963
+andrewrk
+just the glue code is left
+
+1587929990
+andrewrk
+yrashk, oh, we already have enable_qemu here:
+
+1587930026
+andrewrk
+so it will already work if you set that in your build script, and then `zig build test -Dtarget=foo`
+
+1587930035
+andrewrk
+however your idea to run it for multiple targets is good
+
+1587930060
+andrewrk
+and it would be good to surface this option without requiring the build.zig script to opt in
+
+1587930088
+yrashk
+yeah I was kind of expecting this to be  a command line thing as well
+
+1587930114
+yrashk
+so that build.zig doesn't need to
+
+1587930120
+yrashk
+one platform at a time is fine for me, tbh
+
+1587930373
+yrashk
+also, Invalid option: -Dtarget (if I run `zig build test -Dtarget=aarch64-linux-musl`, for example)
+
+1587931200
+r4pr0n
+is there a good way to check if a string is a number?
+
+1587935028
+Snektron
+You could always just try to parse it
+
+1587935140
+Snektron
+`const is_number = str.len > 0 and if (std.fmt.parseInt(str, 10)) |_| true else |_| false)`;
+
+1587935191
+Snektron
+or maybe rather `const is_number = if (std.fmt.parseInt(str, 10) |_| str.len > 0 else |_| false;`
+
+1587935353
+Snektron
+Seems strange that an empty string is considered a number
+
+1587935409
+Snektron
+<r4pr0n "
+
+1587935778
+st4ll1
+a question did there something change with enum from cImport?
+
+1587940506
+shakesoda
+st4ll1: relative to when
+
+1587940551
+shakesoda
+they're translated to actual enums
+

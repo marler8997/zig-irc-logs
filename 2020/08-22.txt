@@ -1,0 +1,320 @@
+1598079355
+andrewrk
+PC9801, the rust code is calling into dynamically linked (not shown) code but the zig code is 100% all there
+
+1598079385
+andrewrk
+you probably intend to turn on release builds for both of them
+
+1598079757
+wilsonk
+lol, I didn't even look at the rust code enough to realize it was calling into dynamically linked code...duh
+
+1598079832
+andrewrk
+that said, I turned on optimizations and am seeing that the rust code got a lot smaller than the optimized zig code. it looks like the formatting code turned into some vectorized stuff. unclear if this is better or worse than the rust code, would have to execute it to find out
+
+1598079908
+andrewrk
+and uh, yeah, actually the optimized rust code is calling a (not shown) function for printing, so again it's not a fair comparison
+
+1598080083
+andrewrk
+PC9801, you can make it fair by using an extern function for printing the values and using an export function instead of main:
+
+1598089466
+eleanor-nb
+I'm thinking of beefing up the RISC-V inline assembler in stage 2. The conceptual problem I'm running into is: how do we do labels?
+
+1598089531
+eleanor-nb
+Relative labels can be handled locally, but absolute labels will have to be passed on to later stages of codegen, which will need to be aware of RISC-Vsymbol vagaries.
+
+1598089585
+eleanor-nb
+Also, incremental compilation will not like that.
+
+1598089790
+eleanor-nb
+With more thought, I think that absolute labels should not be allowed, and function bindings should only be allowed in `call`, whose implementation we override.
+
+1598090826
+eleanor-nb
+To make relative jumps work across function calls, it won't be enough to keep track of output address internally -- we'd need to either track exact byte counts of codegen outputs, or get the current output address.
+
+1598091669
+eleanor-nb
+Here's what I'm thinking:
+
+1598091850
+eleanor-nb
+(Nvm, still thinking.)
+
+1598099540
+Ristovski
+Is there anything else besides LTO not being applied across Zig<->C boundary that could theoretically impose a performance regression when mixing Zig and C?
+
+1598099873
+scientes
+Ristovski, PIC, but otherwise that is basically it. You might want to add a trampoline in some cases to prevent speculative execution.
+
+1598099896
+Ristovski
+scientes: Ah cool, thanks
+
+1598099922
+scientes
+PIC is position independent code
+
+1598099965
+Ristovski
+Yeah I am aware :P
+
+1598100995
+PC9801
+andrewrk thanks! this makes sense
+
+1598101964
+ofelas
+does anyone know why: unable to call function with naked calling convention?
+
+1598102184
+ifreund
+ofelas: you're going to have to give a little more context than that, could you paste the code and error message somewhere?
+
+1598102728
+ofelas
+
+
+1598102898
+ofelas
+error message here
+
+1598103372
+ifreund
+um, shouldn't your entry point be the only callconv(.Naked) function?
+
+1598103564
+ifreund
+pretty sure .Naked means that the function can only be called as an entry point, not from zig code
+
+1598103585
+ofelas
+I'm blindly following this FreeRTOS Cortex-M3 port calling conventions at the moment, haven't spent to much time analyzing as the "inline" asm fixed the problem
+
+1598103606
+daurnimator
+no you should be able to call naked from anywhere
+
+1598103615
+ofelas
+it seems C can call naked functions so I thought Zig could too
+
+1598103702
+ifreund
+daurnimator:
+
+1598103716
+ifreund
+this suggests otherwise no?
+
+1598103826
+daurnimator
+ifreund: hmm, looks like we only support calling naked with assembly
+
+1598103888
+ifreund
+we could definitely use some better docs on calling conventions at least
+
+1598103903
+daurnimator
+ifreund: a naked function is essentially saying "I'll handle the calling convention myself with assembly 'I will grab my own args from registers/the stack'"
+
+1598103938
+daurnimator
+"I'll handle it myself" is not inherently incompatible with other calling conventions; but it
+
+1598103954
+daurnimator
+i.e. its giving the developer enough rope to hang themselvess
+
+1598103957
+ifreund
+makes sense
+
+1598104024
+daurnimator
+_start has to be naked.... because there is no other calling convention for it: you have to do it yourself. but there's no reason you can't write a naked function that does e.g. 20 nops and then the internals of C calling convention
+
+1598116863
+scientes
+when I showed our _start to people they were a bit scared it wasn't assembly
+
+1598116890
+scientes
+ofelas, zig can call naked functions
+
+1598116936
+scientes
+but it doesn't make much sense to do that
+
+1598116958
+scientes
+as if you are not using standard calling conventions (or fastcc) then you do the call yourself, and not with llvm
+
+1598117050
+marler8997_
+is there a way to make a function use the C ABI without making it externally visible?
+
+1598117067
+BaroqueLarouche
+callconv(.C) ?
+
+1598117075
+marler8997_
+that's it, thanks BaroqueLarouche
+
+1598122272
+ifreund
+anyone know if there's a non-hacky way to output a library to $PREFIX/lib/security/foo.so with the zig build system?
+
+1598124230
+andrewrk
+idea being to insert that "security" dir there?
+
+1598124250
+andrewrk
+is that some kind of standard?
+
+1598124758
+ifreund
+that's what pam uses
+
+1598124774
+ifreund
+I'm writing a pam module and using zig of course
+
+1598125197
+andrewrk
+ifreund, I think you can overwrite Builder.lib_dir field
+
+1598125288
+ifreund
+on 0.6.0 at least whatever I set gets overwritten in resolveInstallPrefix()
+
+1598125374
+ifreund
+tried setting the name of the library to "security/foo" as well but there's a check that disallows it as an invalid name
+
+1598126066
+andrewrk
+alright well sounds like it's not really possible but patch welcome. the build should be fully configurable, shouldn't get in people's way
+
+1598126128
+andrewrk
+ifreund, is this something that makes sense to be configured by the project, or by the user doing the install?
+
+1598126153
+andrewrk
+maybe we make a standard option that is always available to override the lib dir?
+
+1598126274
+ifreund
+configured by the project in this case I believe. pam looks for modules in /lib/security by default and so my project should install to $prefix/lib/security
+
+1598126324
+ifreund
+users should only need to specify e.g. /usr as the prefix, they shouldn't need to know where pam will search for modules
+
+1598128825
+andrewrk
+makes sense
+
+1598129934
+ifreund
+hmm, automatically prefixing my .so file with lib also doesn't fit with the conventions for pam
+
+1598129967
+ifreund
+maybe I should just be using addObject
+
+1598130000
+scientes
+ifreund, I remember when systemd wrote a pam module
+
+1598130002
+scientes
+it was hell
+
+1598130010
+ifreund
+lol
+
+1598130013
+scientes
+you have to do all these crazy things
+
+1598130026
+ifreund
+all mine is going to do is set XDG_RUNTIME_DIR
+
+1598130093
+ifreund
+I wouldn't need this if I was using (e)logind of course
+
+1598132327
+marler8997_
+Reading about X and came accross the X "Principles" here, looks like good advice that confirms some of the things I've learned in my years:
+
+1598132413
+andrewrk
+this one goes against zig philosophy: "If you can get 90 percent of the desired effect for 10 percent of the work, use the simpler solution"
+
+1598132427
+andrewrk
+zig is all about doing extra labor to close that last 10%
+
+1598132449
+marler8997_
+an interesting detail, of course, it depends on how important that "effect" is
+
+1598132467
+marler8997_
+when it comes to proper error handling, Zig definitely aims for the 100% approach
+
+1598132514
+marler8997_
+but then again, I wouldn't say Zig had to add 90% more complexity to handle 100% of errors
+
+1598132542
+andrewrk
+not assuming memory allocation will succeed would be the main example
+
+1598132566
+andrewrk
+many programming languages are fundamentally built on the premise that memory is infinite
+
+1598132670
+marler8997_
+It is infinite from the processor's perspective, because if you ever run out, you get murdered by the OOM...so it's infinite as far as you know :)
+
+1598132682
+marler8997_
+*process's perspective (not processor)
+
+1598132709
+andrewrk
+there are many environments where that is not true
+
+1598132760
+andrewrk
+if you're writing library code, the premise is that it's intended to be reusable code, and therefore behaving correctly on many environments is part of the features the library is providing
+
+1598132830
+marler8997_
+yeah starting a language with this premise is a much needed thing in my opinion
+
+1598137302
+ronsor
+hey, does anyone have advice for getting stack traces on UEFI?
+

@@ -1,0 +1,3248 @@
+1582070413
+daurnimator
+translate-c can only translate C. not C++ :P
+
+1582070414
+fengb
+I think ForLoveOfCats is saying that async await denotes concurrency dependencies. What would be the strategy for executing tasks in parallel?
+
+1582070453
+jaredmm
+Right, but running zig build with a cImport including winuser.h popped that bad boy out.
+
+1582070462
+jaredmm
+The C definition in winuser.h would be
+
+1582070465
+fengb
+Will Zig provide a thread pool, mutex locking, etc
+
+1582070467
+jaredmm
+`typedef struct tagMOUSEHOOKSTRUCTEX { MOUSEHOOKSTRUCT DUMMYSTRUCTNAME; DWORD   mouseData; } MOUSEHOOKSTRUCTEX, *LPMOUSEHOOKSTRUCTEX, *PMOUSEHOOKSTRUCTEX;`
+
+1582070471
+ForLoveOfCats
+After re-reading the docs on async/await my confusion still stands. In the docs async/await is framed as a way to call coroutines but not to perform chunks of work in parallel. However the factorial Zig vs Go repo presents it as a solution to build parallel logic. I have a chunk of work I know I can execute in parallel, async/await does not seem to be an approach specifically to that yet the demonstration frames it as a way to
+
+1582070473
+ForLoveOfCats
+achieve parallelism.
+
+1582070502
+daurnimator
+so its really a missing error
+
+1582070589
+andrewrk
+fengb, I can make a simple example of executing 2 async functions in parallel
+
+1582070655
+andrewrk
+ForLoveOfCats, do you want an example of parallelism with or without the event loop?
+
+1582070742
+ForLoveOfCats
+I don't want to take up much more time, can you just tell me which zig implimentation in the Zig vs Go repo demonstrates parallelism in a Zig-y way?
+
+1582070744
+jaredmm
+It shouldn't be trying to run the C++ code in the header, though. `#ifdef __cplusplus`
+
+1582070782
+fengb
+Oh I’m more curious about the patterns going forward
+
+1582070787
+ForLoveOfCats
+Hmmm mayhaps it has something to do with `std.event.Loop.startCpuBoundOperation();`
+
+1582070806
+andrewrk
+ForLoveOfCats, this one:
+
+1582070823
+ForLoveOfCats
+I had seen that file but overlooked the event.Loop start line
+
+1582070840
+ForLoveOfCats
+I'd seen that namespace in the std docs but there is zero documentation on it
+
+1582070856
+ForLoveOfCats
+it looked like something that would be used for, event based programming
+
+1582070856
+andrewrk
+the other important line is line 5. it works if you take out line 5, but it becomes not parallel anymore
+
+1582070875
+ForLoveOfCats
+Why should the IO mode affect how my application logic runs?
+
+1582070884
+ForLoveOfCats
+That is another confusion point of mine
+
+1582070936
+pixelherodev
+I think there should be a distinction between I/O mode and execution model
+
+1582070974
+pixelherodev
+Should be possible to e.g. run a program in parallel with single-threaded I/O
+
+1582070987
+pixelherodev
+... ah wait, never mind that would be dumb
+
+1582071008
+pixelherodev
+Sorry, I'm going to take a nap before participating in this discussion further :P
+
+1582071031
+FireFox317
+andrewrk: how would you make the render.zig async compatible? it is using recurssion, so i have to allocate the frame i guess, however there are 200 callsites of `renderToken` so there has to be a lot of allocation for the frames...
+
+1582071072
+andrewrk
+fengb, ForLoveOfCats: here's a simple example of executing 2 async functions in parallel, with the patterns going forward:
+
+1582071124
+andrewrk
+I added a couple more 0's to the numbers, and I can see 2 cpu cores spin up at the same time
+
+1582071222
+companion_cube
+how does the loop know the cpuBoundOperation is done?
+
+1582071227
+fengb
+Hmm... what will happen with too many cpu bound async functions?
+
+1582071313
+andrewrk
+you waste time sending jobs to the thread pool when you were already in a thread that could have just done the next job
+
+1582071319
+quetzalb
+Is there a why to create a struct at comptime by iteratively adding fields?  For example, I'd like to have a function that takes a type and returns a type with the same fields but perhaps an additional field or methods.
+
+1582071364
+pixelherodev
+Return a struct that `using namespace` the original maybe?
+
+1582071369
+andrewrk
+fengb, generally: only put that function call in when the automatic parallelism due to I/O isn't properly maxing out your cpus
+
+1582071385
+fengb
+I’m thinking what if there are 2 libraries that are being “smart” and ships off work = number of CPUs
+
+1582071391
+ForLoveOfCats
+So if setting io_mode to evented makes async/await actually parallel (which doesn't really make sense from the name?) what does startCpuBoundOperation actually do? I gather that it marks that thread as cpu intensive but how does that affect the operation of the thread pool?
+
+1582071408
+andrewrk
+did you look at the implementation? it's 5 lines
+
+1582071476
+andrewrk
+fengb, generally, libraries should probably not call startCpuBoundOperation(), since an application can always call it before calling an expensive library function
+
+1582071518
+quetzalb
+pixelherodev, thanks! I didn't find documentation on "using namespace" but I will try to dig around and see how it is supposed to work!
+
+1582071545
+ForLoveOfCats
+I did not, I read the doc comment on the std docs which told me nothing (with my limited understanding of how everything works) and looking at the said 5 lines I still know little. Is it pausing all other threads? I feel like that is the wrong interpretation
+
+1582071557
+andrewrk
+quetzalb, related issue:
+
+1582071562
+pixelherodev
+
+
+1582071571
+andrewrk
+usingnamespace is discouraged for the same reason that issue is not "accepted" yet
+
+1582071580
+fengb
+The docs are mostly nonexistent :P
+
+1582071589
+andrewrk
+but hey, no judgement here if it solves your use case
+
+1582071763
+pixelherodev
+What reason is that?
+
+1582071781
+andrewrk
+ForLoveOfCats, I think your next step on the journey of understanding async/await in zig is to try to grok the code in std/event/loop.zig. if you have specific questions about any particular line of code I am happy to help. "layperson" documentation will be available at some future date but it's not available now
+
+1582071878
+jaredmm
+It looks like __cplusplus is going to be defined by Clang. Is there a way to tell Clang "no CPP" and should that be turned on for translate-c?
+
+1582071890
+jaredmm
+off*
+
+1582071960
+quetzalb
+andrewrk, it looks like usingnamespace brings across const definitions but not fields perhaps.  I tried this with no love: const Foo = struct {
+
+1582071986
+ForLoveOfCats
+I have so many questions but the more I ask the less I feel I understand. Such as: Why does the magic const being set to enable all this insist that it is just for IO? In what way is general purpose parallelism evented? I do think that I need to grok the source but it sucks to have to read and understand all the source under std.event when I've already done all the work to make my codebase ready for parallelism and all I need at
+
+1582071988
+ForLoveOfCats
+this point is to actually run the dang thing in parallel.
+
+1582072028
+andrewrk
+quetzalb, that's correct - usingnamespace is for importing declarations into the current namespace
+
+1582072037
+ForLoveOfCats
+I will stop asking questions at this point as I don't wish to take up any more of anyone's time at the moment. I'll have to set aside an afternoon later this week to sit down and read that source
+
+1582072044
+pixelherodev
+Can always go with the "don't bother understanding it beyond 'this is magic keyword that solves all problems' for now" option
+
+1582072057
+ForLoveOfCats
+That's almost never the right solution lol
+
+1582072071
+andrewrk
+jaredmm, did you perhaps give your C file a `.cpp` extension?
+
+1582072087
+ForLoveOfCats
+I don't
+
+1582072096
+quetzalb
+Ok. A workaround I'm using for now is embedding the first struct in the second. Slightly awkward but works  e.g. struct { foo: Foo, y: u8 }
+
+1582072106
+jaredmm
+andrewrk, no, it is a .h file including Windows headers.
+
+1582072146
+fengb
+I think it’s a little confusing to double up evented IO and parallel execution
+
+1582072150
+andrewrk
+jaredmm, `zig translate-c empty.h` does not define __cplusplus
+
+1582072219
+andrewrk
+ForLoveOfCats, you can have general purpose parallelism with async/await without zig std lib's evented I/O abstractions. my offer stands to give you an example of that
+
+1582072252
+pixelherodev
+I'm interested in that!
+
+1582072254
+andrewrk
+quetzalb, I am a fan of that strategy
+
+1582072278
+ForLoveOfCats
+Wat? How?
+
+1582072278
+andrewrk
+quetzalb, in my opinion the extra verbosity is worth the lack of head-scratching when reading someone else's (or your own in the future) code
+
+1582072284
+ForLoveOfCats
+I am so dang confused at this point
+
+1582072316
+fengb
+Everything in Zig is possible without stdlib
+
+1582072335
+ForLoveOfCats
+Lol that's not what is being said
+
+1582072368
+andrewrk
+yes it is
+
+1582072378
+ForLoveOfCats
+andrewrk: Do you mean by building my own abstraction over async/await frames as the solution?
+
+1582072386
+andrewrk
+let me just put this example together
+
+1582072395
+andrewrk
+it's a good gist to have handy anyway
+
+1582072439
+ForLoveOfCats
+Hmmmm, I was under the impression that you simply meant not using the event loop, not something that didn't rely on the std at all (which of course is possible :stuck_out_tongue:)
+
+1582073115
+andrewrk
+
+
+1582073158
+andrewrk
+ooh, I can replace `catch unreachable` with `catch resume`
+
+1582073173
+andrewrk
+so if you are out of memory for a new thread, then it just continues executing in the same thread
+
+1582073292
+ForLoveOfCats
+So you are starting an async function, immediately suspending, getting the frame, spawning a new thread with std.Thread.spawn, then resuming the frame from within the new thread
+
+1582073309
+ForLoveOfCats
+and then sequetually waiting on each one
+
+1582073330
+ForLoveOfCats
+that gets me almost nowhere further than I was before building my own abstration over std.Thread
+
+1582073373
+andrewrk
+well this is an example of parallelism without std.event.Loop
+
+1582073395
+ForLoveOfCats
+well attempting to is a better description, the no more than single argument to the thread restriction is annoying and hard to work around in a pleasing way
+
+1582073412
+andrewrk
+what?
+
+1582073435
+ForLoveOfCats
+Thread.spawn only allows a single argument to the function being run in the new thread
+
+1582073466
+andrewrk
+so make a struct
+
+1582073499
+andrewrk
+Thread.spawn(.{two, args}, func)
+
+1582073548
+ForLoveOfCats
+I said to work around in a pleasing way, requiring my functions to manually use a single struct argument is not pleasing. Calling an autogenerated wrapper function in the thread which takes a single generated struct which then @call's the actual function with the arguments from that struct is much more pleasing
+
+1582073571
+ForLoveOfCats
+but at the same time impossible without being able to build said struct at comptime from a `[]FnArg`
+
+1582073954
+andrewrk
+pixelherodev, ^ not sure if you saw the gist above
+
+1582077382
+pixelherodev
+I'd missed it; thanks
+
+1582077919
+pixelherodev
+andrewrk, so the
+
+1582077960
+andrewrk
+yep. check the strace
+
+1582077991
+pixelherodev
+Hmm
+
+1582078013
+pixelherodev
+With the bring-your-OS layer... I just had a terrible idea
+
+1582078436
+daurnimator
+andrewrk: FWIW that autojson OutOfMemory stuff: is really working around a tautological comparison: `const e = @as(error{Foo,Bar}, error.Foo); if (e == error.OutOfMemory) { // do something }`
+
+1582078484
+andrewrk
+yes I see that - it's quite clever. I was only concerned that OutOfMemory might not be the only error required to be bubbled up
+
+1582078505
+andrewrk
+come to think of it, why do the other errors get ignored?
+
+1582078810
+daurnimator
+andrewrk: we want to ignore type failures: e.g. if you say parseNumber("adf") -> you'd get error.UnexpectedToken.
+
+1582078886
+daurnimator
+because you're really trying to construct a function `parseNumberOrString("adf")` out of `parseNumber("adf")` and `parseString("adf")`
+
+1582078989
+andrewrk
+I see
+
+1582079017
+andrewrk
+similar to this:
+
+1582079237
+daurnimator
+yeah
+
+1582082144
+andrewrk
+something really beautiful just occurred to me: combining
+
+1582082165
+andrewrk
+oh, and combined with
+
+1582082186
+andrewrk
+so you use zig as a drop-in replacement for a C compiler, but you specify the operating system version range you want to support, and the libc is specialized for that OS range
+
+1582083529
+fengb
+Is there a nice way of creating a 0 length slice?
+
+1582083581
+fengb
+I was trying to be fancy with `@"type": []struct {} = .{}`
+
+1582083846
+andrewrk
+why not void?
+
+1582083874
+andrewrk
+you can also do @as([]T, &[0]T{})
+
+1582084004
+fengb
+Simplifying. The struct has fields inside and it's anon
+
+1582084030
+fengb
+Looks like this:
+
+1582084079
+fengb
+I'll use an inline for. Gonna brute force this until I figure out what I'm doing >_>
+
+1582085504
+pixelherodev
+Hadn't seen 2879 before
+
+1582085506
+pixelherodev
+Interesting
+
+1582086366
+andrewrk
+fengb, what do you think about the 0 suffix instead of Z? to indicate null termination
+
+1582086375
+andrewrk
+std.fmt.allocPrint0
+
+1582086381
+andrewrk
+std.os.getenv0
+
+1582086411
+fengb
+Oh I was joking. x86 appends z so I think it’s mostly fine
+
+1582086538
+fengb
+Although... I think I like 0 as a suffix more heh
+
+1582086592
+mikdusan
+std.os.getenvNullz
+
+1582089398
+daurnimator
+yeah I like 0 as a suffix
+
+1582089408
+daurnimator
+feels familiar because of -print0 as a `find` argument
+
+1582094750
+mikdusan
+std.os.getenv⁰ /s
+
+1582094967
+daurnimator
+andrewrk: was waiting on your reply to
+
+1582101044
+metaleap
+i hit a not-minimalrepro-able (I tried) zig compiler bug ..
+
+1582105433
+Xatenev
+hi
+
+1582105690
+daurnimator
+Xatenev: hi
+
+1582105803
+Xatenev
+is it planned to move away from llvm in the future?
+
+1582105897
+Xatenev
+just curious because someone wrote that in another channel but wasn't sure.
+
+1582105939
+daurnimator
+Xatenev: no. no plan to move away; but we do intend to have alternate "backends"
+
+1582105949
+Xatenev
+daurnimator, understood, thanks :)
+
+1582106416
+araspik
+What's the rationale between having a global error set? It seems contradictory to the general convention of moving away from global resources (e.g with allocators).
+
+1582106644
+daurnimator
+araspik: so that all errors fit into specific maximum size.
+
+1582106860
+araspik
+But apparently Zig already has a method for providing unique integers for a given error name; Couldn't it do that without exposing `anyerror`?
+
+1582106868
+araspik
+IMO, instead of `anyerror` as part of the return type it should just automatically deduce the composition of the different possible error sets to return.
+
+1582106934
+metaleap
+araspik anyerror is useful for fn-protots / function-types / signatures.
+
+1582106954
+metaleap
+"give this shape of callback .. but i wont prescribe the errors you can return to me"
+
+1582106984
+metaleap
+ah, func-pointers i mean was the moniker i was looking for here =)
+
+1582107144
+araspik
+Okay, thanks for explaining that metaleap
+
+1582107180
+araspik
+However, question: If there are conflicting doc comments on different error sets, which one would the global set use?
+
+1582107199
+daurnimator
+araspik: I have a feeling things will get cleaned up once we know the outcome of
+
+1582107304
+araspik
+yeah, that looks very promising
+
+1582107354
+araspik
+But I can see how it would conflict with `anyerror`
+
+1582110675
+Xatenev
+
+
+1582110696
+Xatenev
+self.head shouldn't be constant I think?
+
+1582110722
+mikdusan
+`fn append(self: *SinglyLinkedList, ...)`
+
+1582110743
+Xatenev
+oh
+
+1582110782
+Xatenev
+mikdusan, do I still have to .* deref self then?
+
+1582110802
+Xatenev
+because I dont get a compile error if i dont
+
+1582110813
+mikdusan
+on it's own yes. but accessing via dot operator is sugared -- ie. not necessary
+
+1582110835
+Xatenev
+what do you mean "on its own yes"
+
+1582110840
+Xatenev
+i dont understand that :E
+
+1582110852
+Xatenev
+oh nvm
+
+1582110852
+Xatenev
+understood
+
+1582110864
+Xatenev
+you mean var s = self.*;      vs self.something
+
+1582110866
+mikdusan
+let's say `self:
+
+1582110869
+mikdusan
+yes
+
+1582110876
+Xatenev
+thx mikdusan
+
+1582110914
+Xatenev
+mikdusan, they dont seem to do it in the docs here
+
+1582110918
+Xatenev
+self: Vec3
+
+1582110930
+Xatenev
+so both are fine, one is "mutable" one isn't?
+
+1582110987
+mikdusan
+correct, the `*` indicates it can be modified
+
+1582111027
+Xatenev
+understood, thx
+
+1582111311
+Xatenev
+yay all tests passed
+
+1582111317
+Xatenev
+i love the simplicity of the test suite in zig
+
+1582111614
+Xatenev
+is it possible to say that an expression is ignoreable from inside a function?
+
+1582111624
+Xatenev
+say i have a linkedlist with .append() that returns the node
+
+1582111631
+Xatenev
+I dont want the caller to have to assign the node to something
+
+1582111635
+mikdusan
+_ = ignore_me;
+
+1582111639
+Xatenev
+yea i know that
+
+1582111643
+Xatenev
+but i mean can i do it from inside the fnuction?
+
+1582111646
+Xatenev
+so you can just do list.append(i32, 1);
+
+1582111669
+Xatenev
+something like @Ignoreable
+
+1582111779
+Xatenev
+I think its not possible :) i will use _ then
+
+1582112058
+Xatenev
+sorry, one more question - in the example on
+
+1582112062
+Xatenev
+I only get All 1 tests passed
+
+1582112072
+Xatenev
+how can i make it print the name of the test too?
+
+1582112078
+mikdusan
+be careful that append() doesn't return an error. if it does, you should do something like `_ = try a.append(...);`
+
+1582112089
+Xatenev
+mikdusan, yeap im doing that :)
+
+1582112104
+Xatenev
+e.g. i have test "append" { } i would expect 1/1 test "append"... OK
+
+1582112162
+mikdusan
+what does your test block look like?
+
+1582112210
+Xatenev
+mikdusan,
+
+1582112251
+mikdusan
+ah you know I was curious about same, but was too lazy to look into if any flags exist. for now,
+
+1582112268
+mikdusan
+just do something like `zig test foo.zig |& cat`
+
+1582112298
+mikdusan
+if zig detects tty/console it's being much quieter
+
+1582112350
+Xatenev
+ah so its printed to stderr
+
+1582112351
+Xatenev
+i se
+
+1582112352
+Xatenev
+e
+
+1582112381
+Xatenev
+thank you :)
+
+1582112697
+mikdusan
+so yeah it's currently verbose if tty is detected. the only other way I see to get around it is to set env var for the test command:
+
+1582112702
+mikdusan
+(export TERM=dumb; zig test hello.zig)
+
+1582113245
+daurnimator
+Xatenev: so why are you rewriting SinglyLinkedList? :)
+
+1582113358
+Xatenev
+daurnimator, learning the language a bit
+
+1582113369
+Xatenev
+daurnimator, i always just implement some common algos and data structures
+
+1582113379
+Xatenev
+(ive seen the singlylinkedlist in the std) :P
+
+1582113462
+mikdusan
+if you're going to impl some data structures, I wouldn't mind seeing a b-tree, b+tree and maybe some cow versions of those too :P
+
+1582113475
+Xatenev
+mikdusan, will do :]
+
+1582113552
+mikdusan
+s/cow/persistent/ in the "immutable" sense
+
+1582113642
+Xatenev
+my implementations will probably be bad though :P
+
+1582113650
+Xatenev
+but ill do some of them :p
+
+1582114229
+metaleap
+Xatenev: was about to soon try my hand at a minimal prefix-tree
+
+1582116410
+Snektron
+I read SlightlyLinkedList and wondered whats that about
+
+1582116421
+Snektron
+Only to realize it was a SinglyLinkedList
+
+1582116553
+mq32
+andrewrk: is it wanted that @embedFile returns a buffer that is one byte larger than the actual file?
+
+1582116583
+mikdusan
+nullz?
+
+1582116762
+mq32
+yeah, it looks like files get nullterminated
+
+1582116776
+mikdusan
+hmm wait i just got an exact match of file size to slice size
+
+1582116822
+mikdusan
+what's your fs file size?
+
+1582117110
+mq32
+Semantic Analysis [326/645] ./test.zig:5:23: error: destination type 'u32' has size 4 but source type '[4:0]u8' has size 5
+
+1582117111
+mq32
+const data = @bitCast(u32, @embedFile("binary.dat").*);
+
+1582117132
+mq32
+file size (wc -c binary.dat) is 4
+
+1582117146
+mikdusan
+hmm `*const [6946:0]u8` closes the door to implementing @embedFile with mmap
+
+1582117146
+mq32
+ls also says "4"
+
+1582117155
+mikdusan
+yeah the slice.len is still 4
+
+1582117169
+mq32
+yep, but the array is zero-terminated which breaks pretty much all binary stuff
+
+1582117180
+fengb
+Type clearly indicates 0 terminated...
+
+1582117198
+mq32
+as embedFile is a comptime feature, i don't think mmap will help there
+
+1582117251
+fengb
+Ugh we really need auto coercion of slice to array pointer
+
+1582117283
+mq32
+this will mitigate the actual problem: embedFile appends a zero-terminator to the data
+
+1582117310
+mq32
+which is bad for me, as every file will be 4 byte larger than necessary
+
+1582117316
+fengb
+Using readIntNative is safer and more correct since it makes you worry about endianness
+
+1582117337
+mq32
+fengb: the above is a pretty simplified reproduction of my problem
+
+1582117357
+mikdusan
+if it's nullz then first coerce to []const u8, then bitcast?
+
+1582117359
+mq32
+endianess isn't a problem, i know the target platform in embedded world up to the exact number of bits in ram
+
+1582117370
+mq32
+mikdusan, you cannot bitcast slices
+
+1582117373
+mikdusan
+ugh
+
+1582117382
+mq32
+which is reasonable, btw
+
+1582117394
+fengb
+Yeah array coercion would fix this problem
+
+1582117456
+fengb
+
+
+1582117480
+fengb
+Oh wait it’s older:
+
+1582117720
+fengb
+I can imagine a userland function that takes a nullz array and returns the regular version
+
+1582117756
+fengb
+Oh mq32 you were right about builtin. Importing it directly is now deprecated
+
+1582117810
+mq32
+fengb, problem is right now that the nullz-version would still be embedded in the resulting file.
+
+1582117840
+fengb
+You can do it with a comptime function and strip off the byte manually
+
+1582118203
+mikdusan
+mq32: oh, I just meant for possibility to use mmap to supply the bytes, instead of reading them in with regular io
+
+1582118449
+betawaffle
+question: what does `threadlocal` actually do to a variable declaration? does it just specify a special section to be linked into?
+
+1582118852
+Xatenev
+betawaffle, i think
+
+1582118864
+Xatenev
+there are different thread local storage models
+
+1582118899
+betawaffle
+i want to understand what a threadlocal "means" in freestanding
+
+1582119057
+betawaffle
+on x86 for example, my understanding is a common pattern is to use one of the segment registers to point at TLS
+
+1582119092
+betawaffle
+but how could i go about telling zig that's what i mean with threadlocal?
+
+1582119263
+betawaffle
+i guess what i'm asking is... what does zig use to generate accesses of TLS variables?
+
+1582119305
+mikdusan
+it uses an llvm global directive for variable of type `thread_local`
+
+1582119319
+betawaffle
+ok, so it just defers to LLVM to figure it out
+
+1582119354
+betawaffle
+any idea what LLVM does for freestanding?
+
+1582119368
+daurnimator
+betawaffle: seems like it boils down to LLVM's TLSModel::GeneralDynamic
+
+1582119372
+mikdusan
+good question. they do mention something about an emulation mode if not elf-linker compatible
+
+1582119395
+daurnimator
+betawaffle: browsing the LLVM source, that does different things for each architecture
+
+1582119397
+betawaffle
+interesting
+
+1582119486
+betawaffle
+does LLVM error if it can't reasonably support TLS for a target? or is there always
+
+1582119515
+daurnimator
+betawaffle: riscv seems to be the most illustrative:
+
+1582119584
+betawaffle
+lol, LLVM source is like a foreign language to me
+
+1582119625
+mikdusan
+daurnimator: do CI builds limit cpu features? or are they all-out whatever CI box has?
+
+1582119650
+daurnimator
+mikdusan: worse: whatever qemu lies about
+
+1582119684
+mikdusan
+so #4506 could simply be the CI box is new enough to use a few instr the 7700HQ doesn't like
+
+1582119759
+daurnimator
+yeah..... though the 7700HQ isn't that old.
+
+1582119760
+fengb
+Should we default to something reasonably old, like Haswell or before?
+
+1582119771
+betawaffle
+daurnimator: am i reading this right, that it generates a call to `__tls_get_addr`?
+
+1582119786
+daurnimator
+betawaffle: huh?
+
+1582119795
+mikdusan
+I wonder what would happen if azure CI started using AMD epyc
+
+1582119810
+mikdusan
+we really have to start encoding into the binaries what build flags were used
+
+1582119810
+daurnimator
+betawaffle: and which architecture are you asking about?
+
+1582119815
+betawaffle
+riscv
+
+1582119820
+betawaffle
+the one you linked
+
+1582119943
+daurnimator
+for dynamic: yes.
+
+1582119960
+betawaffle
+for static, it's just using the x4 aka tp register
+
+1582120009
+betawaffle
+it would be nice to be able to tell zig -> llvm what tls mode we want in a freestanding build
+
+1582120082
+daurnimator
+betawaffle: with clang you can pass -ftls-model
+
+1582120095
+daurnimator
+we could probably add that...
+
+1582120136
+daurnimator
+gcc supports it too with same argument(s)
+
+1582120191
+daurnimator
+Xatenev's earlier link (
+
+1582120309
+Xatenev
+re `does LLVM error if it can't reasonably support TLS for a target? or is there always
+
+1582120318
+Xatenev
+see
+
+1582120324
+Xatenev
+For platforms without linker support of ELF TLS model, the -femulated-tls flag can be used to generate GCC compatible emulated TLS code.
+
+1582120400
+Barabas
+Silly question, how do I provide an output file for translate-c ?
+
+1582120409
+daurnimator
+Barabas: just redirect to a file
+
+1582120420
+daurnimator
+Barabas: zig translate-c foo.h > myfile.zig
+
+1582120456
+Barabas
+Ok, maybe that works in cmd... powershell is very helpful in that regard and makes everything utf16 <_<
+
+1582120462
+Barabas
+Let me try
+
+1582120518
+Xatenev
+zig translate-c foo.h | Out-File -FilePath .\output
+
+1582120518
+Xatenev
+?
+
+1582120581
+betawaffle
+why is microsoft like utf16 so much...
+
+1582120583
+Xatenev
+Barabas, ... and add -Encoding UTF8
+
+1582120584
+Xatenev
+or whatever you like
+
+1582120586
+Xatenev
+to Out-File
+
+1582120618
+Xatenev
+see -Encoding here
+
+1582120623
+daurnimator
+`[Console]::OutputEncoding = New-Object -typename System.Text.UTF8Encoding` might help
+
+1582120687
+daurnimator
+If you use -Encoding to OutFile then you'll want UTF8NoBOM
+
+1582120706
+Barabas
+The console thing didn't seem to have worked :(
+
+1582120712
+Barabas
+cmd.exe does it right though
+
+1582120721
+Barabas
+Let me try Out-File
+
+1582120836
+Barabas
+Out-File : Cannot validate argument on parameter 'Encoding'. The argument "UTF8NoBOM" does not belong to the set "unknown;string;unicode;bigendianunicode;utf8;utf7;utf32;ascii;default;oem" specified by the ValidateSet attribute. Supply an argument that is in the set and then try the command again.
+
+1582120858
+Barabas
+Microsoft. -.-
+
+1582120912
+Xatenev
+your version is too old
+
+1582120918
+Xatenev
+nobom needs powershell > 6
+
+1582120938
+fengb
+betawaffle: back in the day, it wasn't obvious UTF-8 would win so hard. Although I guess it's a little obvious it probably will due to ASCII compatibility >_>
+
+1582120955
+fengb
+Java and Javascript also chose wrong fwiw
+
+1582121012
+daurnimator
+fengb: it became widely known to be a bad idea in 1996
+
+1582121038
+mikdusan
+Cocoa also chose wrong. Swift seems to like UTF-8
+
+1582121054
+daurnimator
+anything invented between ~93 and ~96 tended to chose UCS-2 and got stuck with it
+
+1582121120
+daurnimator
+windows NT from 1993. Java from 1995. Javascript from 1996
+
+1582121161
+Barabas
+This is so bad
+
+1582121172
+Barabas
+It doesn't even tell me what version it is when I start it
+
+1582121231
+Barabas
+Ok, I seem to have 5.1 for whatever reason.
+
+1582121272
+Barabas
+You'd think Windows would update it for you, just like it does with everything else without even asking.
+
+1582121335
+Xatenev
+I mean.. bash doesnt tell you what version it is when you start it either, does it?
+
+1582121336
+Xatenev
+:O
+
+1582121396
+Xatenev
+I think its pretty similar in that respect, in one you do echo ${BASH_VERSION} in the other $PSVersionTable
+
+1582121600
+Barabas
+Bash doesn't tell me anything
+
+1582121634
+Barabas
+Powershell has build-in advertisements :P
+
+1582121646
+Barabas
+Windows PowerShellCopyright (C) Microsoft Corporation. All rights reserved.Try the new cross-platform PowerShell
+
+1582121667
+Xatenev
+heh
+
+1582121676
+Barabas
+Alright. Thanks for the help guys. Sorry about the nagging ^^
+
+1582121754
+Barabas
+Oh... it's even available for Linux now =D
+
+1582121883
+Barabas
+Here, new version...
+
+1582121884
+Barabas
+PowerShell 6.2.4Copyright (c) Microsoft Corporation. All rights reserved.
+
+1582121885
+Barabas
+^^
+
+1582122388
+Barabas
+Oh damn... windows line endings D=
+
+1582122646
+fengb
+But... can you run Powershell in Wine in WSL??
+
+1582122854
+Barabas
+lol
+
+1582123286
+betawaffle
+Barabas: the real question is why are you on windows
+
+1582123332
+BaroqueLarouche
+because everything works out of the box without too much hassle ?
+
+1582123492
+Barabas
+Because Linux is a pain in the ass in other aspects.
+
+1582123524
+Barabas
+But fuck it, I'll just run my command in cmd.exe, at least that doesn't feel the need to fiddle with the output from zig.
+
+1582123710
+fengb
+I swore off Windows 12 years ago and still smug about it 🙃
+
+1582123917
+Barabas
+I tried Linux for a while. It wasn't all bad, but too many annoying things. It's fine for programming and writing quick scripts and stuff. Windows can't really compete there.
+
+1582123953
+Xatenev
+im fine with linux except for the file manager
+
+1582123957
+Barabas
+But for normal user friendliness Linux just is nowhere near Windows.
+
+1582123959
+Xatenev
+every file manager in linux is terrible bad compared to windows :D
+
+1582123978
+Barabas
+Yes, that's one of those things.
+
+1582123986
+Xatenev
+thats why i switched to i3 and terminal-only
+
+1582123991
+fengb
+I can agree with that, but I'm also on a Mac kool aid machine
+
+1582124005
+betawaffle
+i'm basically in the boat of on macOS but wish linux could be all i need
+
+1582124011
+fengb
+Honestly, I can't wait for something to replace X11
+
+1582124012
+Barabas
+I never saw the point of Mac
+
+1582124016
+Xatenev
+and yeah, now after a few years i got quite used to terminal-only way :E
+
+1582124029
+betawaffle
+fengb: X11, yeah
+
+1582124047
+betawaffle
+i'm ready for wayland to be fully baked
+
+1582124057
+Xatenev
+Barabas, pay-more-get-less
+
+1582124059
+Xatenev
+Barabas, :D
+
+1582124073
+Barabas
+That's definitely Apple ^^
+
+1582124078
+fengb
+Barabas: Mac is a BSD core with a competent windowing system. Some people can't stand not-Linux or not-OSS but once you learn it, it gets the job done pretty well
+
+1582124119
+Xatenev
+is wayland a lot better than x11?
+
+1582124125
+Xatenev
+I have never read about it yet
+
+1582124136
+fengb
+It... can't... not be... 🙃
+
+1582124138
+betawaffle
+it's just not super-legacy
+
+1582124165
+Barabas
+I actually wouldn't mind trying out Mac, but I don't want to buy overpriced hardware just to try :P
+
+1582124187
+betawaffle
+x11 is basically a direct descendent of the original unix stuff, iirc
+
+1582124187
+Xatenev
+I wouldn't want to be in the position to maintain a project like x11/wayland too tbh
+
+1582124200
+Xatenev
+it must be incredibly hard to achieve the compability required
+
+1582124209
+Barabas
+And probably I'm better off using Linux, as there is more information about that than Mac I guess.
+
+1582124246
+fengb
+Other than the touchbar... and the keyboard, the Mac isn't actually too overpriced. They just have more expensive parts than a typical built laptop
+
+1582124264
+Barabas
+Dealing with legacy stuff or (backwards) compatibility is probably one of the hardest problems in programming ^^
+
+1582124275
+fengb
+Like the screen is one of the best I've ever used, and Apple locked down the supply chain
+
+1582124299
+fengb
+I always complain that my designers need to use a shitty monitor because our users are using shitty screens
+
+1582124311
+Barabas
+Haha
+
+1582124342
+Barabas
+I don't use a laptop though.
+
+1582124364
+fengb
+Oh... well probably not for you then :P
+
+1582124385
+Snektron
+<mikdusan "so #4506 could simply be the CI "> Isn't that a laptop cpu?
+
+1582124388
+fengb
+I'm not a fan of their desktop offering either
+
+1582124483
+fengb
+I'm trying to find an old post on Slashdot about why Apple rewrote Aqua instead of using X11. Basically... X11 is super legacy
+
+1582124604
+Snektron
+X11 was just designed in another time
+
+1582124618
+Snektron
+Just like the rest of posix
+
+1582124665
+fengb
+It was also designed for windowing into mainframes
+
+1582124690
+Snektron
+<Barabas "Dealing with legacy stuff or (ba"> And we can see the results of handling it badly
+
+1582124697
+Snektron
+Cough x86 cough
+
+1582124719
+fengb
+I'm amazed how far we pushed x86
+
+1582124752
+Snektron
+Same
+
+1582124783
+fengb
+And with Rizen... it might still keep going
+
+1582124794
+Snektron
+Im developing a small kernel (sadly i couldnt convince my friends to use Zig) and i keep running into these weird old backwards compatibility stuff
+
+1582124810
+Barabas
+lol
+
+1582124825
+Snektron
+Like fpu emulation via sse
+
+1582124827
+Barabas
+Someone once wondered how to render text in things like the bios
+
+1582124849
+fengb
+Back in my day, we didn't have a math coprocessor!
+
+1582124867
+Barabas
+Just one of these things... it's build-in in the hardware :D  (iirc)
+
+1582124884
+betawaffle
+Barabas: old VGA interfaces
+
+1582124900
+fengb
+Learning Z80 really made me appreciate the effort to keep backwards compatibility
+
+1582124907
+mikdusan
+github: "You can't comment at this time" . well that's nice.
+
+1582124911
+Barabas
+lol
+
+1582124921
+Snektron
+Are you that old fengb? I thought 386 is already like 30 years old
+
+1582124937
+betawaffle
+geez, i'm almost 30
+
+1582124945
+fengb
+Semi joking, although my first family computer was a 386 DX
+
+1582124953
+fengb
+So... almost no coprocessor ;)
+
+1582124958
+araspik
+are there any 'new' architectures out there which don't have half the cruft of x86?
+
+1582124958
+Barabas
+30 is when the fun starts :P
+
+1582124964
+Snektron
+My Z80 experience is TI calculators because i couldn't be bothered to pay attention in high school
+
+1582124971
+Snektron
+Good times
+
+1582124974
+betawaffle
+araspik: riscv
+
+1582124977
+fengb
+araspik: arm, RISCV
+
+1582124988
+araspik
+I'll look into it
+
+1582125005
+betawaffle
+riscv is so flexible
+
+1582125010
+Snektron
+Personally im rooting for Gandalf's mill cpu's
+
+1582125012
+araspik
+because every time I try programming in x86 assembly I like it but I'm thrown off by how much useless stuff hangs around
+
+1582125025
+Snektron
+
+
+1582125050
+araspik
+GitHub tells me RISCV has 69 repositories :P
+
+1582125057
+fengb
+Almost every mobile device is arm. And Raspberry PI
+
+1582125072
+Snektron
+Isnt arm also cisc?
+
+1582125077
+fengb
+RISCV was just finalized. It'll be awhile before we see powerful devices
+
+1582125078
+araspik
+Hey, I have a Pi! I could probably do stuff on that
+
+1582125080
+fengb
+No
+
+1582125098
+fengb
+But it's also not strictly RISC due to SIMD and such
+
+1582125100
+Snektron
+Something with converting floating point to javascript formats
+
+1582125218
+araspik
+Question: is it a bad idea to make a programming language called 666?
+
+1582125228
+Snektron
+<fengb "Semi joking, although my first f"> The kernel is targeted at a 486 75DX laptop
+
+1582125250
+Snektron
+So im programming for a laptop made before i was born
+
+1582125260
+Snektron
+I just hope it has pci...
+
+1582125263
+betawaffle
+araspik: there are a number of potential problems with that
+
+1582125295
+araspik
+the main locations where '666' would be used on its own is as a file extension and as a command
+
+1582125314
+araspik
+and Linux seems okay with that name
+
+1582125317
+gchristensen
+Snektron: what, is it older than early-90's? :o
+
+1582125319
+Snektron
+Not a very google friendly name
+
+1582125324
+Snektron
+<gchristensen "Snektron: what, is it older than"> 1995
+
+1582125327
+araspik
+Not like it's ever going to be popular
+
+1582125336
+gchristensen
+Snektron: good lord
+
+1582125339
+mikdusan
+Snektron: yeah the 7700HQ is whatever, the point is if CI box is different... codegen is against CPU features of CI which may not match the issue reporter
+
+1582125340
+Snektron
+I found it in my great uncles appartment
+
+1582125378
+betawaffle
+araspik: famous last words
+
+1582125402
+gchristensen
+Snektron: what is it? (I haven't found mention of it in the scrollback)
+
+1582125404
+araspik
+betawaffle: ahahhaa true but it's mostly for me experimenting with lang design
+
+1582125425
+alva
+fengb: it might not be so far off; Xuantie 910 seems plenty powerful
+
+1582125426
+Snektron
+gchristensen: a compaq contura 420C
+
+1582125442
+araspik
+I like Zig, it combines nice things from both D and Rust, but I'm not happy with a few things and I've always wanted to make a lang so hopefully will be fun
+
+1582125449
+gchristensen
+Snektron: look at that beauty
+
+1582125473
+Snektron
+Running a german version of windows 3.1 on 12 MB ram
+
+1582125474
+mikdusan
+can we get Zig binaries for Novell NetWare? /s
+
+1582125486
+Barabas
+Seems like a dangerous assault weapon :D
+
+1582125504
+fengb
+There's also the problem of RISCV software support :P
+
+1582125521
+fengb
+I have hopes for the future, but I'm also scared at how tiny the core instruction set is
+
+1582125537
+Snektron
+I do want to try to run some Zig on it in the future
+
+1582125562
+Barabas
+Can clang even compile for a processor that old?
+
+1582125578
+fengb
+Yeah, LLVM supports i386
+
+1582125578
+Snektron
+At least i got an usb to pcie cable now because my computer doesn't have either a floppy drive or serial port
+
+1582125581
+shakesoda
+fengb: the core is tiny but everything that can run linux etc isn't running on just core
+
+1582125594
+Snektron
+I think linux technically still supports it
+
+1582125603
+Barabas
+cool
+
+1582125608
+Snektron
+They dropped 386 support, but not 486
+
+1582125621
+fengb
+shakesoda: sure but that means we're having a defacto core. And I dont' know if the ecosystem will settle around the same things
+
+1582125666
+shakesoda
+fengb: time will tell, i mostly mean that there will need to be some target support for a few different configurations of the isa
+
+1582125682
+Snektron
+lLVM supports compiling for 386 but i had some trouble linking. For now were just using i486 gcc
+
+1582125719
+shakesoda
+just supporting stuff like what sifive unleashed has is probably not a big deal, but that probably won't be the same build as you'd be using for some other riscv microcontroller that only implements basic int stuff
+
+1582125724
+fengb
+mikdusan: github is shitting the bed in general
+
+1582125871
+shakesoda
+i recall there was an issue about that and some test related issues
+
+1582125913
+Snektron
+Ye that was probably me shakesoda
+
+1582125928
+Snektron
+I tried getting it to work on an old rpi 3 for a project
+
+1582125949
+Snektron
+But i turned the project into a school project and used C (on an arduino) instead
+
+1582125950
+shakesoda
+the pi 3 is armv8 though
+
+1582125955
+Snektron
+Nope
+
+1582125962
+Snektron
+Wait
+
+1582125963
+shakesoda
+it absolutely is
+
+1582125965
+Snektron
+Pi B+
+
+1582125970
+Snektron
+Sorry i keep mixing them up
+
+1582125973
+shakesoda
+very different!
+
+1582125984
+Snektron
+Yes, i know
+
+1582125994
+shakesoda
+the pi b+ is a much closer relative to the pi zero's i love and use so much
+
+1582126021
+Snektron
+For some reason i keep remembering my Pi B+ as a Pi 3 B+
+
+1582126043
+fengb
+I should do something with my Pi Zero W
+
+1582126064
+Snektron
+But anyway, i fixed compiling a basic executable for it, but it still needs support for extern layout iirc
+
+1582126121
+shakesoda
+fengb: they are fun in a lot of ways - especially if you are experimenting with kernel dev, since you can boot them straight off the usb without a card
+
+1582126137
+shakesoda
+i think that ability is shared by the new model 3b+ and 4's
+
+1582126249
+shakesoda
+i was doing some graphics programming over the linux fb since the hardware has a compositor you can use to just layer what you are working on over top of anything you like
+
+1582126329
+mq32
+mikdusan: i skipped over the packed struct stuff and it looks about right
+
+1582126343
+mq32
+can't do a thorough check right now
+
+1582126354
+mikdusan
+ah thanks. I'm going to need some eyes on this sooner or later
+
+1582126440
+mikdusan
+I'm not sure but I think andrew wants to support sub-byte alignment for fields; I guess `align(:4)` might be the obvious syntax
+
+1582126583
+shakesoda
+that would be useful
+
+1582126594
+shakesoda
+what happens currently if you load up a packed struct with u1's?
+
+1582126620
+shakesoda
+is it packed to the byte, or bit packed?
+
+1582126645
+mikdusan
+right now u1 (arbitrary sized integers) are a problem. it works better with `bool` instead of `u1`.
+
+1582126651
+mikdusan
+in master that is.
+
+1582126674
+Snektron
+What size is bool?
+
+1582126677
+Snektron
+u1m
+
+1582126686
+Snektron
+?*
+
+1582126730
+andrewrk
+mq32, yes, it's the same as string literals
+
+1582126762
+andrewrk
+fengb, does the W stand for Wing?
+
+1582126771
+mikdusan
+shakesoda: i think the spatial packing of u1's are not bad, but it's the load/store operations that is messed right now
+
+1582126792
+fengb
+Wireless
+
+1582126807
+andrewrk
+that's too bad
+
+1582126819
+fengb
+Would it be helpful for InStream to have `readAllocExact`?
+
+1582126850
+andrewrk
+it doesn't have readAlloc - what does Exact mean?
+
+1582126874
+fengb
+Read this exact amount. It has readAllAlloc
+
+1582126898
+fengb
+I wanna simplify my 2 lines :P
+
+1582126915
+fengb
+`i.module = try result.arena.allocator.alloc(u8, module_len); try payload.stream.readNoEof(i.module);`
+
+1582126933
+andrewrk
+hmm that might be helper function territory
+
+1582126968
+fengb
+Yeah it looks worse lol >_>
+
+1582126987
+andrewrk
+you also need an errdefer there
+
+1582126989
+fengb
+Starts looking like word salad args
+
+1582127000
+fengb
+Nah, it's all arenaed
+
+1582127004
+andrewrk
+ah of course :)
+
+1582127023
+fengb
+Arenas are the reason I don't go insane in Zig :P
+
+1582127028
+andrewrk
+is github read-only right now?
+
+1582127063
+fengb
+
+
+1582127163
+fengb
+Man... I hate to see this code in Go. The density of `try` is insane heh
+
+1582127177
+mikdusan
+so is there a way to backup (for free) zig's github issues?
+
+1582127211
+mq32
+mikdusan: you can probably just pull a json dump of the issues
+
+1582127236
+fengb
+Which probably doesn't work right now ;)
+
+1582127261
+mikdusan
+mq32: that will make a good test for zig's http/json abilities :)
+
+1582127271
+mikdusan
+and async
+
+1582127272
+mq32
+hehe, true dat
+
+1582127294
+mq32
+we use github issues in our hackerspace to display a todo list on some wall mounted screen
+
+1582127611
+andrewrk
+mikdusan, I have a dream of an open source project that is essentially github issues but decentralized like git, and uses plain text files within source control (not necessarily git) to store the data. but it would also support running an http server with a web interface
+
+1582127641
+andrewrk
+issues would have unique ids rather than monotonically increasing integers, so they could be created simultaneously offline with no conflicts
+
+1582127651
+companion_cube
+andrewrk: so like, fossil?
+
+1582127659
+companion_cube
+(except for the decentralized part)
+
+1582127672
+andrewrk
+someone else pointed me to this, and no, it doesn't do what I said
+
+1582127796
+andrewrk
+we should be able to have the convenience of a web ui that users can interact with without giving up decentralization
+
+1582127918
+companion_cube
+I imagine a pair of git repos (or just two branches) coudl do the trick, for decentralized storage
+
+1582127924
+companion_cube
+the rest is a UI problem
+
+1582127958
+shakesoda
+it almost certainly isn't what you are looking for but this sounds very doable with dat protocol stuff in beaker browser
+
+1582127972
+shakesoda
+everything there is p2p, works offline and you can communicate between peers as available
+
+1582128004
+mikdusan
+decentralized issues would be a win; but I'd need to see how renames/edits/tracking an issue plays out
+
+1582128034
+andrewrk
+companion_cube, yes it's a ui problem but also a database design problem, you have to design the storage to minimize conflicts
+
+1582128035
+companion_cube
+sounds fun to have to merge issues :D
+
+1582128044
+companion_cube
+the answer is CRDTs
+
+1582128050
+companion_cube
+but the specifics are… hard
+
+1582128083
+fengb
+I mean... it sounds like git can store all the data. Just git all the way down
+
+1582128094
+andrewrk
+yeah that's the idea
+
+1582128182
+fengb
+Once an arena is deinitted, it can be reused right?
+
+1582128186
+companion_cube
+so it'll be zig's killer app? :p
+
+1582128291
+mikdusan
+fengb: I think you need to re-copy to the state variable.
+
+1582128322
+companion_cube
+andrewrk: I'd imagine one file per issue + comments would do?
+
+1582128338
+andrewrk
+std.heap.ArenaAllocator is intended to support this use case but I think it's not tested and should be audited
+
+1582128350
+andrewrk
+companion_cube, sounds like you're getting excited about this project now too :D
+
+1582128365
+companion_cube
+nah, I have far far too many projects already :(
+
+1582128370
+fengb
+Alright, I'm not plannign on using it like this, but I don't want to return corrupted data
+
+1582128382
+fengb
+So I'll pretend this is working as intended and move on :P
+
+1582128526
+Xatenev
+I create a std.ArrayList via std.ArrayList(*Node).init(allocator); and then call .append() on it and get a segmentation fault :| do i need to call something else?
+
+1582128538
+Xatenev
+I thought append would automatically realloc to a proper size, do I have to manually alloc memoryß
+
+1582128596
+fengb
+Do you mean ArrayList(Node)?
+
+1582128615
+shakesoda
+decentralized/p2p issue tracking sounds like a fun project to me
+
+1582128622
+shakesoda
+it also sounds liable to consume the life of whoever tackles it
+
+1582128622
+fengb
+ArrayList(*Node) would create node pointers on the heap, which would probably point to garbage
+
+1582128649
+shakesoda
+an endless sea of details
+
+1582128665
+Xatenev
+fengb, no, ArrayList(*Node) - why would they point to garbage?
+
+1582128677
+Xatenev
+fengb, I am allocating the nodes and append a pointer to them.
+
+1582128687
+Xatenev
+fengb, sec, I copy some code
+
+1582128688
+mikdusan
+Xatenev: then possibly your allocator has vanished?
+
+1582128694
+fengb
+ArrayList(*Node) would allocate node pointers, not nodes
+
+1582128705
+Xatenev
+fengb, yes, I myself allocate nodes somewhre else
+
+1582128711
+Xatenev
+the arraylist just holds a list of pointers to these self-allocated nodes
+
+1582128715
+fengb
+Oh
+
+1582128721
+companion_cube
+shakesoda: nah, you just need to write robust distributed systems, friendly UIs, on all platforms
+
+1582128725
+companion_cube
+sounds like a piece of cake to me 🤔
+
+1582128745
+andrewrk
+Xatenev, make sure you're not holding on to references to ArrayList elements after the list resizes
+
+1582128760
+Xatenev
+
+
+1582128764
+Xatenev
+this is basically what i have
+
+1582128798
+Xatenev
+mikdusan, I dont think the allocator has vanished
+
+1582128812
+Xatenev
+I have an arena allocator and .deinit after the append call
+
+1582128854
+mikdusan
+`var newNode =` doesn't look like a pointer. is it a pointer?
+
+1582128863
+Xatenev
+andrewrk, all my arraylist elements are pointers itself so the list resizing should not change the position of my original elements
+
+1582128866
+Xatenev
+andrewrk, so this should be no problem, correct?
+
+1582128892
+Xatenev
+mikdusan, its not a pointer, but &newNode is
+
+1582128897
+andrewrk
+does the segfault give you a stack trace?
+
+1582128909
+Xatenev
+yes one sec
+
+1582128925
+Xatenev
+
+
+1582128927
+Xatenev
+this is the stacktrace
+
+1582128966
+andrewrk
+is the first one cut off?
+
+1582128992
+andrewrk
+there's a missing error message at the top and caret at the bottom
+
+1582129029
+Xatenev
+andrewrk,
+
+1582129030
+Xatenev
+this is all
+
+1582129039
+andrewrk
+now we're talking
+
+1582129043
+Xatenev
+I cut my name off before but w/e :p
+
+1582129133
+andrewrk
+I think your allocator is messed up
+
+1582129160
+andrewrk
+you use self.allocator on line 5 and allocator on line 2. that could be a clue
+
+1582129224
+Xatenev
+andrewrk, wait i will push my code
+
+1582129325
+Xatenev
+andrewrk,
+
+1582129330
+Xatenev
+Its probably something basic im missing :P
+
+1582129522
+andrewrk
+Xatenev, well you have another problem, your reference to newNode expires at line 30
+
+1582129574
+Xatenev
+but that reference does not matter anymore does it?
+
+1582129583
+Xatenev
+oh
+
+1582129585
+Xatenev
+I think I understnad
+
+1582129586
+andrewrk
+you added it to the list, which is still alive
+
+1582129611
+andrewrk
+the problem with the allocator is probably similar
+
+1582129640
+metaleap
+Xatenev: best to post gist
+
+1582129668
+metaleap
+ooh damn that was 20 mins ago :D
+
+1582129680
+Xatenev
+metaleap, im trying around a bit to implement the prefixtree you mentioned :P
+
+1582129733
+Xatenev
+andrewrk, thanks for the help, i'll create the prefix tree node on the heap instead and pass a pointer to that
+
+1582129899
+mikdusan
+
+
+1582129970
+fengb
+Working as intended™
+
+1582129971
+araspik
+I guess that means somebody pushed to prod
+
+1582129975
+metaleap
+Xatenev good going, share with us here when you feel/checked it's proper  =)
+
+1582132824
+fengb
+I have a stupid project name: bear metal
+
+1582132854
+andrewrk
+question for arm people here: are the arm cpus capable of multiple sub-architectures?
+
+1582132882
+andrewrk
+e.g. does the cortex_a76 cpu support both v8_5a and v8a?
+
+1582132894
+BaroqueLarouche
+andrewrk: you can have both ARM and THUMB code
+
+1582132912
+mq32
+and you can switch mode per jump :D
+
+1582132930
+andrewrk
+I don't think this question is related to thumb
+
+1582132967
+andrewrk
+it looks like the 32 bit arm cpus have a specific sub-arch that they are
+
+1582132990
+andrewrk
+e.g. 32-bit cortex_a76 is always v8_2a
+
+1582133019
+andrewrk
+whereas e.g. 32-bit cortext_a12 is always v7a
+
+1582133108
+andrewrk
+I think I can kill the concept of "sub-architecture" from zig
+
+1582133153
+mq32
+i should have never searched for arm architectures:
+
+1582133161
+FireFox317
+where is the global zig cache on windows?
+
+1582133214
+andrewrk
+FireFox317, there's a chart here:
+
+1582133249
+andrewrk
+also metaleap's accepted proposal would make `zig info` print it:
+
+1582133250
+FireFox317
+thanks andrewrk, i was looking in the wiki already but couldnt find it
+
+1582133257
+fengb
+Hardware Java bytecode support? There's hope for wasm! :P
+
+1582133343
+Barabas
+How do I get the non-optional type of an optional type?
+
+1582133358
+Barabas
+There's this example in the docs, but it doesn't seem to work
+
+1582133360
+Barabas
+comptime assert(@TypeOf(foo).Child == i32);
+
+1582133370
+Barabas
+At least not when I do this
+
+1582133371
+Barabas
+const testfn = ?u32;fn bla(input: @TypeOf(testfn).Child) void {}
+
+1582133386
+fengb
+@typeInfo(@TypeOf(foo)).Optional.Child
+
+1582133388
+Barabas
+(Sorry, naming is weird, I need it for a function p ointer)
+
+1582133403
+fengb
+I think std.meta.Child(@TypeOf(foo)) does the same
+
+1582133451
+Barabas
+This doesn't work: @typeInfo(@TypeOf(foo)).Optional.Child
+
+1582133470
+Barabas
+it says:error: accessing union field 'Optional' while field 'Type' is set
+
+1582133499
+Barabas
+If I leave off the @TypeOf I get: error: no member named 'Child' in struct 'std.builtin.Optional'
+
+1582133512
+fengb
+Oops... `.child`
+
+1582133531
+Barabas
+aha!
+
+1582133543
+Barabas
+cool, thanks
+
+1582133741
+forgot-password
+What's the best way to to link a shared library in my projects build file? I'm trying to use `exe.linkLibrary(LibExeObjStep.createSharedLibrary(...))`, but I get some errors and I'm not sure if I'm just not understanding the builder functions...
+
+1582133857
+Barabas
+Did you build the shared library with the build system?
+
+1582133874
+Barabas
+Otherwise try `.linkSystemLibrary` I guess.
+
+1582133893
+andrewrk
+forgot-password,
+
+1582134062
+forgot-password
+Originally I tried to link against a Swift library, but now I just have a very simple c file that I compile with clang.
+
+1582134088
+forgot-password
+Thanks, andrewrk, I'll give it a shot
+
+1582134108
+andrewrk
+forgot-password, also you can get better help if you actually post your errors ;)
+
+1582134166
+forgot-password
+Yeah I know, but it's quite a mess right now and I thought if anybody can point to some example code I can try to work out myself :)
+
+1582134311
+forgot-password
+Oh, I just noticed that your example uses a zig source, but I have a pre-compiled .so
+
+1582135405
+andrewrk
+don't you want to set up your project to reproducibly build?
+
+1582135434
+andrewrk
+e.g. maybe a colleague wants to help with the project on their computer
+
+1582135463
+andrewrk
+how is this .so produced?
+
+1582137245
+forgot-password
+andrewrk: Sorry, I had to go to the store really quick.
+
+1582137336
+forgot-password
+andrewrk: Yes, I wanna do that, but I would add that build process to the build file (call the respective compiler etc.). I'm currently developing the macOS port and for that I need some platform-specfic APIs that only make sense to use via Objective-C or Swift.
+
+1582137411
+forgot-password
+Well, so far I've been using the objective-c runtime in Zig, but this is really annoying for more than a few lines of code
+
+1582137421
+andrewrk
+it sounds perhaps linkSystemLibrary + addLibPath is what you want
+
+1582138069
+forgot-password
+Hm, the compiler reports it cannot find the library, but it works when I use clang with a very basic c file
+
+1582138103
+forgot-password
+The path I pass to `addLibPath` is the directory in which my `libexports.so` file is located
+
+1582138243
+andrewrk
+that should be good
+
+1582138265
+andrewrk
+what's the exact error message
+
+1582138321
+forgot-password
+|| lld: error: Unable to find library for -lexports
+
+1582138388
+forgot-password
+Can I use a relative path wit addLibPath?
+
+1582138418
+andrewrk
+`zig build --verbose-link`
+
+1582138620
+forgot-password
+The output looks good. The path is correct (I can cd into it when I copy-paste it) and it also contains the `-lexports` flag
+
+1582138678
+andrewrk
+hm. well, here's another thing to try: foo.addObject(path_to_libexports_so) rather than linkSystemLibrary + addLibPath
+
+1582138714
+forgot-password
+Here's the output from `file libexports.so`: libexports.so: Mach-O 64-bit dynamically linked shared library x86_64
+
+1582138752
+forgot-password
+Does that look good to link? ^^
+
+1582138780
+andrewrk
+sure
+
+1582138865
+forgot-password
+When I use `addObjectFile` it builds fine
+
+1582139565
+andrewrk
+what's a good "default"/"baseline"/"generic" sub-architecture for 32-bit arm?
+
+1582139585
+andrewrk
+e.g. what cpu features get enabled if you do -target arm-freestanding or arm-linux
+
+1582139690
+andrewrk
+how about v2a
+
+1582140828
+shakesoda
+andrewrk: arm1176jzf-s (aka arm6hf) seems like a good choice for 32 bit arm, unless there's a good reason to support
+
+1582140869
+shakesoda
+andrewrk: the lowly cortex m0 supports armv6-m and that might be another reasonable baseline for freestanding 32 bit
+
+1582140912
+andrewrk
+shakesoda, nice, that's what I ended up going with
+
+1582140934
+shakesoda
+oh i cut off my first line
+
+1582141004
+shakesoda
+it was supposed to be "unless there's a good reason to support the earliest android phones or you want to default to something for microcontrollers"
+
+1582141095
+shakesoda
+the 1176jzf-s set for arm is going to be the most popular outside of microcontrollers just because of the raspberry pi
+
+1582141455
+Barabas
+I hit some infinite loop it seems
+
+1582141868
+dimenus
+andrewrk: are you looking for contributors to zig-window or are you planning on implementing that yourself?
+
+1582141902
+andrewrk
+it's so early, any contributor can probably pass my progress in their own project in a manner of days
+
+1582141920
+dimenus
+where does that 'nox' name come from?
+
+1582141925
+andrewrk
+so I would recommend someone make progress on their own project. maybe we can join forces some day
+
+1582141932
+andrewrk
+"No X library"
+
+1582141932
+dimenus
+got it
+
+1582141965
+andrewrk
+I think on windows one could make quick progress
+
+1582142040
+dimenus
+i might pick that up, my breakout clone is basically finished - but it's looking a bit too heavy on the required dlls at the moment
+
+1582142055
+dimenus
+the zig/vulkan version is quite a bit faster than the OpenGL version :)
+
+1582142069
+andrewrk
+nice
+
+1582142102
+andrewrk
+is that open source? I could learn a lot from that project
+
+1582142182
+shakesoda
+i wonder if a good starting point for a zig windowing library would just be translated glfw
+
+1582142196
+shakesoda
+windowing stuff is really, extremely hairy to do from the ground up :\
+
+1582142879
+Barabas
+It is.
+
+1582142889
+Barabas
+Especially handling all the user input.
+
+1582142969
+andrewrk
+shakesoda, yes glfw is an excellent point of reference
+
+1582143131
+fengb
+So in the new world, a real CPU = arch + optional features?
+
+1582143310
+andrewrk
+fengb, yes:
+
+1582143376
+fengb
+Ha, okay
+
+1582149029
+Barabas
+How do you create a slice from a pointer and a size?
+
+1582149071
+Barabas
+Oh wait...
+
+1582149072
+dimenus
+foo[0..len]
+
+1582149082
+dimenus
+oh a pointer
+
+1582149097
+shakesoda
+ptr[0..size] should work?
+
+1582149100
+Barabas
+Well, maybe I need a cast, but yes probably that.
+
+1582149109
+dimenus
+you probably do need a cast
+
+1582149121
+shakesoda
+if it's a [*] it should work
+
+1582149124
+dimenus
+@ptrCast([*]foo, ptr)[0..len]
+
+1582149251
+Snektron
+I still need to finish that vulkan thingy
+
+1582149261
+Snektron
+I got kinda distracted
+
+1582149275
+shakesoda
+that's kind of how i feel about vulkan entirely
+
+1582149289
+Barabas
+What vulkan thingy?
+
+1582149296
+Barabas
+I'm currently fiddling around with Vulkan. :)
+
+1582149314
+shakesoda
+i have not been able to get anywhere with it before my attention runs dry and i go back to working on my gl renderer
+
+1582149333
+Barabas
+It takes quite some effort to get into, yes.
+
+1582149341
+Barabas
+I remember I was happy I could display something.
+
+1582149346
+Barabas
+Then I needed a texture...
+
+1582149357
+shakesoda
+one of these days i will complete my quest to have a working vulkan renderer
+
+1582149359
+Barabas
+Took me another few weeks :P
+
+1582149364
+shakesoda
+but not today!
+
+1582149371
+Barabas
+^^
+
+1582149400
+shakesoda
+i'm really happy with my gl4 renderer in general, and it's not really my current bottleneck, so there hasn't been
+
+1582149402
+fengb
+It sounds like we have about 3 implementations of Vulkan in 10 different pieces in here 🙃
+
+1582149421
+Barabas
+We can make a Vulkanstein =D
+
+1582149493
+Barabas
+However, doing all this stuff in zig really shows the power of zig.
+
+1582149500
+Barabas
+I did it in C++ before and it's messy.
+
+1582149500
+shakesoda
+what i am unsure of is if i will be compelled enough to write a vulkan renderer before i can just use webgpu instead :D
+
+1582149527
+shakesoda
+suppose i could use webgpu right now, but it seems a bit volatile still
+
+1582149541
+Barabas
+What's webgpu?
+
+1582149570
+Snektron
+Barabas: better Zig bindings
+
+1582149605
+shakesoda
+Barabas: it's kind of like cross platform metal, in addition to being a successor to webgl
+
+1582149620
+Snektron
+I got stuck on how i wanna handle function pointers
+
+1582149630
+dimenus
+i have a working vulkan renderer and a 95% complete clone of learnopengl.com's breakout game
+
+1582149642
+Barabas
+nice
+
+1582149644
+dimenus
+with sound. still need text though
+
+1582149650
+Barabas
+hah
+
+1582149651
+Barabas
+text
+
+1582149659
+Snektron
+I have a c++ multi gpu volumetric ray tracer
+
+1582149662
+shakesoda
+dimenus: you could cheese the text and snag my vga style debug text :D
+
+1582149670
+shakesoda
+one moment
+
+1582149670
+Barabas
+one of those: "How hard can this be?" things.
+
+1582149675
+dimenus
+meh, i've done it the right way so far
+
+1582149677
+dimenus
+might as well complete it
+
+1582149684
+dimenus
+it's ~5k lines of zig + the generated code
+
+1582149688
+shakesoda
+
+
+1582149697
+Barabas
+What's the right way for text, though?
+
+1582149703
+dimenus
+about 32k if you include generated zig
+
+1582149712
+shakesoda
+this isn't particularly the wrong way to do text - it's just what i do for quick debug stuff
+
+1582149714
+Snektron
+Signed distance fields
+
+1582149722
+shakesoda
+msdf!
+
+1582149733
+Snektron
+Whats the m for?
+
+1582149740
+Barabas
+Maybe, but even there you have multiple options.
+
+1582149750
+shakesoda
+right, also this function is relevant:
+
+1582149763
+shakesoda
+Snektron: multi-channel
+
+1582149770
+shakesoda
+Snektron:
+
+1582149806
+dimenus
+i'm actually trying to cut out dependencies atm
+
+1582149809
+shakesoda
+there's also a much smaller generator here
+
+1582149818
+Snektron
+Very nice
+
+1582149826
+shakesoda
+dimenus: these are just texture generators, don't need them as deps
+
+1582149838
+shakesoda
+you can also use them as deps if you want, granted
+
+1582149842
+dimenus
+shakesoda: not in reference to your comment, i just mean that it's my general goal to remove deps
+
+1582149850
+Snektron
+Build-time dependencies
+
+1582149858
+shakesoda
+i'm always on the quest to remove deps too
+
+1582149858
+dimenus
+although half would be gone if I'd just build libsoundio as a static lib
+
+1582149914
+Barabas
+Best way to not have dependencies is to not add them in the first place :P
+
+1582149941
+Barabas
+But ehm... sometimes... that means things never get done ^^
+
+1582149943
+shakesoda
+of course, but sometimes it's the right way to get something up and running
+
+1582149951
+Barabas
+Yeah
+
+1582149990
+Barabas
+fml
+
+1582150009
+Barabas
+Zig's unit testing seems to be a bit broken
+
+1582150020
+shakesoda
+any corresponding issues already?
+
+1582150053
+Barabas
+
+
+1582150063
+Barabas
+I made that one, but I've run into it ten times after that
+
+1582150109
+Barabas
+test "test test"{    testing.expect(false);}
+
+1582150118
+Barabas
+that triggers it I think...
+
+1582150173
+Barabas
+hmmm....
+
+1582150182
+Barabas
+it needs more than just that
+
+1582150361
+dimenus
+Barbas: are you on linux or windows?
+
+1582150369
+dimenus
+nvm, windows
+
+1582150396
+Barabas
+linking c seems to mess it up
+
+1582150423
+Barabas
+I updated the issue
+
+1582150502
+dimenus
+Barabas: what if you just run 'zig test test.zig'?
+
+1582150579
+Barabas
+that works
+
+1582150579
+dimenus
+Barabas: also, what version of zig are you running?
+
+1582150589
+Barabas
+using zig version: 0.5.0+2978785b6
+
+1582150617
+ForLoveOfCats
+When I set `io_mode = .evented` my entire project blew up.
+
+1582150705
+andrewrk
+ForLoveOfCats, welcome to dealing with safe recursion
+
+1582150711
+andrewrk
+you are one of the first pioneers
+
+1582150737
+andrewrk
+
+
+1582150766
+andrewrk
+please note this is still experimental, I've only gotten behavior tests passing with this mode, and not the std lib tests yet. we don't have ci coverage for evented I/O yet
+
+1582150924
+adamkowalski
+andrewrk: what's the recommended way to deal with runtime polymorphism? Last time I asked, you showed me a few different implementations, I ended up going with fieldParentPointer to be consistent with the standard library. Has anything moved on that point?
+
+1582150950
+andrewrk
+adamkowalski, nothing has moved since then
+
+1582151054
+adamkowalski
+Okay, currently I store a struct of function pointers in the struct which is meant to be polymorphic. But I don't like that because now the struct "knows" it will be used in a polymorphic way. That seems more like a property of the usage site. Is there a way to construct he struct with function pointers there instead and keep the original class unaware of any polymorphism?
+
+1582151061
+FireFox317
+andrewrk, yesterday i tried a bit to get the std --test-evented-io to pass, however i was stuck on the render.zig. It is recursive af and has like 200 callsites for which all the frames have to be heap allocatated. You recommend to do that or something else?
+
+1582151125
+andrewrk
+FireFox317, yep that's a tricky one. I have some ideas on how to solve that. probably other areas would be easier
+
+1582151196
+FireFox317
+okay, will see if I can get some other stuff to pass :)
+
+1582151198
+shakesoda
+for storing totally unknown things is there something preferred over c_void pointers
+
+1582151227
+shakesoda
+my intuition from c points there, but maybe zig has other ideas :)
+
+1582151262
+Barabas
+I see a function of 1700 lines... :/
+
+1582151271
+andrewrk
+shakesoda, you could look at std.Thread.spawn or std.os.dl_iterate_phdr for inspiration
+
+1582151283
+shakesoda
+andrewrk: will do
+
+1582151323
+andrewrk
+Barabas, just hope that you never have to edit ir.cpp ;)
+
+1582151369
+Barabas
+I'd probably create 1700 extra functions :D
+
+1582151457
+fengb
+adamkowalski: I hacked this together
+
+1582151480
+fengb
+No idea if it's useful, just a random yak I decided to shave instead of what I should be doing
+
+1582153491
+daurnimator
+fengb: whats wrong with riscv having a minimal set? I've used it :)
+
+1582153535
+daurnimator
+mikdusan: have a look at git-bug ?
+
+1582153563
+daurnimator
+andrewrk: ^ "open source project that is essentially github issues but decentralized like git, and uses plain text files within source control (not necessarily git) to store the data. but it would also support running an http server with a web interface" git-bug is that
+
+1582153612
+fengb
+Because the core is very minimal and it can easily bifurcate the community
+
+1582153777
+daurnimator
+fengb: for linux there is a minimum supported set
+
+1582153793
+daurnimator
+but also: how would it bifurcate the community?
+
+1582153832
+fengb
+If every community decides on a different subset
+
+1582153845
+fengb
+Maybe Linux is big enough to drive the "real core"
+
+1582153859
+daurnimator
+fengb: why does it matter?
+
+1582153880
+daurnimator
+fengb: see my link before... the tomu has the
+
+1582153906
+fengb
+Distributed binaries. x86 got massive because everything is largely compatible with everything
+
+1582153938
+fengb
+If we have little pockets that each have their own subset, then it'll just fracture the ecosystem and have them competing with each other
+
+1582153940
+daurnimator
+heh. binaries..... my thing above is freestanding and targeting a specific board
+
+1582153955
+daurnimator
+if you're talking about binaries then you're probably talking about on-an-OS.
+
+1582153962
+daurnimator
+in which case you can e.g. assume the linux minimum
+
+1582153983
+fengb
+I think it's amazing for tinkerability of hardware, but I really want RISCV to eat x86's lunch
+
+1582154033
+daurnimator
+I'm not sure if we do it: but the target OS should inform the target baseline cpu feature-set
+
+1582154157
+andrewrk
+daurnimator, that's a good call and we do not do it yet
+
+1582154459
+andrewrk
+llvm's arm cpu features / sub-architectures data is really messy
+
+1582155099
+pixelherodev
+Nice thing about allocators: if you want to limit how much memory a library can use, you can just allocate that max size, set up a fixedbufferallocator using it, and pass that to the library
+
+1582155209
+andrewrk
+arm has a cpu feature called noarm
+
+1582155920
+pixelherodev
+Dare I ask what it does
+
+1582156023
+pixelherodev
+?
+
+1582156260
+frmdstryr
+Was `std.mem.Compare` moved or deleted?
+
+1582156576
+frmdstryr
+Nvm looks like it's now in std.math
+
+1582156621
+andrewrk
+pixelherodev, "Does not support ARM mode execution"
+
+1582156629
+andrewrk
+maybe that means thumb only
+
+1582156669
+pixelherodev
+Why would - but - wat - huh?
+
+1582156684
+frmdstryr
+thumb uses less space
+
+1582156715
+pixelherodev
+What next, NAIL?
+
+1582156732
+pixelherodev
+Then THUMBNAIL as a hybrid ISA?
+
+1582156750
+andrewrk
+yes and all you get is the MOV instruction
+
+1582156769
+pixelherodev
+and FINGER as a balance in performance and size between ARM and THUMB?
+
+1582156778
+pixelherodev
+I mean, MOV is Turing complete :P
+
+1582156782
+pixelherodev
+Someone compiled Doom for it IIRC
+
+1582156794
+pixelherodev
+At least, the x86 version
+

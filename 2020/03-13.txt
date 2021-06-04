@@ -1,0 +1,936 @@
+1584059696
+daurnimator
+andrewrk: it gets a bit tricky for 64 bit time; e.g. we need to redefine our `struct timespec`.... and then we change/edit `extern "c"` definitions to match
+
+1584059731
+andrewrk
+what `extern "c"` definitions are you referring to?
+
+1584059765
+daurnimator
+andrewrk: e.g. `pub extern "c" fn nanosleep(rqtp: *const timespec, rmtp: ?*timespec) c_int;` in std/c.zig
+
+1584068337
+daurnimator
+andrewrk: any particular comment in #265?
+
+1584070356
+pixelherodev
+How do I migrate from `setTheTarget(.{.Cross=.{}})`?
+
+1584070408
+daurnimator
+andrewrk: did you see my comment on #4612 ?
+
+1584070413
+pixelherodev
+Wanted to get back to work on ZigIRRat but build is broken and that hurt motivation :(
+
+1584070563
+daurnimator
+pixelherodev: `setTarget(.{})`
+
+1584070597
+pixelherodev
+Doesn't work - targeting `i386-freestanding`
+
+1584070606
+pixelherodev
+This is for generating test IR to run the AST on
+
+1584070613
+pixelherodev
+s/AST/AST generator
+
+1584070650
+daurnimator
+pixelherodev: "doesn't work"?
+
+1584070711
+pixelherodev
+`setTarget(.{})` <- did you mean that I should move what was in the .Cross struct into there?
+
+1584070812
+daurnimator
+pixelherodev: yep.
+
+1584070882
+pixelherodev
+`./build.zig:22:9: error: no member named 'arch' in struct 'std.zig.cross_target.CrossTarget'` (.arch = .i386)
+
+1584070894
+daurnimator
+pixelherodev: .arch was moved inside of .cpu
+
+1584070926
+andrewrk
+
+
+1584070960
+pixelherodev
+Well, might as well do this now
+
+1584070960
+pixelherodev
+Thanks
+
+1584070967
+andrewrk
+pixelherodev, you probably want standardTargetOptions:
+
+1584070970
+daurnimator
+oh. .cpu was flattened?
+
+1584070986
+andrewrk
+this might actually help you because you can now set a default target
+
+1584071029
+andrewrk
+const target = b.standardTargetOptions(.{}); foo.setTarget(target);
+
+1584071054
+andrewrk
+or you can just hard code a CrossTarget
+
+1584071074
+andrewrk
+daurnimator, you might be mixing up std.Target and std.zig.CrossTarget
+
+1584071117
+pixelherodev
+Right but I don't
+
+1584071147
+pixelherodev
+Generating native binary for test library frontend, i386 test binary, and ... well, it's technically still marked as i386 but the third is a custom ISA I'm testing
+
+1584071156
+pixelherodev
+It's 32-bit so i386 maps "close enough"
+
+1584071282
+pixelherodev
+Zig 0.6 will be mid-April, right? I'm thinking I'll stick to 0.6 (and maybe backport bugfixes from trunk on a local branch) when it's released :P
+
+1584071363
+andrewrk
+so you probably want to use that whitelist feature then
+
+1584071822
+pixelherodev
+The what?
+
+1584071839
+pixelherodev
+CPU features whitelist?
+
+1584071934
+andrewrk
+never mind. what was `setTheTarget(.{.Cross=.{}})` even doing? that doesn't look valid to me. there were no default values for those fields
+
+1584071993
+daurnimator
+andrewrk: I was recalling a previous change:
+
+1584072050
+andrewrk
+yes that was still std.Target. now there is a new struct, std.zig.CrossTarget
+
+1584072101
+pixelherodev
+andrewrk, I had actual values in there but didn't consider them relevant to the question
+
+1584072355
+andrewrk
+if you give the actual example I can give you the actual code to update it to
+
+1584072427
+pixelherodev
+Basically just i386-freestanding
+
+1584072463
+pixelherodev
+{.arch = .i386, .os = .freestanding, .abi = .none, .cpu_features = (zag.Target.Arch.i386).getBaselineCpuFeatures()`
+
+1584072611
+andrewrk
+setTarget(.{.cpu_arch = .i386, .os_tag = .freestanding, .abi = .none})
+
+1584072620
+andrewrk
+the cpu features thing is not needed anymore
+
+1584072723
+pixelherodev
+Yay!
+
+1584072785
+pixelherodev
+Thanks!
+
+1584072795
+pixelherodev
+... and now I run into a compiler regression :(
+
+1584072797
+pixelherodev
+I'll bisect later
+
+1584072812
+pixelherodev
+`Assertion failed at ../src/buffer.hpp:37 in buf_ptr. This is a bug in the Zig compiler`
+
+1584072843
+pixelherodev
+The frontend builds, it's only that i386-freestanding LLVM IR that fails...
+
+1584073085
+andrewrk
+that assertion looks like it might have a straightforward fix
+
+1584073118
+andrewrk
+I'll be happy to look into this before the release. that goes for anyone btw, if you have a regression and your project isn't building
+
+1584073270
+pixelherodev
+Going to try trunk again
+
+1584073278
+pixelherodev
+It's possible I broke it when bisecting a different issue :P
+
+1584073332
+pixelherodev
+Yep, now I have an entirely
+
+1584073376
+pixelherodev
+... nope that's still there too
+
+1584073385
+pixelherodev
+Just had a pleasant surprise with streams :)
+
+1584073401
+pixelherodev
+(inStream() now gives what was previously inStream().stream?! YAY!)
+
+1584073456
+pixelherodev
+I'll look into the bug myself real quick
+
+1584073492
+daurnimator
+andrewrk: we broke every zig hello-world with the change in signature of file.write.
+
+1584073533
+pixelherodev
+What happened?
+
+1584073536
+pixelherodev
+I've clearly missed a
+
+1584073585
+daurnimator
+pixelherodev: write() on posix systems can return with a partial write -> file.write now returns number of bytes written instead of void
+
+1584073669
+andrewrk
+daurnimator, correct
+
+1584073721
+andrewrk
+hello world from 0.5.0 -> master already had 1 breaking change. so think of it like buy 1 get 1 free
+
+1584073729
+daurnimator
+not great for all the misc blog posts out there :(
+
+1584073733
+Nilium
+Is std.Target only defined in specific cases? Kind of confused at why it's missing from std.zig in the Homebrew package but present in the 0.5.0 docs.
+
+1584073764
+andrewrk
+Nilium, std.zig never had Target
+
+1584073786
+daurnimator
+huh?
+
+1584073806
+daurnimator
+even today in builtin we spit out `/// Deprecated: use `std.Target.cpu.arch`
+
+1584073837
+Nilium
+I mean, it might not be part of the source, hence why I'm asking
+
+1584073856
+Nilium
+I couldn't figure out how to use it in build.zig, since it doesn't seem to exist in std
+
+1584073857
+daurnimator
+Nilium:
+
+1584073874
+Nilium
+So maybe the homebrew package is borked...
+
+1584073883
+andrewrk
+not to be confused with
+
+1584073901
+Nilium
+Yeah - that's a different one than I'm referring to.
+
+1584073908
+Nilium
+The one I'm referring to is what daurnimator mentioned.
+
+1584073923
+daurnimator
+Nilium: do you have the 0.5.0 package? or master? (or old master?)
+
+1584073930
+Nilium
+0.5.0
+
+1584073938
+Nilium
+Hang on, let me grab the other laptop
+
+1584073977
+andrewrk
+Nilium, 0.5.0 doesn't have std.Target
+
+1584073989
+andrewrk
+where do you see it in the docs?
+
+1584074001
+Nilium
+I'm trying to find the link I followed to get the stdlib docs.
+
+1584074023
+Nilium
+Yeah, looks like it's the master docs, so that explains it
+
+1584074035
+Nilium
+OK, so probably just.. always use master.
+
+1584074051
+Nilium
+Seems like it's hard to follow things otherwise.
+
+1584074057
+andrewrk
+0.6.0 will be a nice release to stick to, at least for a few months
+
+1584074085
+Nilium
+I mean, this is normal for pre-1.0 languages, so nothing wrong with it.
+
+1584074146
+andrewrk
+I'm really not worried about breaking hello world, or anything else, pre-1.0. there is nothing more important than getting the language and std lib correct before stabilizing
+
+1584074161
+Nilium
+I agree.
+
+1584074175
+pixelherodev
+andrewrk, found the bug - it only occurs with `--no-emit-bin`
+
+1584074201
+pixelherodev
+src/main.cpp:1306 calls `buf_ptr(&g->bin_file_output_path)`, which is of course empty because there
+
+1584074256
+pixelherodev
+Wait no... that's where the crash is happening, but I don't follow the logic looking back
+
+1584074273
+pixelherodev
+Ah wait never mind - the call I thought ruined that logic chain only occurs on Windows
+
+1584074396
+daurnimator
+I generally have found that I can stick on a zig release for ~2.5 months before it gets too out of sync with master
+
+1584076348
+Nilium
+Yeah. It’s not a problem with anything other than me having mismatched information.
+
+1584115978
+fengb
+Whoa no feedback, just merge? >_>
+
+1584116677
+andrewrk
+what kind of feedback were you expecting?
+
+1584116690
+fengb
+"Hey you suck"
+
+1584116724
+fengb
+I don't know. I just dont expect my first round to be okay :P
+
+1584117489
+andrewrk
+I did sneak a "fixup" commit in there if you didn't see it
+
+1584117517
+fengb
+How will I learn if you fix stuff for me? >_>
+
+1584117634
+andrewrk
+I don't really see it that way. sometimes it's harder for contributors to make certain kinds of changes, e.g. breaking changes, and it has nothing to do with learning/skill and more to do with the structure of decision making
+
+1584117754
+fengb
+Ah I see
+
+1584117772
+fengb
+Basically all my questions were answered heh. Okay thanks
+
+1584117798
+andrewrk
+thanks for the patch :)
+
+1584117831
+fengb
+Thanks for letting me experiment like this :)
+
+1584118665
+jessermeyer
+I need to explicitly pass 'self' parameters when using std functions, right? e.g fn openFile(self: Dir, sub_path: []const u8, flags: OpenFlags)... I can't just do std.fs.Dir.openFile("/path/to/file.txt");
+
+1584118810
+andrewrk
+you could do std.fs.cwd().openFile("/path/to/file.txt")
+
+1584118834
+andrewrk
+but if you have an absolute directory then you can use std.fs.openFileAbsolute
+
+1584118844
+jessermeyer
+Yeeeaah was just about to suggest that to myself, after looking up examples in the standard library.
+
+1584118848
+jessermeyer
+Right.
+
+1584118881
+TheLemonMan
+ooh, Travis offers a ppc64le CI for open-source projects
+
+1584118952
+euantor
+I believe sr.ht is going to offer ppc64le at some point too - there was talk in the channel about them having a system from Raptor CS that was going to become a build slave eventually
+
+1584120148
+TheLemonMan
+Raptor systems are quite cool as they are pricey
+
+1584120249
+pixelherodev
+Is it possible to send patches to the Zig mailing list on SourceHut instead of opening GitHub PRs? I'm moving as far away from GitHub as I can given their, uh, "brilliant" decision to make the notifications API worse
+
+1584120254
+pixelherodev
+s/API/UI
+
+1584120292
+andrewrk
+yes you can send patches however you like
+
+1584120344
+andrewrk
+but as usual, the easier you make the patch to merge, the more likely it gets merged sooner
+
+1584120374
+pixelherodev
+Right, that's reasonable
+
+1584120389
+TheLemonMan
+uh? what's up with the GH notifications?
+
+1584120398
+pixelherodev
+They're torturing the UI
+
+1584120408
+pixelherodev
+
+
+1584120516
+TheLemonMan
+
+
+1584120523
+andrewrk
+same
+
+1584120595
+pixelherodev
+There are too many Zig notifications alone to go through them by email for me
+
+1584120630
+TheLemonMan
+andrewrk, golang solves the "lightweight-loop" problem by double-locking a mutex, that's really smart
+
+1584120662
+andrewrk
+thanks, despite seeming simple that took me a good 15 minutes of chin-scratching to come up with
+
+1584120723
+andrewrk
+#4731 is a really nice improvement. it's going to be quite handy when debugging multi threaded event loops
+
+1584120729
+TheLemonMan
+but the stdlib mutex don't have a blocking acquire :(
+
+1584120749
+TheLemonMan
+yeah I wrote that as I was playing around with the event loop on FreeBSD
+
+1584120759
+andrewrk
+why do you think it doesn't?
+
+1584120813
+TheLemonMan
+eh because I'm dumb and was reading the single_threaded implementation of Mutex
+
+1584120923
+andrewrk
+yeah the single-threaded use case is why to check if the atomicrmw is 0 above, rather than simply double-acquire
+
+1584121018
+andrewrk
+pixelherodev, I really don't understand that criticism, can't he just resize his browser window to be smaller
+
+1584121042
+andrewrk
+just checked... it works fine
+
+1584121254
+pixelherodev
+Not if you're using a tiled window manager (which I do as well)
+
+1584121268
+pixelherodev
+I had the same problem
+
+1584121281
+pixelherodev
+(for the brief minutes where I tested it)
+
+1584121325
+TheLemonMan
+andrewrk, I've pushed a slightly different approach
+
+1584121339
+pixelherodev
+And I think the "it blends notifications from multiple repos together" part was more of a concern anyways
+
+1584121342
+TheLemonMan
+no global mutex, I create one in the loop scope and deadlock there
+
+1584121367
+TheLemonMan
+in single-thread mode that path is never taken as the panicked goes back to 0
+
+1584121382
+pixelherodev
+`The title of the notification no longer stands out, as it’s the same size as the name of the repo that was affected. They’re no longer grouped by repo, either, so I have to read both every time to get the full context.`
+
+1584121385
+pixelherodev
+^
+
+1584121450
+TheLemonMan
+you can probably write your own notification display with a few lines of code
+
+1584121486
+andrewrk
+TheLemonMan, this is definitely an improvement over status quo and I'd be happy to merge as is, but do you think it might make sense to make deadlocking a mutex Illegal Behavior? this way if we ever wanted to improve debug mode mutexes we could add some (optional?) debugging features to them
+
+1584121495
+andrewrk
+we already do this for --single-threaded
+
+1584121559
+andrewrk
+this adds a dependency on defining the behavior of double-locking a mutex with the same thread to be a deadlock, rather than Don't Do This, And Tools Will Help You Debug It If You Do
+
+1584121766
+TheLemonMan
+
+
+1584121769
+andrewrk
+the beauty of the approach I outlined is that it doesn't depend on same-thread deadlocking - it only relies on "normal" mutex behavior of thread(s) waiting on other(s)
+
+1584121812
+TheLemonMan
+the idle loop could be replaced with an evel simpler `while (true) sleep(a_lot);` if we don't want to stray into the IB realm
+
+1584121822
+pixelherodev
+To clarify my message from this morning: `src/main.cpp:1306 calls `buf_ptr(&g->bin_file_output_path)`, which is of course empty because there
+
+1584121835
+pixelherodev
+My thought that it was
+
+1584121880
+andrewrk
+TheLemonMan, but this is a default panic handler and sleep() has a more difficult OS dependency than Mutex
+
+1584121894
+TheLemonMan
+same-thread deadlocking means we also have to store the thread id somewhere... that may bloat the parking-lot mutex
+
+1584121908
+andrewrk
+as an example, --single-threaded Mutex has no OS dependency, but sleep() still would
+
+1584121954
+TheLemonMan
+hm, gotcha
+
+1584122008
+TheLemonMan
+we also have some kind of OS (or better, ABI) dependency since `threadlocal` is used
+
+1584122046
+TheLemonMan
+I don't really expect bare-metal/OS-less people to use the default handler
+
+1584122052
+pixelherodev
+What does `--single-threaded` actually *do*?
+
+1584122065
+andrewrk
+
+
+1584122074
+pixelherodev
+Ah, it's in the docs :) Thanks!
+
+1584122217
+andrewrk
+TheLemonMan, based on my understanding, OS's that have multi-threading generally support thread local variables, and ones that don't we make --single-threaded the default (and therefore thread local variables become simply globals)
+
+1584122297
+andrewrk
+oh, I see the flaw in my approach
+
+1584122342
+andrewrk
+the first one to increment panicking is not necessarily the correct one to call abort()
+
+1584122423
+TheLemonMan
+yeah, `panicking` is a rough count of how many waiting threads there are
+
+1584122460
+TheLemonMan
+I spent a lot of time tracking down a bug in a previous implementation because I was sure @atomicRmw returned the new value
+
+1584122682
+andrewrk
+ok I think your latest iteration is good to merge
+
+1584122724
+andrewrk
+I think my approach was fine, but it does possibly result in the same thread locking the same mutex and expecting a deadlock. so it's not better than the simpler approach you have
+
+1584122836
+TheLemonMan
+hmm, what if we just use a `ResetEvent` ?
+
+1584122963
+andrewrk
+that sounds right
+
+1584123004
+TheLemonMan
+thank you kprotty
+
+1584123009
+andrewrk
+indeed
+
+1584123278
+TheLemonMan
+enforcing the mutex lock/unlock thread to be the same is an interesting idea tho
+
+1584123380
+andrewrk
+yeah. I think the language and std lib should help debug multi-threaded software
+
+1584123402
+andrewrk
+we don't have the nice multi-threaded guarantees like rust, so the least we can do is provide helpful debugging tools
+
+1584126083
+FireFox317
+how do i get llvm10? can i just clone llvm-project and checkout `release/10.x`?
+
+1584126156
+FireFox317
+or is there an easier way?
+
+1584126180
+andrewrk
+FireFox317, release/10.x branch is your best bet right now since it's not released yet
+
+1584126222
+FireFox317
+andrewrk, thanks!
+
+1584126489
+pixelherodev
+Testing a fix for that issue I was having
+
+1584126504
+FireFox317
+its not possible to build llvm with cmake anymore :(
+
+1584126537
+andrewrk
+it worked for me
+
+1584126539
+FireFox317
+nvm
+
+1584126542
+FireFox317
+wrong dir lol
+
+1584126583
+andrewrk
+oh nice, they just cut rc4
+
+1584126595
+andrewrk
+like, minutes ago
+
+1584126764
+FireFox317
+rc4 is probably gonna be the one thats gonna be released right?
+
+1584126910
+andrewrk
+likely
+
+1584126920
+andrewrk
+i'm merging master into llvm10 for you
+
+1584126959
+FireFox317
+ah cool, im working on some riscv stuff and i hope llvm10 is gonna solve some things that arent working now
+
+1584127109
+TheLemonMan
+riscv stuff? spill the beans!
+
+1584127250
+FireFox317
+risc-v operating system, starting simple with something like xv6, but finally i want it to work on my own fpga :)
+
+1584127398
+TheLemonMan
+cool! syntesized CPUs are awesome
+
+1584127561
+pixelherodev
+Okay, fixed the problem with building for i386, but now my build.zig is crashing ``/usr/local/lib/zig/std/build.zig:2157:63` "attempted to use null value" :(
+
+1584127613
+BaroqueLarouche
+do I need to compile LLVM 10 right now if you merge the llvm10 into master ?
+
+1584127629
+TheLemonMan
+master into llvm10
+
+1584127637
+TheLemonMan
+not the other way around
+
+1584127643
+BaroqueLarouche
+oh
+
+1584127665
+BaroqueLarouche
+read too fast
+
+1584127669
+andrewrk
+llvm10 branch has master merged in, I just did it
+
+1584127734
+andrewrk
+we merge llvm10 into master as soon as llvm 10 is officially released
+
+1584128331
+andrewrk
+at that point building llvm/clang/lld from source could be the easiest way to obtain a source build, but you can also expect ziglang.org/downloads to work
+
+1584128348
+andrewrk
+and that is because I manually go and build llvm from source for all the ci machines
+
+1584128369
+TheLemonMan
+oh I was about to ask if you compiled llvm9 on freebsd yourself
+
+1584128415
+TheLemonMan
+NetBSD wins, it compiled just fine with llvm/clang installed from ports
+
+1584128437
+andrewrk
+thanks pixelherodev
+
+1584128443
+pixelherodev
+Yeah no problem
+
+1584128447
+pixelherodev
+Thought it would be an easy fix like that
+
+1584128453
+pixelherodev
+Now to figure out the next failure :(
+
+1584128497
+andrewrk
+TheLemonMan, yeah I just pay a couple bucks for a high performance server for 2 hours
+
+1584128526
+andrewrk
+just to upload that tarball for the CI
+
+1584128612
+andrewrk
+pixelherodev, it's related to the other change... the build system is expecting the compiler to print the path to the build artifact
+
+1584128637
+pixelherodev
+But - that doesn't make sense anymore
+
+1584128646
+pixelherodev
+Given that there can be (deliberately) multiple artifacts
+
+1584128657
+pixelherodev
+e.g. binary, LLVM IR, and assembly
+
+1584128665
+andrewrk
+yeah it should just print the output dir not a specific build artifact
+
+1584128671
+pixelherodev
+Ah
+
+1584128686
+andrewrk
+that's all the build system wants anyway
+
+1584128752
+pixelherodev
+Will take a bit for me to find where that happens
+
+1584128807
+pixelherodev
+Ahh, I get it. It's the same change I just made
+
+1584128864
+pixelherodev
+Wait
+
+1584128871
+pixelherodev
+Why is there a different path for the different output types?
+
+1584128879
+pixelherodev
+Shouldn't they all be output to the same folder?
+
+1584129060
+pixelherodev
+Think I got it
+
+1584129068
+pixelherodev
+Well, not an understanding of that
+
+1584129069
+pixelherodev
+But a fix
+
+1584129075
+pixelherodev
+for the build.zig failure
+
+1584129501
+pixelherodev
+Got it working, but it's working around the fact there are multiple paths instead of consolidating them, which it really should IMO
+
+1584130466
+FireFox317
+hmm andrewrk, i'm getting build errors when building zig with llvm10. has to do with lld, i guess its because now its using my system lld?
+
+1584130779
+FireFox317
+fixed :)
+
+1584130883
+FireFox317
+Niceeee, llvm10 fixed the issue yeahh
+
+1584140983
+nrdmn
+since mid november (47f06be36 / "string literals are now null terminated") my uefi/freetype programs don't work any more
+
+1584142392
+andrewrk
+nrdmn, any clues?
+
+1584142628
+nrdmn
+andrewrk: nope, not yet
+
+1584143269
+andrewrk
+it's pretty difficult to observe any side effects from those changes
+

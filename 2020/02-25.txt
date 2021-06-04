@@ -1,0 +1,1568 @@
+1582589546
+frmdstryr
+I'm getting a hard fault when using @intToFloat(f64, i64) on arm.. any ideas why that could happen ?
+
+1582589557
+frmdstryr
+The value being casted is -250
+
+1582589583
+frmdstryr
+it works for f32
+
+1582589879
+frmdstryr
+It's a cortex-m7, it is supposed to have a double-precision fpu
+
+1582590086
+frmdstryr
+bl     0x80186b8 <compiler_rt.floatdidf.__floatdidf>
+
+1582590203
+frmdstryr
+Should those compiler_rt fn's be used if it's complied with the "cortex_m7" cpu_feature?
+
+1582590995
+andrewrk
+frmdstryr, 32 or 64 bit?
+
+1582591425
+frmdstryr
+32-bit
+
+1582591439
+frmdstryr
+stmh743
+
+1582591449
+frmdstryr
+sorry stm32h743
+
+1582591473
+frmdstryr
+The STM32H743/753 lines contain the Arm® Cortex®-M7 core (with double-precision floating point unit) running up to 480 MHz.
+
+1582591660
+shakesoda
+
+
+1582591807
+frmdstryr
+andrewrk: Sorry the cpu is 32-bit, i'm trying to cast to an f64
+
+1582592498
+andrewrk
+frmdstryr, can you check if the CPU feature fp64 is enabled?
+
+1582592540
+andrewrk
+it looks like it is supposed to be for this CPU
+
+1582592672
+frmdstryr
+how do I check that?
+
+1582592772
+frmdstryr
+I added +fp64 and it recompiled and did the same thing
+
+1582592820
+andrewrk
+can you try --verbose-llvm-cpu-features and make sure it's getting sent to llvm?
+
+1582592844
+andrewrk
+that might need to get exposed in zig build
+
+1582592909
+frmdstryr
+zig build --verbose --verbose-llvm-cpu-features
+
+1582592925
+frmdstryr
+says unrecognized argument
+
+1582592984
+andrewrk
+I'll add it real quick
+
+1582593003
+frmdstryr
+actually i used verbose cc then added the arg
+
+1582593102
+frmdstryr
+
+
+1582593112
+andrewrk
+added to zig build in 544bc42fd9b612462579928298ec467484763ae1
+
+1582593191
+frmdstryr
+I see +fp64 there
+
+1582593224
+andrewrk
+yeah. looks like we might be on the way to an llvm bug report then
+
+1582593340
+andrewrk
+frmdstryr, what are you using for the target abi?
+
+1582593368
+frmdstryr
+elf.setTheTarget(builtin.Target.parse(.{
+
+1582593374
+frmdstryr
+.arch_os_abi="thumb-freestanding-none",
+
+1582593381
+frmdstryr
+.cpu_features="cortex_m7",
+
+1582593403
+andrewrk
+maybe try eabihf?
+
+1582593409
+andrewrk
+or anything with hf in it
+
+1582593432
+andrewrk
+that shouldn't change anything but if it does it will be a clue
+
+1582593491
+frmdstryr
+Still hard faults
+
+1582593534
+frmdstryr
+bl     0x8018a50 <compiler_rt.floatdidf.__aeabi_l2d>
+
+1582593577
+andrewrk
+oh, this is for converting an integer to a float
+
+1582593587
+andrewrk
+I wonder if this is related to LemonBoy's issue
+
+1582593617
+frmdstryr
+I added a comment with the asm
+
+1582593622
+frmdstryr
+to the gist
+
+1582593629
+frmdstryr
+it is faulting at the vldr
+
+1582593692
+frmdstryr
+which is "
+
+1582593694
+frmdstryr
+Floating-point Load Register loads an extension register from memory, using an address from an ARM core register,
+
+1582593695
+frmdstryr
+with an optional offset.
+
+1582593722
+andrewrk
+frmdstryr, maybe we can try to catch TheLemonMan when he's around, he might have some insight
+
+1582593807
+andrewrk
+I think the next step here would be putting together a minimal LLVM IR test case and getting a bug report submitted upstream
+
+1582593837
+andrewrk
+can you get the  bl     <compiler_rt.floatdidf.__aeabi_l2d> to happen on godbolt?
+
+1582593965
+frmdstryr
+can godbolt run arm?
+
+1582594045
+andrewrk
+you can pass -target args
+
+1582594062
+andrewrk
+idk if it runs
+
+1582594167
+frmdstryr
+
+
+1582594532
+andrewrk
+here's a shorter example:
+
+1582594557
+andrewrk
+I think this is fine
+
+1582594564
+andrewrk
+so you said the fault is at the vldr?
+
+1582594816
+frmdstryr
+Yea
+
+1582594825
+frmdstryr
+added another comment with the registers
+
+1582594857
+frmdstryr
+and after I do `si` into the first vldr
+
+1582595180
+frmdstryr
+the arm ref manual says it should say VLDR.64
+
+1582595199
+frmdstryr
+but it's optional so maybe that's a display thing
+
+1582595385
+frmdstryr
+acutally i guess that's why it's "d" "s"
+
+1582595399
+frmdstryr
+"d" instead of "s"
+
+1582595804
+frmdstryr
+Maybe i'm enabling the FPU with the wrong flags or something
+
+1582596193
+frmdstryr
+
+
+1582596240
+frmdstryr
+Can I manually add a cpu flag?
+
+1582596245
+frmdstryr
+`fpv5-d16`
+
+1582596446
+andrewrk
+I have to learn about -mfpu. I don't know what that does
+
+1582596470
+andrewrk
+"fpv5-d16" is not a cpu feature that llvm recognizes
+
+1582596497
+andrewrk
+unless that's fp_armv8d16
+
+1582596532
+andrewrk
+which is enabled for cortex_m7
+
+1582600656
+daurnimator
+is
+
+1582600688
+daurnimator
+also if that commit is valid..... TIL .Null is a type
+
+1582600820
+andrewrk
+@typeInfo(@typeOf(null)) == .Null
+
+1582600852
+andrewrk
+it's basically the "anonymous enum literal" of optionals
+
+1582601560
+shakesoda
+managed to get up to about two millions particles updating per frame at usable speeds today, much better than expected
+
+1582601568
+shakesoda
+*million
+
+1582601603
+shakesoda
+it's bottlenecked on display, but this is already a very wasteful thing to do entirely on cpu
+
+1582603261
+BaroqueLarouche
+I was able to emulate interface + instance with some type erasure:
+
+1582605605
+fengb
+Well I'm glad I'm starting to test my bytecode parser lol
+
+1582607697
+fengb
+How bad is it to stick this in the middle of an expression? `switch (self.exports.get(name) orelse return error.ExportNotFound) {`
+
+1582610267
+fengb
+Hmm a weird bug: if I accidentally reference a non-existent variable, it seems to be considered shadowed later in the scope
+
+1582611443
+andrewrk
+that's to avoid giving redundant or misleading compile errors
+
+1582611474
+andrewrk
+which sounds like it's maybe backfiring, but easily fixable
+
+1582625150
+TheLemonMan
+frmdstryr, yo
+
+1582625241
+daurnimator
+hmm, why would I get this error?
+
+1582625353
+daurnimator
+hmmm. I think the null type might be banned at runtime: we should allow it.
+
+1582625384
+daurnimator
+(same as we allow other 0 bit types)
+
+1582625909
+daurnimator
+filed as
+
+1582630497
+Xatenev
+
+
+1582630501
+Xatenev
+is this still required?
+
+1582630532
+Xatenev
+in the related issue someone commented "macro functions are now supported remaining cases are tracked in x"
+
+1582630552
+Xatenev
+but I can't really read from it whether this case is fixed or not
+
+1582631931
+TheLemonMan
+try it and see, it should work pretty well
+
+1582639636
+betawaffle
+lol... macos doesn't have accept4, and zig
+
+1582639692
+betawaffle
+i suppose nobody has tried to use networking at all on macos yet
+
+1582639748
+mikdusan
+probably not
+
+1582639872
+fengb
+I feel so spoiled nowadays. In college, I had the choice of polling or blocking IO
+
+1582642945
+fengb
+`pub fn len(comptime T: type, ptr: [*:0]const T) usize {` shouldn't these functions allow for any type of null termination?
+
+1582642951
+fengb
+sentinel termination*
+
+1582643019
+TheLemonMan
+check out #3972
+
+1582643060
+fengb
+Ah
+
+1582644617
+FireFox317
+andrewrk: there seems to be a regression regarding libc detection on windows, when doing `zig targets` in the libc list it is showing `x86_64-linux-gnu (native)`, which i think is incorrect. This is using the latest master zip file from ziglang.org
+
+1582644698
+FireFox317
+however the native cpu is correctly detected and the triple is `x86_64-windows-msvc`
+
+1582645875
+mikdusan
+andrewrk: I'd like to merge
+
+1582645999
+fengb
+Hmm, how come Windows is so much smaller?
+
+1582646078
+mikdusan
+the RSS was calculated from a msys2/cygwin command "/usr/bin/time -v" which I'm not sure how accurate it is. maybe there's a real native win32 tool I can use to monitor.
+
+1582646102
+mikdusan
+s/accurate/all-inclusive/
+
+1582646149
+fengb
+Oh
+
+1582646179
+fengb
+I'm not doubting you. I'm more curious why it's so different, like maybe somehow it's more optimized
+
+1582646206
+mikdusan
+very well could be exactly that. an allocator that has less overhead?
+
+1582646221
+andrewrk
+mikdusan, sounds good
+
+1582646237
+mikdusan
+yaay
+
+1582646269
+andrewrk
+FireFox317, thanks I'll take a look. this also overlaps with
+
+1582646661
+mikdusan
+fwiw, macos also reports same `zig targets` --> "x86_64-linux-gnu (native)"
+
+1582646744
+TheLemonMan
+andrewrk, million dollar question, is there a reason why ir_resolve_result_raw calls ir_resolve_result with allow_discard forced to true?
+
+1582647031
+mikdusan
+I see a couple of `false` callsites
+
+1582647110
+TheLemonMan
+not a single one of them is within ir_resolve_result_raw
+
+1582647132
+mikdusan
+whups i read that totally backwards. sorry
+
+1582647185
+TheLemonMan
+np, the names are very similar :)
+
+1582647222
+andrewrk
+TheLemonMan, I'm completely sure that `allow_discard` was never part of the original idea, and it was a hack added to make _ = foo; work, and then used in more hacky ways
+
+1582647239
+andrewrk
+with some of the recent technical debt payoff, it may be possible to remove this option entirely
+
+1582647366
+TheLemonMan
+uh maybe, but then you'd have to handle the assignments to _ at the ir_resolve_result callsite
+
+1582647413
+andrewrk
+in answer to your question though, I would treat this parameter skeptically
+
+1582647526
+TheLemonMan
+to give some context, in #3529 you have a slice operation with a peer-resolved result loc and everything is meant to be written to _
+
+1582647564
+TheLemonMan
+I've solved it locally by kindly asking for a non-void result loc to avoid tripping the bogus type-cast
+
+1582647612
+TheLemonMan
+if allow_discard is to be ignored then I'd have to add some more code to detect this situation
+
+1582647659
+TheLemonMan
+it's not much of a problem as a type_has_bits on the result_loc type is probably enough to reliably detect this
+
+1582647832
+andrewrk
+I can look at #3529 in a bit and see if that gives me any more insight to share with you. otherwise, I'm giving you blessing to change how things work if you see a better way
+
+1582647998
+TheLemonMan
+no worries, I'll have a look around and experiment a bit
+
+1582648155
+andrewrk
+the way I reason about my own code, I know the areas where the design is weak and where it is strong. and I know that when I change some things, it weakens some places and strengthens others. sometimes I will intentionally "forget" how a weak area of code works, so that when I read/edit that area of code I'm forced to sort of re-design it. that's currently happening with resolve_result_loc{,_raw}
+
+1582649371
+scientes
+can confirm that I did not understand result_loc stuff
+
+1582649520
+TheLemonMan
+I understand, but keep in mind that other people cannot read your mind heh
+
+1582649545
+fengb
+... yet
+
+1582649579
+andrewrk
+right, I'm just trying to communicate that I have no defense of this area of code, and you should feel free to hack away at it as you see fit
+
+1582652174
+betawaffle
+@byteSwap doesn't work on arrays of multi-byte integers, right?
+
+1582652571
+TheLemonMan
+wtf, the CI didn't start at all for #4556
+
+1582652597
+TheLemonMan
+oh it started, noice
+
+1582653227
+andrewrk
+betawaffle, ints only. I'm sure you could write something for that in userland though
+
+1582653531
+frmdstryr
+TheLemonMan: Any thoughts on the @intToFloat(f64 ) thing from yesterday?
+
+1582653560
+TheLemonMan
+frmdstryr, do you have a minimal piece of code I can compile and run locally?
+
+1582653655
+frmdstryr
+Do you have a stm32 or just want to try it on any generic arm?
+
+1582653702
+andrewrk
+can you reproduce the problem with qemu?
+
+1582653711
+TheLemonMan
+don't have any stm32 board with me atm, I wanted to see if I can reproduce the problem with Qemu
+
+1582653802
+frmdstryr
+Did you look at the godbolt link
+
+1582653892
+TheLemonMan
+you're getting a hard-fault on a vldr instruction, correct?
+
+1582653906
+TheLemonMan
+I vaguely remember seeing a gist with a register dump from gdb
+
+1582653913
+frmdstryr
+yea
+
+1582653930
+frmdstryr
+
+
+1582654118
+frmdstryr
+The asm on godbolt isn't the same, it's in the first gist comment though
+
+1582654188
+frmdstryr
+I can build a simple project with mbed-os and see if it works there to see if anythings different if that'd be helpful
+
+1582654443
+TheLemonMan
+did you enable the vfp?
+
+1582654575
+andrewrk
+at runtime?
+
+1582654603
+TheLemonMan
+yup
+
+1582654612
+andrewrk
+ah that's interesting. I didn't know about that
+
+1582654645
+frmdstryr
+Probably not, what's that / how do I know?
+
+1582654656
+TheLemonMan
+try compiling with -vfp
+
+1582654679
+TheLemonMan
+eh, -vfp2
+
+1582654700
+TheLemonMan
+and a few other vfp-prefixed flags
+
+1582654730
+TheLemonMan
+vfp is neon older and deprecated (iirc) sibling
+
+1582654732
+TheLemonMan
+
+
+1582654755
+frmdstryr
+Did you see all the flags in the gist
+
+1582654774
+frmdstryr
+There's +vfp2
+
+1582654783
+frmdstryr
+can I change that?
+
+1582654794
+andrewrk
+the flags come from specifying the CPU model
+
+1582654889
+frmdstryr
+I added the build.zig to the gist, i'm just passing the cortex_m7
+
+1582654931
+frmdstryr
+Before that PR existed I had to comment out the register that enabled the FPU
+
+1582654932
+frmdstryr
+
+
+1582654938
+frmdstryr
+Just in zig
+
+1582654957
+TheLemonMan
+frmdstryr,
+
+1582655044
+frmdstryr
+Do you have a gitlab acct?
+
+1582655060
+frmdstryr
+I can share the actual code
+
+1582655165
+TheLemonMan
+what's the specific ARM cpu you have? I wonder if it has a fpu or not
+
+1582655170
+TheLemonMan
+sure
+
+1582655222
+frmdstryr
+i
+
+1582655241
+frmdstryr
+STM32H743ZI
+
+1582655395
+TheLemonMan
+yeah it has a FPU
+
+1582655419
+TheLemonMan
+try enabling the VFP in your early init code and see if it still trips the hard fault
+
+1582655480
+frmdstryr
+SCB.CPACR |= ((@as(u32, 3) << (10*2)) | (@as(u32, 3) << (11*2)));
+
+1582655621
+frmdstryr
+I guess I need the FPEXCN wherever that is
+
+1582655684
+TheLemonMan
+check out the last article I've linked
+
+1582655744
+frmdstryr
+That's an A7
+
+1582655748
+frmdstryr
+this is an M7
+
+1582655788
+TheLemonMan
+damn, the ARM website doesn't update the url when you change page
+
+1582655863
+frmdstryr
+Let me read the FPU feature registers and see what it says
+
+1582655959
+TheLemonMan
+are you sure the CPACR is correctly written to?
+
+1582655974
+pixelherodev
+Whoa, you hit the 4GB RAM target?! Nice work!
+
+1582655979
+pixelherodev
+(#4515)
+
+1582655995
+frmdstryr
+Pretty sure, before the cpu flag changes I had to comment out  that line
+
+1582656029
+frmdstryr
+after the cpu flags let it pass cortex_m7 I had to renable it or it just froze when it got to the first float division
+
+1582656045
+TheLemonMan
+did you also add the dsb/isb to flush the caches?
+
+1582656074
+frmdstryr
+Whats your gitlab user name?
+
+1582656107
+andrewrk
+pixelherodev, thanks to mikdusan. note that the target is 3.5 GiB on FreeBSD
+
+1582656132
+TheLemonMan
+frmdstryr, LemonBoy
+
+1582656187
+frmdstryr
+sent an invite, it's in lib/stm32/system.zig
+
+1582656201
+frmdstryr
+the init fn
+
+1582656216
+fengb
+Should there be a way to generate a switch at comptime? I spent a bit of effort fiddling in Godbolt until I convinced LLVM to do it
+
+1582656527
+TheLemonMan
+frmdstryr, is there a buildable example?
+
+1582656547
+frmdstryr
+targets/stm32h7/build.zig
+
+1582656680
+TheLemonMan
+gah, let me build an older version of the compiler, the new one broke once again the target thingie
+
+1582656702
+frmdstryr
+oh let me push
+
+1582656755
+frmdstryr
+ok
+
+1582656825
+frmdstryr
+The FPU media & feature registers match the "single-precision and double precsion FPU" values
+
+1582656978
+mikdusan
+heh #4515 savings of 5-6% were based on 58 revs behind master. RSS is up 10% since then. whups. but that's ok, probably means more tests, etc.
+
+1582657027
+frmdstryr
+Also don't build in release mode there's another strange issue I haven't figured out yet
+
+1582657053
+frmdstryr
+faults when entering main
+
+1582657054
+frmdstryr
+lol
+
+1582657106
+andrewrk
+TheLemonMan, what regressed?
+
+1582657131
+andrewrk
+a diff of --verbose-llvm-cpu-features would be telling
+
+1582657143
+frmdstryr
+I don't think the repo was updated to the changes to the cpu features
+
+1582657590
+frmdstryr
+"FPv4-SP and FPv5 both define a FPU that supports single precision 32-bit arithmetic", while FPv5 also provides additional instructions for double-precision
+
+1582657608
+frmdstryr
+From the armv7m reference manual
+
+1582657632
+frmdstryr
+So maybe llvm doesn't have the proper flag?
+
+1582657759
+frmdstryr
+There's seprate instructions for 64bit integer conversions
+
+1582657789
+frmdstryr
+VCVTA, VCVTN, VCVTP, and VCVTM
+
+1582657906
+andrewrk
+is it mve.fp?
+
+1582657937
+andrewrk
+enable with +mve_fp
+
+1582658005
+andrewrk
+if it's faulting, doesn't that mean that zig emitted instructions which were
+
+1582658127
+frmdstryr
+
+
+1582658190
+TheLemonMan
+bleh, qemu refuses to be helpful here
+
+1582658277
+FireFox317
+frmdstryr, do you have a link to your repo? or is it private
+
+1582658360
+frmdstryr
+It's private but I can share it if you want
+
+1582658426
+frmdstryr
+if you have a gitlab username
+
+1582658479
+TheLemonMan
+you said all the other fp ops are working just fine, right?
+
+1582658524
+frmdstryr
+Yeah only had a problem when trying to use the f64
+
+1582658617
+TheLemonMan
+try adding -vfp2d16sp to your flags
+
+1582658708
+andrewrk
+"Enable VFP2 instructions with no double precision"
+
+1582658731
+frmdstryr
+same thing
+
+1582658792
+andrewrk
+vfp4d16sp was already enabled because the cpu model is cortex_m7
+
+1582658820
+andrewrk
+it's noted as enabled in the --verbose-llvm-cpu-features paste in the gist
+
+1582658841
+andrewrk
+along with +vfp3d16sp, +vfp4d16sp
+
+1582658879
+FireFox317
+TheLemonMan, mentioned to disable it
+
+1582658884
+andrewrk
+ah
+
+1582658912
+TheLemonMan
+eh, llvm flags are a wonderful maze
+
+1582658918
+andrewrk
+oh! you should double check that it got disabled. because cpu features have dependencies, and it might have got re-enabled if something else depended on it
+
+1582658963
+TheLemonMan
+without knowing
+
+1582658980
+andrewrk
+e.g. vfp3d16sp pulls in vfp2d16sp
+
+1582659320
+frmdstryr
+
+
+1582659327
+frmdstryr
+it looks like the flag should be there
+
+1582659417
+andrewrk
+frmdstryr, maybe clang has the equivalent of --verbose-llvm-cpu-features and we can compare
+
+1582659731
+frmdstryr
+The flags seem very confusing, it has `+vfp2,+vfp2d16`,  one says use 32 registers, the other says use 16 so what does it do?
+
+1582659776
+TheLemonMan
+the problem seems to be the use of d16, the CPU has 31 single registers that can be used in pairs
+
+1582659790
+TheLemonMan
+you can only use d0-d15
+
+1582659828
+frmdstryr
+that'd make sense why it blows up there
+
+1582659855
+frmdstryr
+well maybe not, the vldreq d16 before it works
+
+1582659936
+TheLemonMan
+oh well, you won't know until you pass a zero to that function
+
+1582659970
+andrewrk
+is the cpu model incorrect? even in llvm10, llvm has cortex-m7 with: FeatureFPARMv8_D16
+
+1582659996
+TheLemonMan
+frmdstryr, try adding `-d32`
+
+1582659999
+andrewrk
+"Enable ARMv8 FP with only 16 d-registers"
+
+1582660029
+andrewrk
+that sounds righty, so why is it using d16?
+
+1582660105
+andrewrk
+this really is starting to sound like an LLVM bug if we have +fp-armv8d16 and llvm uses d16
+
+1582660112
+frmdstryr
+Same thing, it didn't change the size at all.
+
+1582660139
+andrewrk
+frmdstryr, I believe if the generated assembly uses d16 that demonstrates a bug
+
+1582660165
+andrewrk
+so if we have a minimal repro that uses -mcpu=cortex_m7 and generates assembly which uses d16, that's an llvm bug report
+
+1582660210
+TheLemonMan
+my LLVM seems not to spew any d16...
+
+1582660380
+frmdstryr
+If you put the elf somewhere I can try to run it
+
+1582660498
+TheLemonMan
+done, do you need anything else beside the ELF?
+
+1582660672
+frmdstryr
+well it didn't hard fault so that's god
+
+1582660678
+frmdstryr
+good*
+
+1582660728
+TheLemonMan
+soo, it's working?
+
+1582660747
+TheLemonMan
+that's a bad news!
+
+1582660808
+andrewrk
+is this a difference in zig versions?
+
+1582660834
+TheLemonMan
+I had already seen this kind of problems, it happened with some reports by markfirmware
+
+1582660835
+frmdstryr
+is there any way to change the src path of the files in the elf?
+
+1582660873
+TheLemonMan
+nope :|
+
+1582660934
+TheLemonMan
+are you using the binaries from the website?
+
+1582660954
+frmdstryr
+is lib/gfx/display.zig at line 454 doing the @intToFloat(f64) ?
+
+1582660965
+TheLemonMan
+yep
+
+1582660968
+frmdstryr
+I'm using zig from master, built locally so maybe that's it?
+
+1582660983
+TheLemonMan
+what LLVM version?
+
+1582661007
+TheLemonMan
+maaaybe there's some caching problem?
+
+1582661020
+TheLemonMan
+try nuking your zig-cache to force a complete rebuild
+
+1582661091
+andrewrk
+I've been really careful about zig-cache. cpu features are for sure in there
+
+1582661123
+andrewrk
+not saying not to try it, just don't want any lurkers to get into bad habits :)
+
+1582661155
+frmdstryr
+mine still hard faults
+
+1582661208
+andrewrk
+maybe a disassembly diff would be useful?
+
+1582661597
+frmdstryr
+
+
+1582661733
+frmdstryr
+How do I check the llvm version?
+
+1582661798
+frmdstryr
+so it does look like it's from using d16
+
+1582661836
+andrewrk
+the binary downloads on ziglang.org are still using 9.0.0. if you build from source it's whatever your package manager has (or if you built from source, you're in control of it)
+
+1582661864
+frmdstryr
+clang --version says 9.0.0
+
+1582661917
+andrewrk
+if you want to sit through a clang/llvm/lld release/10.x source build, you could try zig's llvm10 branch
+
+1582662168
+andrewrk
+you should wait to use llvm10 branch until I merge master into it
+
+1582662307
+TheLemonMan
+frmdstryr, can you reproduce the same problem with a teeny source file with just a @intToFloat in it?
+
+1582662506
+kristoff_it
+I have a function that takes a type as input and depending on the type it might produce a specific error or not. Now, at a call site I want to catch that error, but since it's not always present in the errorset I get a compile error. Any recommendation on what I should do? I could use anyerror, but in reality I'd just like to "pin" that particular error to the inferred errorset.
+
+1582662523
+andrewrk
+kristoff_it, in this case it is recommended to use an explicit error set
+
+1582662548
+kristoff_it
+thanks!
+
+1582662556
+fengb
+I'm using this silly hack: `const result_value = if (@typeInfo(@TypeOf(result)) == .ErrorUnion) try result else result;`
+
+1582662557
+andrewrk
+kristoff_it, one thing you can do is use an empty error set and the compiler will tell you all the errors you are missing
+
+1582662594
+andrewrk
+you can also use the  || operator to combine error sets
+
+1582662633
+fengb
+Oh mixing multiple error sets
+
+1582662703
+kristoff_it
+uhmm thinking a bit more about this I'm not sure it's the right choice for me because the type could be user-provided and they might want to introduce their own errors. I'll admit what I'm doing is pushing what is probably considered idiomatic / good zig code, but trying to get a feeling for that limit is partially the goal :)
+
+1582662734
+TheLemonMan
+andrewrk, could it be that the llvm flags are not correctly inherited by the child codegen units? That may explain why compiler-rt refuses to respect the register limits
+
+1582662746
+andrewrk
+kristoff_it, in this case I think you are forced to accept an error set from the user as a parameter
+
+1582662765
+andrewrk
+TheLemonMan, let me double check that
+
+1582662815
+andrewrk
+the Stage2Target pointer is passed directly, which has these fields:
+
+1582662820
+andrewrk
+so it should be identical
+
+1582662893
+andrewrk
+TheLemonMan, also, --verbose-llvm-cpu-features will output for child codegen units; you can verify they are the same
+
+1582662932
+andrewrk
+kristoff_it, a related issue is:
+
+1582662966
+andrewrk
+kristoff_it, one of the things I want to explore with the possible `interface` language feature is to make error sets of interfaces composible in this way. I believe this is the same problem you are running into
+
+1582662986
+andrewrk
+idk, something like an interface having an inferred error set
+
+1582663043
+frmdstryr
+TheLemonMan: yes
+
+1582663062
+frmdstryr
+idk why it chooes to use d16
+
+1582663146
+kristoff_it
+fengb: I looked at your snippet, but I know the return value is always going to be an errorset, the problem is about what's in the set in a given codepath
+
+1582663203
+andrewrk
+I think your best bet with status quo zig is to accept an error set parameter, possibly merge another set of errors into it, and then use that
+
+1582663207
+fengb
+Yeah I misunderstood your problem >_>
+
+1582663268
+kristoff_it
+andrewrk: I think my case is a simpler subset, all functions are specified statically, so the errors flow naturally in the inferred error set. the only problem is one elusive error that sometimes is not part of the set. So I'd like to either "pin" it, or have a way of recognizing in which case I am using metaprogramming.
+
+1582663286
+TheLemonMan
+ok I managed to reproduce the problem using a Zig build from the website
+
+1582663305
+TheLemonMan
+time to find out
+
+1582663385
+kristoff_it
+I think there is an interesting underlying question about wether the programmer should be allowed to do this stuff or not (and I would be more in favor of NO), but right now it's so annoying that I'm so close to expressing precisely what I want to happen :D
+
+1582663422
+andrewrk
+IMO, when in doubt, explicit error set
+
+1582663583
+betawaffle
+do packed structs with non-byte-aligned fields work in master yet?
+
+1582663613
+fengb
+Nope
+
+1582663617
+betawaffle
+darn
+
+1582663626
+fengb
+Well... sorta
+
+1582663633
+betawaffle
+what does that mean?
+
+1582663636
+fengb
+Definitely buggy
+
+1582663693
+shakesoda
+is it a known issue that c functions returning structs are buggy (windows)
+
+1582663710
+fengb
+Oh... most likely not working. I have some code that tries to use it but I don't think it's tested
+
+1582663719
+shakesoda
+i've been getting some crazy bad stuff with imgui functions that return stuff like struct { float x, y }
+
+1582663759
+shakesoda
+i had to write in helpers that just returned single floats instead (or, I suppose, I could have used out vars)
+
+1582663763
+TheLemonMan
+yep
+
+1582664384
+betawaffle
+are functions brought into a struct with usingnamespace eligible to be used with method syntax?
+
+1582664397
+betawaffle
+(assuming the type of the first arg is correct)
+
+1582664448
+fengb
+Yes, a quirk of the compiler is that any function can be invoked with the method syntax. It'll most often throw an error due to mismatched types
+
+1582664466
+betawaffle
+whoa,
+
+1582664484
+betawaffle
+interesting
+
+1582664507
+fengb
+Yeah, a method is just a funny looking invocation. The type check is what the compiler cares about. It's not useful... and possibly not a real feature but still
+
+1582664548
+TheLemonMan
+okay, so this whole shit show happens because my LLVM version defaults to fpv5-d16 while the one used to compile the ziglang.org one defaults to fp-armv8
+
+1582664578
+andrewrk
+TheLemonMan, is there perhaps a branch on uninitialized value happening?
+
+1582664618
+fengb
+betawaffle:
+
+1582664632
+andrewrk
+TheLemonMan, the cpu model is being explicitly specified as cortex_m7. this should set the cpu features accordingly, overriding any defaults llvm has
+
+1582664637
+betawaffle
+interesting
+
+1582664669
+TheLemonMan
+I suspect it's more a problem with LLVM, let me check if the apt.llvm.org copy has some patches applied to it
+
+1582664676
+frmdstryr
+TheLemonMan: The comments in the llvm PR to add say they're the same thing
+
+1582664679
+frmdstryr
+/ FPv5 and FP-ARMv8 have the same instructions, so are modeled as one
+
+1582664691
+frmdstryr
+
+
+1582664725
+andrewrk
+ziglang.org download is 9.0.0; apt.llvm.org is probably 9.0.1
+
+1582664734
+TheLemonMan
+"FPV5_D16 is identical to FP_ARMV8 except for the number of D registers"
+
+1582664753
+TheLemonMan
+it's identical but not the same :)
+
+1582664781
+frmdstryr
+hah.. just shoot me
+
+1582664945
+andrewrk
+cortex_m7 has +fp_armv8d16. in frmdstryr's gist, it shows -fp-armv8 and +fp_armv8d16
+
+1582665356
+TheLemonMan
+according to ARMTargetParser.def cortex_m7 defaults to FK_FPV5_D16
+
+1582665383
+TheLemonMan
+don't focus too much on the flags andrewrk, there's a lot more going on
+
+1582665394
+andrewrk
+ok
+
+1582665516
+andrewrk
+that's too bad; seems like llvm is making it more complicated than it needs to be
+
+1582665780
+TheLemonMan
+meh, most of the times it's complex because it has to accomodate a huge number of use-cases
+
+1582665814
+andrewrk
+and not break backwards compatibility. yeah I get it
+
+1582665956
+TheLemonMan
+move fast and break things™
+
+1582666020
+companion_cube
+move things and breakfast
+
+1582666127
+metaleap
+"move fast" is
+
+1582666186
+fengb
+You don’t need to move fast to break things >_>
+
+1582666212
+TheLemonMan
+not really, cats are able to break stuff with just a little tap
+
+1582666267
+andrewrk
+llvm10 branch is now up-to-date with latest master
+
+1582666291
+andrewrk
+I'll do another test suite run with asserts enabled overnight
+
+1582666755
+TheLemonMan
+I still have no idea of why the fpu setting is different ¯\_(ツ)_/¯
+
+1582666813
+frmdstryr
+You're the magic guy at work that just looks at problems and they go away while you're around
+
+1582667260
+frmdstryr
+Is zig standalone?
+
+1582667319
+frmdstryr
+If so could I try to build with your build of zig?
+
+1582667320
+TheLemonMan
+hm?
+
+1582667337
+TheLemonMan
+oh... I think so
+
+1582667365
+TheLemonMan
+want me to zip it up?
+
+1582667382
+andrewrk
+frmdstryr, are you willing to try with the llvm10 branch?
+
+1582667405
+andrewrk
+(you have to build llvm/clang/lld release/10.x branch from source yourself)
+
+1582667410
+frmdstryr
+Yes it'll take me hours on 2g, or I can run and grab a coffie
+
+1582667621
+frmdstryr
+Or I can try with llvm10
+
+1582667637
+TheLemonMan
+how comes you're stuck with 2g?
+
+1582667660
+TheLemonMan
+it'll probably take less time to send you a stack of floppy disks via snail mail
+
+1582667694
+frmdstryr
+Long story ha, start unlmited at the beginnign of the month
+
+1582667987
+TheLemonMan
+I really don't understand what the hell is causing this problem, the CI and I use the same apt repo
+
+1582668034
+andrewrk
+TheLemonMan, the CI uses an alpine linux docker image with a source build of llvm/clang 9.0.0
+
+1582668075
+andrewrk
+it runs the test suite with the same apt repo as you but then it uses the apline linux docker image to make the download tarball because that was the most straightforward way I found to make a static executable
+
+1582668094
+andrewrk
+
+
+1582668176
+TheLemonMan
+the plot thickens!
+
+1582668205
+andrewrk
+that should make it quite straightforward to reproduce what the CI is doing
+
+1582668208
+TheLemonMan
+damn it, I've read 4-5 times the linux_script file and never caught the use of docker
+
+1582668320
+TheLemonMan
+frmdstryr, are you building zig on linux?
+
+1582668341
+frmdstryr
+do I need to build llvm or can I just use the llvm-10 repo
+
+1582668359
+frmdstryr
+yes, ubuntu 18.04
+
+1582668380
+andrewrk
+frmdstryr, oh, if apt.llvm.org has llvm-10 then you should be able to use that
+
+1582668676
+TheLemonMan
+yeah, a few days ago they've opened the branch for the 10 release
+
+1582673752
+dimenus
+andrewrk: should I be building my PR against your os-version-ranges branch?
+
+1582673799
+andrewrk
+probably not. what PR?
+
+1582673974
+dimenus
+glibc detection self hosting
+
+1582674272
+andrewrk
+dimenus, ah, in this case, you are welcome to open a PR against os-version-ranges. I started the implementation here:
+
+1582674288
+andrewrk
+heads up this branch is extremely volatile
+
+1582674372
+jaredmm
+Any hot tips for trying to improve translate-c? Having a hell of a time trying to extract a minimal test case from the mess that is the Windows headers.
+
+1582674384
+dimenus
+maybe i'll table it until it gets merged, I can still explicitly specify glibc version for now
+
+1582674393
+jaredmm
+Lots of console printing or debugging?
+
+1582674422
+andrewrk
+jaredmm, often times a minimal test case is the main challenge of problem solving
+
+1582674454
+andrewrk
+dimenus, I'd still take a look at your diff if you like, maybe you got further than me
+
+1582674967
+pixelherodev
+Not much more left until ZigIRRat is usable :D
+
+1582675018
+pixelherodev
+The lexer is actually completely valid, and as a result I've been forced to put `error.unimplemented`s all throughout the AST generator instead of leaving it blank as I did in v1, which means it'll be nearly trivial to come in and finish the implementation to bring it up to spec later on
+
+1582675038
+pixelherodev
+I hope to have a hello world compiling tomorrow
+

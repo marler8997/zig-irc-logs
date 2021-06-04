@@ -1,0 +1,1832 @@
+1578873600
+Snektron
+I suppose theres nothing wrong with that strategy on a technical level, but it was a bit unintuitive
+
+1578873603
+companion_cube
+so you just allocate AST nodes by bumping an offset?
+
+1578873756
+andrewrk
+yes
+
+1578873759
+andrewrk
+roughly
+
+1578873810
+andrewrk
+std.heap.ArenaAllocator does have a linked list mechanism if it runs out
+
+1578873830
+companion_cube
+you can just use a list of arenas, right?
+
+1578873856
+mikdusan
+the arena
+
+1578873867
+companion_cube
+a list of chunks, pfff
+
+1578874866
+hryx
+andrewrk: This comment got me wondering. Does the grammar belong in the documentation, or should it only live in the language spec?
+
+1578874885
+hryx
+and then the docs link to the spec and grammar
+
+1578874944
+companion_cube
+if you make a spec, someone will come and implement it and we'll have two implemtations 🙃
+
+1578874997
+hryx
+the more the merrier
+
+1578875104
+fengb
+You can make it impossibly complicated like OOXML :P
+
+1578875211
+andrewrk
+hryx, the spec is the canonical location; it's copied to the lang ref for convenience of people reading it
+
+1578875301
+rankao
+Question, is there a way to coerce a optional into a non-optional?
+
+1578875332
+pixelherodev
+`.?`
+
+1578875346
+pixelherodev
+e.g. if you have an optional called `a`, `a.?` gives you the non-optional form
+
+1578875357
+pixelherodev
+It also asserts that a isn't null, causing a runtime error if it is
+
+1578875359
+hryx
+andrewrk: do you think it would be redundant once the spec is written and hosted on the zig website? Doesn't bother me either way, I just noticed it's prone to getting out of sync as seen in that commit comment
+
+1578875410
+rankao
+It didn't click with me that `assert(x.? == 1234);` was coercing it into a non-optional
+
+1578875427
+hryx
+rankao: in this case it's typically called "unwrapping" rather than coercing
+
+1578875443
+rankao
+Yeah. It's what I'm used to from Rust.
+
+1578875446
+andrewrk
+hryx, eventually we could make docgen pull it from a canonical location. I also think this problem will solve itself once the language stabilizes
+
+1578875480
+hryx
+yeah, good point
+
+1578875703
+rankao
+
+
+1578876485
+daurnimator
+andrewrk: I just sat down with kees cook and went over some paths to getting zig into the linux kernel
+
+1578876722
+andrewrk
+daurnimator, nice! ask him if we can plz have
+
+1578876760
+andrewrk
+to make temp files with no path, and then "materialize" them into the file system atomically
+
+1578876845
+daurnimator
+I thought you could already do that with memfd
+
+1578876860
+andrewrk
+don't think so
+
+1578876867
+daurnimator
+or maybe I'm thinking of something else
+
+1578876971
+pixelherodev
+That - sounds really really useful
+
+1578876975
+mikdusan
+sounds like the inverse of unlink (refcount goes to 0) and file node exists only in memory ?
+
+1578877064
+daurnimator
+Can you link from /proc/self/fd/ ?
+
+1578877068
+andrewrk
+the important part about the patch is the part where it goes from being in memory only, atomically to the file system
+
+1578877446
+pixelherodev
+How's that different from `mv /tmp/file /somewherereal/file`?
+
+1578877491
+andrewrk
+renaming into place requires /tmp/file to exist
+
+1578877532
+andrewrk
+if the application loses power between creating /tmp/file and the rename() then there will be garbage /tmp/file
+
+1578877842
+daurnimator
+andrewrk: can you link from /proc/self/fd to the file system?
+
+1578877877
+pixelherodev
+No there won't; tmpfs exists only in memory
+
+1578877895
+pixelherodev
+If the device loses power, tmpfs gets cleared
+
+1578877907
+fengb
+Most people have /tmp mapped into the HDD
+
+1578877916
+mikdusan
+I'm looking at link() and linkat() manpage. I don't see how it can work without 2 paths; so what is path1 supposed to be if you only have fd1?
+
+1578877944
+daurnimator
+pixelherodev: huh?
+
+1578877999
+daurnimator
+pixelherodev: you can call open() with O_TMPFILE and then linkat it into place via /proc
+
+1578878024
+andrewrk
+mikdusan, you can have an fd that does not correspond to a path. but without AT_REPLACE for linkat (the flag introduced in the patch), there is no way to atomically make the fd gain a path on the file system
+
+1578878034
+daurnimator
+andrewrk: yes you can.....
+
+1578878046
+andrewrk
+prove it
+
+1578878062
+daurnimator
+andrewrk: there's even an example in the manpage open(2)
+
+1578878140
+daurnimator
+
+
+1578878156
+andrewrk
+daurnimator, what syscall do you perform once you've written the data to the tmp file fd, in order to give it a path in the file system?
+
+1578878169
+daurnimator
+andrewrk: linkat
+
+1578878212
+andrewrk
+it will give EEXIST if the destination file exists
+
+1578878236
+andrewrk
+this patch adds AT_REPLACE so that linkat can replace the target
+
+1578878251
+daurnimator
+ah right
+
+1578878296
+daurnimator
+fengb: most people do
+
+1578878343
+daurnimator
+but in any case, for linkat to work you need to be on the correct file system/partition
+
+1578878365
+pixelherodev
+`Most people have /tmp mapped into the HDD` Wait really?
+
+1578878368
+pixelherodev
+Weird
+
+1578878405
+andrewrk
+(1) open directory fd which contains the destination file to overwrite. (2) O_TMPFILE to get an fd to write replacement file to. write replacement data. (3) linkat(AT_REPLACE) to atomically overwrite destination
+
+1578878443
+andrewrk
+this guarantees no trash left around after application crash or power loss, and atomic replacement of dest file
+
+1578878552
+daurnimator
+I'm in a RISCV session at the moment. Anything in particular we want to know?
+
+1578878565
+mikdusan
+path1 is the
+
+1578878582
+daurnimator
+mikdusan: it's meant to be the one in proc.
+
+1578878588
+daurnimator
+mikdusan: see the man page (which I pasted above)
+
+1578878601
+andrewrk
+daurnimator, I think we're good on risc-v front. I'd be interested if there were any CI service
+
+1578878615
+daurnimator
+andrewrk: they say use qemu
+
+1578878626
+andrewrk
+yeah we do already, cool
+
+1578878667
+mikdusan
+daurnimator: ah ok. so /proc
+
+1578878719
+mikdusan
+they need a linkat2()
+
+1578878821
+daurnimator
+mikdusan: I think you can do that via AT_EMPTY_PATH today? though it requires CAP_DAC_READ_SEARCH
+
+1578879070
+daurnimator
+mikdusan:
+
+1578879083
+fengb
+Apparently I need to get current with my Linux knowledge. Back in my day, we mapped /tmp manually to ram and we liked it 🦖
+
+1578879280
+mikdusan
+solaris used to do that
+
+1578879325
+mikdusan
+actually it was (still is?) swap-backed
+
+1578881306
+daurnimator
+so I'm working from lemonboy's patch earlier
+
+1578881337
+daurnimator
+of course I ended up hitting "extern structs cannot contain fields of type 'u1'"
+
+1578881350
+daurnimator
+andrewrk: ^
+
+1578882565
+daurnimator
+I removed that error path in the hope things would "just work"
+
+1578882572
+daurnimator
+Managed to get this failure: mem.zig:286:40: error: out of bounds pointer access
+
+1578882629
+daurnimator
+(which is in mem.zeroes)
+
+1578888998
+daurnimator
+`@sizeOf(struct { x: u32 align(4096) })` == 4096
+
+1578889024
+daurnimator
+is it legal to cast that to a [4096]u8 ?
+
+1578894466
+terinjokes
+i wrote some awful code today. :(
+
+1578894533
+rankao
+That is what refactoring is for
+
+1578894577
+terinjokes
+true. currently debating on if i want to commit, or wait until tomorrow night to do some refactoring and then do so
+
+1578894678
+rankao
+If the code works. Commit then refactor.
+
+1578894690
+rankao
+Especially if you got tests
+
+1578894777
+terinjokes
+yeah, that's next...
+
+1578894793
+terinjokes
+and then seeing how difficult it is to hook zig code up to afl
+
+1578894884
+rankao
+I'm not very good with initialisms out of context. What is afl?
+
+1578894944
+terinjokes
+american fuzzy lop, a security fuzzer
+
+1578895263
+terinjokes
+i forgot libFuzz is in llvm, so maybe easier than I initially thought
+
+1578897536
+andrewrk
+daurnimator, `packed` not `extern` for bit fields
+
+1578899789
+D3zmodos
+Are there any plans to support function overloading? If not, what's the justification? I understand the lack of operator overloading because it hides code but surely that alone doesn't quite cover function overloading (since different overloads are identifiable at the call site)?
+
+1578899990
+hryx
+D3zmodos: a GitHub issue search reveals several rejected proposals related to function overloading
+
+1578900259
+D3zmodos
+hryx:  Ah, I checked the docs but didn't think to check github. Thanks!
+
+1578900322
+hryx
+D3zmodos: no problem! The github issue tracker has an absolute wealth of history regarding language changes
+
+1578913687
+daurnimator
+andrewrk: that's the issue I was on before: if you have a C struct it can have bitfields
+
+1578913707
+daurnimator
+andrewrk: if you want to translate it to a packed struct then you need to know details of the target (including width of things)
+
+1578913815
+daurnimator
+If `extern struct` supported bitfields then it can be done at zig compile-time (vs at translate-c time)
+
+1578919665
+betawaffle
+is there somewhere i should be looking at for differences between current master and 0.5.0, besides the git diff?
+
+1578919681
+betawaffle
+something like in-progress release notes
+
+1578919723
+betawaffle
+as an example, it seems like @typeOf is now @TypeOf?
+
+1578920093
+betawaffle
+also totally unrelated question: is it safe to await a frame in two threads simultaneously?
+
+1578920612
+scientes
+betawaffle, i don't think so
+
+1578920685
+betawaffle
+is there some code i can read to see what await actually does under the hood?
+
+1578922733
+fengb
+Async functions can only be awaited once
+
+1578922789
+betawaffle
+what's the interaction between await and resume/suspend?
+
+1578923006
+fengb
+Resume/suspend is a lot more low level. You need those to build primitives, like IO, but you consume existing async functions with await
+
+1578924125
+fengb
+I believe await is equivalent to “suspend until the async function is complete and then get that return value”
+
+1578924366
+betawaffle
+is there a difference between [*]const u8 and [*:0]const u8 ? are they both pointers to null-terminated arrays?
+
+1578924413
+fengb
+Only the latter is null termination
+
+1578924437
+fengb
+The former might be but that’s only if you converted an existing null terminated array so it’s unreliable
+
+1578924480
+betawaffle
+so, how does one safely call this: pub fn openat(dirfd: i32, path: [*]const u8, flags: u32, mode: usize) usize
+
+1578924506
+fengb
+Hmm that signature might be old and forgot to annotate null terminated
+
+1578924520
+betawaffle
+it has a todo to that effect, yeah
+
+1578924534
+fengb
+It was recently introduced and we may have missed some sites
+
+1578924562
+betawaffle
+grep the codebase for `
+
+1578924637
+betawaffle
+ok so the idea in that case is... it used to be "caller is expected to do the right thing" and the new way can help enforce that?
+
+1578924728
+fengb
+Yep
+
+1578924772
+fengb
+Passing in a null terminated string will auto coerce into the non-terminated pointer so it’s a typecheck issue but you can still use it
+
+1578924815
+betawaffle
+but it's not like you get any of that safety in C, anyway
+
+1578924857
+fengb
+Well we only set C as a bare minimum baseline. We can be better :P
+
+1578924894
+betawaffle
+so far i'm loving zig. just wish it had fewer compiler crashes
+
+1578924973
+fengb
+Yeah it’s been pretty unstable. Unfortunately that won’t be a very high priority until stage 2
+
+1578924994
+betawaffle
+what's holding up stage2?
+
+1578925011
+betawaffle
+or i guess, what's higher priority than stage2?
+
+1578925075
+fengb
+Lots of language changes. Old async was blocking a lot of functionality, and andrewrk didn’t want to work on it without more language stability
+
+1578925120
+betawaffle
+is there a tracking issue or something for what's blocking stage2?
+
+1578925126
+betawaffle
+*still blocking
+
+1578925784
+fengb
+I don’t think anything is directly blocking anymore
+
+1578925845
+fengb
+Based on a recent stream, the priority is: fix some result location bugs, async OutStream, then package manager or stage 2
+
+1578926147
+mikdusan
+betawaffle:
+
+1578926160
+betawaffle
+ah sweet, thanks mikdusan
+
+1578926427
+fengb
+Oh wow did you start this page?
+
+1578926465
+mikdusan
+aye
+
+1578926519
+mikdusan
+it's a bit of a PITA for linking to commits because wiki is in a diff repo. unless i'm doing something wrong.
+
+1578926570
+fengb
+I thought about it generating something from closed breaking issues
+
+1578926637
+mikdusan
+I don't think it will be too much work to maintain. It doesn't have to be the quality of release notes, just good pointers.
+
+1578926737
+fengb
+Yeah but I'm also lazy :P
+
+1578926760
+fengb
+I'd spend days automating something because I don't want to do 5 minutes of manual work >_>
+
+1578927019
+betawaffle
+how do threadlocal variables work on a freestanding target? (or do they not work?)
+
+1578927173
+mq32
+betawaffle: threadlocal isn't a concept that exists on freestanding
+
+1578927187
+betawaffle
+so it'd be a compiler error then?
+
+1578927190
+mq32
+as freestanding has no real concept of multithreading at all (you don't have an OS)
+
+1578927197
+mq32
+i think they will jsut be a normal variable
+
+1578927205
+betawaffle
+ah, ok
+
+1578927255
+mikdusan
+
+
+1578927290
+betawaffle
+i'd be interested to see someone write a zig kernel that supports SMP
+
+1578927350
+fengb
+Are you volunteering? 🙃
+
+1578927370
+betawaffle
+i want to learn how to do that, so yeah
+
+1578927401
+betawaffle
+i have a job, so it'll be slow-going, of course
+
+1578927670
+fengb
+Is there a way to rm -rf the cmake build directory while also preserving original flags?
+
+1578927980
+mikdusan
+you mean remove adir recursively
+
+1578928113
+fengb
+I want to do something like `make distclean`. cmake recommends deleting the build folder, but I have some flags that I always want to use
+
+1578931803
+SyrupThinker
+> i'd be interested to see someone write a zig kernel that supports SMP
+
+1578931803
+SyrupThinker
+On it (: I won't promise anything though ;D
+
+1578935868
+Snektron
+fengb, arent the flags stored in CMakeCache.txt?
+
+1578935887
+Snektron
+If so, you could probably delete everything but that
+
+1578935888
+Snektron
+maybe
+
+1578935892
+Snektron
+dont quote me on that
+
+1578935999
+Snektron
+Why do you want to remove the cmake build dir if i may ask? Shouldn't that update itself automatically?
+
+1578936039
+fengb
+Sometimes the cache is wrong, and there's no `make distclean` equivalent
+
+1578936066
+fengb
+The recommended approach is to delete the build folder entirely, but that means I gotta lookup those flags
+
+1578936376
+andrewrk
+fengb, my solution to this is a long shell history file and ctrl+r search for cmake
+
+1578936440
+andrewrk
+I don't think cmake has a better answer to this question. you can remove the CMakeCache.txt file but I've run into times when removing the entire dir was necessary
+
+1578936523
+rankao
+So Andrew I watched your talk about how Zig came to be, and I've notice a bit more features like async tooling and such as `suspend` and `resume` added to the language. Why was that added into the language versus STDLib? Do you have a blog or a write up you talked about that?
+
+1578936564
+rankao
+I've also watched a few of your youtube videos on async stuff, but I haven't finish them all. So if that question is answered there I'll get to that eventually
+
+1578936622
+andrewrk
+
+
+1578936793
+rankao
+Thanks
+
+1578937025
+mikdusan
+fengb: are the flags you want to preserve well defined enough to put into a sep file?
+
+1578937035
+fengb
+andrewrk: any chance we can make "ZIG_SKIP_INSTALL_LIB_FILES" the default? 😇
+
+1578937059
+rankao
+Okay. After reading that I'm going to re-watch your Async youtube coding sessions. Though I'm kind of glad I watched them first since I think this makes it make more sense.
+
+1578937087
+fengb
+Yeah, it's just been bugging more now that I have 2 flags (ZIG_SKIP_INSTALL_LIB_FILES and CMAKE_PREFIX_PATH)
+
+1578937101
+mikdusan
+so I just tried this and seems to work:
+
+1578937118
+mikdusan
+create a foo.script file, put in things like:
+
+1578937124
+mikdusan
+set(ZIG_SKIP_INSTALL_LIB_FILES on CACHE BOOL "")
+
+1578937131
+mikdusan
+set(ZIG_ENABLE_MEM_PROFILE off CACHE BOOL "")
+
+1578937137
+rankao
+And after reading the single threaded mode code it makes sense why just have it part of the language. Because if I compile it for a micro controller each async function call will simply be blocking instead of whatever it was before.
+
+1578937164
+mikdusan
+then launch cmake with all usual args
+
+1578937276
+andrewrk
+fengb, I think there's a good case to be made to do that. It will mean requiring non-default settings for package maintainers, but they're used to that.
+
+1578937298
+andrewrk
+I'm annoyed at cmake because if they just allowed running a custom command on the install target, we wouldn't need a config setting at all
+
+1578937350
+fengb
+Oh I didn't realize it'd interfere with packaging. I was just confused that I always had a duplicated library that desyncs
+
+1578937405
+andrewrk
+if you think about it, making a duplicated library that desyncs is exactly what "installation" is
+
+1578937429
+fengb
+But I didn't ask for installation heh
+
+1578937452
+andrewrk
+yeah I agree your default choice makes more sense
+
+1578937463
+fengb
+I'm not sure why I added 'heh' there. That sounds weird
+
+1578937505
+andrewrk
+rankao, that's nearly correct. single threaded mode is related to async functions only in that `await` and `return` longer use atomic operations for synchronizing
+
+1578937557
+andrewrk
+the setting that controls whether various parts of the standard library are blocking or evented is a userland concept: std.io.mode
+
+1578937570
+rankao
+I see.
+
+1578937572
+andrewrk
+it can be specified in the root source file
+
+1578937619
+andrewrk
+btw fengb I'm working on finishing
+
+1578937728
+fengb
+Great!
+
+1578938019
+gonz_
+Does anyone have a solution for the watch windows on Windows not being able to actually bind to the actual values? They show up in "locals" but it seems impossible to do anything within the watch window.
+
+1578938031
+BaroqueLarouche
+gonz_: VS Code ?
+
+1578938072
+Snektron
+fengb  the zig build root is not in ny path at all, so also installing lib files seems like the appropriate way?
+
+1578938074
+gonz_
+VS Code, VS, anywhere really.
+
+1578938091
+gonz_
+I haven't checked WinDbg lately but I assume it's the same.
+
+1578938118
+gonz_
+I seem to remember this working at some point, but I'm also curious what other peoples' experience is.
+
+1578938150
+fengb
+Snektron: I wired my build zig to my path, and it works with and without the lib copy. But with the lib copy, I need to run make every time I make a change to std
+
+1578938154
+gonz_
+Since we interact fine with locals, it seems super weird that we can't bind even to the same values in the watch window...
+
+1578938243
+fengb
+daurnimator pointed out that there's a flag to prevent the lib copy, which works really well but it's an extra step to remember
+
+1578938275
+BaroqueLarouche
+gonz: I was able to use the watch window in some case in VS Code, but it doesn't always work
+
+1578938417
+fengb
+I'm actually impressed at how the zig executable works well no matter which path it's in
+
+1578938517
+gonz_
+BaroqueLarouche: It's unfortunate; there doesn't seem to be much reason for zig to be such a "meh" debugging experience atm.
+
+1578938536
+andrewrk
+gonz_, does it work with C code from a clang binary?
+
+1578938571
+gonz_
+andrewrk: Haven't checked, but I'll make sure to
+
+1578939046
+Snektron
+When i work on zig i usually run `ninja` instead of `ninja install`
+
+1578939055
+Snektron
+afaik that stops copying
+
+1578939093
+Snektron
+or did you mean to the build directory? because i'm not sure about that
+
+1578939103
+Snektron
+but i don't notice any problems with it
+
+1578940010
+gonz_
+andrewrk: Is there any logic that might point to private functions not having the same debugging info as public ones?
+
+1578940036
+gonz_
+Actually, nevermind; it's not that.
+
+1578941865
+fengb
+Snektron: yeah, by default make (and I'd guess ninja) copies lib/ into build/ so if I'm actively working on lib then it desyncs until I run make again
+
+1578941972
+mikdusan
+fengb: thoughts?
+
+1578942803
+nocko`
+I finished writing the in-place uboot upgrading application for embedded linux I talked about last week.
+
+1578942821
+nocko`
+It's "baby's first zig", but it functions well:
+
+1578942875
+nocko`
+Any suggestions / comments highly appreciated.
+
+1578943002
+nocko`
+There's a few janky parts. I link libc basically just for a default allocator. I could just hard code a FixedBufferAllocator for this particular case... but that's weird too.
+
+1578943043
+nocko`
+Anyway. It's being used on mipsel. Tier-2; no arch issues came up during development. So, that's cool.
+
+1578943085
+nocko`
+I think that's a pretty new thing (being tier-2). IDK how many users is has, but totally painless.
+
+1578943569
+scientes
+cool
+
+1578944258
+metaleap
+question time: i'm new to non-GC / manual mem-mgmt. how can i best intuit when to `deinit()` something and when not to. especially when I don't know what Allocator is passed to my lib. consider this example:
+
+1578944258
+metaleap
+cause any faults. the last one ln7 (commented-out) would segfault however. but here that `deinit` is just "inherited" from `array_list.AlignedArrayList` that `std.json.Array` aliases. having read lifetime-and-ownership section in zig's langref doc, I'm none the wiser. how would seasoned C (and/or Zig) devs illuminate the generally applicable path-of-reasoning here for otherwise-experienced devs coming from some GC stack like Go / C# / Java etc?
+
+1578944374
+metaleap
+note the segfault occurs exactly on the ln#7 deinit call, which from defer would be scheduled before the (potentially otherwise conflicting) others, and there would be no accesses-to-this-arraylist occurring afterwards anyway, tho it doesnt get to "afterwards"
+
+1578944677
+fengb
+You should deinit any resource that you used but aren’t exposing
+
+1578944694
+nocko``
+Not my area of expertise. Initial thought is that a slice always refers to a backing array... You're returning a reference to a slice from rootarr, but the memory for rootarr is destroyed at the end of the function.
+
+1578944710
+fengb
+The last line indicates you are returning the memory so it’s up to the caller to own that space
+
+1578944809
+betawaffle
+metaleap: have you run it in a debugger yet?
+
+1578944874
+betawaffle
+i think we need to see what `as` does in this case, if the segfault is really coming from rootarr.deinit()
+
+1578944903
+betawaffle
+that would indicate something about rootarr is invalid from the start
+
+1578944913
+metaleap
+fengb: no it doesnt, the call in the last line gets the Allocator but returns either error or some own created slice
+
+1578944953
+metaleap
+nocko``: i'm not returning a slice from rootarr, i'm passing it to a call whose return is returned
+
+1578944961
+fengb
+oh right, the mem variable name threw me off
+
+1578944972
+metaleap
+defer would (or should!) only occur after that final call
+
+1578945013
+nocko``
+hmm. Interesting.
+
+1578945067
+metaleap
+betawaffle: added the (tiny & trivial) `as` to the gist, doesn't really "do" anything other than tag/type-switch-or-err
+
+1578945153
+fengb
+Looks like you'd effectively be doing both jsontree.root.deinit() and jsontree.deinit()
+
+1578945164
+metaleap
+(can also note that the final call itself, that gets the `Allocator`, doesnt do any `deinit`s directly or indirectly, merely allocates new slices for the result structures)
+
+1578945239
+betawaffle
+ok, so the fromJson(...) is getting called, returning, and then the last defer is the first thing to run, and fails?
+
+1578945241
+metaleap
+fengb: yeah. that could be troublesome, will double-check the `std.json` code whether the latter already does the former. still surprised that the segfault is on the "first" (last in code positioning) of the 3 defer'd deinits
+
+1578945250
+fengb
+I'd expect toplevel deinit() also invokes all the children deinit(), which would cause a double free
+
+1578945269
+fengb
+We don't have good double free detection (yet)
+
+1578945352
+metaleap
+betawaffle: yeah, segfault msg like this one:
+
+1578945405
+metaleap
+fengb: i get that but scratching my head (as a side-quest i guess) why it would fault on the inner ("first" aka last) deinit rather than a (later) "top-level" one
+
+1578945435
+gonz_
+BaroqueLarouche and anyone else who might be interested: RemedyBG has added better clang support and actually works with local values much more reliably in my limited testing than VS
+
+1578945486
+gonz_
+Arbitrary watch values seem to just work. Presumably this is just a clang thing, then.
+
+1578945575
+betawaffle
+metaleap: run it under gdb or lldb?
+
+1578945659
+betawaffle
+i don't really understand that "address 0x3" part...
+
+1578945660
+metaleap
+havent yet, will try
+
+1578945663
+BaroqueLarouche
+gonz_: Nice!
+
+1578945693
+betawaffle
+i mean, that would segfault, for sure. just not sure why it would try to deref that
+
+1578945732
+betawaffle
+unless that's some sort of bug in the segfault printing
+
+1578945778
+gonz_
+BaroqueLarouche: Granted, since I haven't really been able to use RemedyBG much before I have no idea what
+
+1578945806
+betawaffle
+hmm, did metaleap leave?
+
+1578945831
+mq32
+betawaffle, yep
+
+1578945842
+___
+betawaffle: had a disconnect but should be back on?
+
+1578945845
+betawaffle
+ok
+
+1578945862
+___
+ooh i got a new nick, used to be metaleap. dangit
+
+1578945874
+betawaffle
+my crazy idea is that `self.allocator` is null
+
+1578945884
+mq32
+/nick metaleap
+
+1578945884
+mq32
+helps
+
+1578945905
+metaleap
+betawaffle: am back, had a disconnect, trying with lldb
+
+1578945952
+betawaffle
+the 0x3 address and the `std.array_list.AlignedArrayList(std.json.Value,null).deinit` makes me think the allocator is null
+
+1578946115
+betawaffle
+oh i see, that second param is just alignment
+
+1578946187
+metaleap
+betawaffle: output lldb lines incoming:
+
+1578946202
+betawaffle
+gist, not irc
+
+1578946241
+metaleap
+ok
+
+1578946265
+betawaffle
+heh, yeah it's just a null pointer deref
+
+1578946351
+metaleap
+so must be somewhere in array_list.AlignedArrayList.deinit so must be its self.allocator
+
+1578946408
+betawaffle
+metaleap: what version of zig are you using?
+
+1578946438
+metaleap
+2-3 days ago --- 0.5.0+84e98405d
+
+1578946495
+metaleap
+so if self.allocator is null the std.json package must have passed to the array_list's init a null allocator from what i can tell skimming the array_list src
+
+1578946507
+betawaffle
+can you set a breakpoint just before the deinit and step in?
+
+1578946572
+metaleap
+ok hang on
+
+1578946607
+betawaffle
+i mean, in theory that shouldn't be possible
+
+1578946685
+metaleap
+btw i just out-commented in (my local) std.array_list.zig the offending line in deinit and the segfault of course goes away, so you sure this is even the point to breakpoint? at that point the null is already fact
+
+1578946721
+betawaffle
+well... we don't know it's null
+
+1578946734
+betawaffle
+we want to confirm or deny that
+
+1578946764
+betawaffle
+basically we want to see if self.allocator is 0
+
+1578946789
+betawaffle
+(which shouldn't be possible)
+
+1578946809
+metaleap
+ok 1 more thing, did you notice in the gist of the segfault the "/home/_/a/zig/lib/zig/std/special/c.zig:81:0: 0x3 in std.target.Target.isDarwin (c)" reference. well i'll try breakpointing now. not used to lldb/gdb so gimme a sec there with the man page
+
+1578946810
+betawaffle
+and if it's not null... then i'm confused about what's going on
+
+1578946832
+betawaffle
+yeah, that's the panic function, called from the segfault handler, i assume
+
+1578946921
+betawaffle
+actually... maybe that's just the stack trace bug?
+
+1578946967
+metaleap
+so for `break` needs absolute `.zig` path?
+
+1578946994
+betawaffle
+dunno, i'm not very familiar with lldb (nor gdb)
+
+1578947009
+betawaffle
+i think it supports multiple things, including addresses
+
+1578947200
+metaleap
+betawaffle: just stepped into the deinit! stay tuned =)
+
+1578947262
+fengb
+You could lldb run the program, and it'll catch the seg fault and let you trace the stack
+
+1578947347
+betawaffle
+he already did that
+
+1578947373
+betawaffle
+we know the stack, we're trying to figure out the state of a variable
+
+1578947381
+fengb
+You can navigate the frame upward once it crashed
+
+1578947407
+fengb
+And get to the function context with the null. No need to pre setup debugging points for that
+
+1578947417
+metaleap
+so here's what happens, it jumps into std.mem.Allocator.free line 233, goes on ok for 234-236, then at 237 the next `step` gives these 3 lines: `signal SIGSEGV: invalid address (fault address: 0x3)`, `frame #0: 0x0000000000000003`, `error: memory read failed for 0x0`.  again thats line 237 in std.mem.Allocator.free
+
+1578947465
+fengb
+At the crash, can you print the backtrace? (lldb) bt
+
+1578947488
+fengb
+And navigate to the right frame — (lldb) up [n]
+
+1578947520
+metaleap
+fengb: backtrace:
+
+1578947547
+betawaffle
+unavailable... cool
+
+1578947593
+betawaffle
+that 0x3 frame is weird...
+
+1578947597
+fengb
+`up 1` followed by `p *self`
+
+1578947664
+metaleap
+fengb: both added,
+
+1578947683
+betawaffle
+the fuck
+
+1578947704
+betawaffle
+that's a really garbage allocator :P
+
+1578947710
+fengb
+Well 0x3 is the shrink
+
+1578947724
+betawaffle
+right, but that's gonna be PROT_NONE
+
+1578947749
+metaleap
+its an arena's .allocator in this case here btw if that matters
+
+1578947768
+betawaffle
+it almost looks like it's been corrupted
+
+1578947769
+metaleap
+aka `std.heap.ArenaAllocator.init(std.heap.page_allocator)`
+
+1578947812
+metaleap
+now that would also mean the top-level deinit would
+
+1578947822
+metaleap
+(well, possibly)
+
+1578947823
+betawaffle
+also... it seems like we could improve the stack traces on segfaults some
+
+1578947837
+betawaffle
+it'
+
+1578947845
+betawaffle
+it's missing the last frame at least
+
+1578947867
+fengb
+Might be a red herring. Can you try  `up 1` => `po *self` again?
+
+1578947888
+metaleap
+fengb: po or p?
+
+1578947898
+fengb
+ArenaAllocator.free() is a noop so this shouldn't be invoking anything
+
+1578947909
+fengb
+p, sorry
+
+1578947953
+metaleap
+so the up 1 jumped back to arraylist's deinit ln 54 and then p *self gives: indirection requires pointer operand ('std.array_list.AlignedArrayList(std.json.Value,null)' invalid)
+
+1578947985
+betawaffle
+oh, try just self
+
+1578947991
+betawaffle
+it's not a pointer
+
+1578948012
+betawaffle
+(which seems a little weird to me)
+
+1578948040
+metaleap
+
+
+1578948060
+fengb
+Zig uses non-pointers when we don't need a ref. The compiler can optimize that into "pass by const ref" or "pass by pointer" depending on which optimizes better
+
+1578948071
+betawaffle
+so `p *self.allocator`
+
+1578948075
+betawaffle
+do*
+
+1578948090
+betawaffle
+just want to make completely sure...
+
+1578948108
+betawaffle
+i don't understand where those function addresses came from
+
+1578948136
+fengb
+Yeah 0x3 is a weird function pointer address. I don't think that's even valid sicne it's unaligned
+
+1578948151
+betawaffle
+it's not, and it's in the zero page
+
+1578948162
+andrewrk
+an address like 0x3 happens when you take the address of a struct field, based on a null struct pointer
+
+1578948163
+metaleap
+(std.mem.Allocator) $2 = { reallocFn = 0x0000000000000008 shrinkFn = 0x0000000000000003 }
+
+1578948168
+betawaffle
+which is always unreadable
+
+1578948173
+metaleap
+above for p *self.allocator
+
+1578948195
+betawaffle
+yeah, makes sense andrewrk
+
+1578948218
+betawaffle
+ok metaleap: so let's look at your code that creates the allocator
+
+1578948270
+metaleap
+sure thing, it's bog-standard AFAIK:
+
+1578948298
+metaleap
+some tmp rubbish in the middle as i got the hang of zig things, never mind that
+
+1578948308
+betawaffle
+sure does look bog-standard
+
+1578948319
+fengb
+So uh... based on your code, you never have to call free() if you know it's in the arena
+
+1578948338
+fengb
+That doesn't exactly solve this problem, but it could simplify your strategy
+
+1578948356
+metaleap
+but the func called at the end of main, which i shared originally in the gist, is supposed to become a lib that wont know the nature of the allocator
+
+1578948406
+fengb
+So a trick that we can do is if you only have 1 entrypoint into your library, then it can create an arena at the beginning and that could be the only site that exposes the allocation
+
+1578948521
+fengb
+It doesn't really teach you about lifetimes though as it more or less works around them
+
+1578948526
+metaleap
+could do as a workaround, but then i can also keep the original offending deinit call commented as another workaround :D see I was just trying to learn if I did that part wrong and if so, why
+
+1578948537
+betawaffle
+metaleap: let's set a breakpoint before load.FromJson to see what's in the allocator
+
+1578948562
+andrewrk
+I'm not sure std.json.ValueTree is meant to be copied
+
+1578948570
+metaleap
+so we still have the question mark why the std.mem.Allocator $2 above is evidently null at least as indicated by the 0x3 / 0x8 etc addrs?
+
+1578948600
+betawaffle
+we'll it's the arena init that's setting those values
+
+1578948646
+betawaffle
+which makes basically no sense
+
+1578948666
+metaleap
+ok so I'll set a breakpoint just before load.FromJson 1 sec
+
+1578948670
+andrewrk
+`as(std.json.Value.Array, std.json.Array, jsontree.root)` would be better written `switch (jsontree.root) { .Array => |*array| { ... }, else => return error.BadJsonSrc }`
+
+1578948743
+betawaffle
+
+
+1578948752
+andrewrk
+yes also rootarr.deinit() is invalid. Appears to be undocumented, but the owner of all the memory of the array lists is the arena which is freed by jsontree.deinit()
+
+1578948760
+betawaffle
+afaict, that's what should be in your allocator
+
+1578948811
+andrewrk
+arguably these should be slices rather than std.ArrayList since they don't manage their own memory, and aren't resizable
+
+1578948824
+andrewrk
+but maybe that's for writing json
+
+1578948886
+andrewrk
+anyway correct fix is to delete the commented out code
+
+1578948914
+betawaffle
+well, but there's also a bug elsewhere, isn't there?
+
+1578949012
+metaleap
+andrewrk: thx for chiming in and clarifying the "appears to be undocumented" bit =) good to know. so then if the valuetree's deinit takes care of all its inner alloc'd `json.Value`s its odd that the same fault didnt occur
+
+1578949047
+metaleap
+ah guess because it has an inner arena itself, ok
+
+1578949420
+metaleap
+betawaffle: so at that breakpoint i get "more normal i guess" addresses 0x0000000000225460 and 0x0000000000225630 for reallocFn and shrinkFn
+
+1578949466
+metaleap
+so that gets degraded at a later point. suppose i step and re-check per line in load.FromJson for giggles..
+
+1578949507
+andrewrk
+metaleap, do you know about hardware watch points?
+
+1578949512
+betawaffle
+yeah. also, it could be a different allocator at that point?
+
+1578949529
+andrewrk
+if not this would be a good time to invest in learning how to use them, they're amazing
+
+1578949658
+metaleap
+i'll make a note for that. first line of load.fromJson the passed *Allocator still prints the same 2 addrs.. stepping further
+
+1578949938
+metaleap
+well so the rootarr.allocator is a pointer to an address different to my own allocator, so some std.json internal circus. thx to all for bearing =)
+
+1578950362
+mikdusan
+
+
+1578950373
+mikdusan
+copying arena
+
+1578950412
+metaleap
+sheesh it takes my arena's child allocator as its own arena's child allocator, ahum
+
+1578950436
+metaleap
+is that normal practice?
+
+1578950455
+fengb
+It is right now. In the future™, it'll detect whether its already in an arena
+
+1578950492
+fengb
+
+
+1578950556
+andrewrk
+oh look at that, apparently I already solved this but needed the async rewrite first
+
+1578950559
+metaleap
+ok i see. probably after my whole initial load stuff completes, i'll free / ditch my arena and make a new one for the rest of the run time then
+
+1578951361
+metaleap
+last newcomer Q for the night: to clarify re andrewrk's earlier suggestion on my tag/type-`switch`ing: if I do say `switch (unionval) { ArrayListTag => |arrlist| fooSomeCodeHere(arrlist), else => unreachable }` unless I explicitly do pointer-notation as in |*arrlist| there'd be a copy made for the successful `switch` case?! ie whether struct or array or whatever, it doesnt operate directly on the union location but the |var| is a value copy, i mean
+
+1578951361
+metaleap
+within / inside the switch case (ignoring / excluding any passing-to / returning-from any calls)?
+
+1578951439
+metaleap
+I'd have expected whatever capture-name is given would refer to the same location as the union-val being scrutinized
+
+1578951501
+metaleap
+(as in, "same, just-now-properly-typed")
+
+1578951656
+daurnimator
+andrewrk: did my reply re: extern bitfields vs packed bitfields make sense?
+
+1578951658
+fengb
+Right now I think |val| is no copy due to result location changes. This has been a footgun so we might be migrating
+
+1578951767
+andrewrk
+yes currently |val| works the same as
+
+1578951804
+andrewrk
+to guarantee copy, make a copy; to guarantee no-copy, use |*val|
+
+1578951815
+metaleap
+ok thanks for clarifying!
+
+1578952400
+mikdusan
+i think this is the fault cause in json:
+
+1578952473
+mikdusan
+`arena` is stack. transition() does stuff, creating Array for example that retains `&arena.allocator`
+
+1578952746
+metaleap
+mikdusan: but only Parser.stack gets deinit'd it's not like the whole inner arena gets cleared except in case of errdefer.. well i'm off, not seeing the forest for the trees anymore
+
+1578952854
+mikdusan
+if you remove all defers (other deinit) ...and put in a manual `root.deinit()` it faults
+
+1578952880
+daurnimator
+mikdusan: ah yes. looks like the old parser tree bug :)
+
+1578952914
+daurnimator
+metaleap: did you get a chance to try the autojson branch?
+
+1578952928
+daurnimator
+bah missed them by a second.
+
+1578953622
+Snektron
+irc moment
+
+1578954805
+fengb
+We definitely need pointer to stack escape analysis >_>
+
+1578954922
+andrewrk
+agreed
+
+1578955016
+andrewrk
+also explicit allowing/disallowing of aggregate types will help with this
+
+1578955035
+andrewrk
+s/of/copying of/
+
+1578956746
+daurnimator
+Is riscv freestanding meant to work?
+
+1578956749
+Snektron
+I triggered a "put into full map" unreachable in HashMap, but im not quite sure what to make of it
+
+1578956833
+daurnimator
+
+
+1578956864
+andrewrk
+Snektron, this can happen if you use putAssumeCapacity incorrectly
+
+1578956908
+andrewrk
+daurnimator, your link script does not include "foo"
+
+1578956937
+Snektron
+Yeah i assumed so, but i never call that
+
+1578956956
+andrewrk
+other than that, either memory was corrupted or there is a bug in the hash map implementation
+
+1578956972
+Snektron
+it was working until i refactored some of my code
+
+1578956974
+daurnimator
+andrewrk: what link script? shouldn't all exported symbols just appear?
+
+1578957005
+andrewrk
+daurnimator, what are you trying to do? are you sure you want an executable rather than an object? executables don't have "foo" sections
+
+1578957029
+andrewrk
+most freestanding projects have linker scripts
+
+1578957045
+mikdusan
+andrewrk: on ir_clean_up_vars, can you try re-run test/stage1/behavior/optional.zig multiple times? I'm getting sporadic failures
+
+1578957056
+daurnimator
+andrewrk: I'm not even sure. Was just trying to play with riscv.....
+
+1578957059
+andrewrk
+daurnimator,
+
+1578957069
+andrewrk
+mikdusan, yes I'll try with valgrind
+
+1578957142
+fengb
+andrewrk: do you get less money on donation if I use credit card vs bank?
+
+1578957166
+daurnimator
+fengb: via github? I think github eat all the fees
+
+1578957169
+andrewrk
+fengb, I don't think I can tell the difference; github is eating the fee for now afaik
+
+1578957171
+mikdusan
+this one: Test [1/10] test "optional pointer to size zero struct"...test failure ; running same test executable from cache, 50/50 chance; maybe I need ECC memory :P
+
+1578957189
+fengb
+Oh okay that works too
+
+1578957203
+andrewrk
+mikdusan, I'm getting all behavioral tests valgrind clean in 27755f1431e6df
+
+1578957219
+mikdusan
+ok I'll try on archlinux
+
+1578957228
+Snektron
+ah, found the problem
+
+1578957229
+andrewrk
+mikdusan, I've been force pushing to that branch fyi
+
+1578957236
+mikdusan
+yup i have 27755
+
+1578957243
+Snektron
+`const e = spec.enums.get(enum_name).?.value;`
+
+1578957374
+andrewrk
+mikdusan, oh - valgrind reports a problem with "optional pointer to size zero struct" when I run the behavioral tests
+
+1578957398
+mikdusan
+if I played bingo I'd yell something out right now
+
+1578957413
+andrewrk
+I forgot about runtime, oops :)
+
+1578957474
+andrewrk
+this warning is fun to see:
+
+1578957482
+andrewrk
+Test [488/786] behavior.new_stack_call.test "calling a function with a new stack...==14005== Warning: client switching stacks?  SP change: 0x1ffeffc550 --> 0x339500
+
+1578957494
+andrewrk
+why yes valgrind, thank you
+
+1578957499
+mikdusan
+heh wow
+
+1578957626
+daurnimator
+andrewrk: do we need to emit some valgrind annotation to silence that warning?
+
+1578957703
+andrewrk
+not if that feature ends up getting scrapped before 1.0
+
+1578957889
+andrewrk
+this branch has been considerably easier to debug
+
+1578957892
+andrewrk
+I think it is an improvement
+
+1578957905
+andrewrk
+adding ZigValue::dump() helped a lot
+
+1578957983
+andrewrk
+mikdusan, fixed with a force push, good catch, thanks
+
+1578957999
+andrewrk
+hopefully it's just this one test from misc.zig left + whatever is causing std lib tests to crash
+
+1578958351
+frmdstryr
+Is there any way to cast a bound function to a function that doesn't take arguments?
+
+1578958373
+frmdstryr
+Want to use a struct method as an IRQ handler and hoping to not have to use a lookup table
+
+1578958664
+daurnimator
+frmdstryr: bound functions tend to crash the compiler if you do much with them
+
+1578958667
+andrewrk
+you'll be better off pretending that zig doesn't have bound functions for now
+
+1578958683
+andrewrk
+
+
+1578958699
+daurnimator
+frmdstryr:
+
+1578958832
+frmdstryr
+k
+
+1578959079
+frmdstryr
+Also i just pulled and now am getting an error
+
+1578959082
+frmdstryr
+lib/zig/std/start.zig:25:13: error: expected 3 arguments, found 2
+
+1578959091
+frmdstryr
+but i'm using the freestanding os, did something change?
+
+1578959176
+frmdstryr
+Nevermind, cleaned and rebuilt, now it's fine
+
+1578959237
+andrewrk
+frmdstryr, you probably didn't install the updated std files
+
+1578959259
+andrewrk
+read the part here about -DZIG_SKIP_INSTALL_LIB_FILES=ON:
+
+1578959270
+andrewrk
+fengb suggested to make this default earlier today and I agreed with it
+
+1578959374
+frmdstryr
+Yeah I think I clicked build instead of install in KDevelop by accident
+
+1578959515
+frmdstryr
+Unrelated but do you know of any "mini" event loops floating around to try on the freestanding os?
+
+1578959535
+frmdstryr
+async uart would be nice :)
+
+1578959628
+daurnimator
+frmdstryr: I ported a C one to JS that you might find useful to port to zig
+
+1578959729
+daurnimator
+if I can find it that is
+
+1578959832
+frmdstryr
+yeah it'd be nice to have a look
+

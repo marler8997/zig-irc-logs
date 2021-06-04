@@ -1,0 +1,1352 @@
+1587342566
+andrewrk
+hmm did std.fmt.format lose the ability to format 0-padded hex numbers?
+
+1587342606
+andrewrk
+I expected ("{x:02}", .{0x07}) to produce "07" but it produces " 7"
+
+1587342741
+andrewrk
+ok, got it with {x:0>2}
+
+1587345105
+jwmerrill
+Does C have any equivalent of @fieldParentPtr, or would you just do pointer arithmetic based on known layout for that kind of thing?
+
+1587346233
+foobles
+It does, I belive
+
+1587346235
+foobles
+but its a macro
+
+1587346257
+foobles
+jwmerrill its a `offsetof`
+
+1587346273
+foobles
+however, it doesn't work on arbitrary comptime strings like I think it does in Zig
+
+1587348133
+daurnimator
+yeah __builtin_offsetof; make sure you don't use the undefined version!
+
+1587348186
+daurnimator
+you also have the traditional `container_of` macro
+
+1587348839
+oats
+I haven't really looked at the compiler internals; does the comptime stuff work by having a zig interpreter of some kind? Could it be used to make a repl for the language?
+
+1587349205
+pixelherodev
+Do you know what IR is?
+
+1587349218
+pixelherodev
+Basically, it interprets the IR
+
+1587349221
+oats
+intermediate representation?
+
+1587349224
+pixelherodev
+Yeah
+
+1587349224
+oats
+like llvm ir?
+
+1587349228
+pixelherodev
+Yeah
+
+1587349245
+pixelherodev
+Zig generates its own IR, executes the comptime bits, translates the rest to LLVM IR and has LLVM generate binaries
+
+1587349260
+oats
+huh, ok
+
+1587349428
+foobles
+its very cool. im actually working on that kind of thing right now
+
+1587349471
+foobles
+basically, as it's analyzing the IR, it checks "is the stuff I've already analyzed marked as comptime? and if so, am I able to evaluate myself right here and now?"
+
+1587349506
+foobles
+like when you say `if (x == null)`
+
+1587349530
+pixelherodev
+if X is comptime known, the whole branch just disintegrates, right?
+
+1587349545
+mikdusan
+sure if the cond is false
+
+1587349553
+oats
+right, if x isn't null
+
+1587349562
+pixelherodev
+But it also applies to any else branch
+
+1587349574
+foobles
+im just saying the comparison itself is replaced with a boolean node directly
+
+1587349586
+foobles
+control flow is a little more advanced, im not quite sure how that works
+
+1587349612
+foobles
+since control flow is all determined at pass 1
+
+1587349721
+mikdusan
+I'd like to remedy that :)
+
+1587349990
+StateOff
+Can I nest two switch expressions that handle an enum(union) somehow? I seem to get: values of type '(enum literal)' must be compile time known.
+
+1587350077
+pixelherodev
+Paste code?
+
+1587350816
+StateOff
+Was a typo. Sorry for the noise - figured it out while recreating in godbolt.
+
+1587350909
+pixelherodev
+:)
+
+1587352066
+pixelherodev
+@TypeOf gives comptime values, right?
+
+1587352110
+pixelherodev
+That is, if I have a `fn(op: var)` which switches on @TypeOf(op) and has `else=>unreachable`, giving it invalid types becomes a compile error, right?
+
+1587352136
+mikdusan
+yes
+
+1587352148
+pixelherodev
+Perfect
+
+1587352172
+pixelherodev
+Documenting my low-level emitter :)
+
+1587352188
+pixelherodev
+"If you attempt an invalid operation, the emitter will fail at compile-time."
+
+1587352190
+pixelherodev
+:D
+
+1587352481
+mikdusan
+oh. unreachable might not do the trick. but @compileError is your friend
+
+1587352527
+pixelherodev
+Ah right
+
+1587352539
+pixelherodev
+unreachable probably should work for debug mode
+
+1587352555
+pixelherodev
+but compileError is definitely the way to go
+
+1587352555
+pixelherodev
+thanks
+
+1587353999
+pixelherodev
+Heh, switching some unimplementeds to unreachable results in a ~0.04% speed boost. How impressive.
+
+1587354027
+pixelherodev
+Good to know that returning errors has negligible overhead :)
+
+1587354055
+pixelherodev
+Well, in the non-error path
+
+1587360445
+pixelherodev
+So today I learned that there's a JS -> LuaJIT compiler
+
+1587360500
+pixelherodev
+I don't think it works though :P
+
+1587360506
+pixelherodev
+Hasn't been updated in six years and was a hack even then
+
+1587360582
+kenaryn
+Hello, I have a very simple question: is Zig higher level than C? If so, is it because Zig compiler is a layer built on top of Clang?
+
+1587360597
+daurnimator
+no and no; but also sort of yes
+
+1587360609
+daurnimator
+zig is same level as C in terms of programming
+
+1587360625
+daurnimator
+but zig also builds on top of clang: but only for compatibility for importing C headers
+
+1587360749
+kenaryn
+Allright, thank you.
+
+1587371079
+TheLemonMan
+Snektron, pong
+
+1587371118
+Snektron
+Ah, morning
+
+1587371135
+Snektron
+I was wondering if you know whats up with arm in gcc/clang
+
+1587371160
+TheLemonMan
+hm? what's up with ARM?
+
+1587371161
+Snektron
+So for example i have a chip with v7e-m, which has a dsp extension
+
+1587371202
+Snektron
+Both gcc and clang cant generate code for this, as you can only enable dsp when targetting v8
+
+1587371228
+Snektron
+But Zig (and by extension i presume llvm) can generate code for that feature?
+
+1587371307
+Snektron
+Why doesn't clang 'just' let you enable that specific feature?
+
+1587371351
+Snektron
+(its not important or anything, i just got confused when i looked it up)
+
+1587371369
+TheLemonMan
+hmm, is __ARM_FEATURE_DSP defined in your C code?
+
+1587371434
+Snektron
+Not that i know of, but i would expect that to just enable library intrinsic implementation of functions
+
+1587371482
+Snektron
+I was rather thinking of something like autovectorization as use case, although im not sure how well that would work on arm
+
+1587371543
+TheLemonMan
+that's a flag defined by the compiler whenever it detects the dsp extensions
+
+1587371584
+Snektron
+Oh, right
+
+1587371632
+TheLemonMan
+if the flag is defined for gcc/clang and you're passing the correct mcpu/march then the problem may be with their choice of LLVM passes/C constraints/LLVM optimizations
+
+1587371802
+TheLemonMan
+when in doubt always check the LLVM IR
+
+1587371810
+Snektron
+I just checked, it does define __ARM_FEATURE_DSP
+
+1587371962
+Snektron
+(Thats with gcc)
+
+1587371998
+Snektron
+So maybe dsp is just core and is always enabled?
+
+1587372005
+Snektron
+Anyway, thanks for helping
+
+1587372259
+TheLemonMan
+the compiler is aware the target supports DSP instructions, maybe the vectorizer doesn't kick in
+
+1587372294
+TheLemonMan
+reading the IR (don't know if GCC has any way to dump that) will tell you more
+
+1587372326
+TheLemonMan
+if the code is similar between clang and zig the problem may be later in the pipeline
+
+1587372346
+Snektron
+I suspect dsp might just be a core part of the processor, instead of an optional extension
+
+1587372352
+Snektron
+(cortex m4)
+
+1587372431
+TheLemonMan
+nah, +dsp refers to the DSP instruction set
+
+1587372469
+Snektron
+but thats only valid from armv8
+
+1587372562
+TheLemonMan
+v7-m does support the DSP instruction set
+
+1587383534
+pixelherodev
+mikdusan, huge thanks :D
+
+1587383562
+pixelherodev
+@compileError("Unimplemented") makes
+
+1587385298
+ifreund
+comptime is a pretty amazing concept to have formalized like this
+
+1587388091
+StateOff
+Zig is such a treat for Game Jams ... WIP
+
+1587388144
+fengb
+Glad you’re enjoying! :)
+
+1587388214
+pixelherodev
+We're still accepting proposals for a short while, right?
+
+1587388216
+pixelherodev
+Had a major one
+
+1587388242
+pixelherodev
+For fundamental language changes, I mean
+
+1587388245
+fengb
+We’re always accepting proposals before 1.0
+
+1587388250
+pixelherodev
+Right, but
+
+1587388260
+pixelherodev
+I know Andrew wanted to stabilize the core language syntax early in 0.7
+
+1587388358
+pixelherodev
+Is e.g. `a[b += 1] = (c.* += 6)` currently accepted?
+
+1587388360
+pixelherodev
+Pretty sure it is
+
+1587388366
+ikskuh
+no
+
+1587388372
+ikskuh
+assignment is no expression
+
+1587388378
+pixelherodev
+Ah nevermind then :D
+
+1587388391
+pixelherodev
+I'm just so used to not doing it that I never noticed
+
+1587388403
+ikskuh
+StateOff: Go on! Be a StateOn! Looks cool :)
+
+1587393700
+ikskuh
+hey
+
+1587393713
+ikskuh
+is there a simple way to check if stdin has a symbol available to be read?
+
+1587393926
+pixelherodev
+I don't think so
+
+1587393930
+pixelherodev
+I remember trying to find a way
+
+1587393938
+pixelherodev
+Though, that was in a shell script so... yeah
+
+1587393966
+ikskuh
+hm
+
+1587393973
+ikskuh
+you can probably use termios for that
+
+1587393982
+ikskuh
+but i'm not sure how that should work
+
+1587393989
+ikskuh
+maybe use poll() for a single char or something
+
+1587396550
+fengb
+
+
+1587401652
+ifreund
+gotta say, I'm really vibing with the `zig zen` right now
+
+1587402672
+fengb
+Wow Homebrew just deleted all of my manually installed zigs
+
+1587402676
+fengb
+:(
+
+1587402774
+fengb
+I'm glad I symlinked my local dev copy
+
+1587402812
+ifreund
+package managers deleteing stuff without ample warning is seldom a good thing
+
+1587403149
+pixelherodev
+s/seldom/never
+
+1587403455
+r4pr0n
+anyone here on arch linux can compile zig after the fix for apt.llvm.org?
+
+1587403497
+ifreund
+reminds me, i've really got to look into nix at some point
+
+1587403557
+r4pr0n
+ifreund: where happened that on?
+
+1587403584
+ifreund
+r4pr0n: i'll check for you, one sec
+
+1587403657
+BaroqueLarouche
+I used the Zig boostrap for my Manjaro Linux VM
+
+1587403694
+r4pr0n
+i used the same basically, just with the second compilation of llvm removed since i compile for native
+
+1587403847
+ifreund
+r4pr0n: yep, i got this
+
+1587403860
+r4pr0n
+yeah smae
+
+1587403867
+r4pr0n
+s/smae/same
+
+1587403884
+ifreund
+been using the zig 0.6.0 package daurnimator made for my personal use
+
+1587403935
+r4pr0n
+the weird thing is that this happens with both the self-built llvm (which worked fine before) and the system llvm (which was updated to 10 recently)
+
+1587408119
+Snektron
+I finally got my zig environment set up again
+
+1587408147
+Snektron
+r4pr0n: works for me on void
+
+1587408155
+Snektron
+self-compiler llvm and zig
+
+1587408166
+Snektron
+s/r/d
+
+1587408189
+r4pr0n
+i guess it's an arch problem then
+
+1587408964
+pixelherodev
+`./src/dynarec.zig:41:46: error: TODO: type coercion of anon struct literal to struct` :(
+
+1587408965
+pixelherodev
+oh well
+
+1587409381
+andrewrk
+you can work around this by surrounding the anon struct literal with @as(T, ...)
+
+1587409458
+pixelherodev
+Or just `T{}`
+
+1587409462
+pixelherodev
+Which is what I'm doing for now
+
+1587409830
+GreaseMonkey
+> dynarec.zig
+
+1587409833
+GreaseMonkey
+sounds like someone's having fun
+
+1587409874
+pixelherodev
+Yeah :)
+
+1587409896
+GreaseMonkey
+i'm having a similar kind of "fun", i'm getting X11 working via Xlib
+
+1587409929
+GreaseMonkey
+i'm currently using C to wrap the interface though because the X11 headers are something @cInclude has a hard time with
+
+1587409941
+pixelherodev
+This is
+
+1587410010
+GreaseMonkey
+i've got a window open that i don't draw to, and i can handle key press and release and actually know the keysym used
+
+1587410042
+GreaseMonkey
+i've got work soon so i'll get some basic drawing happening after work
+
+1587410047
+pixelherodev
+Writing a JIT for ikskuh to prove a point :P
+
+1587410079
+GreaseMonkey
+which point is that?
+
+1587410159
+pixelherodev
+IIRC, they said something to the effect of "I don't think a JIT would be
+
+1587410162
+pixelherodev
+and I took it as a challenge :P
+
+1587410179
+GreaseMonkey
+yeah that's a fun challenge
+
+1587410245
+GreaseMonkey
+...also hot damn, i had a look to see what syntax highlighting there was for VIM for Zig... the highlighter in the official repo was surprisingly easy to set up even w/o pathogen or any of that
+
+1587410249
+oats
+pixelherodev: ooh, what are you writing a JIT for?
+
+1587410325
+ikskuh
+oats,
+
+1587410328
+ikskuh
+the spu mark ii
+
+1587410341
+ikskuh
+a cpu i've developed and for which i'm currently creating a computer
+
+1587410363
+oats
+oh that's awesome
+
+1587410370
+oats
+got anything public I can peek at?
+
+1587410376
+ikskuh
+sure thing
+
+1587410383
+ikskuh
+
+
+1587410394
+pixelherodev
+I hope to have the JIT done by :00
+
+1587410396
+ikskuh
+repo with HDL, specs, emulator, assembler, ... :D
+
+1587410415
+oats
+that's freaking awesome
+
+1587410451
+oats
+vhd, huh
+
+1587410470
+oats
+I had to do some verilog in a couple classes I took
+
+1587410499
+oats
+but I quickly learned CPU architecture and asic design isn't really for me :P
+
+1587410503
+pixelherodev
+On that note actually
+
+1587410506
+oats
+super jelly, good luck :)
+
+1587410508
+pixelherodev
+ikskuh, are all words 16-bit aligned?
+
+1587410521
+ikskuh
+yes
+
+1587410523
+ikskuh
+well
+
+1587410524
+ikskuh
+no
+
+1587410528
+pixelherodev
+Good, than -?
+
+1587410531
+ikskuh
+unaligned access is undefined behaviour
+
+1587410564
+oats
+ikskuh: have you put anything on silicon or is it all simulations so far
+
+1587410579
+TheLemonMan
+VHDL gang, yay
+
+1587410591
+pixelherodev
+ikskuh, in other words
+
+1587410597
+pixelherodev
+it's fine to require 16-bit alignment.
+
+1587410632
+ikskuh
+oats:
+
+1587410640
+oats
+actually, I think I have a pdf of the spec here somewhere
+
+1587410642
+ikskuh
+runs on a MachXO3 board
+
+1587410656
+oats
+1,315 pages
+
+1587410657
+ikskuh
+pixelherodev, correct
+
+1587410659
+oats
+big book :P
+
+1587410688
+pixelherodev
+`Unrecognized opcode: 0x3c08` there we go
+
+1587410691
+pixelherodev
+Fixed up opcode reading
+
+1587410699
+pixelherodev
+(ported this from my ZLIMStation JIT :P)
+
+1587410736
+GreaseMonkey
+oh neat a saleae
+
+1587410767
+ikskuh
+GreaseMonkey: just a china clone
+
+1587410769
+ikskuh
+still great :)
+
+1587410796
+TheLemonMan
+did you flash sigrok on it?
+
+1587410807
+ikskuh
+nah
+
+1587410812
+ikskuh
+using the original software
+
+1587410915
+TheLemonMan
+the saleae software? it works with chinese knockoffs?
+
+1587410995
+torque
+wow that's an old saleae
+
+1587411046
+ikskuh
+TheLemonMan, yes it doe s:D
+
+1587411078
+torque
+I mean aren't those logic analyzers just an fpga in a box
+
+1587411379
+TheLemonMan
+the cheap ones are just a Cypress SoC with an 80xx derivative
+
+1587412703
+marijnfs1
+if i pass any c.struct to a c library, can I allocate it with a page_allocator?
+
+1587412774
+fengb
+Yes... but you might be better off using the c_allocator
+
+1587412819
+fengb
+It also depends on if the C library tries to own the memory. You'll definitely be better off using the c_allocator in that case
+
+1587416422
+hazeycode
+hey!
+
+1587416458
+ikskuh
+hey hazeycode
+
+1587416508
+ikskuh
+hey foobles
+
+1587416516
+foobles
+yo!
+
+1587416771
+ikskuh
+bug of the day:
+
+1587416878
+foobles
+oh dear
+
+1587416898
+hazeycode
+that is fishy
+
+1587416904
+ikskuh
+yep :D
+
+1587416915
+foobles
+looks like the error should be pointing to the other line
+
+1587416916
+foobles
+right?
+
+1587416921
+foobles
+the one returning u8 explicitly
+
+1587416938
+ikskuh
+no
+
+1587416945
+ikskuh
+the function returns u16
+
+1587416951
+ikskuh
+but somehow the compiler thinks it will return u8
+
+1587416956
+foobles
+oh i see
+
+1587416974
+foobles
+the `@as(u8, 0xFF)` should afterwards coerce to a u16 anyway
+
+1587416979
+Xavi92
+Does it probably get "confused" because of the @as above?
+
+1587416991
+ikskuh
+foobles: yep
+
+1587417001
+ikskuh
+Xavi92: nope. that'S just to enforce a type there
+
+1587417010
+ikskuh
+my actual code is somewhat more complex
+
+1587417038
+Xavi92
+Hm it's kinda curious this wasn't spotted before
+
+1587417057
+fengb
+Seems like it’s doing peer resolution instead of result location resolution
+
+1587417140
+akflcar
+hey
+
+1587417151
+ikskuh
+Xavi92: because people don't use zig! people need to use zig more! :D
+
+1587417187
+akflcar
+zig is not as small as C? i am a zig newbie
+
+1587417198
+akflcar
+when was zig created?
+
+1587417276
+akflcar
+2015
+
+1587417302
+ikskuh
+what do you mean by "as small"?
+
+1587417308
+ikskuh
+zig has more features than C
+
+1587417314
+ikskuh
+but it has less footguns
+
+1587417679
+fengb
+The Zig “spec” is a lot more well defined, once it’s written at least. A lot of C tends to hand wave edge cases away
+
+1587417727
+fengb
+Things that are undefined behavior in C usually has some checks around it and possibly well defined alternatives
+
+1587417806
+fengb
+So in that sense, it’s “bigger”
+
+1587417846
+fengb
+Plus comptime can be considered a bigger implementation detail, but the usage is much nicer than the preprocessor
+
+1587417878
+hazeycode
+I turned on UBSAN on a 17 C++ year old project the other day for a joke... wasn't funny actually
+
+1587417903
+hazeycode
+*17 year old, C++ project
+
+1587417925
+hazeycode
+can't type straight anymore
+
+1587418008
+fengb
+C++ year is a new unit
+
+1587418035
+fengb
+Translates to about 10 regular years, since that’s how many years you’ll age for using it 🙃
+
+1587418065
+hazeycode
+how old are you? in c++ years
+
+1587418076
+hazeycode
+lol
+
+1587418154
+akflcar
+how was optimization implemented in zig, as it's the hardest battle?
+
+1587418155
+companion_cube
+time to turn that 17y C++ code into C++17!
+
+1587418165
+companion_cube
+akflcar: it's done by llvm
+
+1587418167
+foobles
+what would yall think if `?T == T` short circuited? Like if the lhs is null, it doesnt evaluate the right hand side at all and just returns false?
+
+1587418177
+foobles
+that seems like a bad idea to me
+
+1587418189
+foobles
+but its an interesting idea  I think
+
+1587418208
+akflcar
+companion_cube: ?? but how does llvm know the "new" language?
+
+1587418224
+companion_cube
+well the zig compiler produces LLVM IR
+
+1587418230
+companion_cube
+llvm doesn't care about where its IR comes fro
+
+1587418232
+ikskuh
+foobles: nah, bad idea
+
+1587418233
+companion_cube
+from*
+
+1587418239
+ikskuh
+i would not expect that
+
+1587418253
+fengb
+I don't like it because I don't think I would translate it in my head
+
+1587418259
+ikskuh
+how can i set a signal handler in zig?
+
+1587418269
+hazeycode
+foobles: I can't think of why it's a bad idea, but it feels like one
+
+1587418270
+fengb
+foo == bar() looks like an immediate compare, not a short circuiting thing
+
+1587418278
+akflcar
+what is llvm IR?
+
+1587418320
+fengb
+LLVM's internal data. Clang => LLVM IR => optimizer => assembly => machine code
+
+1587418326
+fengb
+Rust also compiles down to LLVM IR
+
+1587418343
+foobles
+LLVM IR is an intermediate representation generated by a lot of languages. LLVM itself uses that to generate machine-specific assembly
+
+1587418346
+akflcar
+what does IR stand for?
+
+1587418350
+akflcar
+ok foobles
+
+1587418365
+hazeycode
+on that note:  are there any plans to ditch llvm? :(
+
+1587418372
+foobles
+are you against llvm?
+
+1587418386
+akflcar
+can gcc too do those things, as some use gcc as well.
+
+1587418408
+foobles
+eeh, I dont think its nearly as easy with GCC
+
+1587418415
+fengb
+Yes but it's harder because GCC traditionally doesn't have a frontend interface
+
+1587418434
+fengb
+LLVM IR was designed to be pluggable. GCC wasn't and I'm not sure they've changed their stance
+
+1587418439
+foobles
+hazeycode why do you ask?
+
+1587418443
+hazeycode
+I'm neither for nor against llvm particularly at this moment
+
+1587418488
+fengb
+LLVM was always intended to be an implementation detail... so yes there are plans
+
+1587418489
+fengb
+But it'll also probably be the main optimizing backend for the foreseeable future
+
+1587418513
+foobles
+I dont really see a reason to ditch it
+
+1587418521
+foobles
+unless there is some issue with it that i am unaware of
+
+1587418533
+foobles
+it seems super well supported and reliable
+
+1587418578
+fengb
+We've been having issues keeping it stable
+
+1587418586
+fengb
+LLVM 10 release broke a lot of things
+
+1587418593
+fengb
+Er... keeping the build stable
+
+1587418637
+fengb
+In the near term, there's plans to have alternative backends to at least speed up debug builds. I think andrewrk might have mentioned a stable Zig IR that we can start to leverage
+
+1587419089
+hazeycode
+fengb: thanks for the heads up, that's interesting
+
+1587419367
+pixelherodev
+GCC wasn't not designed to be pluggable
+
+1587419374
+pixelherodev
+It was explicitly designed to not be pluggable
+
+1587419380
+pixelherodev
+For "ethical" reasons
+
+1587419401
+companion_cube
+they could have been llvm but didn't want ti
+
+1587419404
+companion_cube
+to*
+
+1587419409
+fengb
+Right, I just don't remember if they've considered changing their stance
+
+1587419416
+companion_cube
+cause the GPL isn't contaminating through compilation :D
+
+1587419441
+fengb
+The spat happened a few years ago now so maybe it could have gotten better
+
+1587419456
+hazeycode
+really!? :O
+
+1587419796
+pixelherodev
+Basically, they didn't want corporations benefiting from GCC without contributing their changes upstream
+
+1587419817
+pixelherodev
+They deliberately avoided exposing an API for GIMPLE
+
+1587419832
+companion_cube
+they didn't want anyone to write compilers based on gcc without the compiler being GPL
+
+1587419838
+companion_cube
+which, ugh
+
+1587419915
+fengb
+Pretty classical GNU vs BSD. Purity vs practicality
+
+1587419931
+companion_cube
+self-sabotage, in this case
+
+1587419941
+fengb
+It was also at a time when GCC had terrible diagnostics
+
+1587419943
+companion_cube
+well it did bring some competition
+
+1587419990
+fengb
+
+
+1587420011
+companion_cube
+aahah this subject
+
+1587420013
+companion_cube
+I'm dead
+
+1587420172
+hazeycode
+do you guys have any advice for dealing with `error: unable to translate function` ?
+
+1587420516
+pixelherodev
+Not going to lie, I do somewhat agree with Stallman's points there
+
+1587420546
+companion_cube
+that llvm has been used for a lot of compilers by his "adversaries"?
+
+1587420564
+pixelherodev
+not quite
+
+1587420582
+pixelherodev
+That software freedom is important
+
+1587420590
+pixelherodev
+I use GPL in some of my own projects (MIT in others)
+
+1587420592
+companion_cube
+sure, but I don't like his definition of "freedom"
+
+1587420594
+fengb
+Clang/LLVM is just big agenda pushed by Apple
+
+1587420603
+companion_cube
+big apple agenda
+
+1587420607
+pixelherodev
+That I don't agree with
+
+1587420666
+shakesoda
+fengb: the slow compilation agenda
+
+1587420686
+fengb
+Clang used to have faster compilation... 🙃
+
+1587420733
+companion_cube
+the babel tower of new languages agenda
+
+1587420780
+pixelherodev
+I also think any solution that revolves around licenses is bound to fail eventually
+
+1587420856
+pixelherodev
+Whether from a replacement project with a different license (e.g. Clang), people ignoring the license (likely happens all the time; GPL isn't enforceable for most), or some other factor
+
+1587420878
+hazeycode
+I don't understand why opening up gcc has anything to do with copyleft. Seems to be an excuse for design oversight to me
+
+1587421036
+fengb
+They intentionally don't want to make it easy to make a frontend because they can't propagate GPL through a nice IR
+
+1587421057
+pixelherodev
+They don't want people using it to make non-copyleft compilers
+
+1587421080
+fengb
+If LLVM was GPL, you can still make a proprietary frontend to it
+
+1587421101
+hazeycode
+But you enforce that with the license, not usability right ?
+
+1587421104
+fengb
+In order to prevent this, they intentionally made it harder to interface with
+
+1587421137
+fengb
+I mean a better design means they cannot enforce the license since there would be a boundary
+
+1587421151
+fengb
+So they intentionally held back on the design to prevent that from happening
+
+1587421224
+pixelherodev
+I don't really think it's worth thinking about. They did a dumb, it's over.
+
+1587421239
+pixelherodev
+Zig is the future anyways, why worry about C compilers?
+
+1587421266
+companion_cube
+you seem a bit early in celebrating the victory :D
+
+1587421285
+fengb
+Well... I wish we could use GCC as a backend :P
+
+1587421311
+hazeycode
+I don't see much difference between give copyleft program standard defined source code get proprietary program out vs give copyleft program copyleft defined IR and get proprietary program out
+
+1587421313
+companion_cube
+how about tcc? it's LGPL
+
+1587421320
+companion_cube
+and it compiles fast!!
+
+1587421382
+hazeycode
+I'm going to sleep on it.... good night from England
+
+1587421520
+fengb
+Good night
+
+1587424802
+StateOff
+No Idea how to get a Windows build with SDL2 out of zig.
+
+1587425517
+fengb
+thejoshwolfe is like silent bob. He’s barely around but when he pipes up it’s always insightful :P
+

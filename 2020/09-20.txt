@@ -1,0 +1,340 @@
+1600563086
+justin_smith
+I'm tripping over myself with the declaratio of a null terminated array of null terminated arrays
+
+1600563138
+justin_smith
+(this data comes from an api that gives a null terminated array of "port names", each is a null terminated string, port names are registered by other running apps so no compile time length info is possible)
+
+1600563227
+justin_smith
+"[*:0][*:0]const u8" feels like it should be the right type, but the compiler is rejecting that with "error: expected type '[*:0]const u8', found 'comptime_int'"
+
+1600563448
+justin_smith
+"[][*:0]const u8" works but doesn't contain as much information
+
+1600563515
+fengb
+The type you’re probably looking for is `[*:null]?[*:0]const u8`
+
+1600563528
+fengb
+It’s used sparingly in stdlib
+
+1600563578
+justin_smith
+makes sense - I'll try that
+
+1600563588
+justin_smith
+also is there a variant of ptrCast for []>?
+
+1600563769
+justin_smith
+for [] that is. maybe once you've declared [] that means you don't plan on any casts? or else I'm not understanding this compiler error
+
+1600563801
+justin_smith
+still trying to make this type declaration something better than [*c] for a program that was working but underspecified / less than idel
+
+1600563804
+justin_smith
+*ideal
+
+1600565180
+justin_smith
+what's the correct way to index a pointer I get from a c API I don't control?
+
+1600566076
+justin_smith
+style question also: if I'm using a var to hold the return value before converting to a saner type, is there something better than "[*c][*c]const u8" that the type checker will allow in an explicit declaration (previously I was cheating by letting inference type it that way)
+
+1600566329
+andrewrk
+yeah, give it the correct type and zig will let it implicit coerce from the c pointers
+
+1600566580
+justin_smith
+OK wow, it looks like this "sleep(-1)" idiom that was used silently coerced -1 to a large unsigned value(???)
+
+1600566599
+justin_smith
+most of my bitcasts from translate-c were trivial but this is weird
+
+1600566689
+justin_smith
+translating this:
+
+1600566783
+justin_smith
+I guess it's safe to replace it with 0xFFFFFFFF
+
+1600566846
+andrewrk
+that's common in C
+
+1600566864
+andrewrk
+you can use std.math.maxInt(u32)
+
+1600567790
+justin_smith
+it's like a pun: using -1 seems to indicate "some out of band sleep duration" but really just gets converted to max_int thanks to 2's complement encoding and a bad cast
+
+1600569469
+leeward
+Yeah, that's a common idiom. Also ~0
+
+1600577537
+pixelherodev
+Heh, I actually used -2 for something :P
+
+1600577558
+pixelherodev
+I have a graphics lib that allows manually setting width, doing it automatically if it's -1
+
+1600577569
+pixelherodev
+So I used -2 to indicate "expand to screen" :P
+
+1600594552
+ask6155
+Hello
+
+1600594587
+ikskuh
+heya
+
+1600594838
+ask6155
+I have a buffer with only one number and I give it to parseInt(u8, buffer, 10) but it gives me invalid character error
+
+1600594955
+ikskuh
+how do you init the buffer?
+
+1600595031
+ask6155
+buffer: [64]u8 = undefined and then I make a slice of it. I pass it to the reader, it fills it with input then I pass the slice to parseInt
+
+1600595178
+ikskuh
+can you give the full code example?
+
+1600595188
+ikskuh
+you're maybe passing the whole 64 bytes
+
+1600595189
+ask6155
+ok
+
+1600595210
+ask6155
+var user_input: [64]u8 = undefined;
+
+1600595210
+ask6155
+var user_input_slice = user_input[0..]; //Making a slice from the buffer
+
+1600595225
+ask6155
+_ = try reader.read(user_input_slice);
+
+1600595225
+ask6155
+const user_input_int = try parseInt(u8, user_input_slice, 10);
+
+1600595225
+ask6155
+try writer.print("\n{}\n", .{user_input_slice});
+
+1600595314
+ikskuh
+ah yes
+
+1600595318
+ikskuh
+you're passing the whole buffer :D
+
+1600595325
+ikskuh
+reader.read returns the number of bytes read
+
+1600595338
+ikskuh
+so you need to do this:
+
+1600595349
+ikskuh
+const len = try reader.read(&user_input);
+
+1600595357
+ikskuh
+const user_input_slice = user_input[0..len];
+
+1600595364
+ikskuh
+and pass that to parseInt
+
+1600595394
+ask6155
+shouldn't parseint when to stop?
+
+1600595452
+ask6155
+*know when to
+
+1600595484
+ikskuh
+no
+
+1600595494
+ikskuh
+why should it?
+
+1600595511
+ikskuh
+is the "x" a digit? part of the content? excess?
+
+1600595521
+ikskuh
+C assumes that and it's stupid and error prone
+
+1600595551
+ask6155
+hmm
+
+1600595659
+squeek502
+in other words, you're effectively telling parseInt that the input is 64 characters long (the length of your slice)
+
+1600595681
+squeek502
+if your actual input is shorter, then you need to give it the appropriately sized slice
+
+1600595757
+ask6155
+since my buffer was undefined at start... if i fill till x what will be there in x+1?
+
+1600595768
+squeek502
+undefined
+
+1600595778
+ask6155
+garbage?
+
+1600595799
+squeek502
+most likely
+
+1600595804
+ikskuh
+yes, garbage
+
+1600595823
+ask6155
+okay so it makes sense now
+
+1600596050
+ask6155
+also the slice has to be cut from 0..len-1 since read also counts the newline
+
+1600596097
+ikskuh
+if you cut a slice, it uses these info:
+
+1600596111
+ikskuh
+source[start_index_inclusive … end_index_exclusive]
+
+1600596124
+ikskuh
+so you need to cut from [0..len] to get len chars
+
+1600600218
+ask6155
+I have a 16 length buffer. While reading input if I put 17 chars I do gracefully handle the error and restart the loop but the 17th char is then given to the buffer. How do I fix that?
+
+1600600406
+ikskuh
+it depends on how you do all of this
+
+1600600576
+Nypsie[m]
+read() only reads until the length of the buffer, this means that if the buffer is smaller than the entire stream, it will resume at the position the previous read() got to
+
+1600600622
+ask6155
+How do I make it so it doesn't resume from where it left off?
+
+1600600709
+ikskuh
+that depends on the stream
+
+1600600717
+ikskuh
+you can use readAllAlloc for example
+
+1600600828
+ask6155
+hmm
+
+1600601232
+ask6155
+wait you can use zig as a c++ compiler too?
+
+1600601240
+Nypsie[m]
+Yes
+
+1600601251
+ask6155
+does it do cross compilation?
+
+1600601256
+Nypsie[m]
+Yep
+
+1600601263
+ask6155
+when whas this added?
+
+1600601277
+Nypsie[m]
+Hmmm, ages ago I think
+
+1600601284
+squeek502
+shortly after zig cc
+
+1600602206
+ask6155
+is wasm32 support broken currently?
+
+1600619153
+ikskuh
+marler8997: thanks for zigup btw :)
+
+1600619301
+marler8997
+ikshuh, sure thing, at some point the goal will be to upstream it into the zig repo so everyone will just have it
+
+1600619325
+ikskuh
+hehe, good idea :)
+
+1600638625
+mattnite
+hey everyone!
+
+1600643490
+jjsullivan
+mattnite, have a late hello :^)
+
+1600644188
+mattnite
+hi!
+

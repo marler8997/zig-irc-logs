@@ -1,0 +1,988 @@
+1577924313
+traviss
+schme245, i got the time down from around 5.2 to 3.9 on my system using f64 vectors.
+
+1577924357
+schme245
+sweet! do you have a link to the code? :)
+
+1577924396
+traviss
+give me a few minutes. let me clean it up.
+
+1577924402
+schme245
+sure thing
+
+1577924600
+traviss
+does zig currently have any way to use SSE single precision reciprocal square root approximation instruction rsqrtss (_mm_rsqrt_ps from immintrin.h)
+
+1577924937
+traviss
+here it is. i only updated the `advance()` method as this seems like the biggest gain
+
+1577924947
+traviss
+schme245 ^
+
+1577924958
+andrewrk
+traviss, this should work, after @sqrt gains SIMD support:
+
+1577924977
+andrewrk
+not sure if llvm will be smart enough to turn that into the instruction
+
+1577925032
+andrewrk
+making @sqrt SIMD-aware is a reasonably small task
+
+1577925138
+andrewrk
+hmm wait a minute, @sqrt is already supposed to have SIMD support
+
+1577925245
+traviss
+oh neat. maybe this is doable then.
+
+1577925343
+schme245
+traviss: nice! I love that the code shrinks, AND gets faster
+
+1577925469
+schme245
+faster than Rust on my machine! 2.
+
+1577925478
+schme245
+2.1 vs 2.4
+
+1577925492
+schme245
+suuuuweet
+
+1577925553
+andrewrk
+traviss, ok there is some code in here to support vectors in @sqrt and other float functions, but it's untested and broken. I've made a note to fix it in a bit, after I finish another task
+
+1577925591
+andrewrk
+schme245, one thing to consider is that rust may not be taking advantage of native CPU features by default
+
+1577925661
+andrewrk
+make sure you're passing the equivalent of -march=native
+
+1577925680
+andrewrk
+for zig it makes sense to take advantage of native cpu features by default, because zig's cross compiling works out-of-the-box
+
+1577925724
+schme245
+yeah, just realized that I have no idea what the Rust equivalent of release-fast is
+
+1577925742
+schme245
+the benchmarks game build command was optimized for an old 2 core CPU I think
+
+1577925791
+traviss
+is this the rust code you're looking at?
+
+1577925804
+schme245
+indeed
+
+1577925815
+traviss
+this one is using _mm_rsqrt_ps
+
+1577929706
+traviss
+thanks andrewrk looking forward to it. i'm sure you're aware but currently `@sqrt(@Vector(4, f32), v)` gives the following
+
+1577929724
+traviss
+error: expected type 'f32', found '@Vector(4, f32)'
+
+1577936969
+andrewrk
+translate-c is now self-hosted
+
+1577937025
+hryx
+\o/
+
+1577937649
+andrewrk
+I just marked nearly every translate-c issue as contributor friendly
+
+1577938156
+hryx
+may the friendly contributions flourish
+
+1577938996
+blueberrypie
+sweet
+
+1577939485
+andrewrk
+traviss, I have the @sqrt issue fixed here:
+
+1577939508
+andrewrk
+I put an example of some assembly there. Do you have an example with equivalent C code with that intrinsic?
+
+1577939636
+andrewrk
+I'm curious how llvm's optimization of @splat(1)/@sqrt(x) compares to the intrinsic you mentioned
+
+1577939768
+andrewrk
+oh, with @setFloatMode(.Optimized), llvm figures out to use the vrsqrtps instruction
+
+1577940043
+traviss
+give me a minute i'll put one on godbolt
+
+1577940053
+daurnimator
+andrewrk: why do those builtins not take a type any more?
+
+1577940080
+diltsman
+Does anyone have experience getting a basic Windows program working?  Closing the window I see PostQuitMessage(0) getting called correctly, but I never see WM_QUIT being dispatched.
+
+1577940090
+daurnimator
+It was only recently we added the type parameter to lots of other builtins for consistency
+
+1577940103
+daurnimator
+diltsman: are you using an alertable wait state?
+
+1577940156
+diltsman
+What do you mean by alertable wait state?  I have a basic PeekMessageW, TranslateMessage, DispatchMessage loop.  I implemented the same thing in C and it works.
+
+1577940319
+daurnimator
+diltsman: alertable wait state is windows-ism that means that the syscall you're using also adds in the hidden internal message EVENT. see the bAlertable argument of WaitForMultipleObjectsEx. But sounds like you're not using those APIs....
+
+1577940323
+andrewrk
+floating point operations such as sqrt operate on the type of the operand, same as mathematical operators. the functions where it makes sense to take a type parameter is e.g. @byteSwap where the type parameter decides the meaning of the endian swap operation
+
+1577940409
+diltsman
+I have a C program with the same loop.  It sees WM_QUIT (0x12) after I close the window.  The Zig program doesn't so then I am left with an infinite loop with no exit condition.  I am at the point where I don't know where to look next.  I have even started tracing system calls in assembly to verify that things are called the same in both languages.
+
+1577940680
+andrewrk
+diltsman, I wonder if libc is related? you could try linking libc in your zig application or not linking libc in your c application
+
+1577940723
+diltsman
+exe.linkSystemLibrary("c");
+
+1577940724
+diltsman
+exe.linkSystemLibrary("User32");
+
+1577940730
+diltsman
+Already linking those in...
+
+1577940762
+andrewrk
+I wonder if there is some c macro magic happening in the windows.h file?
+
+1577940772
+andrewrk
+I'm completely guessing here
+
+1577940779
+andrewrk
+this is an important use case though
+
+1577940823
+diltsman
+I can post my source, if you would like.  Very basic Windows program that creates a single window and should exit when the window is closed.
+
+1577940828
+andrewrk
+sure
+
+1577940836
+andrewrk
+when you say you see PostQuitMessage(0) getting called correctly, what do you mean?
+
+1577940886
+andrewrk
+I need to quit for the day, I've been working too many hours in a row, see you fine folks tomorrow
+
+1577940895
+daurnimator
+andrewrk: cya :)
+
+1577940984
+diltsman
+I trace the call (in assembly) for both the C and Zig programs.  Both do the DLL dispatch to PostQuitMessage with 0 in ecx, which is the correct register for the function parameter.
+
+1577941125
+daurnimator
+diltsman: check the waitformessage call to see if its alertable?
+
+1577941131
+daurnimator
+diltsman: without source I'm just guessing :P
+
+1577941334
+traviss
+andrewrk, this seems very hacky but maybe this is similar to what you're doing:
+
+1577941453
+diltsman
+daurnimator: I am using PeekMessageW, which is non-blocking.
+
+1577941477
+diltsman
+So, it spins on it superfast because there will never be another message.
+
+1577942124
+traviss
+ah, sorry i forgot all the compiler options. this one is closer at first glance to what you got:
+
+1577967499
+xeno
+hi, how do you open a file in Zig? the stdlib documentation doesn't seem to be complete or match reality?
+
+1577967562
+bgiannan
+xeno, see std.fs.File and std.fs in general
+
+1577967586
+bgiannan
+don't hesitate to look at the actual zig file which contains tests that are most of the time self explanatory
+
+1577967598
+daurnimator
+xeno:
+
+1577967604
+lupine
+are you still using 0.5.0? could definitely be a mismatch between docs and compiler version
+
+1577967654
+xeno
+I'm using latest snapshot, but that's 0.5.0-<somestring>
+
+1577967989
+mq32
+daurnimator: is the sub_path a relative path?
+
+1577968030
+daurnimator
+mq32: yes. its a method on Dir
+
+1577968051
+mq32
+okay, so zig now has "discarded" absolute paths?
+
+1577968124
+daurnimator
+no if sub_path starts with a / its absolute
+
+1577968139
+mq32
+okay, weird
+
+1577968144
+mq32
+how do i obtain a Dir handle?
+
+1577968156
+daurnimator
+mq32: you can use `fs.cwd()` to get a reference to the current directory.
+
+1577968161
+mq32
+i can only find cwd()
+
+1577968174
+mq32
+so using fs.cwd().openRead("/foo") is the way to open "/foo"?
+
+1577968218
+daurnimator
+mq32: yeah. or fs.openFileAbsolute which does exactly that
+
+1577968235
+mq32
+ah
+
+1577968237
+daurnimator
+mq32: from fs.cwd() you can also use `openDirList`
+
+1577968253
+mq32
+ah and i have to close dirs
+
+1577968265
+daurnimator
+except for the cwd
+
+1577968268
+mq32
+hmm, kinda unusual but i can see the appeal
+
+1577968283
+daurnimator
+mq32: that's how most OSes work at the syscall level these days
+
+1577968305
+mq32
+yeah it also makes a lot of stuff much easier
+
+1577968311
+mq32
+var dataDir : std.fs.Dir;
+
+1577968326
+daurnimator
+on e.g. linux its just a wrapper around `openat` and fs.cwd() just returns `AT_FDCWD`
+
+1577968327
+mq32
+dataDir.openFile("foo/bar/bam", …#)
+
+1577968617
+lupine
+⎄
+
+1577973713
+wilsonk
+hey daurnimator: is --verbose-cimport working for you? I don't get any different output with --verbose-cimport...even when I know there is an error that should throw a warning
+
+1577973750
+daurnimator
+wilsonk: the --verbose- flags only do something if the output isn't cached I think. delete your zig-cache and try again
+
+1577973763
+mikdusan
+also `--cache off`
+
+1577973847
+wilsonk
+hmm, nope that didn't change anything
+
+1577973896
+daurnimator
+wilsonk: was the warning just one that got added to the cimport file as a comment?
+
+1577973920
+daurnimator
+find zig-cache | grep cimport.zig
+
+1577974915
+wilsonk
+ok, I removed all zig-cache directories (didn't seem to make a difference) and re-ran 'zig translate-c m.c --verbose-cimport'. This outputs to stdout and the output includes 'pub const main = @compileError("unable to translate function");'. I thought it was just dying there and backing out but I also ran that command in gdb and set a breakpoint at translate_c.zig:1763...zig makes it there and should warn with 'unsupported initlist type' bu
+
+1577974916
+wilsonk
+'
+
+1577975049
+wilsonk
+just looking at #3752 (simple code to run in that issue)
+
+1577975670
+wilsonk
+alright, it looks like even though zig reaches 1764 the warning isn't actually output...just the @compileError
+
+1577977456
+schme245
+hmm... something foul is afoot, zig-crypto tests hang in --release-fast in a commit I know worked yesterday
+
+1577977462
+schme245
+Hangs in "LLVM Emit Output..."
+
+1577977573
+schme245
+wait, it seems like that commit works, but some commit after that breaks it
+
+1577977821
+wilsonk
+schme245: what command line do you use to just run the crypto tests with release-fast?
+
+1577977890
+schme245
+zig test test/des_test.zig --main-pkg-path ../ --release-fast
+
+1577977898
+schme245
+repo is here:
+
+1577977910
+wilsonk
+thanks
+
+1577977916
+schme245
+➜  zig-crypto git:(master) ✗ time zig test test/des_test.zig --main-pkg-path ../ --release-fast
+
+1577977916
+schme245
+zig test test/des_test.zig --main-pkg-path ../ --release-fast  95.84s user 0.90s system 99% cpu 1:37.17 total
+
+1577977916
+schme245
+All 7 tests passed.
+
+1577977918
+schme245
+whoa
+
+1577977945
+schme245
+1.37 min
+
+1577978060
+schme245
+interesting, seems like the additional comptime stuff I added in
+
+1577978120
+mikdusan
+have you factored out the global-cache?
+
+1577978126
+wilsonk
+hmmm, that seems strange
+
+1577978141
+schme245
+I tried looking for a global zig cache but I couldn't find any on my system
+
+1577978155
+mikdusan
+linux?
+
+1577978157
+schme245
+it's not in application support like suggested here:
+
+1577978163
+schme245
+macOS
+
+1577978181
+schme245
+and `find / zig-cache` didn't turn up anything
+
+1577978333
+schme245
+
+
+1577978362
+wilsonk
+yep, takes 93 seconds here on linux. With the local dir cache it is just .44 seconds
+
+1577978409
+schme245
+gonna create an issue
+
+1577978932
+schme245
+
+
+1577979604
+TheLemonMan
+is any osx user able to check if the failure on #4034 is legit?
+
+1577980006
+andrewrk
+TheLemonMan, I'll take a look
+
+1577980073
+TheLemonMan
+thank you, I also have one more translate-c patch for you :)
+
+1577980223
+andrewrk
+I'll look into
+
+1577980372
+TheLemonMan
+there are too many PRs touching translate_c, a lot of rebases are needed :\
+
+1577980490
+andrewrk
+true
+
+1577980504
+andrewrk
+do you have 3-way conflict diffs enabled?
+
+1577980521
+andrewrk
+in .gitconfig: merge.conflictstyle = diff3
+
+1577980525
+andrewrk
+it's really nice
+
+1577980632
+andrewrk
+
+
+1577980644
+andrewrk
+most common response to people discovering this option for the first time: "why is this not the default?"
+
+1577981254
+fengb
+I wonder how much user friendliness can be obtained by going beyond old Unix conventions
+
+1577981310
+andrewrk
+TheLemonMan, try passing `-target x86_64-macosx` to your test case
+
+1577981325
+andrewrk
+I'm also adding to the test harness to properly emit compile errors from clang
+
+1577981367
+fengb
+How was everyone's break?
+
+1577981401
+andrewrk
+TheLemonMan, yes, I can reproduce on linux with `./zig translate-c test.c -target x86_64-macosx`
+
+1577981416
+andrewrk
+fengb, it was nice to have a break, but now I need a break from the break
+
+1577981460
+fengb
+We welcome you back with open arms :)
+
+1577981737
+shakesoda
+before i try, is there any fundamental reason i shouldn't try to build zig on armv6 (rpi zero)
+
+1577981787
+TheLemonMan
+andrewrk, thanks, I'll try later to find out what's wrong
+
+1577981858
+andrewrk
+shakesoda, it should mostly work, although we don't have CI coverage for arm32 yet
+
+1577981887
+andrewrk
+drone CI does provide it though, this is a good area to improve- once the issues are fixed we could add ci coverage and another download .tar.xz on the download page
+
+1577981912
+andrewrk
+shakesoda, here's a relevant issue for you:
+
+1577981921
+andrewrk
+TheLemonMan has been doing a lot of work to improve zig on arm (both 64 and 32 bit)
+
+1577981978
+TheLemonMan
+yeah, I'm successfully running Zig binaries on a OG RPI model B with no major hiccup
+
+1577982008
+shakesoda
+i believe that's essentially the same version of the soc that the zero uses, so that's good news
+
+1577982022
+andrewrk
+also, to be clear: we actually do have some test coverage for 32-bit arm, just no coverage of
+
+1577983467
+fengb
+
+
+1577985395
+andrewrk
+that article is worth reading
+
+1577985403
+andrewrk
+it's about resource management and backpressure
+
+1577985553
+andrewrk
+I wonder what the author would think if they saw the zig example code of a basic tcp chat server where the async frame to handle a client is allocated before accepting the connection:
+
+1577985553
+scientes
+yes
+
+1577985555
+scientes
+>
+
+1577985555
+scientes
+New Footguns
+
+1577985609
+andrewrk
+zig is uniquely suited to the discipline of making sure there are appropriate resources available before attempting an operation
+
+1577985674
+scientes
+and this is also where bounded stacks are super useful
+
+1577985681
+scientes
+as you just said
+
+1577986287
+fengb
+andrewrk: would you accept a rewritten std.fmt.format using my hacky generators?
+
+1577986433
+andrewrk
+fengb, yes if it returns an iterator on slices rather than taking an error set, context, and callback function
+
+1577986448
+andrewrk
+I've actually been looking into doing something similar
+
+1577986480
+andrewrk
+I tried it myself a bit in fact. it's hacky enough that it's a good use case for generators, I think
+
+1577986503
+fengb
+Yep, I experimented making a formatter and found it pretty pleasant once I figured out all the generator edge cases
+
+1577986520
+fengb
+It's kinda abusing async, but the pattern isn't too terrible
+
+1577986618
+andrewrk
+the annoying thing I found was that you had to do some hacks for function calls, because the callee can't suspend the caller
+
+1577986693
+andrewrk
+fengb, but you managed to make std.fmt.format return an iterator rather than using callbacks?
+
+1577986706
+andrewrk
+how did you solve the recursion problem?
+
+1577986721
+fengb
+The generator context takes an arbitrary frame, so anything can yield to it
+
+1577986735
+andrewrk
+oh interesting
+
+1577986747
+fengb
+So pass down the context and everything just works™
+
+1577986762
+andrewrk
+recursion though? formatValue calls formatValue
+
+1577986790
+andrewrk
+don't you get that error where a function's frame is inside itself?
+
+1577986839
+fengb
+Oh
+
+1577986847
+fengb
+I guess I didn't handle that
+
+1577986906
+fengb
+Well crap, that'd require allocation
+
+1577986959
+TheLemonMan
+andrewrk, do you want me to rebase #3977 ?
+
+1577986970
+andrewrk
+fengb, yeah I ran into that when I tried it
+
+1577986977
+andrewrk
+still thinking about how to solve it
+
+1577987009
+andrewrk
+fengb, in theory we should be able to allocate some static number of bytes which corresponds to the maximum recursion depth, and use that buffer
+
+1577987026
+andrewrk
+we already have a max recursion limit on printing structs
+
+1577987036
+andrewrk
+but that might depend on a lot of bugs being solved :)
+
+1577987063
+andrewrk
+TheLemonMan, if you're up for it, that would be helpful, but I wouldn't mind doing the work either
+
+1577987075
+andrewrk
+I will certainly get to it faster if you do it
+
+1577987249
+fengb
+Well arguably it's more futureproof for recursion to require allocation right? :P
+
+1577987440
+andrewrk
+yeah I mean it's a legitimate problem to solve. we want zig to be able to figure out at compile-time how much stack space each format() needs
+
+1577987449
+andrewrk
+this is not currently the case
+
+1577987460
+andrewrk
+so solving this recursion problem is actually accomplishing something
+
+1577987503
+andrewrk
+people will probably want to use format() on embedded devices
+
+1577987516
+andrewrk
+where being able to compute stack size is extra important
+
+1577989431
+nofmal
+hello, i just got this compiler error: `error: invalid character: ';' pub const CSTATUS = '\x00;`
+
+1577989517
+andrewrk
+nofmal, are you missing a single quote there?
+
+1577989526
+nofmal
+that happened every time i tried to compile with c library
+
+1577989556
+nofmal
+andrewrk: no, the generated `cimport.zig` did that
+
+1577989629
+nofmal
+i'm using the latest build from the website by the way
+
+1577989894
+nofmal
+upon further inspections, both variable _POSIX_VDISABLE and CEOL are also missing a single quote
+
+1577989898
+andrewrk
+nofmal, the next step to fix this is to find the C code that this comes from
+
+1577989927
+andrewrk
+or guess, to create a reproducing test case
+
+1577990675
+nofmal
+the problematic c code apparently comes from `termios.h`
+
+1577990696
+nofmal
+that's weird, it compiled just fine using a previous build a few days ago...
+
+1577990872
+andrewrk
+nofmal, as of yesterday, we switched to self-hosted translate-c
+
+1577990883
+andrewrk
+it makes sense that there would be a few regressions
+
+1577991047
+nofmal
+i see, that kinda explains it
+
+1577991071
+andrewrk
+yes and unfortunately the case you ran into did not have test coverage, so that's why it regressed
+
+1577991110
+TheLemonMan
+it seems that parseCPrimaryExpr is emitting the correct tokens but in the wrong order
+
+1577991114
+nofmal
+well just to clarify a bit more, i tested using a simple c printf
+
+1577991139
+TheLemonMan
+you can reproduce it with `#define FOO ((unsigned char)'\377')`
+
+1577991153
+nofmal
+and the generated `cimport.zig` didnt contain variable CSTATUS, _POSIX_VDISABLE, and CEOL
+
+1577991351
+andrewrk
+nofmal, thanks for the report, I recommend now to stick with the older version of zig that worked, until you get the email that #4042 is solved
+
+1577991677
+nofmal
+andrewrk: it's all good, i'm gonna stick with the stable build for now. thanks for the fast response!
+
+1577993289
+TheLemonMan
+I have a fix for that but nofmal left :(
+
+1577993389
+andrewrk
+TheLemonMan, it's likely they will get a notification for updates to
+
+1577993717
+Snektron
+with the whole recursion requiring runtime allocation thing, what does that mean for recursion at compile time?
+
+1577993822
+protty
+Hi people, am on the latest release for master and getting a failed assertion:
+
+1577993835
+andrewrk
+Snektron, recursion at compile time is no problem - the relevant thing here is
+
+1577993903
+andrewrk
+protty, is that a build of zig with debug symbols?
+
+1577993922
+andrewrk
+this looks like an issue that might be a straightforward fix with a full stack trace
+
+1577993955
+protty
+its from the downloads page. will try building master from source instead
+
+1577993973
+andrewrk
+fyi downloads page does not have debug symbols
+
+1577994469
+protty
+the full stack trace:
+
+1577994580
+andrewrk
+likely fix is  ir_analyze_struct_field_ptr at ir.cpp:19978 needs to call type_resolve for the alignment of the element type before calling get_pointer_to_type_extra
+
+1577994645
+andrewrk
+get_abi_alignment asserts that the alignment of the type is resolved
+
+1577995548
+protty
+looks like that was it. adding a custom `align(N)` on fields was causing the bad assert
+
+1577995904
+fengb
+andrewrk: what if we preallocate `default_max_depth * @sizeOf(@Frame(formatType))` in the root function
+
+1577996016
+fengb
+That should give us enough recursion space
+
+1577996042
+fengb
+Oh wait, it doesn't account for arbitrary format functions :(
+
+1577996107
+fengb
+I think it'd be possible to recursively calculate the max depth, but that requires comptime allocation
+
+1577996346
+fengb
+No wait, I can use a non-async function to figure out the depth. This might work 🤞
+
+1578002567
+hryx
+Is Twitch stream happening today?
+
+1578003061
+andrewrk
+fengb, yep I went through that same thought process
+
+1578003074
+andrewrk
+hryx, yes! starting in 50 minutes
+
+1578003082
+andrewrk
+not sure what the topic will be yet
+
+1578003107
+hryx
+yey~
+
+1578003433
+fengb
+How do I limit tests to one file only?
+
+1578003544
+adamkowalski
+fengb: you can zig test src/file.zig
+
+1578003556
+andrewrk
+yes and then probably also need --test-filter
+
+1578005192
+andrewrk
+the topic will be adding a new kind of test to zig's test suite: translating C code to zig, and then compiling & running it
+
+1578005237
+schme245
+is there anything in particular preventing
+
+1578005245
+schme245
+it would help me a lot when playing around with vectors
+
+1578005759
+andrewrk
+going live
+
+1578005937
+dimenus
+I have a really odd bug. I have a process with 'standardReleaseOptions' that segfaults randomly, but will not crash at all under gdb
+
+1578005943
+dimenus
+being somewhat of a linux noob, i find this confusing
+
+1578005975
+dimenus
+it segfaults on the same @memcpy each time
+
+1578006044
+TheLemonMan
+smells like some alignment problem
+

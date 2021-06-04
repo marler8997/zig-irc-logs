@@ -1,0 +1,704 @@
+1602979209
+Ondingen
+and I don't have access to the code, it wasn't released with the quake source
+
+1602979216
+Ondingen
+"lib\std\start.zig:289:45: error: root source file has no member called 'main'
+
+1602979229
+Ondingen
+is the error I get when using const exe = b.addExecutable("win", "ubsan-test/src/segfault_handler.zig");
+
+1602979309
+andrewrk
+hmm let me check something
+
+1602979377
+andrewrk
+well anyway you can make the object in build.zig
+
+1602979409
+andrewrk
+const obj = b.addObject("segfault_handler", "ubsan-test/src/segfault_handler.zig"); obj.setTarget(target); exe.addObject(obj);
+
+1602979439
+andrewrk
+I still don't understand the default libc thing - zig won't link libc unless you explicitly ask for it
+
+1602979445
+andrewrk
+so you should be OK
+
+1602979450
+Ondingen
+ah, I missed setting the target on obj
+
+1602979478
+andrewrk
+yeah, that's a flaw in the API design I think - it could detect and warn you about it
+
+1602979499
+andrewrk
+this build stuff is all still under construction
+
+1602979578
+andrewrk
+what problem do you get without safeseh:no?
+
+1602979609
+Ondingen
+lld: error: /safeseh: vga.obj is not compatible with SEH
+
+1602979612
+andrewrk
+if this is an important linker option it would be good to get upstream support for it because we will want to be aware of it for the self-hosted linker for fast debug builds
+
+1602979661
+Ondingen
+with -safeseh:no and without -nodefaultlib:libc I get "lld: error: could not open 'LIBC.lib': no such file or directory"
+
+1602979684
+andrewrk
+hmm and why is LIBC.lib ending up on the linker line?
+
+1602979691
+andrewrk
+zig doesn't put that there
+
+1602979705
+Ondingen
+because of the -defaultlib:libc from MGLLT.lib
+
+1602979722
+andrewrk
+if MGLLT.LIB has a reference to it, why isn't it needed?
+
+1602979764
+andrewrk
+is that just a quirk of quake?
+
+1602979809
+ky0ko
+oh interesting, am i not the only person working on a zig port of quake
+
+1602979811
+Ondingen
+It think is needed, just not both libc and libcmt/msvcrt? It's a super old library with software rendering routines
+
+1602979818
+Ondingen
+ky0ko cool!
+
+1602979881
+ky0ko
+i had to disable ubsan for the whole project, the code is just absolutely littered with undefined behavior and i'm just tackling it as i rewrite
+
+1602979899
+andrewrk
+ah yeah I forgot to mention that option
+
+1602979913
+andrewrk
+even zig has to disable UBSAN for some of the libc code it builds from source
+
+1602979945
+andrewrk
+I think it's the right call to have on by default, it's forcing people to be aware of how much UB is going (so far) unnoticed
+
+1602979960
+andrewrk
+but yeah no shame in disabling it for 3rd party code to make your project work
+
+1602979995
+Ondingen
+How is that done? I figured I might have to do that but I haven't looked into how to do it yet. It's been a lot of hours just to get to this point, haha.
+
+1602980099
+ky0ko
+pass the `-fno-sanitize=undefined` and `-fno-sanitize-trap=undefined` to all your c objects
+
+1602980102
+andrewrk
+
+
+1602980105
+ky0ko
+at least, that's what i'm doing in my build.zig and it's working
+
+1602980147
+Ondingen
+thanks!
+
+1602980276
+ky0ko
+and yeah, andrewrk, i agree that ubsan on by default is the right call here
+
+1602980372
+Ondingen
+there's also .disable_sanitize_c in LibExeObjStep, but there doesn't seem to be a way to set it? NVM, forgot that there's no encapsulation. exe.disable_sanitize_c = true; works ky0ko
+
+1602980489
+ky0ko
+thanks, though i'll probably just leave it as it is for now as my build.zig is currently a house of cards due to the shenanigans i've had to pull to make the c and zig bits cooperate at this stage
+
+1602980511
+ky0ko
+need to have more of the zig code running the show so i can refactor it a bit nicer
+
+1602980574
+Ondingen
+ky0ko, I sent you a private mssage
+
+1602980796
+andrewrk
+friendship is magic 🌈
+
+1602985682
+ryuukk_
+is there a way to tell the compiler to search in specific folder for zig files?
+
+1602985733
+andrewrk
+--override-lib-dir [path] Override path to Zig installation lib directory
+
+1602985754
+andrewrk
+by default it looks relative to the executable. multiple installations should be fine
+
+1602985759
+ryuukk_
+is it possible to set that in the build.zig file?
+
+1602985795
+Ondingen
+exe.overrideZigLibDir(...)
+
+1602985804
+ryuukk_
+thanks i will try that
+
+1602985896
+andrewrk
+zig build supports the same option
+
+1602985915
+andrewrk
+you can't specify it in your build.zig because `zig build` depends on that value
+
+1602985938
+andrewrk
+why do you need this option though?
+
+1602986095
+ryuukk_
+i have a sample directory, and i would like the files there to be able to import the engine files without having to do stuff like "../../engine/file.zig"
+
+1602986124
+ryuukk_
+4am and i forgot english term of most things sorry if i don't make sense xD
+
+1602986152
+ryuukk_
+
+
+1602986326
+andrewrk
+ok I'm glad I asked because --override-lib-dir is irrelevant to this use case
+
+1602986343
+ryuukk_
+yes i should have started by the usecase my bad
+
+1602986353
+ryuukk_
+closest i found is addPackagePath
+
+1602986372
+ryuukk_
+but i need to manually import everything into a dedicated file
+
+1602986379
+andrewrk
+yes that's right - this lets you map an arbitrary string so you can do @import("foo")
+
+1602986457
+andrewrk
+I think it's not so bad, here's the std lib doing this pattern:
+
+1602986724
+ryuukk_
+ohh right, yeah that's nice, it lets me choose what people have access to, so i can exclude internal stuff
+
+1602986741
+ryuukk_
+i'll try do that then
+
+1602986743
+ryuukk_
+thanks
+
+1602987065
+andrewrk
+np
+
+1602987081
+ryuukk_
+it's been few days i am using zig, i am hooked, nice job on the language, i never thought i'd stick this long with a language with manual memory management, but with this one it feels super nice
+
+1602987581
+andrewrk
+:)
+
+1602992761
+daurnimator
+andrewrk: heh; I'm trying to get to the json prs today
+
+1602992783
+daurnimator
+btw, just tested compilation against llvm 11 on arch; all seems good for the release
+
+1602992802
+andrewrk
+nice
+
+1602992995
+daurnimator
+uh wait; I lied on the packaging
+
+1602993014
+daurnimator
+the self-hosted component seems to get built again in the `install` step
+
+1602993055
+andrewrk
+that is undesired but expected
+
+1602993061
+pixelherodev
+why's that?
+
+1602993083
+andrewrk
+it's cmake not letting us express the dependency
+
+1602993094
+daurnimator
+its more than undesired.... its unacceptable as an install step
+
+1602993094
+pixelherodev
+`add_custom_dependency` or something?
+
+1602993102
+andrewrk
+idk why there is a separate make and install step. just do the install step only
+
+1602993114
+pixelherodev
+That's not possible, for Gentoo at least
+
+1602993120
+pixelherodev
+Build and install are completely distinct
+
+1602993127
+andrewrk
+isn't it doing it into a build root anyway?
+
+1602993130
+daurnimator
+its not allowed for
+
+1602993132
+daurnimator
+*of
+
+1602993149
+pixelherodev
+It does QA checks and such on the compilation step IIRC
+
+1602993162
+andrewrk
+yeah I'm not going to win this argument, everyone does the `make && make install` but I am right about it being dumb
+
+1602993177
+pixelherodev
+andrewrk: the big reason I don't do it is permissions
+
+1602993188
+pixelherodev
+`doas ninja install` results in ninja files being owned by root
+
+1602993190
+daurnimator
+^ `make && sudo make install`
+
+1602993191
+pixelherodev
+and thus `ninja` fails
+
+1602993207
+andrewrk
+you shouldn't be running make or ninja with root
+
+1602993207
+daurnimator
+importantly you never invoke the compiler as root
+
+1602993221
+daurnimator
+`make install` needs to run as root... otherwise how would you install to /usr ?
+
+1602993248
+andrewrk
+you shouldn't install to /usr, your package manager should do that
+
+1602993252
+pixelherodev
+With Gentoo, it installs to /var/tmp/portage/work/blah, and then copies it into place
+
+1602993254
+daurnimator
+I
+
+1602993257
+pixelherodev
+But I'm talking normal builds
+
+1602993259
+pixelherodev
+Yeah
+
+1602993275
+pixelherodev
+This is more of an issue for normal users than for package managers
+
+1602993276
+andrewrk
+so aren't you installing to a package manager prefix, rather than your global system?
+
+1602993287
+pixelherodev
+Only if you're using a package manager
+
+1602993298
+daurnimator
+that's optional
+
+1602993305
+andrewrk
+no if you are the package maintainer, you are installing to some prefix, which then gets compiled into the package
+
+1602993337
+daurnimator
+yes the prefix gets compiled in; and also we use DESTDIR
+
+1602993343
+andrewrk
+anyway I recognize the need for upstream zig to not invoke the compiler on the install step. do you know how to fix the cmake file?
+
+1602993375
+pixelherodev
+Switching the build system to not use CMake?
+
+1602993376
+pixelherodev
+:P
+
+1602993391
+pixelherodev
+My solution to cmake bugs is, typically, to ditch cmake
+
+1602993451
+daurnimator
+pixelherodev: though I agree with you; that's obviously not going to work here
+
+1602993464
+andrewrk
+that is an option, but it introduces problems as well such as how to build on windows
+
+1602993555
+pixelherodev
+My answer to that wouldn't be well liked either ;)
+
+1602993802
+andrewrk
+we could change to use add_custom_command but then it has the problem that it won't rebuild zig1.o when it should
+
+1602993841
+daurnimator
+>  Using DEPFILE with other generators than Ninja is an error.
+
+1602993843
+daurnimator
+:(
+
+1602993904
+daurnimator
+andrewrk: you mean it doesn't know about .zig files changing?
+
+1602993925
+andrewrk
+right
+
+1602993930
+daurnimator
+andrewrk: should be able to list every .zig file in DEPENDS ?
+
+1602993974
+andrewrk
+that might be an OK compromise. it would be everything in src/* and then also some files from the std lib
+
+1602993996
+daurnimator
+even if it was the entire std library.... so be it
+
+1602994008
+andrewrk
+yeah I see your point. alright, will have that done by the release
+
+1602994026
+andrewrk
+I'm still right about make install tho :P
+
+1602994371
+daurnimator
+andrewrk: need me to make an issue for it?
+
+1602995647
+andrewrk
+sure
+
+1602995863
+kandinski
+quick question, because I'm looking at some Zig code that doesn't compile under 0.6 and one of the syntax quirks it uses is the syntax c"foo" for a c-type string in calling a C library. What's the new c-string literal I should be using?
+
+1602995882
+pixelherodev
+There isn't one
+
+1602995885
+pixelherodev
+Just use a string normally
+
+1602995888
+pixelherodev
+Ah wait
+
+1602995896
+pixelherodev
+You mean from Zig to C, right?
+
+1602995908
+kandinski
+also, what's a good small project that I can crib from which is updated to 0.6?
+
+1602995911
+pixelherodev
+If you want to pass a literal, I think it'll "just work"
+
+1602995918
+kandinski
+pixelherodev: yes, calling a C library from Zig code.
+
+1602995925
+kandinski
+pixelherodev: thanks
+
+1602995925
+pixelherodev
+For slices, you want to use the pointer
+
+1602996119
+kandinski
+ta
+
+1603002981
+kandinski
+I'd appreciate some help with this:
+
+1603003059
+kandinski
+I'm on NixOS but I just went through Nathan Michaels' tutorial on wrapping libsodium and everything worked, so I tried to do the same thing with readline. My paste again:
+
+1603022874
+nyaayaya
+Hello!
+
+1603022875
+nyaayaya
+
+
+1603022875
+nyaayaya
+Is this feature WIP? Because on FreeBSD 12.1 it fails with "Address boundary error"/"Segmentation fault (core cumped)" [fish/bash] :(
+
+1603022952
+ikskuh
+the C backend is for stage2 only, i think pixelherodev can tell more about it
+
+1603023164
+nyaayaya
+oh, ookie. Got a bit confused when it showed up in `zig build-exe --help`. Thankie ^^
+
+1603023478
+ikskuh
+heh. still gonna be awesome as soon as it works :)
+
+1603050007
+ryuukk__
+got the triangle working, yay
+
+1603050035
+slice
+just wanted to pop in and say that i got windows cross compile working on the bigsur branch, although i had to edit start.zig a lil
+
+1603050048
+slice
+pretty amazing work
+
+1603050166
+ikskuh
+uh neat :)
+
+1603053041
+g-w1
+I am having trouble with @cImport("hpdf.h"); I want to use libharu but this happens:
+
+1603053251
+earnestly
+Does zig need to be told to look in /usr/include?
+
+1603053282
+g-w1
+i dont think
+
+1603053301
+g-w1
+huh it works!
+
+1603053303
+g-w1
+thanks
+
+1603053403
+ifreund
+It's always found stuff in /usr/include for me..
+
+1603053446
+ifreund
+you do need to link with the library though for the header to be found
+
+1603053496
+ikskuh
+earnestly: yes, you need to tell zig to search in /usr/include
+
+1603053517
+earnestly
+til
+
+1603053529
+ifreund
+ikskuh: I don't and river builds just fine
+
+1603053558
+ifreund
+it even finds wlroots headers in ~/.local/include by checkind LD_LIBRARY_PATH i assume
+
+1603053583
+ikskuh
+ifreund: do you link anything with linkSystemLibrary? ;)
+
+1603053586
+ifreund
+yes
+
+1603053595
+ikskuh
+this tells to link /usr/include ;)
+
+1603053619
+ikskuh
+if you don't, zig won't search /usr/include (for example linkSystemLibraryName)
+
+1603053634
+ifreund
+ah ok
+
+1603053779
+g-w1
+its fine. it works
+
+1603054854
+g-w1
+does anyone know of any good pdf libraries for zig (c will work ofc). libharu is unmaintained and seems like it is broken
+
+1603055135
+g-w1
+or ill just impliment the pdf standard. :) I have a very limited use case, so it may be easy. (im trying to made a pdf code reader with links to goto definition, etc)
+
+1603055349
+ifreund
+i'd probably just generate something simpler and pass it through pandoc
+
+1603055560
+g-w1
+yeah i did that but it took like 20 minutes. im thinking about something that will be really fast for 100,000's of lines codebases. i prefer reading stuff in pdf format so i would like an efficient way to convert it. this is nice
+
+1603055613
+g-w1
+this article seems like a good erference
+
+1603056800
+earnestly
+I mean, mupdf
+
+1603056805
+earnestly
+But "good", idk
+
+1603056873
+g-w1
+oh i forgot abt that. ill check it out
+
+1603057026
+g-w1
+it seems it is only for reading/viewing pdf files but thanks
+
+1603057080
+earnestly
+g-w1: No it's a library
+
+1603057105
+g-w1
+yeah. if i read it correctly the library is only for reading,not writing
+
+1603057138
+g-w1
+oh wait it can render files, thanks!
+
+1603057194
+earnestly
+
+
+1603057238
+earnestly
+But I don't know much about it, there's also poppler
+
+1603057346
+g-w1
+ok
+
+1603057351
+g-w1
+ill do some research
+
+1603063495
+ryuukk_
+
+
+1603065251
+ryuukk_
+looks like hastebin refuses to save my pastes, a new link in case it doesn't work for you
+

@@ -1,0 +1,372 @@
+1603238539
+kandinski
+I see
+
+1603238570
+kandinski
+so maybe the solution is to have an ._errorbuffer field and a var errormessage declaration with the slice
+
+1603238605
+kandinski
+I like this pattern
+
+1603238826
+jayschwa
+Personally, (without knowing more context), I would have a buffer field and a length field. Then create the slice only at the point where you need it (e.g. const slice = struct_val.buffer[0..struct_val.len]). If the slice is also a field on the struct, and an instance of the struct is copied, the copy's slice pointer will still be to the original
+
+1603238826
+jayschwa
+struct buffer, not the copy's buffer.
+
+1603238862
+kandinski
+jayschwa: so a pub struct function is what I need
+
+1603238874
+kandinski
+foo.errormessage()
+
+1603238930
+kandinski
+jayschwa: the context is that I'm wrapping pcre2 (for now, just enough to have a nice API for myself, I'm not writing a library for public consumption)
+
+1603238952
+kandinski
+so I'm doing a lot of passing out buffers to C for things like error messages
+
+1603238976
+kandinski
+but I want the consuming code to be clean and ziggish
+
+1603239023
+kandinski
+buffer/length are required because that's what pcre2.get_error_message(&buffer) returns: length as the return value and it writes the bytes in the buffer.
+
+1603239105
+kandinski
+given this context, would you say implementing it so it can be consumed as `message: []u8 = re_matcher.errormessage()` is the ziggish approach?
+
+1603239143
+kandinski
+(going forward, the solution would be this one:
+
+1603239313
+jayschwa
+Looks reasonable to me
+
+1603239365
+kandinski
+ta. I'm not only new to Zig but not a C programmer. I'm only learning enough C to understand memory models etc when interfacing. So I appreciate any advice not only about the technology, but about conventions and design.
+
+1603239383
+kandinski
+(in this case, I also learnt about the dangers of copying structs with slices as members)
+
+1603243234
+Ondingen
+I've hit a c-to-zig translation error and I'm trying to make a minimal example. How do I get all the defines set as they are when using @cImport(@cInclude(...))? Right now I'm doing: "zig translate-c -target i386-windows-msvc -Ipath/to/includes path/to/winnt.h" but the target doesn't seem to affect the defines.
+
+1603243699
+kandinski
+so I'm writing this C wrapper and would like to test whether I'm freeing all memory (using the c heap) in my deinit() function. Can anyone point me to a test that checks for that?
+
+1603244220
+ifreund
+valgrind would certainly let you check that, but you can't use it in a test case
+
+1603244500
+ifreund
+I think your best bet for that is using std.heap.GeneralPurposeAllocator with std.heap.c_allocator as the backing allocator
+
+1603244531
+ifreund
+the general purpose allocator will check for leaks
+
+1603244678
+ifreund
+Ondingen: there are no defines set by default. You can set any you like using @cDefine()
+
+1603244815
+Ondingen
+ifreund That can't be true, there are several defines that aren't set when doing translate-c, like
+
+1603244913
+Ondingen
+and when I manually set them, I get complaints about unknown type names for DWORD, BYTE etc.. Do I have to manually add all the dependencies to winnt.h for it to work?
+
+1603245168
+ifreund
+hmm, maybe you need to pass -lc ?
+
+1603245199
+Ondingen
+Does not make a difference
+
+1603245206
+kandinski
+ifreund: I'm not passing an allocator expliclty to pcre2 though. I'm just letting it allocate and then calling its own freeing functions.
+
+1603245225
+Ondingen
+For the target, i386-windows-msvc, I have to add all the includes manually anyway so that's what I'm doing for translate-c aswell
+
+1603245287
+kandinski
+example:             pcre2.pcre2_code_free_8(self.re_code);
+
+1603245319
+ifreund
+kandinski: there's no way for zig code to track allocation if the allocation is done directly through libc
+
+1603245333
+kandinski
+ifreund: I see, thanks
+
+1603245357
+ifreund
+valgrind is your best friend in that case :)
+
+1603245364
+kandinski
+I don't know C, but isn't there something in the current process that knows what the heap is and where it is and how much of it is used?
+
+1603245370
+Ondingen
+or address sanitizer if you need better performance
+
+1603245409
+kandinski
+ifreund: given that this is my first week writing in a c-level language ever, I think I'll put that in the "later" bin, thanks :)
+
+1603245424
+kandinski
+(for "valgrind" values of "that")
+
+1603245455
+Ondingen
+just run your executable with valgrind, there isn't much to learn
+
+1603245509
+ifreund
+yeah, if you're on linux it's really easy
+
+1603245521
+kandinski
+Ondingen: oh, I see, thanks!
+
+1603245528
+Ondingen
+and especially if you're just starting out, without valgrind or address sanitizer it's really hard to know if you're messing something up
+
+1603245551
+kandinski
+so `valgrind zig test ...`?
+
+1603245558
+Ondingen
+kandinski, with valgrind, you only get line numbers if you've compiled your executable with debug mode
+
+1603245567
+Ondingen
+no, valgrind on your final executable
+
+1603245580
+Ondingen
+I don't know if there's some better way to use it with zig
+
+1603245587
+kandinski
+Ondingen: no worries
+
+1603245599
+kandinski
+I'll figure how to do it in build.zig
+
+1603245612
+kandinski
+maybe build.zig --test or something like that can run valgrind?
+
+1603245702
+Ondingen
+There's exe.valgrind_support but I don't know what it does
+
+1603245731
+kandinski
+I'll look into it later, thanks. For now, well, we do clean up on exit, and I'm not allocating all that much so far.
+
+1603245751
+Ondingen
+You could test it with valgrind zig test ... I think but there might be leaks in zig so you get false positives
+
+1603245761
+kandinski
+In fact, I think I'm only allocating the compiled regex, because the matches come back as pairs of pointers or pointer, length tuples.
+
+1603245785
+kandinski
+so the question is more academic than a pressing need.
+
+1603245797
+Ondingen
+:)
+
+1603245817
+kandinski
+I'm making note for a future requirement. Thanks for the explanation!
+
+1603245822
+ifreund
+kandinski: you may want to give fengb's talk a watch to get up to speed on allocators:
+
+1603245866
+kandinski
+ifreund: I will!
+
+1603245907
+kandinski
+ifreund: as a learning project I'm writing a toy lisp via
+
+1603245984
+ifreund
+cool :)
+
+1603302608
+janiczek
+Hi folks! I'm trying to init a 2D array (50 rows, 6 columns) but I wasn't able to generalize from the examples in the documentation
+
+1603302617
+janiczek
+the best I was able to do was
+
+1603302631
+janiczek
+const lights = [50][6]bool{[_]bool{false}
+
+1603302659
+janiczek
+but the compiler complains with "expected [50][6]..., found [1][6]..."
+
+1603302693
+ifreund
+const lights = [_][6]bool{[_]bool{false}
+
+1603302699
+ifreund
+this will do what you want
+
+1603302727
+ifreund
+same as: const lights = [1][6]bool{[1]bool{false}
+
+1603302733
+janiczek
+so the trick is to only let it infer (with the underscore) the one that I repeat with ** ?
+
+1603302767
+ifreund
+you want to repeat a length 1 array 50 times, not a length 50 array 50 times
+
+1603302810
+ifreund
+that make sense?
+
+1603302838
+janiczek
+I guess so. I was guessing wrong what the [1][6] means at the beginning of the array literal
+
+1603302848
+janiczek
+ie. I thought it's the length after repeating
+
+1603302861
+janiczek
+but it's length before repeating, then it's repeated, and the final length is implicit?
+
+1603302868
+g-w1
+yes
+
+1603302892
+janiczek
+great, thanks folks!
+
+1603302893
+g-w1
+const lights: [50][6];
+
+1603302909
+janiczek
+^ false = default element if I don't initialize explicitly?
+
+1603302920
+g-w1
+no
+
+1603302924
+g-w1
+im just telling you the type
+
+1603302926
+janiczek
+oh right
+
+1603302934
+janiczek
+I skipped over the : instead of =
+
+1603303953
+justin_smith
+similar question: for an API, I want a struct to hold a slice of (variable) N slices of f64, so I declared "outputs: ?[][]f64", and tried to initialize with ".outputs = &[1][]f64{undefined}" - meaning a slice of 1, not yet initialized with the slice it will hold
+
+1603303978
+justin_smith
+I get "expected type '[][]f64', found *const [1][]f64"
+
+1603304003
+ifreund
+that's an issue with constness
+
+1603304021
+ifreund
+array literals are always const but your fuction expects a mutable slice
+
+1603304031
+justin_smith
+ahh, so the number is a red herring, OK
+
+1603304046
+justin_smith
+then I need to initialize this differently, thanks
+
+1603304054
+ifreund
+no problem
+
+1603304133
+ifreund
+to give more detail: *const [1][]f64 is a constant pointer to an array of one f64 slice. A pointer to an array may be coerced to a slice because the length of the array is comptime known
+
+1603304155
+ifreund
+but only if the constness of the array agrees with the constness of the slice
+
+1603304221
+justin_smith
+that makes sense - the idea is that each struct instance will know its expected number of output slices, but I want a single struct that can hold each
+
+1603304238
+justin_smith
+err, that can hold any of them
+
+1603304260
+ifreund
+if the number is comptime known you could make it generic
+
+1603304295
+justin_smith
+that's a good point, it might be time for me to learn generics
+
+1603304326
+ifreund
+not much to learn really, they're just functions that take some comptime parameters and return a type
+

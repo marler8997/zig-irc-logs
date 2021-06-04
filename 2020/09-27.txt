@@ -1,0 +1,380 @@
+1601165604
+fengb
+Yeah I agreed with him until halfway through
+
+1601169901
+andrewrk
+I have to say I'm not a fan of all these weird log levels
+
+1601169955
+andrewrk
+I think debug, info, warn, error, and fatal make sense
+
+1601169977
+andrewrk
+I'll make a proposal
+
+1601171160
+pixelherodev
+Why
+
+1601171914
+torque
+I remember someone linking a list of "standard" log levels that other logging libraries use in here
+
+1601172560
+andrewrk
+it corresponds to some legacy system thing
+
+1601172582
+andrewrk
+`man syslog`
+
+1601173027
+torque
+right
+
+1601180615
+andrewrk
+I'm in the final stretch for #6250
+
+1601180639
+andrewrk
+"andrewrk wants to merge 120 commits into master" @_@
+
+1601181738
+pixelherodev
+Nice
+
+1601181743
+pixelherodev
+I guess my vacation is almost over :P
+
+1601200258
+cxzuk
+Hi all, wondering if someone can point me in the right direction. Id like to know if theres something equivalent to templated functions in zig?
+
+1601200311
+earnestly
+Generics?
+
+1601200334
+andrewrk
+cxzuk,
+
+1601200349
+andrewrk
+maybe even
+
+1601200390
+andrewrk
+also
+
+1601200460
+cxzuk
+Yes that looks likely, I think Zig doesn't support function overloading? Id like to make a DSL that takes either a function pointer, a struct, or an enum as its generic component. Is that doable?
+
+1601200555
+andrewrk
+
+
+1601200660
+cxzuk
+Thats great, thank you! have a good sunday
+
+1601209043
+sealmove
+Hi, I am new to Zig. I downloaded v0.6.0 binary and see that the compiler is 147.5 MB! What's going on? Does it ship with the whole LLVM statically compiled in it?
+
+1601209193
+ifreund
+yes
+
+1601209277
+sealmove
+I have LLVM 10 installed on my system. Which .tar file should I use to leverage my existing LLVM installation? zig-0.6.0.tar.xz? zig-bootstrap-0.6.0.tar.xz? or some other?
+
+1601209312
+ifreund
+all the tar files from the website are statically linked for portability
+
+1601209337
+ifreund
+if you want a dynamically linked zig you need to get it from your distro's repos or compile yourself
+
+1601209450
+sealmove
+oh ok thanks
+
+1601209498
+ifreund
+no problem, have fun playing with zig!
+
+1601209761
+sealmove
+thanks :)
+
+1601222842
+justin_smith
+andrewrk: that binding if suggestion the other day hurt my brain a bit, but it works, here's the most "puzzling" part of my simplifying test (which passes)
+
+1601222870
+justin_smith
+in both branches box.prize is equal to null (in thousands of goes both branches are hit, and both asserts succeed)
+
+1601222950
+justin_smith
+I needed some carefully placed randomized sleeps to ensure that the race branch is always hit though (but even with the race cmpxchgWeak does its job, of course, keeping the final tally for prizes_claimed correct)
+
+1601223024
+justin_smith
+if that |_| was |foo| I could assert foo was null as well, but there's really no point in testing the failure branch
+
+1601223059
+justin_smith
+anyway, your suggestion works and clearly I have some things to learn about binding inside if
+
+1601223753
+ifreund
+if (foo) |f| { // if the "outermost" optional is non-null, unwrap and set f to the contained value
+
+1601223806
+ifreund
+nested optionals are a pain to work with though, but are luckily not too common
+
+1601223858
+ifreund
+the "contained value" of f could be null if foo is e.g. a ??u32
+
+1601223909
+pixelherodev
+Hmm.. would a std.meta.noneNull function, which checks a N-level optional recursively and returns the innermost value or null, be useful?
+
+1601223927
+pixelherodev
+e.g. with ???a you could do `if (std.meta.noneNull(a)) |b| {} else {}`
+
+1601223951
+ifreund
+I really don't think we sould encourage using nested optionals
+
+1601223984
+ifreund
+I've never seen a valid use case for ???T, and ??T is already rare enough
+
+1601224168
+pixelherodev
+Hmm... what valid use cases are there for ??T
+
+1601224169
+pixelherodev
+?
+
+1601224174
+justin_smith
+ifreund: I wouldn't be using a nested optional, but cmpxchgWeak is optional (null on success, old value on failure), and I need to use it on an optional value
+
+1601224180
+justin_smith
+pixelherodev: see above
+
+1601224202
+justin_smith
+if it was up to me cmpxchg{Strong|Weak} would return true/false instead of being an optional
+
+1601224207
+ifreund
+justin_smith: yes, this is one of the valid use cases where ??T comes up
+
+1601224245
+ifreund
+and what, use an out argument for the old value?
+
+1601224254
+ifreund
+i think the current state is fine
+
+1601224275
+justin_smith
+ifreund: it's already stale by the time you do anything useful with it, just read the thing again
+
+1601224320
+justin_smith
+perhaps there's subtle techniques where race conditions are avoided if you only have the one transaction rather than a write followed by read?
+
+1601224364
+justin_smith
+if I'm in a retry loop, reading the pointer again instead of using the failure value is more likely to succeed
+
+1601224375
+justin_smith
+does it slow things down in the global impact?
+
+1601224387
+justin_smith
+or maybe that assumption is wrong...
+
+1601224466
+justin_smith
+ifreund: my understanding is that on the hardware level, the cmpxchg means that the "old value" is propagated fully to your thread, and your next read is guaranteed to be at least that up to date (the thing being prevented here is chache being out of sync between CPUs)
+
+1601224490
+justin_smith
+so the very fact you did cmpxchg is enough to get the result you want, you don't need to return the value
+
+1601224517
+justin_smith
+I welcome correction if that's a misunderstanding
+
+1601224570
+ifreund
+well, the value could be modified before you get the chance to read it after the cmpxchg
+
+1601224617
+ifreund
+I don't have a use-case in mind, but there's no way to prevent that race if the old value is not returned by the atomic opreation
+
+1601224774
+justin_smith
+ifreund: but the value could also change after the cmpxchg in all the same cases
+
+1601224803
+justin_smith
+*would - in all cases where your read after the cmpxchg is invalid, the return value of the cmpxchg was invalid at the same point of execution
+
+1601224833
+justin_smith
+ifreund: returning the old value doesn't prevent any race though, it's the cmpxchg which asserts the old value which does the race prevention
+
+1601224855
+justin_smith
+what it
+
+1601224960
+ifreund
+like I said, I don't have a use-case in mind but the fact that you are losing information that cannot otherwise be obtained without racing
+
+1601224976
+ifreund
+i agree that this information probably isn't useful though, so maybe it doesn't matter
+
+1601225495
+justin_smith
+ifreund: you are losing no information, the cmpxchg on the hardware level already guarantees that the value is synchronized at that point in time, my test pasted above would fail if this weren't true
+
+1601225535
+justin_smith
+normal usage of the value from memory provides the same information that the cmpxchg does
+
+1601225557
+justin_smith
+(after that synchronization point occurs- that sync is what cmpxchg offers, not information)
+
+1601225624
+justin_smith
+that said, it's a minor issue, it just requires counterintuitive unboxing of an optional, and a zig user should understand optionals (I'm closer to that now...)
+
+1601225788
+justin_smith
+oh, that was sloppy - cmpxchg does provide the important informatin of success / fail, my minor gripe is that that could simply be a boolean
+
+1601225872
+ifreund
+what stops you from getting pre-empted directly after the cmpxchg and before the normal read by a thread that modifies the value?
+
+1601225916
+justin_smith
+ifreund: what stops that thread from changing the value after you've already cached the return of "old value" - it's exactly the same situation, you deal with it the same way
+
+1601225950
+justin_smith
+if anything having one less operation makes the existing race (if any) harder to see in testing
+
+1601225956
+ifreund
+no, because you don't know what the old value was
+
+1601225972
+ifreund
+it may not matter what it was, but this is information you are losing
+
+1601225974
+justin_smith
+ifreund: you read it on failure from the object, it's been synchronized to your thread
+
+1601225986
+justin_smith
+you get the same result the cmpxchg as currently written provides
+
+1601225989
+justin_smith
+my test shows that
+
+1601226000
+ifreund
+I don't think thats guarenteed
+
+1601226057
+ifreund
+in practice it may happen 99% or even 100% of the time, but I'm pretty sure there is no guarenteed atomicity there
+
+1601226127
+justin_smith
+it doesn't need atomicity - all I'm saying is your use of the memory location itself is at least as up to date as the return value of the cmpxchg was, relying on anything other than that means you already have a bug
+
+1601226176
+ifreund
+I agree that it's "at least" as up to date, but it could have been overwritten since the cmpxchg
+
+1601226176
+justin_smith
+the usage of that primitive means that you have a single known synchronization point, returning true/false vs. optional doesn't change the fact that this is your last sync point
+
+1601226202
+justin_smith
+ifreund: and that failure case applies equally to the return value of cmpxchg itself
+
+1601226216
+justin_smith
+any failure of reading the var is also a failure of using that value
+
+1601226240
+justin_smith
+both are suspect, but known correct as of a specific known op, that's enough
+
+1601226266
+justin_smith
+(though one is allowed to be slightly fresher.. maybe there's a way that could cause a but)
+
+1601226269
+justin_smith
+*bug
+
+1601226330
+ifreund
+that's what I'm saying, splitting the read out of the cmpxchg makes the whole thing non-atomic
+
+1601226374
+ifreund
+yes the value return may have been changed since the cmpxchng, but it
+
+1601226401
+ifreund
+if you read after then you can't know if that's the value you compared with or if it's fresher
+
+1601226466
+ifreund
+I don't know if this actually matters in practice, but I think you are losing some information if cmpxchg doesn't return the old value
+
+1601226567
+justin_smith
+ifreund: oh, OK - that's what I lost, the case where knowing the older value that's no longer fresh would be potentially useful
+
+1601226571
+justin_smith
+thanks
+
+1601226686
+ifreund
+yeah like I said I can't think of any use case for this information, but it is information that would be lost :P
+

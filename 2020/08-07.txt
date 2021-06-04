@@ -1,0 +1,1032 @@
+1596759411
+blinghound
+I've got a tagged union of 20+ ui widget types, they all share common functions, and at the moment I've got a seperate switch statement for every common function, switching on the union tag, to then call the type specific function with the same name
+
+1596759435
+blinghound
+is there a pattern I can use to avoid having to write a huge switch statement for every common function?
+
+1596759488
+blinghound
+or some comptime magic to automatically write it?
+
+1596760717
+andrewrk
+blinghound, alexnask[m] is the wizard of this particular use case
+
+1596761543
+waleee-cl
+wasn't it him that used code generation with python or something along those lines?
+
+1596761721
+pfg_
+blinghound,
+
+1596761765
+pfg_
+example: `fn apply(value: Action, app: *App) void {   return help.unionCallThis("apply", value, .{app});   }`
+
+1596761799
+pfg_
+also here are the tests which have examples for everything
+
+1596761814
+pfg_
+oh you left rip
+
+1596766704
+tsujp
+so there's this thing the ruby community uses a lot apparently, called jemalloc
+
+1596766729
+tsujp
+Also apparently (as I just discovered both yesterday and havent touched ruby since ~2014) it allocates non-fragmented heap memory
+
+1596766743
+tsujp
+malloc can allocate fragmented heap memory, jemalloc cannot*
+
+1596766753
+tsujp
+Does zig use this or something similar?
+
+1596766764
+daurnimator
+we don't currently have a general purpose allocator
+
+1596766813
+tsujp
+so a general purpose allocator would be one specific to zig as opposed to (what I assume) is a syscall to the kernel to allocate memory?
+
+1596766820
+tsujp
+which is what malloc does (the syscall)?
+
+1596766832
+daurnimator
+no
+
+1596766855
+daurnimator
+tsujp: see
+
+1596766883
+tsujp
+Ah yes I forgot about Allocator
+
+1596767134
+gruebite
+what would be idiomatic zig? if i wanted to provide an idiomatic wrapper of a C library, for instance
+
+1596767176
+gruebite
+i feel like i'm picking up a lot of it
+
+1596767198
+daurnimator
+gruebite: os/windows.zig has good examples of zigifying C functions/libraries
+
+1596767273
+daurnimator
+in general, change any ptr+length things to take slices + create an error set and use the error reporting mechanism of the library
+
+1596767312
+gruebite
+what about structures?
+
+1596767326
+gruebite
+or the way it's laid out
+
+1596767355
+daurnimator
+you need to match those with `extern struct`. though generally you would just get this from @cImport ing your library
+
+1596767405
+daurnimator
+oh; the other thing I do sometimes is modify integer parameters to be extensible enums
+
+1596767507
+gruebite
+entensible?
+
+1596767516
+gruebite
+extensible*
+
+1596767554
+daurnimator
+gruebite: yep. `extern enum (i32) { FOO = 1, BAR = 2, _ }`
+
+1596767582
+daurnimator
+gruebite: that is an i32 with 2 special values; `_` indicates that there are potentially other unknown values
+
+1596767602
+gruebite
+ooo, i didn't know the _ syntax
+
+1596767623
+daurnimator
+
+
+1596767670
+gruebite
+okay, so right now i have a color module and to create an rgb i do: `thelib.color.rgb(255, 255, 0)`
+
+1596767717
+gruebite
+but i also see: `thelib.color.Rgb.init(255, 255, 0)` but to me that looks less pretty
+
+1596767750
+gruebite
+i imagine init when there is an associated deinit that needs to be called
+
+1596767761
+gruebite
+but these conventions probably haven't been established?
+
+1596767944
+daurnimator
+gruebite: yeah generally an .init() would have a .deinit()
+
+1596767972
+daurnimator
+gruebite: you might just do: `thelib.color.Rgb { .R = 255, .G = 255, .B = 255 }`
+
+1596768002
+gruebite
+yeah probably that
+
+1596768764
+gruebite
+trying to figure out how to structure callbacks. an interface / trait would work nicely here but...
+
+1596768876
+daurnimator
+misc note on your color struct: avoid coding in an assumption of 8-bit colour. 10-bit colour is getting common now.....
+
+1596768972
+ronsor
+may as well go straight for RGBA32
+
+1596769013
+daurnimator
+I was going to say might as well go to 48-bit colour (16 bits per channel)
+
+1596769034
+daurnimator
+or use floating point...
+
+1596769188
+ronsor
+floating point is probably best
+
+1596769194
+daurnimator
+EXT_color_buffer_half_float should be pretty well supported now
+
+1596769442
+gruebite
+floating point it is
+
+1596769457
+gruebite
+also
+
+1596769459
+gruebite
+for callbacks
+
+1596769504
+gruebite
+i do not think sdl supports 10-bit color
+
+1596769774
+gruebite
+i used associated types
+
+1596770124
+shakesoda
+i usually do full floats for my color structs these days until whatever the latest point possible is before a conversion is needed
+
+1596770160
+shakesoda
+half floats are usually plenty for pixels though
+
+1596770285
+gruebite
+may as well just combine it with a vec4
+
+1596771028
+shakesoda
+i usually store them in vec4 unless i have a reason to do otherwise (color spaces)
+
+1596771643
+gruebite
+thoughts on that method for callbacks?
+
+1596771668
+gruebite
+my other idea is to just have global variables the user can set: `lib.event.update = myUpdate`
+
+1596773937
+gruebite
+how to organize package private functions on a struct? is an underscore pretty common for "don't touch this"
+
+1596774511
+leeward
+Just don't mark them pub
+
+1596774672
+leeward
+Struct methods not marked pub can't be referenced from outside the file in which they're declared.
+
+1596775240
+gruebite
+right, that's what i mean. another internal file wanting access
+
+1596775282
+gruebite
+probably means too granular separation
+
+1596807317
+blinghound
+@pfg_ I saw your replies to my static dispatch question on the logs
+
+1596807320
+blinghound
+thanks for that!
+
+1596819396
+danyspin97
+myvar = functionThatThrows() catch |err| { ... };
+
+1596819403
+danyspin97
+how can I set myvar inside the catch ?
+
+1596819456
+ifreund
+myvar = foo() catch |e| blk: { break :blk 42; };
+
+1596819469
+ifreund
+this is an educated guess, I didn't actually try it
+
+1596819529
+danyspin97
+ifreund: it works, thanks!
+
+1596819563
+ifreund
+no problem
+
+1596819587
+danyspin97
+how can I copy a struct from stack to heap?
+
+1596819608
+danyspin97
+I have Struct but I need *Struct
+
+1596819618
+ifreund
+const ptr = allocator.create(Foo);
+
+1596819625
+ifreund
+ptr.* = foo;
+
+1596819650
+ifreund
+you can also just take the address of your struct on the stack, but be careful with the lifetime
+
+1596819652
+leeward
+
+
+1596819698
+leeward
+But it does.
+
+1596819741
+ifreund
+leeward: My ideal would be allowing the "copy" with = whenever that copy can be optimized away with result location or whatever
+
+1596819748
+fengb
+*retort that all assignment is copying so it's not really implicit
+
+1596819773
+ifreund
+and if it can't be then require some std.mem.foo or a builtin
+
+1596819799
+leeward
+ifreund: Yeah, that's a fair compromise, but a little harder to reason about.
+
+1596819838
+danyspin97
+ifreund: yea, that's why I didn't use &
+
+1596819861
+leeward
+fengb: It's true that it's not really implicit, but it is a common footgun: I know I've shot myself with it.
+
+1596819910
+ifreund
+leeward: I agree, it's inconsistent
+
+1596819913
+fengb
+New operator for memcpy?
+
+1596819922
+ifreund
+:=.
+
+1596819929
+fengb
+lol
+
+1596819934
+fengb
+#5076 flashbacks
+
+1596819940
+ifreund
+exactly :D
+
+1596819980
+ifreund
+man I am slowly making progress on this wasm backend
+
+1596820001
+ifreund
+hopefully I'll be able to put up a PR this weekend
+
+1596820136
+danyspin97
+hurray, just finished benice :)
+
+1596820220
+ifreund
+is any software ever truely finished? :P
+
+1596820264
+danyspin97
+at least, 0.1 is xD
+
+1596820285
+fengb
+:o
+
+1596820294
+fengb
+That's so much more progress than I pump out
+
+1596820322
+danyspin97
+i still need to understand async in zig
+
+1596820339
+danyspin97
+that could be a nice improvements
+
+1596820344
+ifreund
+first release is definitely a good milestone
+
+1596820371
+ifreund
+still not quite there with river, though I've been dogfooding it for over a month now
+
+1596823631
+danyspin97
+and just by adding -Drelease-fast, the program broke xD
+
+1596823856
+leeward
+Does it still work in -Drelease-safe?
+
+1596824150
+danyspin97
+leeward: my bad, the problem is not related to -Drelease-fast
+
+1596825085
+leeward
+Well, that's probably a good thing.
+
+1596825097
+leeward
+Optimizer bugs are hard to track down.
+
+1596825273
+gruebite
+what does this mean? expected type '(bound fn(i32, i32) anyerror!void)', found 'fn(i32, i32) anyerror!void'
+
+1596825292
+gruebite
+i'm assuming my default function pointer being assigned is determining the anyerror type and thus can't be reassigned
+
+1596825450
+ifreund
+could you paste the code snippet somewhere?
+
+1596825502
+Nypsie[m]
+I assume first you assign it something like var myFunc = struct.func  and later you try to reassign it doing myFunc = someFunc
+
+1596825515
+Nypsie[m]
+In the former, the first function is a bound function
+
+1596825526
+Nypsie[m]
+* In the former, the function is a bound function
+
+1596825730
+leeward
+Is "bound function" defined anywhere in the docs?
+
+1596825771
+gruebite
+yeah, after simplifying it made more sense
+
+1596825773
+gruebite
+and that was it
+
+1596825785
+Nypsie[m]
+I'm probably wrong here but I believe all non-global functions are bound functions.
+
+1596825796
+Nypsie[m]
+i.e. they're bound to a struct
+
+1596825804
+leeward
+Aren't files structs?
+
+1596825824
+fengb
+Only things accessed as methods are bound
+
+1596825824
+Nypsie[m]
+Yeah true actually
+
+1596825836
+Nypsie[m]
+Ah there we go, Fengb to the rescue :P
+
+1596825846
+leeward
+So it's about how they're called?
+
+1596825859
+ifreund
+there is one reference in the docs, grep for BoundFn
+
+1596825863
+fengb
+And it's kinda deceptive because they aren't really bound in the FP sense >_>
+
+1596825886
+ifreund
+not a very useful reference though :D
+
+1596825900
+leeward
+And...BoundFn appears in a list saying @Type is unavailable for it.
+
+1596825905
+Nypsie[m]
+Aaah, so if you'd do myFunc(struct, 5) instead of struct.myFunc(5) it's no longer considered a bound function?
+
+1596825907
+leeward
+Definitely doesn't count as being defined.
+
+1596826308
+gruebite
+i was thinking something akin to interfaces would be just checking if variables exist. if we had lua function call syntax for non delcaration functions like foo:myfunc() it could work :P
+
+1596826363
+gruebite
+there's likely way better ways though
+
+1596826446
+ifreund
+@hasDecl()
+
+1596826887
+gruebite
+runtime i'm thinking
+
+1596829551
+ifreund
+andrewrk: I'd like to store some wasm-specific info in Decl similar to the already present link/fn_link fields
+
+1596829590
+ifreund
+should a make a union over Elf and Wasm specific stuff or do we need to support both at the same time?
+
+1596829635
+andrewrk
+ifreund, here's an idea for that: make it an untagged union with a field for ELF and a field for Wasm
+
+1596829667
+andrewrk
+so the "tag" is implied by the target object format rather than stored redundantly in the union (although in zig safe modes will have a hidden safety field)
+
+1596829736
+ifreund
+andrewrk: sounds good to me, thanks!
+
+1596829789
+ifreund
+hmm, might to a quick PR doing only that to make the upcoming wasm PR less noisy
+
+1596829797
+andrewrk
+makes sense to me
+
+1596829831
+andrewrk
+the only other consideration here is if the amount of data needing to be stored is significantly different than for ELF, we can get more creative with the memory layout so that one object format does not cause the other one to have to pay the memory usage cost per Decl
+
+1596829847
+andrewrk
+if they're nearly the same amount of memory, then probably an untagged union is simplest
+
+1596829891
+ifreund
+Not entirely sure how much I'll need for wasm yet, shouldn't be more than what's already there for elf though I think
+
+1596829894
+andrewrk
+anyway the idea would be that when allocating a Decl, it would allocate a variable amount of memory depending on the object format, so accessing the "link" field would be trailing the rest of the Decl and of a size that is implied by the object format of the compilation
+
+1596829914
+andrewrk
+but yeah I think starting with untagged union is a good start
+
+1596831223
+andrewrk
+I have a fun (standard library related) surprise for everyone today :)
+
+1596831260
+Nypsie[m]
+Hit it :)
+
+1596831277
+ifreund
+ArrayList -> Vec?
+
+1596831548
+andrewrk
+gotta get it working on windows first
+
+1596831989
+Nypsie[m]
+Such a tease haha :P
+
+1596833233
+ifreund
+man, the stage2 tests run so damn fast
+
+1596833401
+andrewrk
+yeah all you have to do is wait for stage1 to build the test harness, haha
+
+1596833440
+andrewrk
+it's been a long time coming. feels bad to promise fast compiler speed and then not deliver for a long time
+
+1596833485
+andrewrk
+I have a bunch of experiments I want to do to make stage2 even faster, but I want to set up performance tracking benchmarks first
+
+1596833502
+andrewrk
+that was one of the main motivations of ziglang/gotta-go-fast
+
+1596833846
+ifreund
+Yeah, also would be good to bench more realistic programs once it gains enough features
+
+1596834067
+andrewrk
+agreed
+
+1596834125
+andrewrk
+still some big design decisions to solve too. each one represents a potential compromise of perf, and therefore will have to be very carefully considered. possibly even with some language modifications, if it means a fundamental difference in the achievable compilation speed
+
+1596834158
+andrewrk
+affecting the "best theoretical compilation speed" is a valid reason to make language changes, in my opinion
+
+1596834191
+andrewrk
+there are things that inherently affect the best theoretical perf of a compiler, regardless of any particular implementation's details
+
+1596834235
+andrewrk
+for example I think swift is doomed to be slow for some kinds of things because it has to do some advanced multi-variable equation solving to figure out the type system
+
+1596834278
+andrewrk
+which is kind of ironic when you consider the name of the language
+
+1596834312
+ifreund
+heh, I think I saw a blog post on that recently
+
+1596834386
+andrewrk
+zig is also doomed to be slow if you use @setEvalBranchQuota(9999999) and then make a giant comptime while loop. but that's a bit more intentional by the programmer
+
+1596834413
+andrewrk
+also, incremental compilation goes a long way to mitigate this
+
+1596834430
+pixelherodev
+
+
+1596834443
+pixelherodev
+Or even just static loop detection
+
+1596834447
+leeward
+Do you care if Zig is slow when building release-*?
+
+1596834458
+pixelherodev
+e.g. `comptime while (i < 10000000) : (i += 1) {}`
+
+1596834461
+leeward
+Ooh, ooh, solve the halting problem for comptime.
+
+1596834483
+pixelherodev
+We could discard empty body loops, for instance
+
+1596834504
+andrewrk
+leeward, not nearly as much. clearly there is still a limit on how slow it can be before it compromises the usefulness of the build mode, but it is allowed to be several orders of magnitude slower
+
+1596834542
+andrewrk
+I think our rule of thumb for debug safety checks is that they are allowed to cause 100x slowdowns, but not more than that
+
+1596834564
+ifreund
+incremental compilation also doesn't make sense for release builds
+
+1596834575
+leeward
+^^
+
+1596834579
+andrewrk
+agreed
+
+1596834598
+pixelherodev
+Disagreeed
+
+1596834601
+pixelherodev
+disagreed*
+
+1596834605
+pixelherodev
+There's one valid use I can think of
+
+1596834606
+leeward
+It's not like the parse tree takes a lot of time to generate.
+
+1596834619
+pixelherodev
+If you want to optimize a hot-loop, for instance
+
+1596834629
+pixelherodev
+It's useful to be able to test performance changes on-demand
+
+1596834660
+ifreund
+i don't think you can draw any meaningful conclusions from an incrementally compiled binary
+
+1596834664
+pixelherodev
+In other words, there's a situation in which you could reasonably use release builds while developing
+
+1596834679
+pixelherodev
+ifreund: not with the current backends, sure
+
+1596834681
+ifreund
+the codegen is too different and introduces a lot of overhead/bloat
+
+1596834725
+leeward
+It's totally true that release builds can be useful while developing, and if it were practical to do incremental release builds it would make sense. But it's not, so it's not worth the tradeoff.
+
+1596834744
+pixelherodev
+Agreed, yeah
+
+1596834760
+pixelherodev
+Incremental release builds would be a whole different ballpark, and aren't worth the effort
+
+1596834783
+pixelherodev
+Might be useful to allow for a binary which an adjusted _start, though
+
+1596834799
+pixelherodev
+e.g. have it run a single specified function and then exit
+
+1596834824
+pixelherodev
+That would be a small frontend tweak instead of requiring a full additional backend
+
+1596834848
+leeward
+May as well build it in userland.
+
+1596835381
+pixelherodev
+That's what I was thinking, actually - it'd be a build.zig + start.zig integration, probably
+
+1596835389
+pixelherodev
+`zig build -Drun_function=foo` for instance
+
+1596835401
+pixelherodev
+Could be a distinct build step from the normal one
+
+1596835774
+andrewrk
+leeward, in the traces I've been doing so far, creating the parse tree is something like 33% of the total compilation time
+
+1596835833
+andrewrk
+the way zig models optimizing a hot loop is that you would compile in debug mode, but use @optimizeFor(.release_fast) in the hot loop
+
+1596835880
+andrewrk
+it's also planned to be able to pick .release_fast for packages other than the main application, and .debug for the main application. so you'd get incremental compilation but with release builds for your dependencies
+
+1596835950
+ifreund
+I can't wait
+
+1596835966
+gruebite
+best way to represent an enumeration of bitflags?
+
+1596835968
+leeward
+33% either means Zig takes a lot of time to parse or it's compiling really fast.
+
+1596835979
+gruebite
+i want to put them in an enum. perhaps a namespace struct instead?
+
+1596836016
+ifreund
+your suggestion on the PR I just opened makes sense, the only thing I'm struggling with is a more generic name than TextBlock which makes 0 sense for wasm
+
+1596836075
+ifreund
+could just do something non-descriptive like LinkDeclData, but that's also flawed
+
+1596836081
+leeward
+Per-block (and per-package) build mode sounds useful, but aren't packages source? How do you not rebuild the release-fast bits every time?
+
+1596836134
+ifreund
+magic I guess :P
+
+1596836136
+andrewrk
+leeward, it could be both, meaning there is potential for even more speed :D
+
+1596836182
+andrewrk
+gruebite, an enum isn't the best way to model bit flags. it would be more a packed struct, or better yet
+
+1596836201
+andrewrk
+ifreund, how about CodeBlock
+
+1596836237
+gruebite
+i like align(0)
+
+1596836245
+gruebite
+but packed struct of u1 would be good?
+
+1596836273
+andrewrk
+leeward, the beautiful thing about leaving memory layout of most types and calling convention of most functions unspecified is that the compiler has the power to choose arbitrary conventions in order to facilitate exactly this use case :)
+
+1596836355
+andrewrk
+so the compiler identifies the boundaries between debug and optimized builds, and picks an arbitrary (but consistent) ABI for itself to use
+
+1596836368
+andrewrk
+which is how incremental compilation works anyway
+
+1596837337
+fengb
+packed struct of u1 works great if you make sure the size is to power of two. Otherwise you'll run into some nasty packed bugs
+
+1596837403
+ifreund
+do you even need to make it packed?
+
+1596837420
+fengb
+Yeah, otherwise u1 take up at least 1 byte
+
+1596837447
+andrewrk
+ifreund, align(0) would mean it doesn't have to be packed
+
+1596837460
+ifreund
+ah, I see
+
+1596837490
+gruebite
+bitflags are used in boolean expressions. doing packed struct { flag1: u1 } means i have to do: str.flag1 == 1
+
+1596837508
+gruebite
+or is u1 a special case and i can use it in boolean expressions? :P
+
+1596837518
+fengb
+You can do packed bool
+
+1596837529
+fengb
+Also a one bit
+
+1596837531
+gruebite
+packed bool is u1?
+
+1596837534
+fengb
+Yep
+
+1596837536
+gruebite
+nice
+
+1596838404
+andrewrk
+if you make all the fields have default 0/false values you can then only set the flags you want
+
+1596838569
+gruebite
+yeah
+
+1596838602
+gruebite
+can i print unicode (u32) characters?
+
+1596838630
+gruebite
+{c} is ascii which won't accept u32
+
+1596838703
+gruebite
+looking std.unicode right now
+
+1596838738
+gruebite
+and a way to uppcase unicode :D
+
+1596839173
+andrewrk
+unicode-aware upcase/downcase is often an underestimated challeng. it depends on human culture, which is constantly changing
+
+1596839516
+companion_cube
+aren't there tables for that? normalization and all?
+
+1596839780
+andrewrk
+yeah but you have to get them from somewhere, and they have to be maintained with human labor. it's a dependency
+
+1596839812
+fengb
+Can we have an async frame resumed by mechanical turk 🤔
+
+1596839817
+andrewrk
+no problem if that's what you need. but it's good to double check that you want to add a dependency on that
+
+1596842638
+andrewrk
+ifreund, #5997 looks good. if you tell me you tested it locally I'll merge it before waiting for CI
+
+1596842653
+andrewrk
+`./zig build test-stage2` should suffice
+
+1596842697
+ifreund
+All 1 tests passed.
+
+1596842720
+ifreund
+./build/zig build test-stage2  0.04s user 0.02s system 81% cpu 0.065 total
+
+1596842870
+gruebite
+what's zig's solution to compile time library configuration? like: #define FOO_MAX 2 #ifndef FOO_MAX #define FOO_MAX DEFAULT #endif
+
+1596842925
+ifreund
+well, you have a lot of freedom really
+
+1596842951
+ifreund
+you can check for values set in the root soruce file using @hasDecl()
+
+1596842984
+ifreund
+you can also pass in options through the build system using build_options
+
+1596843022
+gruebite
+nice, and branch on that
+
+1596843510
+andrewrk
+yeah just be careful with addBuildOptions, I think the implementation needs to be taught about a few more types
+
+1596843518
+andrewrk
+I fixed strings recently
+
+1596843553
+ifreund
+I've only ever used bools :D
+
+1596843835
+gruebite
+there should be an xor keyword
+
+1596843843
+gruebite
+for logical xor
+
+1596843898
+fengb
+There’s a proposal
+
+1596843910
+gruebite
+:D
+
+1596843916
+fengb
+Although logical xor is the same as “foo != bar”
+
+1596843918
+gruebite
+accepted
+
+1596843927
+ifreund
+
+
+1596843960
+fengb
+#define xor !=
+
+1596843978
+gruebite
+that's true, one way to do things
+

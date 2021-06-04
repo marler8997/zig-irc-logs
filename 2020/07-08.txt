@@ -1,0 +1,1948 @@
+1594170816
+andrewrk
+pixelherodev, yo
+
+1594173124
+pixelherodev
+andrewrk: hi
+
+1594173130
+pixelherodev
+Good news: about to open the first CBE PR
+
+1594173152
+pixelherodev
+Inline asm works with inputs and outputs; stddef.h is auto-included if needed; function calls without args and with `noreturn` or `void` return value works :)
+
+1594173218
+andrewrk
+neat!
+
+1594173226
+pixelherodev
+Need some help to go further
+
+1594173240
+pixelherodev
+Mostly, just need to wait for your PR i believe
+
+1594173253
+pixelherodev
+
+
+1594173376
+pixelherodev
+
+
+1594173695
+pixelherodev
+andrewrk: does `pub` work in self-hosted yet?
+
+1594173706
+pixelherodev
+Is there any way to check `if (pub)` from a Module.Fn?
+
+1594173717
+leeward
+I wonder if _start needs a `while (1);` to get rid of that warning.
+
+1594173723
+pixelherodev
+Nah
+
+1594173728
+pixelherodev
+Going to provide a way to `unreachable`
+
+1594173750
+pixelherodev
+Still working towards that example I posted
+
+1594173803
+pixelherodev
+Ah wait, that Pr's not good yet
+
+1594173809
+pixelherodev
+It's targeting C99 but emitting _Noreturn
+
+1594174516
+andrewrk
+pixelherodev, we don't even have structs and @import yet
+
+1594174553
+andrewrk
+nice work, will give you a review in one moment
+
+1594174615
+pixelherodev
+Not ready yet regardless, need to properly handle the standard
+
+1594174625
+pixelherodev
+But reviewing before I do that is helpful because I won't be changing much
+
+1594174666
+andrewrk
+yeah I was going to ask, given that the use case of c back end is to be valid C code in as many different C compilers as possible, wouldn't it make sense to have it be C89 and not configurable?
+
+1594174683
+pixelherodev
+The idea is to make it fully flexible
+
+1594174686
+pixelherodev
+We should support C89 of course
+
+1594174695
+andrewrk
+what's the use case for non-C89?
+
+1594174698
+pixelherodev
+But if you want to generate C11, you should be able to do so; it's not that much work anyways
+
+1594174700
+pixelherodev
+e.g. _Noreturn
+
+1594174719
+andrewrk
+IMO we should have #ifdefs for _Noreturn
+
+1594174720
+pixelherodev
+There's a number of convenience features that make it easier (and potentially more efficient) to map with C99 / C11
+
+1594174771
+andrewrk
+idea being to emit code that works in all the c standards
+
+1594174791
+pixelherodev
+The goal is to make it possible to generate code that's good for e.g. SDCC (--c-standard C89) or code that's more efficient but only works with new compilers (e.g. designated initializers)
+
+1594174806
+pixelherodev
+This isn't just about compatibility though, it's about readability
+
+1594174811
+pixelherodev
+I also want to directly copy comments
+
+1594174826
+pixelherodev
+The goal is to produce readable code that can be maintained without knowledge of the original
+
+1594174830
+andrewrk
+I don't think we're on the same page regarding readability
+
+1594174846
+andrewrk
+consider that we may introduce optimization passes that would sit between zig source and the c back end
+
+1594174855
+pixelherodev
+I think that should be a compiler option as well
+
+1594174865
+pixelherodev
+You should be able to say, "make me efficient C" or "make me readable C"
+
+1594174877
+pixelherodev
+It's not like it's much work for the compiler
+
+1594174898
+andrewrk
+I agree with you that those are two different use cases, but I'm not sold on bringing the second one into scope for the zig project
+
+1594174949
+pixelherodev
+I can understand that, even if I'm definitely going to try to change your mind :)
+
+1594174954
+andrewrk
+fair :)
+
+1594174971
+andrewrk
+anyway, your PR is nearly mergeable already, let me just give you some review comments
+
+1594174991
+pixelherodev
+I think we need to make
+
+1594175023
+pixelherodev
+Because the PR needs to be tweaked accordingly (strip out C standard? actually pay attention to it? simply emit warnings?)
+
+1594175089
+andrewrk
+well, can we agree that the former use case is the primary one to target for now? (emitting .c code that is supposed to work in as many different compilers  / standards as possible at the same time)
+
+1594175129
+pixelherodev
+For sure
+
+1594175142
+pixelherodev
+I'm going to add C89 to the CStandard enum and make that the main target for now
+
+1594175152
+andrewrk
+ok
+
+1594175153
+pixelherodev
+Removing it or implementing the others will come later
+
+1594175175
+pixelherodev
+No reason to torch it (since it might still happen), but if you're not sold on it there's no reason to dump the work in yet either
+
+1594175214
+pixelherodev
+For C89, noreturn will probably just map straight to void and have a call to unreachable() at the end
+
+1594175221
+pixelherodev
+Need to work on user-provided unreachable handler, I think
+
+1594175227
+pixelherodev
+Or panic handler, rather
+
+1594175240
+pixelherodev
+`unreachable()` -> `panic_handler("Unreachable")
+
+1594175249
+pixelherodev
+A lot of this work blocks on frontend stuff though
+
+1594175265
+andrewrk
+you can check for gcc / clang / msvc / other versions with #ifdef
+
+1594175316
+andrewrk
+probably even the existence of _Noreturn
+
+1594175325
+pixelherodev
+True
+
+1594175335
+pixelherodev
+I should probably `#define noreturn` accordingly
+
+1594175351
+sqwishy
+Is there a good place to find zig libraries to read? I'm curious about writing a parser. I was going to look at something called zigini but it looks like all the links to the project on github just 404
+
+1594175370
+andrewrk
+there are a few parsers in the standard library
+
+1594175381
+andrewrk
+json for instance, and the self-hosted .zig source parser
+
+1594175399
+andrewrk
+there's also
+
+1594175400
+daurnimator
+pixelherodev: why not target all C versions with a mess of macros?
+
+1594175416
+daurnimator
+for at least e.g. _Noreturn it should be a simple ifdef
+
+1594175534
+pixelherodev
+daurnimator: that's what's going to be done for older targets (e.g. C89(
+
+1594175536
+pixelherodev
+)
+
+1594175559
+pixelherodev
+but if you're targeting C11 anyways, you probably don't want to have to read through a mess of macros :P
+
+1594175599
+daurnimator
+hmmm... could we throw the macros into a C header zig-bridge.h or something?
+
+1594175633
+pixelherodev
+Potentially, but that doesn't really help
+
+1594175641
+pixelherodev
+That just moves the mess elsewhere
+
+1594175663
+pixelherodev
+The idea is that if I'm targeting e.g. modern Linux, I don't want that around at all
+
+1594175676
+pixelherodev
+But if I'm targeting e.g. SDCC, there's no point in checking for _Noreturn anyways
+
+1594175707
+andrewrk
+the point is to remove complications from both the zig compiler implementation and the CLI
+
+1594175731
+pixelherodev
+That's true...
+
+1594175758
+pixelherodev
+It's a tradeoff, but I'm not sure that the tiny bit of complexity really matters here
+
+1594175759
+andrewrk
+if your goal is to output readable .c code, you will only be doing a 1 time translation, and then manually cleaning up the output. if your goal isn't that, you've already lost. the output is not source, it's generated code
+
+1594175790
+pixelherodev
+Alrighty
+
+1594175795
+pixelherodev
+I'll remove the enum and clean this up
+
+1594175805
+pixelherodev
+But if I'm doing it this way, I'll take daurnimator's idea a step further
+
+1594175815
+pixelherodev
+I'll include all the ifdef guards in a source file in the repo, and @embedFile it :)
+
+1594175826
+pixelherodev
+I'm still only dealing with single file output for now
+
+1594175840
+pixelherodev
+I'll need to rework this to support multi-file output later, at which point it might get #included
+
+1594175844
+andrewrk
+sounds good to me
+
+1594175924
+pixelherodev
+Not sure how I'd check for e.g. _Noreturn via ifdefs - I'll probably just check for the standard version
+
+1594175957
+pixelherodev
+e.g. GNU99/GNU89 will use __attribute(noreturn), C11 and up will use _Noreturn, and C89/C99 will just be void
+
+1594175990
+andrewrk
+pretty sure msvc and gcc still support noreturn in c89 mode
+
+1594176027
+andrewrk
+it's ok to do compiler checks
+
+1594176199
+daurnimator
+yeah. check standard version and then compiler version
+
+1594176212
+pixelherodev
+That can come later
+
+1594176215
+pixelherodev
+It's really not a priority :P
+
+1594176237
+daurnimator
+and don't forget the non_null attribute :)
+
+1594176261
+pixelherodev
+None of that is happening until the frontend improves
+
+1594176263
+daurnimator
+uh, `__attribute__((nonnull))`
+
+1594176332
+daurnimator
+huh, TIL nonnull takes the argument indices that are non-null
+
+1594176344
+pixelherodev
+Ah right, `allowzero` / optionals aren't done yet
+
+1594176356
+pixelherodev
+nonnull is default :)
+
+1594176770
+pixelherodev
+Okays
+
+1594176784
+pixelherodev
+
+
+1594176819
+pixelherodev
+Header is good to go, just need to modify tests to auto-prepend it to expected output
+
+1594177003
+pixelherodev
+Okays!
+
+1594177862
+andrewrk
+pixelherodev, alright, feel free to ping me when you're ready. if you address all that stuff it should be good to go
+
+1594177965
+pixelherodev
+Within three-four minutes i think
+
+1594178083
+pixelherodev
+How would I go about truncating an open file? :P
+
+1594178100
+pixelherodev
+Ah wait nvm
+
+1594178102
+pixelherodev
+I see what I was doing
+
+1594178134
+pixelherodev
+andrewrk: do we want to support incremental update of C targets?
+
+1594178142
+pixelherodev
+IMO it's not worth doing
+
+1594178152
+andrewrk
+nah. I mean the update() API should work fine
+
+1594178165
+pixelherodev
+I was thinking in terms of adding tests and such
+
+1594178175
+andrewrk
+nah
+
+1594178177
+pixelherodev
+Plus, I'm setting truncate to true in setWritable
+
+1594178190
+pixelherodev
+Was going to `TODO support incremental` when I realized there's no real reason to do so
+
+1594178196
+andrewrk
+agreed
+
+1594178221
+andrewrk
+setWritable/setExecutable should be no-ops for CBE
+
+1594178291
+pixelherodev
+makeExecutable already is (make, not set; my bad)
+
+1594178344
+andrewrk
+makeWritable too. the point of it is to undo what makeExecutable does
+
+1594178354
+pixelherodev
+I did
+
+1594178356
+pixelherodev
+already :)
+
+1594178657
+pixelherodev
+Just need to tweak the Unimplementeds and it's done
+
+1594178659
+pixelherodev
+:)
+
+1594178792
+pixelherodev
+andrewrk: should I pass in the Module and do `return module.fail`?
+
+1594178866
+andrewrk
+look at how codegen does it
+
+1594178871
+andrewrk
+codegen.zig
+
+1594178896
+andrewrk
+I think the same mechanism should work
+
+1594178943
+pixelherodev
+Not really
+
+1594178947
+pixelherodev
+It sets err_msg on a Function
+
+1594178951
+pixelherodev
+We don't have those :P
+
+1594178976
+pixelherodev
+Ah wait, looking at the wrong place
+
+1594179031
+pixelherodev
+got it
+
+1594179705
+pixelherodev
+Just doing some minor fixup and pushing all the requested changes :)
+
+1594179824
+daurnimator
+if we pass it back to translate-c do we have a working zig to zig compiler? :)
+
+1594179857
+daurnimator
+pixelherodev: I expect much can be shared with emit-h code?
+
+1594179873
+pixelherodev
+Not yet
+
+1594179878
+pixelherodev
+I need to work on multi-file output first
+
+1594179888
+pixelherodev
+for now, it generates the header as part of the .c file
+
+1594180813
+pixelherodev
+andrewrk: ping :)
+
+1594180833
+andrewrk
+gotcha
+
+1594181109
+pixelherodev
+Anyone here have an old GCC?
+
+1594181112
+pixelherodev
+e.g. 5ish?
+
+1594181381
+pixelherodev
+...oops
+
+1594181741
+pixelherodev
+... or...not?
+
+1594181910
+pixelherodev
+andrewrk: One minor dumb I'm working around in CBE rn is that there's an attempt to embed strings from inline asm into the output even though they're never used
+
+1594181915
+pixelherodev
+e.g. `syscall`, `rdi`, `rax`
+
+1594181928
+pixelherodev
+You can notice the same thing if you `objdump -d` a binary produce by stage2 w/o CBE
+
+1594181967
+torque
+godbolt does
+
+1594182039
+pixelherodev
+?
+
+1594182043
+andrewrk
+pixelherodev, I think you can leave that. should be cleaned up in release builds, but not necessarily debug builds
+
+1594182049
+torque
+have old gcc versions
+
+1594182056
+pixelherodev
+andrewrk: it's not referenced
+
+1594182058
+pixelherodev
+at all
+
+1594182060
+pixelherodev
+not in debug info or anything
+
+1594182083
+pixelherodev
+All it does is make disasming more annoying
+
+1594182099
+pixelherodev
+torque: ah right
+
+1594182101
+andrewrk
+I don't think it's part of this CBE PR tho
+
+1594182105
+pixelherodev
+That's the second time someone's pointed it out
+
+1594182112
+pixelherodev
+andrewrk: Nah, I mean, CBE works around it currently
+
+1594182115
+pixelherodev
+In a really
+
+1594182116
+pixelherodev
+really
+
+1594182118
+pixelherodev
+dumb way
+
+1594182129
+pixelherodev
+I should remove that TBH, but then I need to figure out how to avoid generating invalid identifiers :P
+
+1594182132
+andrewrk
+yeah don't do that kind of thing, that's what I mean by "avoid local maximums"
+
+1594182135
+daurnimator
+pixelherodev: make sure you test with GCC 4.7
+
+1594182139
+pixelherodev
+daurnimator: good call
+
+1594182147
+daurnimator
+it's probably the most important historical gcc version
+
+1594182185
+andrewrk
+"not done yet" is a lot easier to improve than "done wrong"
+
+1594182233
+pixelherodev
+daurnimator: it does work :)
+
+1594182237
+pixelherodev
+With GCC 4.7
+
+1594182240
+pixelherodev
+andrewrk: for sure
+
+1594182243
+daurnimator
+pixelherodev: awesome :)
+
+1594182269
+daurnimator
+pixelherodev: for 4.7 support you need to e.g. use __thread instead of thread_local. though you probably haven't got that far yet
+
+1594182290
+pixelherodev
+
+
+1594182361
+pixelherodev
+Works as far back as 4.5.3
+
+1594182399
+daurnimator
+awesome
+
+1594182434
+daurnimator
+I would encourage you to test with GCC 4.7 and the most recent releases of GCC and Clang, and tiny c compiler.
+
+1594182435
+pixelherodev
+More curious if it works with e.g. SDCC
+
+1594182446
+pixelherodev
+Going to test with KCC and cproc as well
+
+1594182476
+pixelherodev
+Works with Clang 3.0 and ICC 13.0
+
+1594182505
+pixelherodev
+... but not clang 5 or newer, apparently
+
+1594182524
+daurnimator
+pixelherodev: do tcc?
+
+1594182576
+pixelherodev
+Not important right now
+
+1594182578
+pixelherodev
+Going to sleep
+
+1594182589
+pixelherodev
+... right after I do basic mapping
+
+1594182622
+andrewrk
+pixelherodev, just that one problem left, everything else looks good
+
+1594182645
+pixelherodev
+I think I'm going to just do $ -> _ for now?
+
+1594182649
+pixelherodev
+and _ -> __
+
+1594182654
+pixelherodev
+No, that's terrible
+
+1594182686
+pixelherodev
+I could just comment out the inline asm test for now and leave this an explicit TODO
+
+1594182712
+andrewrk
+this is a general problem since zig has @"aoeu" identifiers
+
+1594182740
+pixelherodev
+I know
+
+1594182754
+pixelherodev
+I was going to just limit the valid identifier range
+
+1594182773
+pixelherodev
+So that you can't try to use emoji identifiers and translate them
+
+1594182952
+andrewrk
+you could also just change it from $ to something else, I'm not married to that prefix
+
+1594182967
+pixelherodev
+True
+
+1594182976
+pixelherodev
+Or maybe I should just try to find where it's being generated and remove it
+
+1594183033
+pixelherodev
+Ahh, I see
+
+1594183040
+pixelherodev
+It's being lowered to a `str` in ZIR
+
+1594183055
+pixelherodev
+and all strs are generated, even if they aren't referenced, IIUC
+
+1594183192
+pixelherodev
+Would be neat to lazy evaluate ZIR in reverse order
+
+1594183196
+andrewrk
+it's an anonymous Decl generated at comptime, and not detected as garbage until update()
+
+1594183200
+pixelherodev
+But would be a major change for the worst reasons
+
+1594183225
+pixelherodev
+andrewrk: yeah, I noticed
+
+1594183226
+andrewrk
+it wouldn't solve the problem, actual mark+sweep garbage collection is needed to omit these anonymous decls generated at comptime
+
+1594183246
+andrewrk
+which is an option available to us. but it may not be worth it in debug builds. we'll see
+
+1594183279
+pixelherodev
+hmm
+
+1594183296
+pixelherodev
+another option would be a special ZIR instruction for comptime-only string literals
+
+1594183316
+andrewrk
+think bigger picture
+
+1594183321
+andrewrk
+that doesn't solve the actual problem for zig source code
+
+1594183327
+pixelherodev
+Yes it does, doesn't it?
+
+1594183333
+pixelherodev
+Instead of adding str, we'd add $FOO
+
+1594183347
+pixelherodev
+and this would actually mean doing
+
+1594183409
+andrewrk
+arbitrary zig code deals with comptime values
+
+1594183427
+andrewrk
+we don't find out if the values are referenced until the comptime code finishes running, and we do a sweep
+
+1594183443
+andrewrk
+that's the problem. adding a new zir instruction doesn't address it
+
+1594183511
+pixelherodev
+In this specific case though (feeding a literal to a builtin / asm), it would help
+
+1594183521
+pixelherodev
+And it'd mean less work for a potential GC if one was added
+
+1594183533
+pixelherodev
+but that might not be worth it anyways
+
+1594183548
+pixelherodev
+I should just nap, and come at this again in the morning
+
+1594183563
+andrewrk
+it doesn't help with .zig source code. the analysis would not be able to use your proposed new zir instruction
+
+1594183577
+pixelherodev
+Here it definitely would
+
+1594183591
+pixelherodev
+e.g. `args[i] = try self.astGenExpr(scope, input.expr);` in genAstAsm
+
+1594183595
+pixelherodev
+astGenAsm*
+
+1594183634
+pixelherodev
+That currently sees StringLiterals and produces `str`, even though we can say for certain that if it's a literal here, it doesn't need to be emitted
+
+1594183645
+pixelherodev
+(though if an identical string is used, it
+
+1594183751
+pixelherodev
+Another option might be to have the actual string generated at the first reference to it by runtime code instead of when we see the `sr`
+
+1594183753
+pixelherodev
+`str`*
+
+1594184106
+pixelherodev
+but that means an extra branch on any access to a str, which would probably be waaaay too wasteful in the long run
+
+1594184150
+pixelherodev
+... andrewrk: is there any reason we can't make `asm` ZIR take string literals instead of `str`s?
+
+1594184163
+pixelherodev
+It's definitionally incapable of taking runtime strings anyways
+
+1594184202
+pixelherodev
+... except it can take comptime strings, not just literals
+
+1594184204
+pixelherodev
+Hmm
+
+1594184230
+andrewrk
+pixelherodev, I think I would like to make inline assembly take string literals for those things yes, rather than arbitrary expressions
+
+1594184253
+andrewrk
+then this problem - which we still need to solve - would not be rearing its head for this particular use case
+
+1594184306
+pixelherodev
+That would mean that e.g. `comptime const a = "syscall"; asm(a);` would be illegal?
+
+1594184334
+andrewrk
+yes
+
+1594184343
+pixelherodev
+The question then is whether there's a valid use case for it
+
+1594184382
+pixelherodev
+... but no, I don't think we should encourage complex usage of inline asm
+
+1594184405
+andrewrk
+I was even thinking it might be nice to tokenize the asm source directly rather than having it be a string literal. but let's not get ahead of ourselves
+
+1594184487
+pixelherodev
+so asm_source goes from *Inst to []const u8?
+
+1594184497
+pixelherodev
+Should I do that?
+
+1594184509
+pixelherodev
+(and fix all the tests and inevitable breakage :P)
+
+1594184605
+andrewrk
+if you go that route you'll need to do a proposal, get it accepted (I'll wait a day or two to let someone object), update the grammar spec, update self-hosted parser and stage1 parser, update zig fmt, and then you can do that
+
+1594184612
+pixelherodev
+Righty
+
+1594184642
+pixelherodev
+I think I'll leave the CBE PR open, and we should hold off on it for now
+
+1594184648
+andrewrk
+ok
+
+1594184651
+daurnimator
+andrewrk: hang on...
+
+1594184656
+daurnimator
+objection already :)
+
+1594184661
+pixelherodev
+There's a few more things we need to decide before it can really take off anyways
+
+1594184670
+pixelherodev
+daurnimator: let's hear it! :)
+
+1594184690
+daurnimator
+one sec; going to find the proposal that I sent to allow it in the first place :P
+
+1594184692
+andrewrk
+Eleanor has some inline assembly proposals that are probably relevant as well, which I haven't familiarized myself with yet
+
+1594184733
+daurnimator
+pixelherodev:
+
+1594184793
+pixelherodev
+Hmm
+
+1594184806
+pixelherodev
+The question then is, is there a use case
+
+1594184829
+pixelherodev
+After all, with `a ++ b ++ c`, we can just make that a string literal internally
+
+1594184838
+pixelherodev
+But again, that requires potential changes to grammar and the vaporspec
+
+1594184852
+daurnimator
+well `b` might be generated with e.g. std.fmt.bufPrint
+
+1594184857
+pixelherodev
+True
+
+1594184870
+scientes
+concatenating slices requires memory allocator
+
+1594184874
+pixelherodev
+And even as the result of a builtin, that doesn't really work
+
+1594184877
+pixelherodev
+scientes: not at comptime
+
+1594184910
+pixelherodev
+At comptime, the compiler can just internally construct a new string literal using whatever allocation strategy it wants
+
+1594184927
+scientes
+yeah but you are losing sight of the forest for the trees
+
+1594185034
+pixelherodev
+One alternative would be to have it support *both*, but while that avoids requiring any language changes, it's needless compelxity
+
+1594185037
+pixelherodev
+complexity*
+
+1594185076
+pixelherodev
+Which means either the mappings or some other major solution is needed here
+
+1594185094
+pixelherodev
+Whelp, napping now
+
+1594185159
+daurnimator
+another thing is I've been wanting to make an xbyak-alike that emits inline assembly
+
+1594185198
+pixelherodev
+Interesting idea
+
+1594185205
+pixelherodev
+Though I'd hold off until we have performant comptime ;)
+
+1594185210
+daurnimator
+yeah
+
+1594185214
+daurnimator
+I have many higher priorities
+
+1594185214
+pixelherodev
+BUt yeah, I completely see your point here
+
+1594185293
+pixelherodev
+Anywho, night
+
+1594185325
+daurnimator
+night
+
+1594186327
+daurnimator
+andrewrk: where are you at in terms of a garbage collector for comptime?
+
+1594186449
+andrewrk
+as far as incremental compilation goes it's solved
+
+1594190337
+andrewrk
+conditional branching in stage2:
+
+1594190356
+andrewrk
+I'm not sure why it doesn't show an "entry" label at 0x8000012. you can see in the symbol table that's where the function starts
+
+1594190738
+daurnimator
+andrewrk: block taking a string of "if" is weird IMO
+
+1594190782
+andrewrk
+don't bikeshed zir, it's not worth it
+
+1594190794
+andrewrk
+it's just a debugging tool
+
+1594190842
+andrewrk
+that's a labeled break
+
+1594190900
+daurnimator
+ah
+
+1594190940
+andrewrk
+the analysis doesn't even use strings, it just points directly to the *Block. but we have to serialize it to text format for .zir code
+
+1594190992
+andrewrk
+here's the .zig test case I'm working towards:
+
+1594191092
+daurnimator
+so equivalent zig code was: `fn entry(@"0": u32, @"1": u32) void { _ = @"if": { const neq = (@"0" + "1") != 7; break :@"if" neq; } return {}; }` ?
+
+1594191124
+andrewrk
+I just linked you to it
+
+1594191141
+andrewrk
+lol
+
+1594209840
+ask6155
+hello!
+
+1594209872
+ask6155
+How do I make so that my generic function can take only any integers?
+
+1594209932
+ask6155
+currently it takes (comptime T: type, num: T)
+
+1594210143
+ifreund
+ask6155: one way to do this is to add an if (@typeinfo(T) != .Integer) @compileError("foo requires an integer!");
+
+1594210154
+dermetfan
+ask6155: usually if the function body handles num like an integer, it will cause compile errors if you give it something else
+
+1594210185
+ask6155
+yes it does but I wanted it to be more clear. What is the .Integer?
+
+1594210198
+ifreund
+should be .Int actually
+
+1594210206
+ifreund
+it is std.builtin.TypeInfo.Int
+
+1594210737
+pixelherodev
+There's a proposal to make that easier
+
+1594211308
+ask6155
+how do I send debug messages in comptime?
+
+1594211329
+ifreund
+@compileLog()
+
+1594212268
+ask6155
+is it better to use the builtin overflow arithmetic or the math.*?
+
+1594212416
+ifreund
+ask6155: depends on what you want to do. the std.math functions are useful if you want to handle overflow as an error
+
+1594212740
+ask6155
+How do I look at all the errors? How do I make my own errors?
+
+1594213186
+ifreund
+ask6155: to make an error just do `error.MyError` and return it or do whatever
+
+1594213217
+ask6155
+oh thanks
+
+1594213230
+pixelherodev
+Or define an error set :P
+
+1594213272
+ask6155
+I never really understood emojis :O
+
+1594213288
+fengb
+💩
+
+1594213297
+ifreund
+it's a hat!
+
+1594213341
+ask6155
+I meant the smileys :) also my font is so small I can't tell what 💩is.
+
+1594213375
+ifreund
+in my interpretation :P is stuck-out tounge
+
+1594213390
+yeti
+:-þ
+
+1594213414
+pixelherodev
+It's the beauty of emoji: you can interpret it as flexibly as a face!
+
+1594213416
+pixelherodev
+:P
+
+1594213421
+pixelherodev
+:(
+
+1594213423
+pixelherodev
+:)
+
+1594213477
+ifreund
+:D
+
+1594213480
+ifreund
+:<
+
+1594213489
+yeti
+darth?
+
+1594213500
+pixelherodev
+Where?!
+
+1594213527
+ask6155
+ok but would you do that irl? Is it meant to be interpreted IRL? Am I crazy? xD
+
+1594213532
+yeti
+even interpreting 2-char-mojis is too complicated
+
+1594213545
+fengb
+>_>
+
+1594213548
+pixelherodev
+I'mma get back to work now :P
+
+1594213550
+fengb
+<_<
+
+1594213557
+yeti
+_@o
+
+1594214572
+pixelherodev
+andrewrk: I think for now I'll just change anons from {}${} to {}__anon_{}
+
+1594214590
+pixelherodev
+That should probably be fine anyways
+
+1594214773
+pixelherodev
+Then just modify the tests...
+
+1594214790
+pixelherodev
+Oh, and since we don't have imports / pub yet, I'm just marking
+
+1594214802
+pixelherodev
+except exports, which will probably be slightly more work :P
+
+1594221109
+oats
+I love how you can always tell where an identifier comes from in a zig file
+
+1594221139
+ikskuh
+oats: yeah that's really great :)
+
+1594221190
+oats
+no combing through mysterious wildcard imports
+
+1594221215
+leeward
+unless someone usingnamespaces it
+
+1594221217
+ikskuh
+well, usingnamespace is evil D:
+
+1594221239
+ifreund
+evil but useful
+
+1594221261
+oats
+eh, yin and yang :P
+
+1594221274
+oats
+sometimes you just gotta do a little evil
+
+1594221284
+ikskuh
+ifreund: true!
+
+1594221295
+ikskuh
+zlm uses it to deduplicate a lot of code
+
+1594221305
+pixelherodev
+stdlib uses it for e.g. ArrayList(u8).Writer
+
+1594221309
+pixelherodev
+Selective definitions
+
+1594221326
+ifreund
+It's used quite heavily in std.os as well
+
+1594221346
+pixelherodev
+For sure
+
+1594221348
+leeward
+It's super handy for wrapping C stuff.
+
+1594221358
+pixelherodev
+True, but you can't do it twice :P
+
+1594221371
+pixelherodev
+e.g. if you `usingnamespace @cBlah`, it pulls in basic macros
+
+1594221380
+pixelherodev
+So any other usingnamespace @cBlah would conflict
+
+1594221403
+pixelherodev
+Someone should make a ZBS extension that autogenerates specific imports instead of usingnamespace
+
+1594221412
+pixelherodev
+Or that just ignores the standard stuff
+
+1594230106
+jaredmm
+One hour to get things working on not Windows, one year to get things working on Windows. Sounds about right.
+
+1594230542
+leeward
+developers developers developers developers
+
+1594230555
+pixelherodev
+What's that for?
+
+1594230564
+pixelherodev
+What took a year for Win?
+
+1594230571
+pixelherodev
+Not doubting, just curious
+
+1594230671
+jaredmm
+You should doubt, because it is a gross exaggeration speared on by massive annoyance.
+
+1594230763
+pixelherodev
+lol
+
+1594230766
+pixelherodev
+Still don't doubt it
+
+1594230774
+pixelherodev
+oh crap
+
+1594230775
+jaredmm
+For whatever reason, I have been unable to build SDL2 on Windows successfully in a way that works with llvm (lld-link).
+
+1594230780
+pixelherodev
+andrewrk: you merged the CBE PR already?
+
+1594230792
+pixelherodev
+whooops
+
+1594230797
+pixelherodev
+Need to submit a new one to fix it up then :P
+
+1594230808
+fengb
+Did you break everything?
+
+1594230841
+leeward
+jaredmm: I had problems trying to cross-build with SDL2 for Windows. I took the easy route though, and gave up.
+
+1594230851
+pixelherodev
+fengb: no, but I fixed a bit that I didn't push
+
+1594230947
+jaredmm
+leeward: I also gave up, in September of last year, so my year estimate is not entirely wrong (but wholly misleading because I have not worked on it).
+
+1594230979
+leeward
+I think it counts if you're demoralized so much that you can't look at it for a year.
+
+1594231175
+pixelherodev
+^
+
+1594231177
+pixelherodev
+For sure
+
+1594231732
+jaredmm
+Windows in a nutshell, really.
+
+1594232007
+marler8997
+jaredmm, what issues are you running into?
+
+1594232283
+jaredmm
+It was a series of issues on Windows. Exported symbols not working the same between lld-link and link.exe, libraries/DLLs not existing, not being able to build lldb-mi, SDL refusing to use anything that wasn't DX9, etc. I have it mostly working these days.
+
+1594235157
+marler8997
+gotcha, typical windows grind
+
+1594236791
+andrewrk
+xackus, did #5811 pass the `./zig build docs` for you locally, and pass tidy?
+
+1594236804
+andrewrk
+unfortunately there was a hiccup in the CI which would have provided testing for that PR
+
+1594237466
+sqwishy
+Hi. My boss won't use zig unless it's 1.0, when will zig 1.0 be released so I can use zig?
+
+1594237676
+pixelherodev
+andrewrk: do you think we should tweak CBE to go outside the ZIR pipeline?
+
+1594237689
+ifreund
+a while, there won't be any corners cut. At least a year or longer I'd guess.
+
+1594237698
+pixelherodev
+?
+
+1594237714
+pixelherodev
+what did I miss? (power went out, SSH-chater restarted)
+
+1594237716
+pixelherodev
+chatter*
+
+1594237754
+ifreund
+someone asked how long until we should expect a 1.0 release
+
+1594237767
+pixelherodev
+Ah I see
+
+1594237785
+pixelherodev
+Yeah, 1.0 isn't going to be released until stage2 and the language are 100% complete
+
+1594237803
+pixelherodev
+there won't ever be a Zig 1.1, for instance (at least in terms of the *language*; compiler bugfixes are to be expected)
+
+1594237818
+ifreund
+i think you mean there won't ever be a 2.0
+
+1594237829
+ifreund
+assuming we are semantic versioning
+
+1594237846
+pixelherodev
+both
+
+1594237852
+pixelherodev
+The language will be set in stone at 1.0 IIUC
+
+1594237883
+ikskuh
+yeah that's what i figured as well. it wants to replace C, so we have to have the same qualities in reliability
+
+1594237908
+pixelherodev
+Ahh, so we have to wait 10 years to make any changes? :P
+
+1594237930
+ifreund
+nah, just start objective-zig or zig++
+
+1594237944
+pixelherodev
+at which point we'll start working with the Zig++ team to make our language more like theirs, right?
+
+1594237948
+pixelherodev
+Or does that wait until Zig11?
+
+1594237957
+ifreund
+3011?
+
+1594237968
+ifreund
+er, guess it could just be 2111
+
+1594237969
+andrewrk
+pixelherodev, no, certainly not
+
+1594237999
+andrewrk
+remember, the goal is not source to source translation
+
+1594238025
+pixelherodev
+I was thinking e.g. decl lookup is wasted effort
+
+1594238028
+pixelherodev
+s/decl/local var
+
+1594238044
+pixelherodev
+but yeah
+
+1594238045
+pixelherodev
+I see that
+
+1594238070
+andrewrk
+it's not wasted effort, it's absolutely necessary
+
+1594238072
+pixelherodev
+andrewrk: do you have an ETA on regalloc branch?
+
+1594238096
+andrewrk
+let me see if it's passing tests
+
+1594238103
+pixelherodev
+Oh neat
+
+1594238114
+andrewrk
+well I didn't add any new ones yet
+
+1594238126
+pixelherodev
+Want me to do that? :)
+
+1594238148
+pixelherodev
+hmm
+
+1594238155
+pixelherodev
+I should probably focus on CBE blockers
+
+1594238173
+pixelherodev
+Those are useful for ZIR and Zig as well, and have immediate payoffs
+
+1594238179
+pixelherodev
+And it means avoiding stepping on each others toes, hopefully
+
+1594238364
+pixelherodev
+Or maybe not, since e.g. assignment is one of the biggest ones :P
+
+1594238377
+pixelherodev
+`_ = ` should probably use a Discard MCValue or something like that
+
+1594238413
+andrewrk
+_ = should be dealt with before it gets to codegen
+
+1594238421
+pixelherodev
+Not for cgen though
+
+1594238431
+andrewrk
+why would it be different?
+
+1594238432
+pixelherodev
+For cgen, we want to know that we're deliberately discarding a result
+
+1594238437
+pixelherodev
+(void)blah();
+
+1594238448
+andrewrk
+no we don't, you're thinking of the other use case again
+
+1594238456
+pixelherodev
+I'm thinking of suppressing warnings
+
+1594238467
+pixelherodev
+Not readability of *source*, but of compilation output
+
+1594238581
+andrewrk
+I'm not following
+
+1594238666
+pixelherodev
+... never mind, apparently
+
+1594238680
+pixelherodev
+I thought that calling a function and ignoring its return value without an explicit (void) was a warning
+
+1594238717
+pixelherodev
+So yeah, it's fine
+
+1594238722
+andrewrk
+I'm still not following
+
+1594238776
+andrewrk
+every IR instruction is either: referenced later, not referenced later but has side effects, not referenced later + no side effects
+
+1594238827
+andrewrk
+(1) emit as `T x = foo();` (2) emit as `(void)foo();` (3) skip codegen
+
+1594238855
+andrewrk
+you can check ir instruction isUnused()
+
+1594239329
+pixelherodev
+Ah true
+
+1594239415
+andrewrk
+you can see how this output is not going to look anything like the source
+
+1594239524
+pixelherodev
+Ofc
+
+1594240378
+pixelherodev
+andrewrk: yeah I completely see what you're getting at now
+
+1594240401
+pixelherodev
+For `_ = blah`, should we just treat it as blah and lower it?
+
+1594240415
+pixelherodev
+The only real difference is that we want to error if the `_ =`  isn't present
+
+1594240661
+andrewrk
+the goal is no special casing for CBE, it's just yet another machine code format
+
+1594240673
+andrewrk
+the same analysis code that handles `_` will handle it for all architectures
+
+1594242072
+pixelherodev
+andrewrk: I know
+
+1594242078
+pixelherodev
+I'm talking in terms of the Zig -> ZIR part
+
+1594242085
+pixelherodev
+i'm doing more frontend work now
+
+1594242218
+ifreund
+if I just do `zig build test` that runs the std tests as one of the things right?
+
+1594242269
+pixelherodev
+Read build.zig lol
+
+1594242278
+pixelherodev
+It says run all the tests
+
+1594242280
+pixelherodev
+So I assume so
+
+1594242293
+pixelherodev
+Yes
+
+1594242295
+pixelherodev
+It will
+
+1594242310
+pixelherodev
+test_step depends on stage2, lib/std/std.zig, test/stage1/behavior.zig
+
+1594242313
+pixelherodev
+and possibly others
+
+1594242320
+pixelherodev
+compiler-rt
+
+1594242324
+ifreund
+i was tryna be lazy :P
+
+1594242328
+pixelherodev
+lol
+
+1594242332
+pixelherodev
+So you had me do your work
+
+1594242333
+pixelherodev
+Ugh
+
+1594242339
+pixelherodev
+;(
+
+1594242340
+pixelherodev
+;0
+
+1594242342
+pixelherodev
+;) *
+
+1594242427
+andrewrk
+easy on the line spam in irc plz
+
+1594242702
+pixelherodev
+Yeah, sorry, not intentional
+
+1594242712
+pixelherodev
+Was trying to correct a typo, then corrected that :P
+
+1594247122
+shcv
+is there a way to do something like closures in zig?
+
+1594247236
+shcv
+hmm; I think I found a different way to do what I wanted anyway
+
+1594248380
+pixelherodev
+andrewrk: so when translating Zig to ZIR, `_ = blah` -> `blah`?
+
+1594248399
+pixelherodev
+There's no need to explicitly drop the returned value, right?
+
+1594248431
+pixelherodev
+Hmm
+
+1594248439
+pixelherodev
+I'm envisioning targeting a fully stack-based ABI
+
+1594248446
+pixelherodev
+We'd need a way to drop the value from the stack
+
+1594248473
+pixelherodev
+Except that ZIR would still have an identifier for it, we'd just not be using it
+
+1594248476
+pixelherodev
+So it should be fine...
+
+1594249500
+pixelherodev
+Hmm
+
+1594249513
+pixelherodev
+I need to get a better view of the astGen stuff before I try this
+
+1594249519
+pixelherodev
+And I don't have time for that right now
+
+1594250259
+xpyxel
+hey there! I've got a question regarding the std, I'm on windows trying to use the `os.socket` function to create a socketfd but when attempting to do so it says there's no such thing in the windows namespace
+
+1594250506
+ifreund
+xpyxel: yes, most of the stuff in std.os is posix only (there is an open issue to move this stuff to a proper std.posix namespace)
+
+1594250548
+xpyxel
+ah thanks, was curious as to why as i was looking at the `os.zig` file in the github and it looked like it was using windows sockets 2 on windows, but when i attempted to use it, it failed
+
+1594250572
+ifreund
+I know that
+
+1594250745
+ifreund
+Yeah it looks like there is at least some support for windows sockets in the standard library, I'm not on windows though so I can't really give much advice :/
+
+1594250886
+xpyxel
+I miss linux sometimes, but i casually play some windows-only games here and there so it's hard :/
+
+1594250911
+ifreund
+looks like zig-nework's code is a good example of using the std's windows sockets
+
+1594250967
+ifreund
+no luck with wine? last time I got the itch to play skyrim it worked near flawlessly
+
+1594251048
+xpyxel
+some heavier games such as say, Rocket League (which unforunately dropped linux support officially earlier this year) has i think a bronze or silver rating on WineHQ
+
+1594251705
+leeward
+rocket league dropped linux support?
+
+1594251712
+leeward
+Good thing I never enjoyed it.
+
+1594251851
+fraktor
+I was just thinking of getting into it too.
+

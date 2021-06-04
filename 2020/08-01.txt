@@ -1,0 +1,2328 @@
+1596241105
+ronsor
+DarkUranium: return if (cond) x; else y;
+
+1596241118
+ronsor
+err* `return if (cond) x else y;`
+
+1596242985
+DarkUranium
+alexnask[m], pixelherodev: Reading up on Zig's error handling, I definitely like the `catch` and the `try` and so on (except maybe the specific keywords used --- I feel like they might end up being confusing for people used to the
+
+1596243003
+DarkUranium
+Maybe I should stea^H^H^H^Hadapt this for Coyote :)
+
+1596243030
+fengb
+You shoulda looked when Zig used %% instead 🙃
+
+1596243206
+DarkUranium
+I've been considering using %% for remainder in Coyote.
+
+1596243209
+DarkUranium
+Sorry, for modulo.
+
+1596243230
+DarkUranium
+(and % for remainder, which is what it is [despite it being called "modulo"])
+
+1596243357
+torque
+I think try and catch are perfectly descriptive
+
+1596243411
+ronsor
+I prefer it over Go's error handling
+
+1596243444
+torque
+it's also the best language-level error ecosystem I've seen (disregarding the inability to attach arbitrary data to the errors which can be worked around if necessary)
+
+1596243473
+fengb
+Yeah I also wish we had error payloads
+
+1596243494
+torque
+can't count the number of bugs we've had with exceptions because there's no external indication what exceptions a function may throw
+
+1596243519
+torque
+implicit error propagation Was A Mistake™
+
+1596243630
+andrewrk
+DarkUranium, I'm happy with what zig ended up for that too
+
+1596243672
+andrewrk
+we use `%` which is the ambiguously rem/mod operator. It's allowed when rem and mod have the same result (because the operands are unsigned)
+
+1596243683
+andrewrk
+when rem/mod have different results then one is required to use @rem or @mod
+
+1596243691
+andrewrk
+same deal with the `/` operator
+
+1596243709
+andrewrk
+`a / b` is a compile error if the operands are signed
+
+1596243714
+fengb
+Wait what’s the difference?
+
+1596243723
+DarkUranium
+Huh, I thought a/b was well-defined for signed?
+
+1596243734
+DarkUranium
+Or rather, unambigious.
+
+1596243744
+andrewrk
+is it floored division or truncated division?
+
+1596243745
+DarkUranium
+fengb, one takes the sign of the left operand; the other of the right.
+
+1596243746
+fengb
+Oh right, negative rounding
+
+1596243761
+andrewrk
+floored division corresponds to modulus; truncated division corresponds to remainder division
+
+1596243775
+DarkUranium
+Ah, that.
+
+1596243798
+andrewrk
+zig only allows `/` when truncated division and floored division would have the same result
+
+1596243839
+andrewrk
+if not: pick one!
+
+1596243850
+gruebite
+there are a lot of languages that don't have a solid solution to that
+
+1596243858
+fengb
+We could add %+ and %- operators. That wouldn’t be confusing at all
+
+1596243911
+DarkUranium
+Yeah, my solution is to just pick one option and go with it.
+
+1596243928
+DarkUranium
+Though keep in mind that familiarity (at least to some extent) is an explicit design goal of Coyote. Otherwise, it would've looked ... quite a lot different.
+
+1596244040
+andrewrk
+in this case my suggestion would be to follow python's choice (modulus, floored division)
+
+1596244067
+DarkUranium
+Yeah, maybe. Well, I'll see.
+
+1596244198
+DarkUranium
+andrewrk, one reason why I prefer truncated division is because of C. Remember that this is an embedded language.
+
+1596244210
+DarkUranium
+(basically, keeping in line with C semantics makes things simpler)
+
+1596244223
+DarkUranium
+That doesn't mean there aren't good arguments for floored division, though.
+
+1596244241
+DarkUranium
+In particular, having modulus is great. For example, you can do `arr[(i - 1) % len]`
+
+1596244257
+DarkUranium
+(instead of `arr[(i - 1 + len) % len]`)
+
+1596244259
+andrewrk
+yeah I mean I maintain my stance that zig got this right and anything else is sub-par :)
+
+1596244265
+DarkUranium
+hehe
+
+1596244330
+keegans
+andrewrk: before i keep sinking my time into adding sanitizer support and libFuzzer to zig, are you interested in having official support for this in the compiler ?
+
+1596244377
+keegans
+well, i should rephrase, I don't see it as a time sink ;)
+
+1596244467
+andrewrk
+keegans, I see ASAN and
+
+1596244517
+keegans
+i no doubt believe the zig gpa is a better alternative to asan, but the zig gpa doesn't exist
+
+1596244551
+keegans
+needless to say, asan in zig doesn't exist
+
+1596244555
+keegans
+*either
+
+1596244566
+andrewrk
+this is kinda what I mean about avoiding local maximums
+
+1596244582
+andrewrk
+I'd rather see the effort spent on polishing up the general purpose debug allocator
+
+1596244608
+andrewrk
+which, btw, is also the key to the plan for solving UAF and other memory safety of function-local variables
+
+1596244651
+andrewrk
+keegans, I do think there is room for this feature if done carefully
+
+1596244668
+keegans
+hmm. yeah. for what it's worth, adding ASan to zig required 35 line changes. but i agree that doesn't merit itself a place in the compiler just by that metric
+
+1596244703
+andrewrk
+35 lines? doesn't it depend on a library?
+
+1596244713
+keegans
+
+
+1596244719
+keegans
+llvm has got yer back
+
+1596244730
+keegans
+it needs compiler_rt for asan of course, but that's just a linker flag
+
+1596244757
+andrewrk
+nah see that's the thing, we don't have any system dependencies, and this adds one
+
+1596244771
+keegans
+ah- this feature requires libc, yeah
+
+1596244782
+keegans
+it would be an error to attempt to enable sanitizers without libc
+
+1596244792
+andrewrk
+it requires compiler_rt to have ASAN functions and other stuff, which zig's compiler_rt currently doesn't have
+
+1596244799
+keegans
+but of course they wouldn't be useful if they
+
+1596244803
+andrewrk
+again I do think there is room for this feature, but I think it may be a bit more involved than you are estimating
+
+1596244868
+andrewrk
+because we would need to do it the zig way, and that would mean zig would have to provide the library support (in compiler_rt or whatever else)
+
+1596244900
+andrewrk
+I'm kinda confused how you got this to work at all, didn't you get linker errors?
+
+1596244902
+keegans
+if we would need to do it the Zig way, then yes this is a complete waste of time
+
+1596244925
+keegans
+but I didn't think that we operated that way, I assumed having a hard dependency on libc for an optional feature was a worthwhile tradeoff
+
+1596244966
+andrewrk
+does glibc have the ASAN support functions in it already?
+
+1596244982
+keegans
+I believe glibc also implements the asan runtime as well
+
+1596244991
+andrewrk
+ok that solves my confusion
+
+1596245003
+andrewrk
+it also changes things a little bit
+
+1596245006
+keegans
+i don't know what you mean by linker errors, this works right now
+
+1596245020
+keegans
+I link against the static bin shipped with clang for the asan compiler_rt
+
+1596245038
+andrewrk
+ahh there we go. that's what I'm talking about. the asan support library
+
+1596245076
+andrewrk
+see this is a system dependency. you would be introducing the very first system dependency into the zig compiler. you can see why I would be reluctant to do that
+
+1596245100
+keegans
+I am confused, we depend on libc in the same way we depend on the asan support library, optionally.
+
+1596245109
+andrewrk
+that's not actually true :)
+
+1596245146
+andrewrk
+try this: `zig build-exe hello.zig -target aarch64-linux-gnu` and then consider that you don't actually have aarch64 glibc installed
+
+1596245168
+andrewrk
+oops, throw a `-lc` on there.
+
+1596245235
+keegans
+hmm, if this is really a concern, we copy-paste glibc into the zig source tree, what's stopping us from doing that with the asan runtime
+
+1596245269
+andrewrk
+nothing. that's what I meant by  zig would have to provide the library support (in compiler_rt or whatever else)
+
+1596245287
+andrewrk
+it's not as trivial as copy pasting into the zig source tree tho
+
+1596245308
+keegans
+yeah for sure, I just stated it like that to make sure I'm understanding
+
+1596245362
+andrewrk
+I think I misrepresented my position here as a bit more negative than I really intend to be. I mainly wanted to clarify what it would look like to implement this according to the zig vision
+
+1596245384
+andrewrk
+...which would mean it would even work for cross compiling zig for all the supported targets (where possible)
+
+1596245459
+andrewrk
+there are some sanity checks to do though. I'm not sure what the maintenance burden or installation size burden would be of taking on the sanitizers
+
+1596245485
+andrewrk
+anyway point being this is something that is quite possibly in scope, however there are considerations
+
+1596245505
+keegans
+I didn't forsee the maintenance burden because as I was hacking away on it I thought "no problem, we link against the system-provided compile_rt for asan"
+
+1596245522
+keegans
+so yeah, I saw sanitizers as a very, very special case
+
+1596245535
+andrewrk
+there's no ssytem provided compiler_rt on freestanding or on windows, or on many posix operating systems
+
+1596245553
+andrewrk
+we avoid so many problems by providing a consistent compiler_rt lib
+
+1596245563
+keegans
+sorry, I mean the asan compiler_rt, regardless it's not free-standing, it requires libstdc++ and libc
+
+1596245619
+keegans
+truth be told my "master plan" adding fuzzing support to Zig. and the fastpath to that was adding ASan and then jumping directly into libFuzzer
+
+1596245629
+keegans
+and we can achieve the fuzzing goal without using ASan
+
+1596245679
+keegans
+so I have to re-evaluate this work. thank you for discussing and clarifying
+
+1596245702
+andrewrk
+no problem, and thanks for the interest in improving this. certainly sanitization and fuzzing are important and in-scope use cases
+
+1596245826
+keegans
+while I have you here, I also want to solve an issue with Android support since static compilation is currently broken on ndk 20. the solution as far as I can tell requires some sort of allocation primitive in compiler_rt. details here:
+
+1596245862
+keegans
+the reason why I don't just figure it out is that as far as I can tell allocating things in the compiler_rt is a no-go, so I am not sure what the best way to do this is
+
+1596245970
+keegans
+this doesn't have to be solved right this minute I just got stuck and don't know who to talk to about it
+
+1596246545
+andrewrk
+keegans, as a work around you could link against the static libgcc file from the NDK
+
+1596246626
+keegans
+ah, I'd prefer to fix it "properly" so noone else has to deal with that
+
+1596246635
+keegans
+well I guess as of right now the NDK is a requirement anyway...
+
+1596246656
+andrewrk
+I'm sure we can get to the point where that is not the case
+
+1596246664
+andrewrk
+just requires the work to be put in
+
+1596246683
+andrewrk
+ikskuh has been looking into this recently
+
+1596246686
+keegans
+yeah I have really, really tried to rip bionic out of the android jungle so it can be built independently, but i've given up each time
+
+1596246703
+keegans
+I did at one point get a partial build for just the featureset that I required, but I didn't get the whole nine yards
+
+1596246731
+andrewrk
+well rest assured at some point after I rewrite Groove Basin in zig, I'm going to want an android client for it :)
+
+1596246854
+keegans
+yeah I definitely want bionic in Zig, such that way can do away with env vars in libc.txt as well, but I'm not ready to jump back into that just yet
+
+1596246860
+keegans
+*we
+
+1596246940
+andrewrk
+I think android is a little rough because non of the main zig contributors (and especially me) have really pioneered that path yet
+
+1596246955
+andrewrk
+so it's definitely doable, it's just not, you know, a path well trodden yet
+
+1596247020
+andrewrk
+shame though, because zig has some unique things to offer to that use case
+
+1596247119
+keegans
+yep. I think that zig has the potential to be an excellent choice for android native development
+
+1596247619
+gruebite
+google backing zig?
+
+1596247628
+gruebite
+:P
+
+1596247960
+keegans
+who says we need Google's approval? ;)
+
+1596247970
+gruebite
+my android experience is also extremely limitd
+
+1596248016
+gruebite
+just the basic libgdx, unity, and cordova stuff
+
+1596248194
+ronsor
+I have discovered a bug in the compiler
+
+1596249071
+torque
+I would guess it's pretty unlikely that you were the first to discover it
+
+1596249174
+ronsor
+I did a search
+
+1596250608
+ronsor
+and now it's filed
+
+1596250889
+ronsor
+
+
+1596252131
+andrewrk
+thanks ronsor
+
+1596266329
+gruebite
+if i wanted the zig equivalent to a void pointer, it would be `*@Type(.Opaque)`?
+
+1596266336
+gruebite
+of a*
+
+1596266411
+scientes
+gruebite, *c_void
+
+1596266473
+gruebite
+c_void is defined as @Type(.Opaque). would it be more idiomatic to do my own typedef? `const MyType = @Type(.Opaque);` and then `*MyType`
+
+1596266505
+scientes
+yes
+
+1596266520
+scientes
+well, I think there is a built in for opaque types
+
+1596266534
+scientes
+but the point then is then you have a unique type, unlike c_void
+
+1596268708
+leeward
+@Type(.Opaque) replaces @OpaqueType.
+
+1596268808
+gruebite
+yeah
+
+1596270482
+Snektron
+The C equivalent of `const A = @Type(.Opaque);` is `struct A;`
+
+1596270922
+DarkUranium
+alexnask[m], pixelherodev: So, on yesterday's topic. I'm not quite sure I understand how empty types in Zig can have the same meaning as `noreturn`?
+
+1596271102
+DarkUranium
+(I ask because it sounds more like a unit type to me, than a bottom type)
+
+1596276021
+scientes
+yeah that doesn't make any sense
+
+1596276027
+scientes
+'noreturn' is a procedural thing
+
+1596276039
+alexnask[m]
+DarkUranium: They dont
+
+1596276045
+alexnask[m]
+zig has noreturn
+
+1596277375
+DarkUranium
+alexnask[m], noreturn as a type?
+
+1596277390
+DarkUranium
+Someone mentioned it yesterday, let me try to figure out who.
+
+1596277395
+DarkUranium
+Or what exactly they said.
+
+1596277425
+DarkUranium
+Oh. Apparently it wasn't in here. My bad.
+
+1596277442
+alexnask[m]
+I think it was I believe I saw it too
+
+1596277452
+alexnask[m]
+But yeah I guess it depends on what "bottom type" means exactly
+
+1596277463
+DarkUranium
+It means it's a type that both:
+
+1596277469
+alexnask[m]
+noreturn is the type of control flow expressions and infinite loops in zig
+
+1596277496
+DarkUranium
+1) has no value whatsoever (this implies that it cannot ever be evaluated, e.g. functions "returning" this type cannot ever actually return)
+
+1596277552
+DarkUranium
+2) can be implicitly converted to any other type (the conversion itself is undefined, but that's okay: it'll never happen because of #1 anyways)
+
+1596277570
+DarkUranium
+This does have implications, some ugly. E.g. you can do `int x = abort();`
+
+1596277583
+DarkUranium
+But OTOH, it's useful: `int x = y ? 1 : abort();`
+
+1596277605
+alexnask[m]
+Right, noreturn in zig fits but not empty types
+
+1596277611
+alexnask[m]
+or rather, zero bit types
+
+1596277704
+DarkUranium
+Yes, that's what I figured.
+
+1596278141
+DarkUranium
+alexnask[m], hm, Zig has compile-time evaluation, right?
+
+1596278221
+alexnask[m]
+Yes
+
+1596278261
+alexnask[m]
+I personally feel like its one of the best designs around (this is what drew me into zig in the first place)
+
+1596278286
+alexnask[m]
+Especially the whole types-as-values thing which eliminates the need for an extra setg fo features for generic programming
+
+1596278336
+DarkUranium
+Yeah, I've been toying with that idea for Coyote, too (with a simple generics syntax that's basically a conveniency wrapper)
+
+1596278364
+DarkUranium
+Question #2. Can CTFE open files (at compile-time, ofc)
+
+1596278405
+alexnask[m]
+You can open files with the builtin @embedFile but in general all syscalls are not allowed
+
+1596278420
+DarkUranium
+Okay. I'm asking because, uh. I have a stupid idea :P
+
+1596278423
+alexnask[m]
+Well, to be precise inline assembly and calls into dynamic libraries are not allowed
+
+1596278425
+DarkUranium
+(maybe Zig does it already)
+
+1596278477
+DarkUranium
+Basically, a compile-time parseCHeader(@embedFile("foo.h")) :P
+
+1596278505
+alexnask[m]
+Right, this would be achievable in zig userland if we had reification for structs
+
+1596278513
+alexnask[m]
+Which is not out of the picture
+
+1596278532
+alexnask[m]
+But not yet implemented and probably a 50/50 thing
+
+1596278545
+alexnask[m]
+We do have a language feature for it currently though
+
+1596278548
+alexnask[m]
+(@cImport)
+
+1596278553
+DarkUranium
+Oh, nice.
+
+1596278556
+DarkUranium
+That reminds me, I'm kinda considering going for deterministic compilation with Coyote.
+
+1596278625
+alexnask[m]
+what do you plan to compile down to?
+
+1596278627
+DarkUranium
+The bytecode format I have in mind would already be deterministic, regardless of order of inputs or such (basically: symbols would be alphabetically sorted, to allow for binary search)
+
+1596278632
+DarkUranium
+Bytecode. So that makes it easier IMO.
+
+1596278655
+DarkUranium
+There are reasons to want compilation date & time in there, though, but that could be limited to a single header field (and treated as a non-constant for the sake of determinism)
+
+1596278692
+alexnask[m]
+I see, yeah sounds achievable. Are you gonna jit compile this? (only asking since pixelhero is involved and I assume he would want to :P)
+
+1596278719
+DarkUranium
+I don't even know
+
+1596278745
+DarkUranium
+The plan is to interpret for now. But even before pixelherodev came on board, the plan was to have a bytecode format that was amenable to JITting (as opposed to interpreting).
+
+1596278747
+alexnask[m]
+Its a nice guarantee even if it doesnt add much practical value afaict
+
+1596278752
+DarkUranium
+Basically, I intend for my bytecode to be in SSI form.
+
+1596278763
+DarkUranium
+(because it's 2020, and there's little point in
+
+1596278806
+DarkUranium
+One way to handle compilation date/time would be to just use current datetime by default, but provide a flag to override, I guess?
+
+1596278819
+DarkUranium
+(I like having date/time in there for debugging reasons ... it's poor man's automatic versioning)
+
+1596278850
+alexnask[m]
+Yeah this sounds good for testing
+
+1596278889
+alexnask[m]
+I assume you are writing this in C?
+
+1596278903
+DarkUranium
+That's the plan :)
+
+1596278916
+DarkUranium
+Would've used Zig, but repl.it doesn't support it (yet?)
+
+1596278921
+DarkUranium
+(apparently, you can make a pull request?)
+
+1596278927
+DarkUranium
+Well, pixelherodev would've used Zig for the JIT, that is.
+
+1596278933
+DarkUranium
+But I don't think we need a JIT for the jam.
+
+1596278939
+alexnask[m]
+Havent looked into repl.it at all
+
+1596278952
+DarkUranium
+It's just a online editor+compiler thingie. Nothing fancy.
+
+1596278958
+alexnask[m]
+Yeah they pretty much only judge language design and not the implementation itself right?
+
+1596278967
+alexnask[m]
+They just want something that works afaict
+
+1596279022
+DarkUranium
+
+
+1596279038
+DarkUranium
+"Today, we're announcing the programming language jam and a $10,000 grant to a team that designs and prototypes a new language with emphasis on fresh and possibly wild ideas"
+
+1596279097
+alexnask[m]
+TFW some weird functional thing will win
+
+1596279107
+DarkUranium
+I'm almost positive that's what's gonna happen, yes.
+
+1596279111
+DarkUranium
+Or some very niche DSL.
+
+1596279140
+DarkUranium
+One of the ideas I discussed w/ pixelherodev
+
+1596279160
+DarkUranium
+A brand new relational language (same problem space as SQL, but way different).
+
+1596279389
+ikskuh
+ouh, that sounds funny
+
+1596279397
+DarkUranium
+ikskuh, in what sense?
+
+1596279405
+ikskuh
+the language jam itself :D
+
+1596279411
+DarkUranium
+Oh :D
+
+1596279426
+DarkUranium
+Thought you meant the DSL.
+
+1596279439
+ikskuh
+> The hackathon starts on August 10th and runs until August 31st.
+
+1596279456
+alexnask[m]
+I think some language with comptime evaluation taken to the extreme would have a chance even if the runtime stuff is vanilla
+
+1596279495
+alexnask[m]
+I was tempted too but I dont think Ill have much time
+
+1596279560
+ikskuh
+but i think i have enough projects already, including "moving to a new flat"
+
+1596279758
+DarkUranium
+alexnask[m], Coyote would be a good candidate for adding comptime evaluation. I'll already have a VM, and the compiler will depend on it.
+
+1596279790
+DarkUranium
+All I'd need, really, would be syntax for compile-time eval, and an API to manipulate the program "one level deeper".
+
+1596279804
+DarkUranium
+Then you could even layer compile-time eval
+
+1596279947
+DarkUranium
+BTW, sneak peek of that DSL I mentioned (just for fun): σ{id,display_name} Π{email=$email} users
+
+1596279951
+DarkUranium
+Because words are too obvious :D
+
+1596279977
+DarkUranium
+(I'm only semi-joking: they'll be \selection and \projection, respectively)
+
+1596280165
+alexnask[m]
+ς <- best sigma
+
+1596280423
+pixelherodev
+alexnask[m]: lol I see my reputation precedes me now
+
+1596280449
+DarkUranium
+Hey there! :)
+
+1596280457
+pixelherodev
+Hi!
+
+1596280468
+pixelherodev
+I'd say good morning but I'm an idiot and I didn't sleep
+
+1596280476
+ifreund
+heh
+
+1596280476
+pixelherodev
+Bright side, I realized why I've had trouble sleeping this past week
+
+1596280478
+DarkUranium
+ouch
+
+1596280503
+ifreund
+yeah, that'd do it
+
+1596280513
+ifreund
+I just stick to herbal tea
+
+1596280579
+DarkUranium
+Funny thing is, caffeinated tea makes me *sleepy*.
+
+1596280603
+pixelherodev
+Other bright side, I've gone running five out of the last six days, and a linear regression on my weight for the last week shows that my predictions are accurate and it's going down rapidly :)
+
+1596280617
+pixelherodev
+Also I finally found an excuse to use GNUPlot again :P
+
+1596280654
+pixelherodev
+Anywho, time for me to rebase and split that PR
+
+1596280663
+ifreund
+good for you man, running is literally the fastest way to get fit
+
+1596280699
+ifreund
+it also greatly improves sleep quality for me at least (assuming you don't negate it with caffine :P)
+
+1596280728
+pixelherodev
+lol, yeah
+
+1596280874
+pixelherodev
+Whoa
+
+1596280879
+pixelherodev
+#5964 looks neat
+
+1596281012
+ifreund
+hmm, should std.Childprocess clear the signal mask of children?
+
+1596281075
+ifreund
+It also leaks an fd currently on linux which a user of river just discovered
+
+1596281112
+ifreund
+I'm just going to replace it with fork/execve in my code for now
+
+1596281120
+pixelherodev
+:(
+
+1596281285
+ifreund
+I guess it should maybe call setsid as well, not really sure what best practice is here
+
+1596281682
+ifreund
+eh, probably not. Wouldn't really be a child then
+
+1596284892
+eleanor-nb
+pixelherodev Discord PM'd you my notes.
+
+1596284909
+pixelherodev
+Thanks!
+
+1596291565
+pixelherodev
+... i think it's good enough now
+
+1596291570
+pixelherodev
+publishing shortly
+
+1596292599
+Cadey
+did something happen to std.os.mode_t?
+
+1596292743
+ifreund
+don't think so, i still see it in e.g. lib/std/os/bits/linux/x86_64.zig
+
+1596293308
+Cadey
+did std.Buffer change names in 0.6?
+
+1596293415
+Cadey
+aha:
+
+1596293509
+pixelherodev
+
+
+1596293626
+ifreund
+\o/
+
+1596293908
+pixelherodev
+gah css is off slightly
+
+1596293940
+DarkUranium
+pixelherodev, obligatory:
+
+1596294013
+Sahnvour
+pixelherodev: typo where you advocate for Kristall ? seems like a bit of sentence is missing
+
+1596294757
+SyrupThinker
+Ye, it probably should say something like "... allows that with its outline feature)" Also code blocks overflow on my phone and I can't scroll to read the rest.
+
+1596294789
+SyrupThinker
+(of the overflowing part)
+
+1596294903
+scientes
+DarkUranium, nice gif
+
+1596294973
+danyspin97
+how can I convert this in zig?
+
+1596295002
+danyspin97
+<< and @shrExact complains about value 13 that cannot be coerced to u3
+
+1596295091
+ifreund
+danyspin97: what's the type of class/data?
+
+1596295099
+danyspin97
+integer
+
+1596295133
+danyspin97
+both `int` in C
+
+1596295146
+pixelherodev
+Sahnvour: whoops
+
+1596295153
+ifreund
+what size? sounds like you're using 8 bits from the "u3"
+
+1596295172
+danyspin97
+I have `const IOPRIO_CLASS_SHIFT : u8 = 13;`
+
+1596295180
+ifreund
+not asking about C but about your code
+
+1596295181
+danyspin97
+the C code is just `int`
+
+1596295193
+ifreund
+what about class though?
+
+1596295203
+danyspin97
+and yea
+
+1596295205
+danyspin97
+i8
+
+1596295213
+ifreund
+yeah, you can't do that
+
+1596295225
+danyspin97
+i see, I should use i32
+
+1596295230
+ifreund
+i8 has 8 bits, you can't shift left 13 bits
+
+1596295242
+danyspin97
+you're right, thanks for the explanation
+
+1596295247
+ifreund
+no problem
+
+1596295263
+DarkUranium
+I wonder. Does Zig have a way of specifying saturating arithmetic for a specific expression?
+
+1596295322
+alexnask[m]
+Nope, there is a proposal open for this though
+
+1596295343
+alexnask[m]
+(accepted)
+
+1596295363
+DarkUranium
+It is something I miss quite often in C. It's very useful for signal processing (including image processing, which is just a fancy type of signal anyways)
+
+1596296145
+pixelherodev
+DarkUranium: lol exactly (the gif)
+
+1596296206
+DarkUranium
+Web technologies are such a mess.
+
+1596296216
+DarkUranium
+pixelherodev, did you know that they wanted to put file uploads
+
+1596296227
+DarkUranium
+Yes, the graphics format.
+
+1596296241
+pixelherodev
+What the actual fuck?!
+
+1596296258
+KoljaKube
+Now I'm intrigued :D
+
+1596296258
+pixelherodev
+Whoever proposed that should be shot into the sun!
+
+1596296282
+DarkUranium
+They finally got to their senses at some point (which is why the "newest version" link doesn't have it), but:
+
+1596296285
+DarkUranium
+
+
+1596296286
+DarkUranium
+
+
+1596296296
+SyrupThinker
+Sockets Via Graphics
+
+1596296316
+DarkUranium
+lol SyrupThinker
+
+1596296418
+pixelherodev
+Hahaha
+
+1596296432
+DarkUranium
+And don't get me started on WebUSB ...
+
+1596296450
+pixelherodev
+Or webserial
+
+1596296451
+alexnask[m]
+TIL
+
+1596296475
+DarkUranium
+pixelherodev, wtf.
+
+1596296482
+pixelherodev
+You didn't know about that one?
+
+1596296486
+DarkUranium
+Nope.
+
+1596296496
+pixelherodev
+Haha
+
+1596296500
+pixelherodev
+Yeah it's awful
+
+1596296504
+DarkUranium
+Here's a fun read:
+
+1596296510
+DarkUranium
+(I may have lied about the "fun" part)
+
+1596296525
+DarkUranium
+Just see first two code blocks.
+
+1596296545
+SyrupThinker
+Web* make sense for the web as an application platform, but not for the web as a document system
+
+1596296563
+DarkUranium
+SyrupThinker, it doesn't, though.
+
+1596296577
+DarkUranium
+Oh, you mean all the WebFoo things ... I guess?
+
+1596296586
+DarkUranium
+But WebUSB is just plain dangerous.
+
+1596296630
+SyrupThinker
+Sadly browser vendors (or at least their PR people) think Permissions are evil and should be avoided at all costs
+
+1596296650
+SyrupThinker
+Although that's the one thing that redeems the web as a platform for me
+
+1596296651
+DarkUranium
+IETF also had their share of blunders.
+
+1596296656
+DarkUranium
+The most frustrating one for me is libopus.
+
+1596296730
+ifreund
+WebAssembly seems to be the only reasonably WebFoo thing
+
+1596296755
+pixelherodev
+Eh
+
+1596296757
+pixelherodev
+I disagree there
+
+1596296758
+DarkUranium
+ifreund, I've looked into it. The idea is reasonable.
+
+1596296759
+pixelherodev
+I like WebAsm
+
+1596296764
+DarkUranium
+WebAssembly itself is a *horrible mess*.
+
+1596296766
+pixelherodev
+I don't think it's a good fit for the web
+
+1596296781
+DarkUranium
+pixelherodev, it's a mess. I outright don't want to use it because they fucked up so badly :|
+
+1596296783
+pixelherodev
+^ that's probably a better way to put it
+
+1596296786
+DarkUranium
+(but I'll probably be forced to)
+
+1596296798
+pixelherodev
+The idea of web-as-application-platform is anathema to me
+
+1596296808
+pixelherodev
+If I can get away with it, I'll be nuking qutebrowser soon
+
+1596296815
+pixelherodev
+And using kristall only :P
+
+1596296836
+fengb
+Wasm is fine
+
+1596296856
+alexnask[m]
+Fight
+
+1596296857
+fengb
+Interfacing with it and web apis kinda blows
+
+1596296861
+Nypsie[m]
+It's really not that strange of an idea if you look in the enterprise industry. It is so much easier to support enterprises with a web app than some desktop application.
+
+1596296872
+alexnask[m]
+Yeah all the JS glue >.>
+
+1596296878
+fengb
+Despite its name, it’s actually kinda lousy for the web
+
+1596296895
+fengb
+And pretty good as a stand-alone vm setup
+
+1596296896
+Nypsie[m]
+(Altho, companies who still use IE can burn)
+
+1596296921
+DarkUranium
+fengb, are you aware of what mess they made with their representation?
+
+1596296938
+DarkUranium
+They fucked up so badly that their locals can't be optimized properly.
+
+1596296957
+DarkUranium
+And they're seemingly unaware of the fact that you can verify code that's in SSA form (because that's their argument for not allowing normal block-based control flow).
+
+1596296975
+DarkUranium
+There's a thread about the lack of goto, it's a dumpster fire.
+
+1596296989
+Sahnvour
+webasm is peak "local maximum"
+
+1596297005
+DarkUranium
+It's not even a local maximum. In hype & usage, maybe.
+
+1596297025
+Sahnvour
+make that quotes tiples, but you get the idea
+
+1596297110
+Sahnvour
+the very idea of making the web the universal platform is a (very) local maximum because web browsers are ubiquitous, but meh
+
+1596297122
+fengb
+Wasm isn’t designed for the web
+
+1596297134
+DarkUranium
+fengb, my issue with wasm isn't with wasm on the web.
+
+1596297142
+DarkUranium
+My issue with wasm is in its internal representation.
+
+1596297143
+fengb
+Trying to use it on the web and it’s pretty clear it doesn’t map well at all
+
+1596297153
+Sahnvour
+isn't it part of the trend to make web browsers into VMs ?
+
+1596297159
+DarkUranium
+And it definitely was designed for the web --- the main
+
+1596297190
+fengb
+I’m actually fine with no gotos
+
+1596297195
+DarkUranium
+Well, it wasn't designed for the web in the sense that it was designed for V8.
+
+1596297196
+SyrupThinker
+Control flow analysis no?
+
+1596297204
+DarkUranium
+fengb, I'm not. Internal representation of compilers nowadays uses basic blocks.
+
+1596297210
+fengb
+It’s not designed to be instruction based low level
+
+1596297218
+fengb
+At least not machine level
+
+1596297236
+DarkUranium
+You end up deoptimizing anything that's not. LLVM emits while(__label__) switch(__label__) for irreducible control flow (this shows up a
+
+1596297264
+DarkUranium
+They also fucked up the locals, where you can't actually allocate registers as effectively as with SSA, or as easily as with stack-based machines.
+
+1596297276
+DarkUranium
+It's just a dumpster fire of bad design, really.
+
+1596297354
+DarkUranium
+
+
+1596297426
+danyspin97
+how can i get the errno of syscall?
+
+1596297436
+DarkUranium
+fengb, relevant portion: "[...] This essentially makes WebAssembly a register machine without liveness analysis, but not only that, it’s a register machine that isn’t even in SSA form - both of the tools at our disposal to do optimisation are unavailable. [...]"
+
+1596297446
+danyspin97
+I have tried os.errno(result) with result the return value of the syscall
+
+1596297456
+fengb
+
+
+1596297529
+fengb
+Feels kinda like 2 camps just yelling at each other
+
+1596297580
+fengb
+Which I’m sure it probably has flaws. But we’ve never had a cross platform VM that’s this low level
+
+1596297713
+pixelherodev
+fengb: that's nonsense
+
+1596297716
+pixelherodev
+We've had plenty
+
+1596297722
+pixelherodev
+People just haven't used them for this kinda thing
+
+1596297741
+pixelherodev
+Almost literally every emulator ever supports most common platforms
+
+1596297746
+pixelherodev
+With 100% consistency between them
+
+1596297752
+ifreund
+DarkUranium: re that post, it looks like the proposal referenced that solves the problem was merged a couple months ago
+
+1596297754
+ifreund
+
+
+1596297886
+DarkUranium
+ifreund, took them long enough =\
+
+1596300892
+pixelherodev
+Woot!
+
+1596300896
+pixelherodev
+#5964 merged!
+
+1596300897
+pixelherodev
+:D
+
+1596302800
+Ristovski
+hmm, am I dumb? I can't get cimgui to work. Keep throws "note: unknown type name 'IMGUI_IMPL_API'" no matter if I define it to be 'extern "C"' or not
+
+1596302888
+ifreund
+man, zig fmt won't let me put a switch on one line, even if I remove the trailing comma
+
+1596302916
+fengb
+zig fmt does not make friends, only judgements
+
+1596302953
+ifreund
+I made it an if so I can do it on one line, but the switch was more readable if a little longer
+
+1596302991
+pixelherodev
+ifreund: fmt: off /)
+
+1596302994
+pixelherodev
+;)
+
+1596303640
+leeward
+Ristovski: If you give us some sample code we might be able to figure out what's going wrong.
+
+1596303681
+Ristovski
+Let me try debugging thi
+
+1596303685
+Ristovski
+s
+
+1596304445
+DarkUranium
+Ristovski, sounds like a missing #define?
+
+1596304457
+Ristovski
+DarkUranium: ah, I had it badly escaped :/
+
+1596304465
+DarkUranium
+*_API is typically stuff that defined the calling convention.
+
+1596304471
+DarkUranium
+s/defined/defines/
+
+1596304566
+Ristovski
+yup, had an extra set of "" around the -DIMGUI_IMPL_API
+
+1596308478
+gruebite
+quick way to zero initialize a struct instead of undefined?
+
+1596308565
+alexnask[m]
+std.mem.zeroes
+
+1596308656
+alexnask[m]
+(or zeroInit which initializes to default or zero)
+
+1596308876
+Ristovski
+How can I 1) format a string 2) pass it to a C function
+
+1596308898
+Ristovski
+I looked at fmt.zig but its not immediately obvious
+
+1596308918
+gruebite
+nice, thanks
+
+1596308942
+ifreund
+Ristovski: you migh want std.fmt.allocPrint0()
+
+1596308978
+ifreund
+this will allocate memory and format a string, adding a null terminator which the C function probably needs
+
+1596309018
+ifreund
+If you don't want to allocate, there's a version taking a buffer as well iirc
+
+1596309179
+alexnask[m]
+Looks like there isnt a bufPrint zero terminated variant
+
+1596309193
+Ristovski
+yeah I just noticed
+
+1596309199
+alexnask[m]
+But you can just explicily add a zero terminator in the format string
+
+1596309211
+ronsor
+^
+
+1596309375
+Ristovski
+alexnask[m]: Can I not set the buffer to be 0 initialized?
+
+1596309457
+alexnask[m]
+Sure this would work too
+
+1596309501
+alexnask[m]
+You will be writing over N bytes twice though but I dont think its a huge deal :shrug:
+
+1596309626
+Ristovski
+Oh hmm, I see
+
+1596309629
+Ristovski
+thanks!
+
+1596310743
+ifreund
+so, wasm doesn't use elf. Guess I've got a good bit of infrastucture to build
+
+1596310783
+pixelherodev
+Going to need a new link.File type
+
+1596310822
+ifreund
+yep
+
+1596310862
+alexnask[m]
+Ah are you adding wasm to stage2? Cool! Im working on PE myself, reading docs and code rn and will start writing code soon
+
+1596310899
+ifreund
+alexnask[m]: yeah, that's my goal
+
+1596310942
+ifreund
+wait, what's PE?
+
+1596310944
+pixelherodev
+... okay I really need to rush my PRs through now :P
+
+1596310946
+pixelherodev
+ifreund: Windows.
+
+1596310953
+alexnask[m]
+ifreund: windows executables
+
+1596310956
+pixelherodev
+Nice to see interest taking off now :)
+
+1596310981
+ifreund
+ah lol
+
+1596310985
+Nypsie[m]
+I should work on another stage 2 PR 🤔
+
+1596311079
+ifreund
+I guess incremental compilation needs to be implemented independantly for each container format
+
+1596311088
+pixelherodev
+Nope
+
+1596311092
+pixelherodev
+Well, sorta
+
+1596311109
+pixelherodev
+You need to implement some parts of it, but the majority of it is before the linker
+
+1596311141
+pixelherodev
+Linker should use an offset table, codegen needs to use that instead of directly calling functions
+
+1596311160
+pixelherodev
+Linker needs to track where symbols are in the output so it can update them, and it needs to track their offset table entries
+
+1596311161
+ifreund
+yeah, so I need to figure out how that works for wasm
+
+1596311163
+alexnask[m]
+updateDecl, allocateDeclIndexes, updateDeclExports is what you need per format afaict
+
+1596311175
+ifreund
+yup, found those
+
+1596311182
+pixelherodev
+This is awesome :)
+
+1596311403
+ifreund
+gotta say, the stage2 code has been surprisingly easy to follow so far for someone who has never worked on a compiler before
+
+1596311419
+ifreund
+it does help that it's written in zig :)
+
+1596311495
+Nypsie[m]
+The general structure is really clear imo
+
+1596311758
+pixelherodev
+Okay, removed p16 and improved the way 16-bit ELF is handled a bi
+
+1596311761
+pixelherodev
+bit*
+
+1596311769
+pixelherodev
+And tests still pass, so...
+
+1596311955
+ronsor
+crazy idea incoming: is it possible that I could add support for targeting MS-DOS DJGPP?
+
+1596311972
+pixelherodev
+What's DJGPP?
+
+1596311998
+ronsor
+"DJGPP is a complete 32-bit C/C++ development system for Intel 80386 (and higher) PCs running DOS. It includes ports of many GNU development utilities. The development tools require a 80386 or newer computer to run, as do the programs they produce. In most cases, the programs it produces can be sold commercially without license or royalties. "
+
+1596312010
+pixelherodev
+C compiler?
+
+1596312013
+pixelherodev
+Does it support C89?
+
+1596312023
+ronsor
+yes, it's a port of GCC to DOS
+
+1596312028
+pixelherodev
+Then you don't need to do anything ;)
+
+1596312035
+pixelherodev
+I've already started working on a C89 backend
+
+1596312049
+pixelherodev
+It's not fully up to date, but I'm going to be expanding it tomorrow morning :D
+
+1596312060
+ronsor
+C89 backend? wow
+
+1596312065
+pixelherodev
+Yep
+
+1596312087
+leeward
+Does anything not support C89? I feel like that's the least common denominator for generated code.
+
+1596312106
+pixelherodev
+That's why we're targeting it
+
+1596312131
+pixelherodev
+We use the preprocessor to add better e.g. noreturn support depending on available standard
+
+1596312135
+DarkUranium
+leeward, uuh ... the C# compiler doesn't!
+
+1596312139
+DarkUranium
+(it supports C#!)
+
+1596312141
+DarkUranium
+:P
+
+1596312148
+pixelherodev
+while grinning a bit :P
+
+1596312155
+DarkUranium
+Thank you, I'll be here all week.
+
+1596312155
+ronsor
+a C# backend would be interesting
+
+1596312156
+leeward
+DarkUranium: Thank you. Your pedantry has been noted.
+
+1596312156
+ronsor
+and strange
+
+1596312159
+leeward
+Welcome to the list.
+
+1596312162
+DarkUranium
+lol
+
+1596312167
+DarkUranium
+Am I getting coal for christmas now?
+
+1596312176
+leeward
+Ask phd. He's the charter member of the list.
+
+1596312202
+pixelherodev
+Nah, sorry, I don't know that stuff
+
+1596312227
+leeward
+ronsor: A CLI (because Microsoft is happy to alias TLAs) backend might actually be useful to some people.
+
+1596312248
+pixelherodev
+... I think my zig fmt is broken???
+
+1596312271
+pixelherodev
+Yeah.
+
+1596312273
+pixelherodev
+Crap.
+
+1596312289
+pixelherodev
+... oh wait nvm
+
+1596312294
+pixelherodev
+`zig fmt: off` at the top
+
+1596312308
+leeward
+hah
+
+1596312316
+DarkUranium
+leeward, isn't it called CLR nowadays?
+
+1596312341
+pixelherodev
+Huh neat, Kristall can look at GitHub Issues without Issues ;)
+
+1596312342
+DarkUranium
+And I think CLR is a bit of a bag of worms, because then people expect to be able to use the entirety of .NET from the language ...
+
+1596312353
+DarkUranium
+pixelherodev, I wonder how it'd work with Gitea.
+
+1596312353
+leeward
+DarkUranium: Maybe? I haven't paid any attention to it.
+
+1596312380
+DarkUranium
+I've used it briefly at univ and a tiny bit at work ... but I really dislike .NET, so I try to avoid it whenever I can.
+
+1596312388
+ronsor
+I prefer .NET to Java
+
+1596312424
+leeward
+.NET came out when I was in school and I wasn't a CS major so...managed to never learn any .NET languages or Java.
+
+1596312608
+Ristovski
+is "-target native" the default?
+
+1596312621
+leeward
+Ristovski: yep
+
+1596312629
+Ristovski
+cool!
+
+1596312633
+leeward
+native-native
+
+1596312634
+pixelherodev
+Which also includes the equivalent of `-march=native` ;D
+
+1596313092
+pixelherodev
+Okay, almost done rebasing SPU II branch...
+
+1596313123
+pixelherodev
+There
+
+1596313624
+gruebite
+trying to cast from [256]u8 to [*:0]u8
+
+1596313657
+gruebite
+i would think it would be unambiguous and allowed by @as but apparently not
+
+1596313672
+fengb
+The zero termination makes it ambiguous
+
+1596313672
+pixelherodev
+Two PRs down... one to go?
+
+1596313678
+alexnask[m]
+`text[0..len : 0]`
+
+1596313695
+fengb
+Not ambiguous. Potentially buggy
+
+1596313699
+leeward
+It's not obvious that your [256]u8 is terminated by a zero.
+
+1596313701
+alexnask[m]
+(len doesnt include the zero byte)
+
+1596313701
+gruebite
+i was looking at spanZ but i first need a sentinal
+
+1596313716
+fengb
+So it won’t help you accidentally shoot yourself in the foot
+
+1596313721
+gruebite
+gotcha
+
+1596313737
+gruebite
+where i cast to 0 sentinal and it doesn't have a zero sentinal
+
+1596313739
+leeward
+casts only reinterpret memory; they don't transform it.
+
+1596313779
+fengb
+Easiest way is `@ptrCast([*:0]u8, &array)` but that doesn’t check the sentinel
+
+1596313781
+gruebite
+okay, so how to get the length of [256]u8 where i know it has a zero terminator? :P
+
+1596313798
+gruebite
+yeah, i've used that previously
+
+1596313812
+gruebite
+i'm getting this block from C code
+
+1596313818
+pixelherodev
+Okay, hopefully none of those PRs accidentally depend on each other...
+
+1596313876
+pixelherodev
+`tests` branch passes locally...
+
+1596313931
+pixelherodev
+ihex
+
+1596313996
+pixelherodev
+All three pass locally :D
+
+1596314044
+gruebite
+this ended up working: mem.eql(u8, check, mem.spanZ(@ptrCast([*:0]const u8, &c_buffer)))
+
+1596314613
+pixelherodev
+Now that more of us are working on backends, I think it's time to at least start keeping track of who's working on what so we can avoid stepping on each other's toes
+
+1596314640
+pixelherodev
+Don't want to have multiple people submitting redundant work :)
+
+1596314684
+pixelherodev
+Haha
+
+1596314688
+pixelherodev
+I need to update my post already :P
+
+1596314740
+DarkUranium
+alexnask[m], hey. I did some brainstorming with pixelherodev on the topic of LSP support.
+
+1596314757
+DarkUranium
+I think I have a strategy on what to try now; I can let you know how it goes :)
+
+1596314802
+pixelherodev
+I'm currently working on File.Hex (Intel HEX format), SPU II, and the C backend; alexnask[m] is working on File.PE (Windows executables); ifreund is working on File.Wasm
+
+1596314802
+DarkUranium
+(though we're likely to only implement it post-jam)
+
+1596314809
+pixelherodev
+Neato
+
+1596315242
+leeward
+Heh, that's a fun bug.
+
+1596315648
+leeward
+I think using defer in a noreturn function might cause an infinite loop in the compiler.
+
+1596315674
+leeward
+Ooh, and it eats memory like a champ too.
+
+1596315699
+DarkUranium
+nom nom memory
+
+1596315723
+DarkUranium
+I managed to use 25GB of RAM in a single query yesterday, before postgres gave up.
+
+1596315737
+DarkUranium
+Sorry, not RAM --- but disk space (it flushed to disk due to size)
+
+1596315758
+leeward
+Well, this ate all my RAM and was chewing through swap by the time I killed it.
+
+1596315777
+gruebite
+[_][]const u8 -> [*c]const [*c]const u8
+
+1596315787
+DarkUranium
+leeward, ouch.
+
+1596316200
+gruebite
+can't seem to get this conversion right
+
+1596316243
+ifreund
+well, a []cons u8 is twice the size of a [*c]const u8
+
+1596316252
+alexnask[m]
+You cant do this without a separate array of pointers since a slice is a ptr len
+
+1596316258
+ifreund
+so you need to do a copy there
+
+1596316551
+gruebite
+i would just duplicate it since it's internal, but i can't easily initialize [*c][*c]const u8?
+
+1596316567
+gruebite
+like: [*c][*c]const u8{ "str1", "str2" };
+
+1596316671
+alexnask[m]
+`var arr = [_][*c]const u8 { "str1", "str2" }; &arr;`
+
+1596316789
+ifreund
+I'd recommend var arr = [_][*:c]const u8{ .. }
+
+1596316810
+ifreund
+all pointers coerce to [*c]
+
+1596316823
+ifreund
+whoops, meant [*:0]
+
+1596316855
+leeward
+Did I accidentally slip into evented IO mode when I started using File.seekableStream()?
+
+1596316865
+leeward
+My program runs to completion and hangs.
+
+1596316887
+alexnask[m]
+ifreund: `&arr` will not coerce to [*c][*c]const u8 in that case because of the different child types
+
+1596316916
+ifreund
+really? that seems odd
+
+1596317095
+leeward
+ah data dependent bugs
+
+1596318198
+ifreund
+what happens as the offset table grows in size? wouldn't that require shifting the rest of the contents of the file?
+
+1596318240
+ifreund
+or are things only incrementally updated in-memory and the the file is rewritten each time?
+
+1596318396
+ifreund
+or is there just a bunch of padding after the offset table?
+
+1596319223
+ifreund
+hmm, looks like everything is updated in the file directly
+
+1596319266
+ifreund
+not quite sure how this is going to work with wasm as the spec requires the functions to be perfectly packed
+
+1596319435
+leeward
+does "perfectly packed" mean align(1)?
+
+1596319497
+ifreund
+yeah wasm is all align(1) afaik
+
+1596319627
+leeward
+makes sense for something that's necessarily being sent over a network
+
+1596319670
+ifreund
+I could add new functions to the end without removing the old versions, but re-using the space taken up by the "dead" functions can only happen if a new function has the exact same size
+
+1596319694
+fengb
+Can you noop pad the function?
+
+1596319697
+alexnask[m]
+^
+
+1596319716
+ifreund
+hmm, yeah I think I could
+
+1596319719
+ifreund
+let me test that
+
+1596319726
+fengb
+It should only take a byte so as long as it’s smaller
+
+1596319745
+ifreund
+I can also pad between sections using empty custom sections
+
+1596319763
+fengb
+I thought custom sections was reserved for the end
+
+1596319775
+fengb
+Been a few months since I looked though
+
+1596319844
+ifreund
+you can put them at the start, end, and between any section
+
+1596319949
+ifreund
+yeah looks like noop padding will work wonders
+
+1596320011
+ifreund
+now I just need to figure out how best to implement the offset table, probably padded with a custom section after it
+
+1596320268
+ifreund
+fengb: it's sensible to just use globals to store the function indexes right?
+
+1596320316
+fengb
+I thought function indexes have their own section
+
+1596320353
+ifreund
+yes, but we need to have the equivalent of an offset table
+
+1596320389
+ifreund
+instead of calling functions directly, one would call the function index stored in a specific global
+
+1596320405
+fengb
+Oh and everything would be call indirect then?
+
+1596320425
+ifreund
+yeah, we need that to make incremental work
+
+1596320464
+leeward
+Incremental build only has to work in Debug, right?
+
+1596320470
+ifreund
+right
+
+1596320487
+ifreund
+we definetly don't want this indirection in release builds
+
+1596320610
+fengb
+Maybe using the table section? Looks like global section can only store primitives
+
+1596320627
+fengb
+(I actually have no clue what the table section does... was planning on figuring that out later)
+
+1596320672
+fengb
+
+
+1596320757
+fengb
+"tables may only be accessed from WebAssembly code via call_indirect;"
+
+1596320797
+fengb
+Hmm, you'll need to merge the compiler jump table with the executable's table into the same section
+
+1596320802
+fengb
+That's awkward :(
+
+1596321415
+ifreund
+fengb: function indexes are just 32 bit integers no?
+
+1596321426
+ifreund
+what's wrong with putting that in a global?
+
+1596321541
+fengb
+Because you can't call arbitrary numbers afaik
+
+1596321551
+fengb
+They need to be loaded into a jump table
+
+1596321602
+fengb
+s/jump/dispatch
+
+1596321735
+ifreund
+hmm
+
+1596322106
+ifreund
+yeah looks like you're right
+

@@ -1,0 +1,992 @@
+1598494442
+andrewrk
+I forgot how ridiculous it is to compile glibc for every arch
+
+1598494463
+andrewrk
+you literally have to build a different gcc for every architecture. that's like 30 of them
+
+1598494498
+andrewrk
+there's a script, but still. it takes 60 GiB on your hard drive and takes 2 full days of compiling, even with 16 CPU cores
+
+1598497764
+pixelherodev
+andrewrk: can't compile glibc with clang?
+
+1598499916
+andrewrk
+why do you ask?
+
+1598501236
+pixelherodev
+andrewrk: "you need to build a different GCC for every arch"
+
+1598501245
+pixelherodev
+If you can build with Clang, can't you use a single Clang for some of those arches?
+
+1598501433
+leeward
+I think these are all cross compilers. Only 1 gcc required to compile the 30
+
+1598501493
+andrewrk
+I'm not doing anything weird, just running the official build-many-glibcs.py script as described here
+
+1598513321
+protheory8-new-m
+Btw, should someone improve the error message when doing `std.Thread.spawn(self, self.fnName);`?
+
+1598513345
+protheory8-new-m
+Or is it fine?
+
+1598516521
+protheory8-new-m
+What I mean is if I do `std.Thread.spawn(self, self.fnName);`, it doesn't compile with an error in standard library, `std.Thread.spawn(self, StructName.fnName);` should be done instead. The error message for this isn't very good, but it's kind of fine
+
+1598517055
+protheory8-new-m
+Example:
+
+1598517122
+pixelherodev
+andrewrk: most people would probably say that building 30 glibcs is itself weird ;P
+
+1598517719
+daurnimator
+those people haven't lived
+
+1598517961
+scientes
+^^^
+
+1598517976
+scientes
+if you are not breaking things you are not doing it correctly
+
+1598519293
+BoilerOnAsurf
+Hi, can anyone explain why the pass by value/pass by reference decision has been left to the compiler? I'm just curious about the rationale, as I find this point ambiguos and it strikes me as weird given that is a pretty important decision and that zig aim to clarity.
+
+1598520182
+shakesoda
+well, the compiler has enough information about the target to make the right choice. i'm sure there's a longer form explanation from someone else though.
+
+1598520271
+shakesoda
+afaik, it's really to prevent footgunning yourself with it, and it means passing a pointer is explicitly used when you need mutability
+
+1598520308
+daurnimator
+A better question might be: you can force pass-by-const-reference; but why can't you force pass-by-value?
+
+1598520457
+BoilerOnAsurf
+I'm an hyper newbie in zig, but to be honest I would rather have the possibility to footgun myself without having the compiler take this decision for me, even if its probably better than me at it.
+
+1598520519
+ikskuh
+BoilerOnASurf: wdym exactly?
+
+1598520522
+alexnask[m]
+I prefer this to passing `*const T` everywhere (and possibly having to use the size of T to pass either by value or by const ref in generic code)
+
+1598520553
+shakesoda
+BoilerOnASurf: well, for what gain? passing non-ptr is always immutable, so that's off the table, and the fast way to pass stuff can be determined without programmer input every time
+
+1598520718
+BoilerOnAsurf
+shakesoda: no gain at all probably
+
+1598520793
+shakesoda
+i'm also curious if there's a fuller explanation, but from actually using it, this hasn't come up as an issue (writing perf sensitive code, too)
+
+1598521041
+BoilerOnAsurf
+shakesoda: is not an issue at all, I get the pros of it, but would be great to hear the rationale anyway. This syntax seems to hide a detail, and that seems to be away from zig's aim (even if is in the user's best interest).
+
+1598521145
+BoilerOnAsurf
+alexnask[m]: maybe, but as it is there are two possible behaviours for the same syntax.
+
+1598521193
+alexnask[m]
+It can also introduce subtle footguns where an argument that is considered const can be mutated through another mutable ptr argument. (e.g. if you pass a mut ptr to a struct and a field of the struct that ends up being passed by const ptr and modify the struct, the second argument will be modified as well)
+
+1598521207
+alexnask[m]
+Theres an issue with an example of this but I cant find i atm
+
+1598521233
+daurnimator
+BoilerOnASurf: I suppose it came about organically: imagine has a huge (e.g. 4K) struct and want to take it as an argument. there is no way to take it
+
+1598521249
+shakesoda
+BoilerOnASurf: i don't think the spirit of "communicate intent precisely" is what exactly something gets compiled as in cases like this, especially when it serves several other purposes (e.g. reducing the amount one must remember, favoring reading, one obvious way to do things...)
+
+1598521252
+daurnimator
+so you end up with a rule of "its okay to change from by-value to by-reference"
+
+1598521270
+daurnimator
+it also comes down to calling conventions: different calling conventions pass different things...... differently
+
+1598521334
+shakesoda
+daurnimator: and often self-inconsistently, i.e. only first couple args in registers, the rest in stack
+
+1598521343
+shakesoda
+so the value passing ends up being a bit of a lie anyways
+
+1598521357
+daurnimator
+yep
+
+1598521378
+daurnimator
+so the idea of by-value => by-reference comes about pretty organically
+
+1598521388
+daurnimator
+and zig just put the rule in that you can't go the other way
+
+1598522127
+BoilerOnAsurf
+Yeah these are all valid points. There's a way to enforce a calling convention on a function for a given target? Again not suggesting anything and I don't need it, just curious.
+
+1598522179
+daurnimator
+BoilerOnASurf: yes. `fn foo() callconv(somecallingconvention) ReturnType {`
+
+1598522219
+BoilerOnAsurf
+Thanks
+
+1598522239
+daurnimator
+where you can pass anything (comptime) you want to callconv
+
+1598522396
+BoilerOnAsurf
+You lost me there :-D  . What does it mean?
+
+1598522453
+daurnimator
+`fn foo() callconv(someFunction()) RT {`
+
+1598522508
+daurnimator
+`fn foo() callconv(if (foo()) .C else .StdCall) RT {`
+
+1598522513
+daurnimator
+BoilerOnASurf: ^ etc.
+
+1598522516
+BoilerOnAsurf
+love it
+
+1598522955
+BoilerOnAsurf
+Noob question: how can I import a package as ```const mypack =
+
+1598523013
+BoilerOnAsurf
+The question is: how can I import the package without referencing directly the .zig file?
+
+1598523044
+alexnask[m]
+You can define packages in your build.zig file
+
+1598523200
+BoilerOnAsurf
+can you point me to the documentation for this?
+
+1598523333
+alexnask[m]
+Here is an example: `exe.addPackage(.{ .name = "known-folders", .path = "src/known-folders/known-folders.zig" });`
+
+1598523341
+alexnask[m]
+The build system docs are sparse atm
+
+1598523342
+protheory8-new-m
+How do I initialize `[]?*StructName` with runtime known amount of nulls?
+
+1598523383
+alexnask[m]
+(this means you can then `@import("known-folders")`)
+
+1598523434
+BoilerOnAsurf
+alexnask[m]: thank you much appreciated
+
+1598523434
+protheory8-new-m
+> How do I initialize []?*StructName with runtime known amount of nulls?
+
+1598523434
+protheory8-new-m
+I mean initialize this slice fully with nulls, but the length is runtime known.
+
+1598523500
+daurnimator
+protheory8-new-m: [] is a pointer type
+
+1598523504
+alexnask[m]
+protheory8-new Slices are just pointers into arrays, so you have to initialize an array of the number of elements you need
+
+1598523545
+daurnimator
+answererd differentely, you need to get a `[*]?*StructName` and slice it
+
+1598523553
+ifreund
+runtime known means you probably need to allocate
+
+1598523601
+ifreund
+i.e. const foo = allocator.alloc(?*StructName, count);
+
+1598523636
+protheory8-new-m
+Oh ok
+
+1598523649
+protheory8-new-m
+Btw, how do I do C-style for loop in Zig?
+
+1598523652
+ifreund
+and then you just loop overt your slice and set every element to null
+
+1598523670
+alexnask[m]
+`var i: usize = 0; while (i < count) : (i += 1) {}`
+
+1598523671
+ifreund
+var i = 0; while (i < 5) : (i += 1) {  ... }
+
+1598523684
+daurnimator
+`var i: usize = 0` ifreund
+
+1598523690
+ifreund
+yes
+
+1598523830
+protheory8-new-m
+Thanks for help
+
+1598524182
+ifreund
+you want to do for (self.examples) |*example| ...
+
+1598524207
+protheory8-new-m
+Why?
+
+1598524217
+scientes
+protheory8-new-m, you can also just make it example.init()
+
+1598524235
+scientes
+which is the pattern you are actually using
+
+1598524237
+ifreund
+otherwise the "capture" is by value instead of by pointer and mutating it won't modify self.examples
+
+1598524257
+scientes
+otherwise you should just use while (i < size) : (i += 1) {}
+
+1598524282
+scientes
+this is not complicated stuff
+
+1598524293
+scientes
+<protheory8-new-m> Btw, how do I do C-style for loop in Zig?
+
+1598524312
+scientes
+var i: usize = 0; while (i < foo) : (i += 1) {}
+
+1598525607
+marnix
+On pass by value: I understood that it is always pass by value (and the compiler uses by ref as an optimization).
+
+1598530106
+scientes
+marnix, they always leave....
+
+1598532544
+protheory8-new-m
+So is that an issue
+
+1598532544
+protheory8-new-m
+Or is the error supposed to be like that?
+
+1598532661
+alexnask[m]
+The stdlib code could do some checking and emit a better error
+
+1598532670
+alexnask[m]
+But you just need to replace self.fnName with fnName
+
+1598532714
+alexnask[m]
+self.fnName is a "bound fn", aka a function + the self parameter, here you want to pass self as the context (as you did) and the unbound fn
+
+1598532854
+protheory8-new-m
+I mean I know, I was thinking that an error message should be better
+
+1598532934
+alexnask[m]
+Yes, it could be better for sure, it just assumes you passed a Fn atm
+
+1598532974
+protheory8-new-m
+Is there a way to do `await` without the a function suspending or something like that?
+
+1598533012
+protheory8-new-m
+I do `await` inside `asyncMain` function, `asyncMain` suspends and the entire program exits
+
+1598533074
+protheory8-new-m
+> I do `await` inside `asyncMain` function, `asyncMain` suspends and the entire program exits
+
+1598533074
+protheory8-new-m
+How do I solve this? I was thinking about some kind of await that doesn't suspend, but that's kind of weird
+
+1598533252
+ifreund
+did you see the example in the docs?
+
+1598533354
+protheory8-new-m
+yeah
+
+1598533834
+alexnask[m]
+await is fundamentally a suspend (+ a tail resume from the callee function to the caller when it is done)
+
+1598534019
+protheory8-new-m
+what am I supposed to do in that case then?
+
+1598534097
+alexnask[m]
+Im sorry, I dont quite get what your usecase is, afaict doing it the way that is shown in that example should be good enough, you can use `await` in amain and all the fns it calls
+
+1598534316
+protheory8-new-m
+I have something similar to the code in the example, but my code doesn't have resumes in main, it has them in other thread so `main` function returns earlier than any resumes can happen.
+
+1598534351
+alexnask[m]
+I see, would waiting on that thread in main not solve this?
+
+1598534397
+protheory8-new-m
+It would, but that thread never ends executing.
+
+1598535918
+fengb
+From a high level, your main needs to wait on whatever is outstanding. In most other systems, this is done by wiring it into the event loop that handles all of the resumes
+
+1598536071
+leeward
+If that other thread never stops executing, it sounds like you don't want main to ever terminate. So waiting on the other thread is the way to go, no?
+
+1598536140
+fengb
+
+
+1598536168
+protheory8-new-m
+leeward: no, not really
+
+1598536231
+leeward
+protheory8-new-m: I'm confused then. When do you want main to return?
+
+1598536265
+protheory8-new-m
+when asyncMain returns
+
+1598536383
+leeward
+Ok, so when do you want asyncMain to return? It sounds like your problem is that it's returning too early.
+
+1598536669
+protheory8-new-m
+> Ok, so when do you want asyncMain to return?
+
+1598536669
+protheory8-new-m
+Sorry, don't have a real answer to that. I want it to return when it reaches the end of the function
+
+1598536783
+fengb
+Quick hack: add a global mutex. Acquire it at the top of asyncMain and defer release it. Stick the same mutex acquire at the bottom of main
+
+1598536938
+Michcioperz
+it's a beautiful idea for me
+
+1598537241
+protheory8-new-m
+fengb: I'll try it, thanks
+
+1598541189
+blinghound
+Using the master branch on Windows, why does a NUL file get created when compiling?
+
+1598541287
+alexnask[m]
+This is a known issue that started happening recently, this is the discussion on the issue:
+
+1598541365
+blinghound
+Thanks for linking me alex
+
+1598543904
+companion_cube
+question from a friend: would Zig be extensible to add pre/postconditions on functions, for formal verification? :p
+
+1598543950
+leeward
+like contracts?
+
+1598543956
+companion_cube
+yeah, exactly like contracts
+
+1598543979
+leeward
+I wonder if the language actually has to be changed for that.
+
+1598543998
+companion_cube
+I think so, if you don't want to run them, just to analyse them at comptime
+
+1598544190
+leeward
+Extensible implies language support for language extensions.
+
+1598544417
+companion_cube
+alternatively, being expressive enough that the extension can be removed/processed purely in userland :)
+
+1598544556
+ikskuh
+you can probably do that
+
+1598544576
+ikskuh
+preconditions are just "if(!argMatchesCondition) @panic()"
+
+1598544592
+ikskuh
+and postconditions can probably be implemented as soon as @resultLocation() is a thing
+
+1598544615
+ikskuh
+which you validate in a defer
+
+1598544991
+companion_cube
+ahah nice
+
+1598545100
+ikskuh
+if you write a nice library, it will probably be super-readable
+
+1598545259
+fengb
+We need the comefrom statement 🙃
+
+1598545311
+companion_cube
+well, maybe we'll get the assertions after parameters, like in D? for emulating type bounds
+
+1598545452
+ikskuh
+why that? we can probably have a more extensible type system?
+
+1598545470
+companion_cube
+hmm, not following
+
+1598545495
+companion_cube
+I mean having `(…params) if … { … }` where the if is comptime, used to place restrictions on parameters
+
+1598545524
+ikskuh
+but why?
+
+1598545529
+ikskuh
+i can just write that in the method body itself
+
+1598545531
+ikskuh
+and be done
+
+1598545575
+companion_cube
+ah, I see.
+
+1598545587
+companion_cube
+right, since it's still executed at comptime…
+
+1598545593
+ikskuh
+yep
+
+1598545596
+companion_cube
+so the body itself is part of the type if it wants to
+
+1598545602
+ikskuh
+ah wait
+
+1598545614
+ikskuh
+no, i don't follow
+
+1598545629
+ikskuh
+we either have a strict enough type system already (except for @Int())
+
+1598545637
+ikskuh
+or it will be runtime checks anyway
+
+1598551572
+mahmudov
+hi, i am getting ": CommandLine Error: Option 'mc-relax-all' registered more than once!" error with llvm 10.0.1 with "-DCMAKE_BUILD_TYPE=None -DCMAKE_INSTALL_PREFIX=/usr -DZIG_PREFER_CLANG_CPP_DYLIB=ON"
+
+1598551613
+mahmudov
+full log:
+
+1598551700
+mahmudov
+i looked to
+
+1598557096
+blinghound
+Is there an easy way to add a signed int to an unsigned int without lots of casting?
+
+1598557113
+ikskuh
+no :D
+
+1598557193
+blinghound
+ahh ok, naughty inline function time
+
+1598557236
+scientes
+blinghound, inline functions are not naughty when everything is fastcc
+
+1598557296
+ikskuh
+scientes: inline in zig is enforced :)
+
+1598557304
+blinghound
+I mean naughty only in the way that I'm hiding all the unsafe casting behind it
+
+1598557314
+scientes
+ikskuh, no it isn't
+
+1598557320
+scientes
+the LLVM inliner cannot be converted however
+
+1598557326
+scientes
+*improved
+
+1598557334
+scientes
+that is the consensus
+
+1598557346
+ikskuh
+scientes: it is defined as enforced
+
+1598557362
+blinghound
+Aren't the functions inlined pre llvm?
+
+1598557378
+scientes
+blinghound, that would only be possible if you turned everything into a loop
+
+1598557386
+scientes
+including recursion
+
+1598557395
+scientes
+which is something LLVM actually wanted to do and never got around to
+
+1598557416
+scientes
+but you only need to do it for recursion
+
+1598557428
+scientes
+that's why what you says makes no sense
+
+1598557440
+scientes
+if you inlined everything your code size would be massive
+
+1598557454
+scientes
+-funroll-loops
+
+1598557471
+ikskuh
+scientes: fun fact: zig has a keyword "inline" which enforces inlining ;)
+
+1598557475
+ikskuh
+which i was talking about
+
+1598557484
+ikskuh
+afaik it is already inlined in IR, not in llvm
+
+1598557509
+scientes
+ikskuh, ahh, no big deal---inline while works like that
+
+1598557520
+blinghound
+I didn't mean that all functions are inlined, just that functions marked with the inline keyword (possibly excluding recursion) are inlined at AST time
+
+1598557822
+leeward
+Is there a -f-inline-only-functions-larger-than-cache-line ? That seems like a good pessimization option.
+
+1598557878
+scientes
+leeward, the inliner is VERY complicated
+
+1598557887
+leeward
+scientes: it was a joke
+
+1598557892
+scientes
+oh yeah
+
+1598557895
+scientes
+"pessimization"
+
+1598557899
+leeward
+:P
+
+1598557903
+blinghound
+What would be the best way to add a negative number to an unsigned int?
+
+1598557912
+leeward
+subtract?
+
+1598557923
+blinghound
+the number could be positive too
+
+1598557932
+scientes
+blinghound, add a bit to the unsigned int making it signed
+
+1598557942
+leeward
+So...a signed number then?
+
+1598557960
+leeward
+Are you suggesting changing a u16 to an i17?
+
+1598557960
+blinghound
+I'm trying to find an easier way to add a signed number to an unsigned number
+
+1598557968
+blinghound
+without loads of casting or conditionals
+
+1598558089
+blinghound
+maybe I'm being stupid, but if feels like there should be an easier way than: @intCast(u32, @as(i33, num) + other_num);
+
+1598558152
+leeward
+I'm not sure there is if you want to keep safety.
+
+1598558227
+blinghound
+yeah that's what I expected, I thought there might be a slightly more elegant @function
+
+1598558873
+andrewrk
+@as is supposed to be seen as effortless
+
+1598558938
+ikskuh
+andrewrk: how strong are you against a different syntax for @as?
+
+1598558968
+andrewrk
+not against it but I have put a lot of thought into it and could not come up with anything better
+
+1598558997
+ikskuh
+@ isn't the most convenient character to type
+
+1598559045
+alexnask[m]
+ikskuh What is it in German layout?
+
+1598559052
+ikskuh
+it's on AltGr+Q
+
+1598559064
+ikskuh
+(right alt)
+
+1598559094
+alexnask[m]
+>.>
+
+1598559101
+ikskuh
+andrewrk: i assume you thought about "expr as T", right?
+
+1598559143
+blinghound
+andrewrk would @as(u32, @as(i33, unsigned_num) + signed_num) be the best way?
+
+1598559207
+blinghound
+I understand the difficulties when we get so many benefits with the safety, I just wanted to make sure I was going about it the right way
+
+1598559288
+andrewrk
+ikskuh, zig actually had that syntax at one point :)
+
+1598559342
+ikskuh
+oh? so T(expr) was another iteration of that already?
+
+1598559556
+leeward
+What about (expr as T)?
+
+1598559628
+leeward
+ikskuh: How do you send e-mail? That's super inconvenient.
+
+1598559651
+ikskuh
+leeward: autocompletion and copy/paste :D
+
+1598559794
+leeward
+Mmm, I see an opportunity for an editor macro.
+
+1598559923
+ikskuh
+you mean key rebinding? :D
+
+1598559931
+leeward
+Or that.
+
+1598560018
+ikskuh
+has anyone here bound the compose key?
+
+1598560026
+leeward
+lemme check
+
+1598560036
+leeward
+nope
+
+1598560046
+companion_cube
+ikskuh: I have it on right-ctrl
+
+1598560065
+ikskuh
+i'm not alone \o/
+
+1598560069
+ikskuh
+caps lock is my key
+
+1598560073
+ikskuh
+ctrl-right is useful for gaming :D
+
+1598560088
+leeward
+Isn't caps lock where ctrl is supposed to be?
+
+1598560101
+companion_cube
+caps lock is for `escape` for me
+
+1598560103
+companion_cube
+useful for vim :p
+
+1598560124
+leeward
+My solution to that is to never install vim on anything ever.
+
+1598560159
+ikskuh
+compose allows funky things
+
+1598560180
+ikskuh
+ẍ
+
+1598560186
+fengb
+I never install vim
+
+1598560189
+fengb
+It just is
+
+1598560233
+leeward
+Wow, I don't even have vi installed on this machine.
+
+1598560243
+leeward
+I probably had to uninstall it.
+
+1598560249
+companion_cube
+leeward: blasphemy
+
+1598560259
+companion_cube
+ø
+
+1598560259
+ikskuh
+just install tilde!
+
+1598560264
+ikskuh
+or EDIT.COM
+
+1598560318
+leeward
+companion_cube: My editor religion is the best editor religion. All others are heathens. It's just the way it is.
+
+1598560328
+companion_cube
+exactly!
+
+1598560334
+companion_cube
+thanks for recognizing I'm right
+
+1598560338
+companion_cube
+and that all the others are wrong
+
+1598560412
+leeward
+I use the holy escape meta alt control shift, as stolen from the Gosling by the Stallman. I don't know what you're talking about.
+
+1598562005
+leeward
+ooh, pinebook just arrived
+
+1598562011
+leeward
+Tonight is going to be busy.
+
+1598562023
+companion_cube
+time to install emacs on it?
+
+1598562033
+leeward
+Exactly!
+
+1598562071
+leeward
+If only I didn't have to put another OS underneath it...mmm, bare metal emacs...
+
+1598562084
+leeward
+Then all I'd need is a decent editor.
+
+1598564549
+andrewrk
+I'm taking a couple days off. Take care everybody
+
+1598564571
+BaroqueLarouche
+Take care and rest well!
+
+1598564599
+leeward
+enjoy
+
+1598564643
+ikskuh
+andrewrk: enjoy!
+
+1598564716
+fengb
+Have fun!
+
+1598564768
+ifreund
+o7
+

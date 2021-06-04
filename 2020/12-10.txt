@@ -1,0 +1,1368 @@
+1607558944
+karchnu
+I'm using std.heap.page_allocator  and valgrind doesn't tell me that I did a memory allocation.  In strace I see mmap and munmap. Is that normal?
+
+1607559219
+waleee-cl
+I think you need to use the C allocator for valgrind to work
+
+1607559317
+waleee-cl
+karchnu: ping ^
+
+1607559461
+justin_smith
+that's my understanding as well, that might be the only one that maps to a malloc call (you also need the --library c flag)
+
+1607559679
+ifreund
+this is correct ^
+
+1607559702
+hlolli
+I'm exploring around, and checking if it's possible to make a custom writer. The wall I'm hitting is that "type 'type' does not support field access", the type in question is the return of @TypeOf(struct_instance), called in std.fmt.format. So basically, is field access not possible from struct types?
+
+1607559831
+justin_smith
+hlolli: is this one of those type vs. typinfo things?
+
+1607559942
+justin_smith
+hlolli: @Type(x) doesn't contain the fields as something you can enumerate, as I understand it, @typeInfo(x) does
+
+1607559944
+hlolli
+not sure, I've not used much of the type values up to this point. The failing code is this
+
+1607560033
+karchnu
+oh, so to test my code and be sure that I don't have memory leaks, I need to use the C allocator and compile with --library c, right?
+
+1607560055
+justin_smith
+hlolli: try using @typeInfo(@typeOf(x)) instead of @typeOf(x)?
+
+1607560079
+karchnu
+I wonder if there is another way, I use valgrind, but maybe there is another tool
+
+1607560082
+justin_smith
+karchnu: if you want to use a tool written for debugging C allocations, yes
+
+1607560128
+hlolli
+to do that I'd need to override the built in function, if I were to want to use std.fmt.format with a custom writer? If it's possible to overridie builtins, I could do that.
+
+1607560160
+justin_smith
+hlolli: oh I think I misunderstood your issue, my apologies
+
+1607560173
+andrewrk
+karchnu, the GeneralPurposeAllocator from the zig standard library does leak checking
+
+1607560182
+andrewrk
+you don't need libc or valgrind for that
+
+1607560206
+hlolli
+justin_smith, all good
+
+1607560213
+andrewrk
+you can try it out quickly using `zig test` and `std.testing.allocator`
+
+1607560335
+karchnu
+Oh… that's nice! Thanks
+
+1607560410
+andrewrk
+karchnu, it also provides heap safety
+
+1607560440
+andrewrk
+it will exhaust the entire virtual address space before recycling pointer addresses
+
+1607560448
+karchnu
+I'll try to create a memory leak just to check how this works, later.
+
+1607560723
+companion_cube
+what did @typeof become?
+
+1607561515
+leeward
+@TypeOf?
+
+1607562335
+leeward
+I thought there was a zig fmt thing to translate that one.
+
+1607562351
+companion_cube
+ah yes indeed.
+
+1607562708
+hlolli
+companion_cube: I solve it, realizing that the Writer type is probably a compiletype where field access is possible, but simple type isn't. So I did the ceremony which was done here
+
+1607562776
+hlolli
+perhaps it was a random occourance that the exact same buzzwords were thrown out as I used related to my question, so not sure if this was related at all, well, so be it :)
+
+1607562841
+companion_cube
+my question was unrelated :p
+
+1607562871
+companion_cube
+I tried to translate-c some code a while ago, and was trying to update it
+
+1607562882
+companion_cube
+it still fails because there's indexing with i32 (instead of usize)
+
+1607562889
+companion_cube
+it's from somewhat gnarly C code…
+
+1607567693
+rowbee
+what's the best way to open a file and get a File object? i found std.os.open but that seems to return the fd instead of a File.
+
+1607567700
+rowbee
+i looked through the source code but couldn't find much
+
+1607567754
+viashimo
+rowbee: I struggled with that too. i have settled on: var fd = try std.os.open(filename, std.os.O_RDONLY, 0);  var f = std.fs.File { .handle = fd };
+
+1607567767
+viashimo
+it can probably be just online
+
+1607567772
+viashimo
+one* line
+
+1607567790
+rowbee
+i see...
+
+1607567810
+rowbee
+would it be better to have std.fs.openFile(fname, mode, flags)?
+
+1607567850
+rowbee
+there seems to be something called "openFileAbsolute" but i didn't quite get what it does
+
+1607567900
+rowbee
+i guess you're supposed to use Dir.openFile
+
+1607567907
+rowbee
+but that feels kind of clunky
+
+1607567974
+rowbee
+since std.fs.cwd() also returns a Dir, i suppose you could do std.fs.cwd().openFile(fname, mode, flags); ???
+
+1607567996
+rowbee
+again feels clunky but it's probably analogous to what people would expect from a high-level open function
+
+1607567998
+viashimo
+yup, which is pretty much openFileAbsolute does, except there's an extra check for the absolute path
+
+1607568019
+rowbee
+yeah but i don't want to open from an absolute file, i was looking for something analogous to python's open
+
+1607568030
+rowbee
+absolute path*
+
+1607568467
+rowbee
+what allocator should i choose if i'm just reading a file into a buffer? is page_allocator enough, should i get GeneralPurposeAllocator?
+
+1607568678
+andrewrk
+rowbee,
+
+1607568695
+rowbee
+gotchu
+
+1607568990
+daurnimator
+rowbee: yes you're meant to use `std.fs.cwd().openFile(`. that's how all modern OS file apis work: with a directory to be relative to.
+
+1607569021
+rowbee
+that's fine, it was just a bit opaque looking at the source code and such
+
+1607569355
+karchnu
+daurnimator: it's what I did to open files but I thought I hacked a bit the standard library…
+
+1607569376
+karchnu
+good to know that's normal
+
+1607569886
+rowbee
+what's the atoi equivalent in zig?
+
+1607570079
+andrewrk
+std.fmt.parseInt
+
+1607570125
+rowbee
+thank you
+
+1607570148
+rowbee
+i will probably have to make a cheatsheet of this stuff... the stdlib documentation search is giving me a hard time
+
+1607570219
+rowbee
+also it says the version is 0.6.0+commit hash when the current version is 0.7.0?
+
+1607570375
+andrewrk
+rowbee, try this link instead:
+
+1607570388
+andrewrk
+master branch std lib docs are pretty outdated, the issue is
+
+1607570389
+rowbee
+thanks... master is older than 0.7.0? :S
+
+1607570392
+rowbee
+aha i see
+
+1607570395
+andrewrk
+I'll refresh it now at least
+
+1607570405
+rowbee
+yeah master didn't even have ArrayList.pop
+
+1607570416
+rowbee
+ah yeah that helps
+
+1607570435
+andrewrk
+there's also the problem of lazy decls which I haven't given up trying to solve yet
+
+1607570494
+andrewrk
+mikdusan, long time, no see! good to see you around :)
+
+1607570509
+andrewrk
+...have you always been idling here and I just didn't notice?
+
+1607570560
+mikdusan
+hey andrew just noticed qemu upstream released so doing a bump for linux testing to qemu-5.2.0
+
+1607570583
+mikdusan
+haven't been lurking for a while. just stuff in life keeping me very occupied
+
+1607570615
+mikdusan
+congrats on 0.7.0 :)
+
+1607570701
+rowbee
+okay zig-mode is actually breaking stuff because of revert-buffer
+
+1607570708
+g-w1
+tell me if you think I should make a proposal for this: zig check command which analyzes all the public decls in a file recursively. if given an exe it will check main and anything else public or that main references, but if given a lib it will analyze any public decl from the lib. this would be pretty useful when writing a standalone library to analyze it without writing a bunch of tests. for generic
+
+1607570709
+g-w1
+functions, the semantic analyzer will do the best it can, but I feel like this would be a BIG help. what do you think, ive been thinking of this for a few days
+
+1607570710
+rowbee
+my code just reverted to an earlier version
+
+1607570767
+andrewrk
+mikdusan, appreciate the bump. hope you're doing ok out there buddy
+
+1607570771
+g-w1
+I feel like I saw an gh issue on this once though, so I might be just regurgating from my sub concious
+
+1607570892
+andrewrk
+g-w1, it's been proposed and in fact implemented and then reverted. it's unfortunately a pretty complicated topic
+
+1607570930
+g-w1
+ah cool, so I was regurgating it, good to know. what is the relevant issue(s)/prs to get me caught up?
+
+1607570958
+andrewrk
+hmm well there's this commit from 2017: af536ac343564e5120f99cbf3b7fc9efa984eb93
+
+1607571000
+g-w1
+ok, thanks
+
+1607571151
+g-w1
+is there anything I can read on why it is so complicated?
+
+1607571156
+andrewrk
+rowbee, I updated
+
+1607571164
+rowbee
+aha i see, thank you
+
+1607571692
+rowbee
+ArrayList documentation seems to be missing all the pop, remove etc. stuff? known bug?
+
+1607571778
+andrewrk
+this is the lazy decls issue that g-w1 and I were just discussing. looks like pop and remove don't have test coverage :)
+
+1607571798
+andrewrk
+hmm they do though, so that's worth investigating
+
+1607571813
+andrewrk
+g-w1, have a look at this issue:
+
+1607571823
+andrewrk
+multibuilds is probably too complicated to get implemented but I think I at least explained the problem clearly there
+
+1607571837
+g-w1
+ok tysm
+
+1607572348
+andrewrk
+rowbee, to be clear: these generated docs are still experimental
+
+1607572468
+rowbee
+i see
+
+1607572509
+rowbee
+maybe it would be nice to have them categorized and have a preface to each category, like how python documentation has a description and examples at the start of each page
+
+1607572522
+rowbee
+rather than just dumping them hierarchically
+
+1607572741
+andrewrk
+if you want to experiment with that, the code is here:
+
+1607572755
+andrewrk
+basically the compiler dumps a big json blob and this html/js code creates an interactive web page out of it
+
+1607572800
+rowbee
+i see
+
+1607572812
+rowbee
+would be nice to also have it generate a static site, for nojs support
+
+1607572818
+rowbee
+i'll take a look cheers
+
+1607572912
+rowbee
+what's the best way to iterate over a slice from a start index until the end? i tried doing for (slice[i..]) { but that's a syntax error
+
+1607573000
+rowbee
+slice.len?
+
+1607573054
+rowbee
+nevermind it works
+
+1607573057
+rowbee
+i was missing the payload
+
+1607573075
+andrewrk
+rowbee, my reasoning re: js is that we want search. in order to make search work we need js and we need all the data available at once. in this case we may as well embrace it and do everything with js rendering the site based on the data
+
+1607573094
+andrewrk
+so it's kinda the simplest thing you can do if you want to have a search feature
+
+1607573101
+rowbee
+with my approach, it would be category-by-category, perhaps reducing the need for search at all
+
+1607573112
+rowbee
+so semantically grouping modules rather than just based on module hierarchy
+
+1607573126
+rowbee
+search could be added on top of it
+
+1607573189
+daurnimator
+for e.g. the lua docs, I just use Ctrl+F to search.... at least it works without JS
+
+1607573798
+andrewrk
+I think the js is pulling a lot of weight with the auto generated std lib docs
+
+1607573845
+andrewrk
+the good news is that third party projects can utilize this option: -femit-analysis[=path]    Write analysis JSON file with type information
+
+1607573868
+andrewrk
+then they can produce that single-page docs
+
+1607573882
+andrewrk
+err non-js docs page, I mean
+
+1607574598
+rowbee
+how can i get the maximum value for a type, i.e. maximum value of i64?
+
+1607574611
+rowbee
+nevermind
+
+1607574612
+rowbee
+maxInt
+
+1607575901
+rslabbert
+quit
+
+1607580930
+rowbee
+i cannot pass std.sort.asc as an argument to std.sort.sort
+
+1607580938
+rowbee
+error: expected type 'fn(type,anytype,anytype) anytype', found 'fn(void, u32, u32) bool'
+
+1607581028
+rowbee
+welp sort simply doesn't work
+
+1607581032
+rowbee
+TODO implement inferred return types
+
+1607581210
+andrewrk
+inferred return types probably won't make it into the language
+
+1607581221
+andrewrk
+don't put `anytype` as your return type
+
+1607581237
+rowbee
+i see... well, i was simply trying to do std.sort.sort(u32, numbers.items, void, std.sort.asc(u32));
+
+1607581253
+rowbee
+but that fails with the first error
+
+1607581257
+rowbee
+i had to write a wrapper function
+
+1607581347
+andrewrk
+look at the function signature of std.sort.sort
+
+1607581428
+rowbee
+hm... i don't quite get what i'm doing wrong here
+
+1607581442
+andrewrk
+there are some examples of using asc in the test cases in that file
+
+1607581465
+rowbee
+i see
+
+1607581527
+rowbee
+ah, something like {} will do. okay
+
+1607581623
+rowbee
+hmmm... now getting "error: unable to evaluate constant expression" with std.sort.sort(u32, numbers.items, {}, asc);
+
+1607581634
+rowbee
+i moved it to a variable like in the tests however that didn't help
+
+1607581641
+rowbee
+maybe i should move it to module scope
+
+1607581650
+rowbee
+yeah that worked
+
+1607581963
+daurnimator
+FYI I noticed the other day that the doccomment on std.sort.asc is out of date/incorrect
+
+1607581997
+daurnimator
+and yes indeed there is a weird compile error if you don't evaluate it at compile time. I think that's a zig bug
+
+1607582005
+daurnimator
+I never got around to filing either of them :/
+
+1607582766
+rowbee
+yeah i noticed too. what's context supposed to be? like an analogue to user pointers in C or something?
+
+1607588400
+ifreund
+rowbee: iirc you just need a comptime keyword: std.sort.sort(u32, numbers.items, void, comptime std.sort.asc(u32))
+
+1607588422
+rowbee
+i see
+
+1607588430
+rowbee
+yeah the docs need to be updated
+
+1607589549
+ifreund
+and yeah, that's exactly what the context is meant to be used for
+
+1607590386
+rowbee
+hmm... maybe a 3-parameter sort would be nice? i'd guess that the actual use for a context variable is uncommon
+
+1607590549
+ifreund
+maybe, though you can just just pass {}/void for it
+
+1607592281
+rowbee
+hm... {} is of type void, yeah?
+
+1607592290
+rowbee
+what exactly is it? empty block?
+
+1607592348
+ifreund
+yep, exactly
+
+1607595884
+ikskuh
+andrewrk: when linking against libsoundio on windows with zig i get the following error:
+
+1607595886
+ikskuh
+lld-link: error: could not open 'libuuid.a': no such file or directory
+
+1607607886
+ifreund
+andrewrk: so, I think I've succeeded in making executeables that link musl dynamically, however this doesn't seem to have solved my issue runnning river as the musl startup code isn't being run
+
+1607607919
+ifreund
+which as far as I can tell happens because we export our own _start symbol instead of letting libc call main
+
+1607608011
+ifreund
+so maybe the real fix we need is to do more of the things musl does in its startup code in start.zig
+
+1607608034
+ifreund
+I'm going to try that now and see if I can't get river running on my my musl install
+
+1607608535
+TheLemonMan
+ifreund, musl crt should take over start.zig _start
+
+1607608857
+ifreund
+hmm, that doesn't seem to be happening as I'm getting a segfault deep in mesa because __progname is NULL
+
+1607608987
+TheLemonMan
+double-check the linking logic
+
+1607609052
+TheLemonMan
+iirc you need rcrt1.c
+
+1607609162
+ifreund
+looking at that file that would make sense
+
+1607609190
+ifreund
+gcc only links Scrt1.o though not rcrt1.o
+
+1607609227
+TheLemonMan
+that's the static crt1 iirc
+
+1607609239
+TheLemonMan
+the naming is extremely confusing
+
+1607609349
+ifreund
+huh, it's definetly creating a dynamically linked executeable
+
+1607609393
+ifreund
+I'll try it with rcrt1.o and see what happens
+
+1607609412
+TheLemonMan
+"Used in place of crt1.o when generating PIEs."
+
+1607609415
+TheLemonMan
+that's Scrt1
+
+1607609508
+TheLemonMan
+"A new crt start file, rcrt1.o, is provided for producing static-linked position independent executables (PIE)"
+
+1607610108
+ifreund
+huh, so our `int main()` export in start.zig is getting called...
+
+1607610229
+ifreund
+and progname is even set properly, seems like I need to dig deeper into why river is crashing then
+
+1607610340
+ifreund
+oh, only when I do -fPIE though
+
+1607610453
+TheLemonMan
+..is this about dynamically-linked musl?
+
+1607610508
+ifreund
+yeah
+
+1607610529
+ifreund
+The end goal is to run river on a musl-based distro, which requires dynamic linking
+
+1607610638
+ifreund
+now there's an odd backtrace:
+
+1607610674
+ifreund
+this is without -fPIE
+
+1607610780
+ifreund
+pretty sure it's cause I'm still using Scrt1.o even when PIE is disabled
+
+1607611976
+ifreund
+ok, so I've done something right because the example from #5364 works with -dynamic -fPIE
+
+1607612182
+TheLemonMan
+progress!
+
+1607625165
+andrewrk
+ikskuh, zig can provide -luuid out of the box if you use the gnu abi. see also #6565
+
+1607627375
+ikskuh
+andrewrk: thanks
+
+1607627630
+ikskuh
+i'll try
+
+1607627647
+TheLemonMan
+give it the boot!
+
+1607627856
+leeward
+/kick the_windows_machine Booted!
+
+1607628142
+TheLemonMan
+hello msp430man, got any more interesting problems to troubleshoot?
+
+1607628391
+leeward
+hah, hi
+
+1607628436
+leeward
+Actually, no interesting problems right now. I'm just assembling a minimal set of things needed to build msp430 code with Zig into a convenient place.
+
+1607628483
+leeward
+Finding the license for these linker scripts at the moment. It's not in the files, but I'm pretty sure they're distributed as part of GCC so...GPL seems likely.
+
+1607630030
+leeward
+Soon I get to actually start working on the project I wanted to build with this.
+
+1607631436
+dutchie
+was ust th
+
+1607631439
+dutchie
+whoops
+
+1607631464
+dutchie
+was thinking earlier today about whether the language should know to try to evaluate comptime args at comptime
+
+1607631487
+dutchie
+`std.sort.sort(u32, arr, {}, std.sort.asc(u32))` didn't work when i tried
+
+1607631509
+dutchie
+is there a bug for that already?
+
+1607631715
+TheLemonMan
+hmm, did that actually work in some previous release?
+
+1607631727
+dutchie
+i'm not sure
+
+1607631764
+TheLemonMan
+if you have a small snippet compiler-explorer is your friend
+
+1607631877
+leeward
+Alright, time to generate some random numbers.
+
+1607631888
+TheLemonMan
+3
+
+1607631894
+TheLemonMan
+here you go
+
+1607631901
+leeward
+Bzzt. Wrong. It was 4.
+
+1607631911
+dutchie
+
+
+1607631912
+leeward
+
+
+1607631953
+dutchie
+hard to say if it's a regression because the signature is different in 0.6.0
+
+1607631973
+leeward
+Or was that the ISO one? I use IEEE random numbers.
+
+1607632105
+dutchie
+
+
+1607633376
+andrewrk
+TheLemonMan, with #7372, why not let @atomicRmw emit a compile error for invalid ordering?
+
+1607633393
+andrewrk
+isn't the userland check redundant?
+
+1607633589
+dutchie
+lol, thanks vexu for turbo-closing as dupe of
+
+1607633594
+dutchie
+um
+
+1607633632
+dutchie
+might be a fun first dip into the code for me if i get a chance over the weekend
+
+1607633908
+andrewrk
+ir.cpp might be a rough first dip
+
+1607634082
+ikskuh
+if the editor can support it :D
+
+1607634596
+andrewrk
+ifreund, what do you have the linker line down to so far?
+
+1607634699
+TheLemonMan
+andrewrk, the orderings are valid but won't do what people want, LLVM will happily compile them
+
+1607634744
+andrewrk
+I see
+
+1607634759
+andrewrk
+well should we change the builtins?
+
+1607634801
+ifreund
+andrewrk: here's where I'm at, compiling and running on a musl based distro:
+
+1607634827
+ifreund
+only works with -fPIE, but I haven't figured out why yet
+
+1607634835
+TheLemonMan
+
+
+1607634852
+andrewrk
+fair enough, I'll leave it be for now
+
+1607634982
+andrewrk
+ifreund, how is libc.so produced?
+
+1607635050
+ifreund
+branch is here:
+
+1607635057
+andrewrk
+also do you have handy the linker line that the native do you have handy the linker line that th enative tooling uses? you can get it pretty easily with `strace -f -e trace=execve cc -o hello hello.c`
+
+1607635096
+ifreund
+basically just the same as libc.a but with LinkMode set to Dynamic
+
+1607635177
+ifreund
+here's the execve call:
+
+1607635278
+andrewrk
+hmm looking at the diff I think the libc.so is the culprit
+
+1607635356
+andrewrk
+well... maybe it could be ok
+
+1607635367
+ifreund
+oh maybe it's getting built as PIE when it shouldn't be
+
+1607635373
+ifreund
+I didn't check that yet
+
+1607635382
+andrewrk
+we build the glibc .so files very differently
+
+1607635411
+ifreund
+yeah I saw :D
+
+1607635422
+ifreund
+this seemed like a good thing to try first though
+
+1607635443
+andrewrk
+well maybe not that differently
+
+1607635458
+andrewrk
+but I'm not sure build_crt_file should be repurposed for dyn linking
+
+1607635465
+andrewrk
+you probably need a soname in there too
+
+1607635477
+ifreund
+isn't it unversioned though?
+
+1607635490
+synaps3
+hey all, I am new to zig any fun projects to look around ?
+
+1607635511
+ifreund
+river is pretty fun :P
+
+1607635526
+andrewrk
+ifreund, check your system-installed libc.so using `readelf -d`
+
+1607635551
+andrewrk
+for glibc it's libc.so.6
+
+1607635643
+ifreund
+
+
+1607635659
+andrewrk
+yeah alright, no soname
+
+1607635660
+ifreund
+and it's just /usr/bin/libc.so
+
+1607635668
+ifreund
+er /lib not /bin
+
+1607635677
+andrewrk
+oh here's something to try
+
+1607635685
+fengb
+Zig is for work, no fun allowed 🙃
+
+1607635692
+synaps3
+thanks ifreund
+
+1607635696
+synaps3
+danke
+
+1607635706
+ifreund
+bitte :P
+
+1607635723
+andrewrk
+ifreund, take your first linker line the one that's not working, and put `zig` in front of it
+
+1607635727
+andrewrk
+from
+
+1607635750
+andrewrk
+you need a zig after master branch commit 391d81a3802e48f59d804746eedc396d60ad3820
+
+1607635757
+andrewrk
+zig ld.lld ...
+
+1607635769
+andrewrk
+replace the libc.so with your system one, and see if that fixes it
+
+1607635813
+ifreund
+indeed it did
+
+1607635819
+ifreund
+what does that tell us?
+
+1607635824
+ifreund
+libc.so is messed up?
+
+1607635826
+andrewrk
+ok so we have narrowed the problem down to how we are generating libc.so
+
+1607635913
+ifreund
+hold up, I may have made a small typo let me check this
+
+1607635979
+andrewrk
+I just built musl locally, and here is the command it used to link libc.so:
+
+1607636008
+ifreund
+zig is building on the musl machine...
+
+1607636011
+andrewrk
+I'm guessing -Wl,-e,_dlstart is the issue
+
+1607636148
+ifreund
+ld.lld --help doesn't show a _dlstart option
+
+1607636162
+andrewrk
+it's the -e option
+
+1607636164
+andrewrk
+-e _dlstart
+
+1607636176
+ifreund
+oh yeah duh
+
+1607636184
+andrewrk
+here's another topic: with dynamic musl we have 2 options: (1) stub out the functions to produce a libc.so more quickly, or (2) build libc.so based on libc.a which will produce a fully viable libc.so but take longer on first run
+
+1607636278
+andrewrk
+we don't currently support overriding the entry point symbol in link.zig so that will have to be added
+
+1607636288
+andrewrk
+whether to expose it to the cli is a separate issue
+
+1607636430
+andrewrk
+also linked into libc.so are obj/ldso/dlstart.o obj/ldso/dynlink.o
+
+1607636503
+andrewrk
+we might also want to consider those other -Wl args, such as --dynamic-list
+
+1607636578
+ifreund
+looks like I have a lot of stuff to try now, thanks
+
+1607636638
+ifreund
+by the way I know why it was working with -fPIE earlier, I was actually building libc.a but calling it libc.so because I forgot to pass link_mode along somewhere
+
+1607636673
+andrewrk
+oops, lol
+
+1607636719
+ifreund
+kinda cool that that SDL example somehow worked :D
+
+1607636752
+andrewrk
+hmm I think you actually can't re-use the same libc.a from static linking because we need PIC objects for libc.so
+
+1607636782
+andrewrk
+so in this case I would suggest option (1) - stubbing out all the functions with a similar strategy that we do with glibc libc.so
+
+1607636812
+TheLemonMan
+oh no, more stubs
+
+1607636833
+andrewrk
+for musl it can just be a pre-made .s file since we aren't trying to support multiple versions
+
+1607636888
+TheLemonMan
+...as long as it's autogenerated it's fine
+
+1607636919
+andrewrk
+yep, just one more step added to
+
+1607637027
+andrewrk
+welp that was a fun distraction from #7308. now let's see where was I...
+
+1607637050
+ifreund
+build with `-e _dlstart` failed with "cannot find _dlstart" but the fact that I'm not linking a thing called dlstart.o yet gives me a hint where that comes from :D
+
+1607637089
+ifreund
+thanks for giving me some time andrewrk that was very helpful and I should be good on my own now for a while :)
+
+1607637470
+andrewrk
+:)
+
+1607639424
+justin_smith
+is there a recipe somewhere (or a function I didn't find yet) to consume stdin by lines?
+
+1607639476
+justin_smith
+I could use readAllAlloc and iterate the result, but for my use case it would be nice to just consume a line at a time
+
+1607639495
+ifreund
+justin_smith: well get a Reader from stdin and then use readUntilDelimiterAlloc() or similiar
+
+1607639547
+justin_smith
+ifreund: readUnitDelimiterAlloc is what I was looking for (already have that reader) - thanks much
+
+1607639575
+ifreund
+no problem!
+
+1607640013
+justin_smith
+quick follow up: if I am using readUntilDelimiterAlloc to create a series of strings that go into an ArrayList, is there a shorthand to tell the ArrayList that its cleanup should involve freeing each of those strings?
+
+1607640134
+justin_smith
+probably not, its just a small for loop anyway
+
+1607640151
+ifreund
+nope, there isn't
+
+1607640170
+fengb
+Toss them into a single arena
+
+1607640185
+ifreund
+that works too, but isn't always ideal
+
+1607640189
+justin_smith
+fengb: that makes sense, then just let the arena go
+
+1607640310
+andrewrk
+you can avoid allocating if you put a comptime known upper bound on the line size of your file format
+
+1607640335
+andrewrk
+otherwise, fundamentally the problem you're being forced to deal with is, "what if the user makes a file with a really long line?"
+
+1607640373
+fengb
+Can you invoke UB and slap the user?
+
+1607640388
+andrewrk
+I think invoking UB is the user slapping
+
+1607640404
+ifreund
+I saw a rougelike once with segfault traps and other such fun things
+
+1607640420
+justin_smith
+hmm, I do have a predictable line length, maybe instead of returning an ArrayList of lines I can just take a function that is called on the line...
+
+1607640427
+andrewrk
+ifreund, related:
+
+1607640447
+ifreund
+:D
+
+1607640487
+justin_smith
+ifreund: nethack has a signal handler that gives you the max possible score if you can make it crash irrecoverably (or so I hear, I've never hit it)
+
+1607640555
+ifreund
+I really want to write a game in zig sometime, but there are so many other things that need doing
+
+1607640558
+justin_smith
+I like the "arbitrary execution chamber"
+
+1607640567
+ifreund
+yeah that's really good
+
+1607640586
+justin_smith
+I once built for a mud that had a scripting language for rooms/mobs that couldn't do math
+
+1607640602
+justin_smith
+I created a series of rooms that acted like registers, and objects that could be dropped in the rooms
+
+1607640622
+justin_smith
+basically a cross between a register machine and an abacus for doing math in my mob scripts
+
+1607640658
+justin_smith
+(end goal was very simple, a gambling bot that would double your money or eat it)
+
+1607640670
+andrewrk
+josh's open source work is really inspiring, I wish he would quit ok cupid and try to hack it as a donation funded open source person
+
+1607640709
+karchnu
+talking about projects, I want to do a QML-like UI system based on zig and
+
+1607640737
+andrewrk
+neat
+
+1607640748
+karchnu
+and I never used opengl, so… :D
+
+1607640777
+karchnu
+I'll (almost) dedicate the next 6 months on that I think
+
+1607640780
+ifreund
+heh, I'd really love to see a simple UI toolkit in zig
+
+1607640799
+andrewrk
+imgui seems like a possible contender
+
+1607640817
+ifreund
+retained mode, I wouldn't be using it for games
+
+1607641362
+karchnu
+I want to separate the model and the controller, having an application able to get QML-like data and handling only the UI, sending notifications to the controller on user input.
+
+1607641423
+karchnu
+Creating UI would be easy for everyone after that, as HTML did but in a way less broken way.
+
+1607641471
+justin_smith
+karchnu: so basically a data-driven UI server?
+
+1607641502
+karchnu
+justin_smith: data-driven I'm not sure, but yes an UI server.
+
+1607641565
+justin_smith
+karchnu: what I mean by "data driven" is that the interaction would happen via events / messages rather than mutating a shared state (maybe that's my prejudice sneaking in)
+
+1607641605
+karchnu
+I want single-page applications inside browsers in WASM so I can finally make UI without any HTML code or broken layout or even worse, javascript.
+
+1607641697
+karchnu
+But I don't want it to be "just" for web applications, that would be silly, once you have an UI server you can make it work everywhere (or at least it
+
+1607641725
+fengb
+Adobe tried that with Air
+
+1607641743
+justin_smith
+karchnu: there's a cool open source app, "open stage control", which lets you use drag and drop to create UIs that are variations on an audio mixer or synth, then lets you register each control to communicate with a data channel
+
+1607641762
+justin_smith
+the UI editor emits a json file, the app runs it in an electron window
+
+1607641787
+justin_smith
+(the data channels are OSC, which many audio apps support)
+
+1607641795
+karchnu
+on principle, that's nice, until the electron part :D
+
+1607641810
+karchnu
+OSC?
+
+1607641821
+justin_smith
+
+
+1607641850
+justin_smith
+karchnu: OSC is like midi crossed with http - different signals have heirchal paths, and it uses the network
+
+1607641866
+justin_smith
+(and it allows data types other than 7 bit ints)
+
+1607641929
+justin_smith
+karchnu: right, the model sounds close to what you are talking about to me, even if the UI engine it uses isn't up to your standard
+
+1607641999
+karchnu
+yes, that's kinda close, but I want to implement layout, property bindings and maybe a few other cool things we can find in QML
+
+1607642075
+karchnu
+in the end, we should be able to create websites and (probably) any kind of graphical application (even maybe a compositor for wayland, using only the layout part)
+
+1607642172
+karchnu
+it's at least the things I have in mind right now, let's see what happen within the next months :D
+

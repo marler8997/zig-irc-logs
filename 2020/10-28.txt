@@ -1,0 +1,440 @@
+1603853715
+daurnimator
+is `@hasDecl(root, start_sym_name)@hasDecl(root, start_sym_name)` broken now or am I doing it wrong?
+
+1603853726
+daurnimator
+oops pasted twice
+
+1603853973
+g-w1
+I am getting a build error for the self hosted compiler in cache.zig ./src/Cache.zig:38:64: error: container 'std.crypto.siphash.SipHash(u128,1,3)' has no member called 'key_length'
+
+1603854090
+daurnimator
+g-w1: huh. possibly due to the reorganisation of std.crypto?
+
+1603854092
+g-w1
+oh, I was using the wrong version of the compiler, nvm
+
+1603854096
+g-w1
+I think
+
+1603854134
+daurnimator
+yeah looks like you're using a new std lib with an old stage2 checkout
+
+1603854165
+g-w1
+I think other way around.
+
+1603855048
+jabb
+so what's going on with this?
+
+1603855087
+jabb
+it's segfaulting because of passing "allocator" in Subnode.init
+
+1603855100
+jabb
+removing it and it doesn't segfault
+
+1603855344
+g-w1
+I am confused, init does'nt take self, so does it return a dangling pointer?
+
+1603855352
+g-w1
+*doesn't
+
+1603855390
+g-w1
+I must be missing something
+
+1603855454
+g-w1
+ah, it is dynamically allocated.
+
+1603855772
+jabb
+yeah
+
+1603855792
+jabb
+it's weird. i would expect this to work, but maybe i'm misunderstanding what it's doing
+
+1603856255
+jabb
+if you move allocator outsite of the call to `create` and do `self.node_.allocator = allocator` it works too
+
+1603856284
+jabb
+so something is going on when passing the comptime anytype struct to create, and then subsequently to zeroInit
+
+1603856355
+jabb
+ooo, sorry, meant the inline for. i also tried it with zeroInit and it didn't work
+
+1603856758
+jabb
+ahh, it's evaluated at comptime when it doesn't exist? looks like that's the case
+
+1603862740
+dominikh
+when writing bindings for a C library, is there any trick to dealing with memory allocations inside the C library and prevent it from using the libc default allocator?
+
+1603892659
+g-w1
+is there an equavelence to `cargo check` for zig where it only runs the semantic analysis
+
+1603892904
+ifreund
+nope
+
+1603892947
+g-w1
+would it be useful to make one, or does the lazy analysis not make it worth it?
+
+1603892955
+ifreund
+maybe in self hosted, but that should already be so fast for incremental builds it shouldn't matter
+
+1603892970
+ifreund
+there are other priorities imo
+
+1603893023
+g-w1
+cool
+
+1603893175
+tane
+will the self-hosted compiler be LLVM free?
+
+1603893189
+g-w1
+yes unless you want llvm!
+
+1603893225
+tane
+what are the implications w.r.t. to performance optimizations, i.e., can we expect a similar level or is that where LLVM comes in?
+
+1603893234
+tane
+-to
+
+1603893251
+dutchie
+
+
+1603893257
+tane
+thanks
+
+1603893421
+ifreund
+tane: tldr; llvm free for incremental debug builds, llvm optinal for full optimizations
+
+1603893461
+tane
+yes, everything else would be a rather ambitious adventure :)
+
+1603893484
+companion_cube
+could the release-safe mode also avoid llvm, optionally?
+
+1603893541
+ifreund
+companion_cube: I think a release mode with 80% of llvm's speed without llvm may be a longer term goal
+
+1603893555
+companion_cube
+yeah
+
+1603893578
+companion_cube
+even the equivalent of -O1 makes a world of difference with -O0, and is not that far away from -O2
+
+1603893589
+ifreund
+that's non-essential for zig 1.0 though at least imo, I know others may feel differently
+
+1603894663
+companion_cube
+sure, it's an implementation detail as some say :p
+
+1603903168
+Nypsie[m]
+Sorry for the off-topic question. Is there anyone in here who signed up for the plushie, and put their contact details as "IRC"? Please contact me so I actually know who to contact. Would be unfortunately if you miss out due to this.
+
+1603903340
+betawaffle
+there's a plushie?
+
+1603903406
+Nypsie[m]
+I'm in the process of getting some manufactured, based on the amount of people who sign up
+
+1603904205
+betawaffle
+can i see a picture?
+
+1603904252
+Nypsie[m]
+They aren't manufactred yet. But it'll be based on the mascotte, Zero:
+
+1603904953
+betawaffle
+cute
+
+1603905146
+ugla
+Nypsie: I didn't sign up but would like to, if it's not too late :]
+
+1603905200
+Nypsie[m]
+I'll add you to the list
+
+1603905517
+ugla
+Thanks!
+
+1603910170
+TheLemonMan
+andrewrk, how's the debugging going?
+
+1603910176
+andrewrk
+yo
+
+1603910234
+andrewrk
+I'm waiting on a build where I build zig1.o with the produced zig binary rather than zig0 and I expect that to not show the problem. this would confirm your hypothesis. I'm not sure how to do the objdump thing you suggested
+
+1603910306
+TheLemonMan
+objdump -d <your .o file> |& grep 'fld' or something like that
+
+1603910356
+TheLemonMan
+you could also use gdb/lldb and follow the float formatting code to see where it goes bonkers
+
+1603910361
+andrewrk
+good point
+
+1603910395
+TheLemonMan
+I wonder why none of the interesting bugs show up on hardware I own :(
+
+1603910411
+andrewrk
+assuming that is the problem, let's see what a fix would look like. we could introduce another build step where we rebuild zig1.o with stage1 zig. it's incredibly frustrating how difficult cmake makes such a simple concept
+
+1603910543
+andrewrk
+we could go back to passing -DZIG_EXECUTABLE=foo for macos CI - but that means we would have to update the tarball every time we want to change the language
+
+1603910580
+TheLemonMan
+can you remind me why we're not using the host CC/CXX ?
+
+1603910636
+andrewrk
+I spent all day trying to make that work after llvm 11 was released and this was my solution to create a consistent build environment that we control
+
+1603910722
+andrewrk
+oh it fixed something too. even previously with gcc we were incorrectly building a fully static exe - not even linking libSystem. I was unable to get gcc to do the right thing
+
+1603910730
+andrewrk
+now the macos tarballs are correctly dynamic linking libSystem
+
+1603910757
+andrewrk
+also the CI tarball is an order of magnitude smaller, and doesn't depend on homebrew or gcc
+
+1603910799
+TheLemonMan
+oh I see, cross-platform building is such a mess
+
+1603910840
+andrewrk
+yeah and zig actually makes it pretty nice - but trying to bootstrap can be tricky
+
+1603910872
+andrewrk
+OK I have just confirmed that if I rebuild zig1.o with stage1 zig instead of stage0 it no longer has the translate-c failures
+
+1603910901
+TheLemonMan
+do you still have both the zig1.o files?
+
+1603910901
+andrewrk
+so it does appear to be stage0 giving LLVM incorrect data for "baseline"
+
+1603910917
+andrewrk
+I have the new one only but I can regenerate the old one within ~10 min
+
+1603910933
+TheLemonMan
+you could bindiff the good and the bad one and see what changed
+
+1603910941
+andrewrk
+ok will start that process
+
+1603910981
+TheLemonMan
+isn't it lovely how all those weird issues pop up right before the release period?
+
+1603911029
+andrewrk
+:(
+
+1603911055
+andrewrk
+also I don't know if you heard but my landlord went berzerk last thursday and I have been chased out of my home
+
+1603911074
+andrewrk
+it seems the universe does not want zig 0.7.0
+
+1603911170
+TheLemonMan
+yeah I read the twitter thread, crazy stuff
+
+1603911225
+andrewrk
+the universe can go fuck itself, this release is happening
+
+1603911260
+TheLemonMan
+speaking of release, I finally got the libclang patch merged!
+
+1603911280
+andrewrk
+wow, and 87 LLVM versions earlier than anticipated!
+
+1603911330
+TheLemonMan
+pfft, that's nothing compared to the patches for the SPARC backend
+
+1603911439
+TheLemonMan
+nyaayaya, ping
+
+1603912704
+andrewrk
+TheLemonMan, I have both object files now
+
+1603912795
+TheLemonMan
+can you send both this way?
+
+1603912815
+andrewrk
+one moment
+
+1603912918
+andrewrk
+
+
+1603912994
+andrewrk
+
+
+1603913085
+andrewrk
+stage0 is sending "" for CPU features to llvm. stage1 is sending a full and complete list, leaving nothing up to chance
+
+1603921893
+TheLemonMan
+andrewrk, is --cache off gone for good? the caching system doesn't detect when the zig compiler itself changes and testing new changes is harder than it should be
+
+1603921997
+TheLemonMan
+oh and some part of build.zig is now invoking `git diff` to build the dirty tree hash, can we avoid that? sometimes the generated diff overflows the maximum readable size and I have to go and modify the build.zig by hand
+
+1603923667
+andrewrk
+TheLemonMan, stage1 detects based on `zig version` only now, which has the git commit in it but no dirty changes. I did this thing for `zig build` but didn't even try to convert it to cmake:
+
+1603923682
+andrewrk
+oh, sorry, responded before I read your second message
+
+1603923782
+andrewrk
+sure we can disable that
+
+1603923929
+andrewrk
+caching is a big topic, I'm having trouble answering the --cache off question quickly. I agree that hacking on the compiler right now is more annoying than necessary due to caching
+
+1603924814
+andrewrk
+TheLemonMan, FYI here's my current plan for the short term: * fuck with the cmake script to rebuild zig1.o & relink stage1 zig binary before running * move on to other release related stuff
+
+1603924841
+TheLemonMan
+hah good luck with the cmake part
+
+1603924986
+TheLemonMan
+just saw your last update on #6830, I'm confused as well
+
+1603925010
+TheLemonMan
+there's no trace of x87 use, I wonder what the hell is wrong then
+
+1603925024
+TheLemonMan
+ghosts? evil spirits?
+
+1603925084
+earnestly
+Halloween
+
+1603925117
+TheLemonMan
+makes sense
+
+1603925256
+andrewrk
+I feel ok working around it because once
+
+1603926448
+pixelherodev
+On that note, I need to get back to work on the header generation tomorrow
+
+1603926616
+frmdstryr
+Stupid question... when I use @breakpoint() and run in the debugger how do I make it continue past the breakpoint? Pressing 'n' just repeats halting forever and 'c' re-enters the trap
+
+1603926714
+andrewrk
+I'm not actually sure. Sometimes @breakpoint() actually confuses debuggers. That might actually be a question to ask in the channel for the debugger you are usingf
+
+1603926731
+andrewrk
+the question is how to go to the next instruction after a trap instruction which was compiled ahead of time into the binary
+
+1603926939
+pixelherodev
+On GDB, I think you can manually "set PC" or something like that?
+
+1603926947
+pixelherodev
+I don't remember the "proper" way to do it :P
+
+1603929020
+dominikh
+with extern functions, is it possible to specify different names for the external name and how to call it in zig? or should I just write wrapper functions? context is writing idiomatic C bindings
+

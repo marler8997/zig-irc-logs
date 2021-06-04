@@ -1,0 +1,632 @@
+1584316802
+adamkowalski
+that needs memory to allocate the tensor and copies the data being passed
+
+1584316813
+adamkowalski
+so it uses the arena which was defined at the top of the scope
+
+1584316847
+adamkowalski
+the reason is sometimes you have many expected values and you don't want to have to write defer expected0.deinit() for each one
+
+1584316877
+adamkowalski
+so the arena is purely for the expected values at the bottom of the tests where the assertions happen
+
+1584316904
+adamkowalski
+it just happens to be overkill in this case, but I favored consistency between all my tests rather than just using the page allocator here and arena elsewhere
+
+1584316905
+jjido
+I strongly feel there should only be one allocator in that function
+
+1584316924
+adamkowalski
+in which function
+
+1584316937
+adamkowalski
+you mean the unit test?
+
+1584316965
+jjido
+yes the test function in this case, but it can be any function using your library
+
+1584316984
+adamkowalski
+but i'm open to suggestions, wanna create a pastebin with your proposal?
+
+1584317005
+adamkowalski
+are you saying remove the arena and have everyone use the heap.page_allocator
+
+1584317232
+jjido
+
+
+1584317297
+jjido
+that may be naive, but you get the idea
+
+1584317391
+jjido
+can't you create an arena allocator out of another arena allocator? That may be appropriate for Session
+
+1584317487
+adamkowalski
+Thanks for taking the time to write that up
+
+1584317533
+adamkowalski
+So for your second idea, the graph does handle all the allocation, it has an internal arena and everytime you add an operation it will allocate using that allocator
+
+1584317560
+adamkowalski
+same thing with session, it uses it's own arena
+
+1584317565
+adamkowalski
+however, the hitch is eager.constant
+
+1584317597
+adamkowalski
+that is a whole seperate namespace which contains "eager" versions of all the operations
+
+1584317614
+adamkowalski
+so lazy add will actually shell out to eager add when the time comes to do work
+
+1584317635
+adamkowalski
+eager operations have no notions of the graph and only need allocators to do their work
+
+1584317663
+jjido
+that's why I suggested using "graph" as some kind of allocator
+
+1584317670
+adamkowalski
+it is
+
+1584317680
+adamkowalski
+but eager operations are not meant to be used by consumers of the api
+
+1584317690
+jjido
+ignoring it is a graph
+
+1584317706
+adamkowalski
+well I suppose you can call &graph.allocator
+
+1584317717
+adamkowalski
+but that ties the lifetime of the eager constant and the graph
+
+1584317718
+jjido
+sounds fine
+
+1584317737
+jjido
+it's a convenience, let the use choose
+
+1584317738
+adamkowalski
+the graph, session, and any eager tensors should have disjoint lifetimes
+
+1584317757
+adamkowalski
+However, I agree in this test code you could do that and it would be fine
+
+1584317764
+adamkowalski
+it would make the code a little simpler
+
+1584317804
+adamkowalski
+however, I just realized an issue
+
+1584317830
+adamkowalski
+now I'm forced to expose the guts of the graph to the user, and if they call &graph.allocator I'm forced to keep that as part of the api when it is supposed to be an implementation detail
+
+1584317849
+adamkowalski
+I can now never change the name of that field or change how I allocate without breaking users code
+
+1584317875
+adamkowalski
+I really think graph allocations should only deal with things that will be part of the graph
+
+1584317892
+jjido
+ok
+
+1584317896
+adamkowalski
+However, I do agree that the current code should be slimmed down and made more sexy, maybe use less allocators and become more streamlined
+
+1584317915
+jjido
+you said that Graph creates an arena allocator
+
+1584317917
+adamkowalski
+I just want to think about how I approach that so that graphs are their own thing with their own lifetime and they don't get mixed up with anything else
+
+1584317928
+adamkowalski
+yes internally they do, and you shouldn't know that
+
+1584317990
+jjido
+so graph.allocator gives you an allocator tied to the lifetime of the graph
+
+1584318006
+adamkowalski
+well not atm because the allocator is not a public field
+
+1584318027
+adamkowalski
+and I'm not convinced I want people monkying around with the internals of the graph and/or relying on them
+
+1584318043
+adamkowalski
+it breaks encapsulation
+
+1584318066
+adamkowalski
+but yes the graph has an allocator by that name
+
+1584318119
+jjido
+as long as "graph.allocator" means an allocator tied to the lifetime of the graph, it doesn't matter if you change the way graph allocates - you can just use that something else and still provide the old graph.allocator in the API
+
+1584318161
+jjido
+I think it makes the code look cleaner
+
+1584318194
+adamkowalski
+okay, but what about your first proposal
+
+1584318197
+adamkowalski
+I liked that one too
+
+1584318200
+jjido
+don't like to expose that much "piping"
+
+1584318218
+jjido
+yeah if that works, it's good too
+
+1584318219
+adamkowalski
+since the allocator is in scope at the top level, why not just use that
+
+1584318255
+adamkowalski
+I could make that even simpler and not even use an arena
+
+1584318266
+adamkowalski
+just pass the heap allocator to the graph and the session directly
+
+1584318285
+jjido
+if you do that what about eager.constant?
+
+1584318305
+adamkowalski
+defer deinit that sucker
+
+1584318315
+adamkowalski
+but yes that is the ugly duckling left
+
+1584318344
+adamkowalski
+but actually talking about this with you helped me realize a flaw in the session allocation strategy
+
+1584318358
+adamkowalski
+the returned value from session.run is tied to the lifetime of the session
+
+1584318365
+adamkowalski
+since it uses the sessions arena
+
+1584318371
+adamkowalski
+they should probably be disjoint
+
+1584318381
+jjido
+the arena is not really the issue, it's having more than one allocator around which is
+
+1584318404
+adamkowalski
+you mean in general or just in this particular example?
+
+1584318412
+jjido
+yes the returned value should use the initial allocator
+
+1584318430
+jjido
+this particular example
+
+1584318472
+adamkowalski
+yeah okay I'm sold I'll make the change
+
+1584318483
+adamkowalski
+now the question is how to approach the session.run
+
+1584339885
+pixelherodev
+LLVM IR parsing and AST gen of simple test file: 0.06 seconds in debug mode, `assertion failed in ir.cpp` in release-fast mode
+
+1584339889
+pixelherodev
+:P
+
+1584339912
+pixelherodev
+And in release-small
+
+1584376920
+shakesoda
+build on the site is from the 12th, what happened
+
+1584377835
+tdeo
+playing with async and can't seem to find a way for an async function to remove its frame from a list on its own, noasync should theoretically be able to solve this, right (it doesn't now)?
+
+1584377929
+tdeo
+though i guess since std.event.Loop is using a threadpool anyway this way won't work
+
+1584378303
+andrewrk
+shakesoda, I noticed the download page has been lagging but I'm not sure what's going wrong in the CI yet
+
+1584378329
+andrewrk
+one thing I noticed is that azure stopped running CI builds for merged PRs, which is problematic
+
+1584378555
+andrewrk
+hmm yeah I just rebase-merged a PR into master, and azure is not running
+
+1584378593
+andrewrk
+I don't even know how to troubleshoot this. azure just changed its behavior and broke stuff
+
+1584378774
+andrewrk
+tdeo, you may be able to work around this by using *Client rather than Client in the list
+
+1584378837
+andrewrk
+it looks like either your memory layout actually does have a cycle, or zig's lazy value system needs an improvement to understand that this is not a cycle
+
+1584378855
+andrewrk
+I can almost tell from the stack trace but not quite
+
+1584378880
+shakesoda
+after fixing, like, a thousand things, i was able to work around #1481 and get cimgui working again even on linux
+
+1584378888
+shakesoda
+although i'd rather not have had to change so much code to do it
+
+1584378931
+shakesoda
+but it's alive
+
+1584379024
+andrewrk
+we'll get there, it will just take some time
+
+1584379027
+andrewrk
+nice work
+
+1584379051
+tdeo
+the problem with it is Client includes @Frame(run) where run calls deinit, so while analyzing deinit it doesn't seem to know what the size of Client is, so it can't use generic types based on it
+
+1584379071
+tdeo
+getting the same problem with std.atomic.Queue :(, i guess an extra indirection isn't too bad since it's rarely touched
+
+1584379150
+shakesoda
+andrewrk: zig improves at a healthy pace, i have no doubt that it will get there
+
+1584379160
+andrewrk
+the CI problem appears to be
+
+1584379172
+shakesoda
+i did run into a nasty bug in opt builds last night though, i had to mess with my fs read function
+
+1584379246
+andrewrk
+I kicked off a manual CI run of master, in theory this should update the download page
+
+1584379422
+andrewrk
+tdeo, btw I'm happy that you're trying out the event loop and async/await features, but also just as reminder, this is definitely "experimental" territory (although it's what I'm currently working on improving)
+
+1584379487
+tdeo
+yeah, i do understand that
+
+1584379522
+tdeo
+i'm really excited, the async io feels so much nicer than the situation on other systems languages
+
+1584379601
+tdeo
+i'm slowly working on writing a wayland compositor in zig, from scratch as much is reasonable, i've written the wire protocol part in pure zig
+
+1584379606
+tdeo
+probably will never finish but it's fun
+
+1584379610
+shakesoda
+meanwhile i have been suffering at the hands of the fs apis
+
+1584379739
+shakesoda
+
+
+1584379774
+andrewrk
+shakesoda, what os?
+
+1584379775
+shakesoda
+this is almost certainly bad code, but it behaves completely differently in fast vs safe modes
+
+1584379783
+shakesoda
+andrewrk: x86_64 linux
+
+1584379808
+shakesoda
+i believe it works fine on x64 windows
+
+1584379893
+andrewrk
+shakesoda, I think you want to pass `path` to `dirname`
+
+1584379901
+andrewrk
+you're passing the entire buffer
+
+1584379928
+shakesoda
+oh, good spot, that's definitely a typo
+
+1584379932
+andrewrk
+
+
+1584379936
+shakesoda
+why on earth does this work in debug
+
+1584379944
+shakesoda
+zero initialized?
+
+1584379979
+andrewrk
+unfortunately not everything can be caught by safety features, and this can lead to different behavior in different build modes
+
+1584380262
+shakesoda
+andrewrk: good spot, that was the bug, thank you
+
+1584380271
+andrewrk
+debug mode initializes undefined values to 0xaaaaa, so I would actually expect debug mode to fail harder
+
+1584380312
+andrewrk
+shakesoda, one thing you can try, if you don't mind going back to the old (broken) code - run it in strace and look for aaaaaa
+
+1584380332
+andrewrk
+if you see that, you know you passed undefined data to a syscall
+
+1584380342
+andrewrk
+also, try running it in valgrind, it should also identify the problem, with a stack trace even
+
+1584380359
+andrewrk
+I'm actually quite curious to know what the valgrind output is for the broken code in debug mode
+
+1584380644
+shakesoda
+andrewrk: the syscall is good in debug
+
+1584380677
+andrewrk
+no complaints from valgrind?
+
+1584380709
+shakesoda
+just checked strace
+
+1584380935
+shakesoda
+ugh, valgrind output is so incredibly noisy
+
+1584380975
+shakesoda
+so many complaints about the i965 driver
+
+1584381018
+shakesoda
+32000 lines of output before anything i might have done
+
+1584381116
+shakesoda
+andrewrk: I did indeed find a "param openat(filename) points to uninitialized byte(s)" in release mode, which would be the offender here
+
+1584381186
+shakesoda
+I've got no idea why in debug everything seems okay
+
+1584382157
+andrewrk
+hmm that is indeed curious
+
+1584382401
+mikdusan
+wouldn't that behavior depend entirely on what cwd.openFile does with a bunch of newlines in filename?
+
+1584382466
+mikdusan
+or rather inverse. nulls.
+
+1584386759
+andrewrk
+ah, it was 2 things. the azure thing, but also update-download-page.zig needed to be updated to new streams API
+
+1584390882
+FireFox317
+i'm using the addSystemCommand api in build.zig to run qemu, however stdin is not forwarded to the qemu command and thus im not possible to interact with it when doing `zig build qemu`. However when I run the qemu command in a terminal it works fine. Does someone know how to get the correct behavior?
+
+1584391134
+andrewrk
+FireFox317, the code is in lib/std/build/run.zig
+
+1584391152
+andrewrk
+you can see it unconditionally sets stdin to `.Ignore`. so this will have to be improved to support this use case
+
+1584391209
+FireFox317
+ah yes, i see thanks
+
+1584391229
+andrewrk
+FireFox317, if you look at StdIoAction, that should probably be renamed to StdIoOutputAction and then another enum introduced for stdin, with options such as ignore, input_this_slice, forward_terminal_stdin, etc. make sense?
+
+1584391347
+andrewrk
+perhaps the default ought to be `inherit`
+
+1584391357
+andrewrk
+rather than `ignore`
+
+1584391403
+FireFox317
+yeah i guess that makes more sense, because when you are running a system command, you also expect to be able to use the stdin and stdout of that command
+
+1584391413
+FireFox317
+well, thats what i would expect
+
+1584391418
+andrewrk
+makes sense to me
+
+1584391462
+andrewrk
+I'm happy to merge a PR if you tell me it's working for your project. standalone tests would be welcome but not required for this
+
+1584391494
+andrewrk
+(standalone tests being things in the test/standalone/ directory
+
+1584391847
+FireFox317
+andrewrk: I just changed line 162 of run.zig to default to inherit and it works. Is that enough for a PR or do you want me to do the StdIoAction thing you said before?
+
+1584392005
+andrewrk
+oh I see. hmm. well I'm ok with changing the default, but since that's a breaking change, I do want there to be an answer to the question, "how do I update my code to get the previous behavior?"
+
+1584392050
+andrewrk
+so I think a minimal mergeable PR would be to have that enum with inherit, or ignore, configurable as a field on RunStep
+
+1584392367
+danyspin97
+quit
+
+1584392377
+danyspin97
+ops lol
+
+1584392395
+danyspin97
+btw, zig has been successfully packaged for exherbo :)
+
+1584393402
+FireFox317
+andrewrk: #4751
+
+1584393536
+andrewrk
+FireFox317, thanks. and it works for you, yeah?
+
+1584393707
+FireFox317
+Yes definitely
+
+1584394450
+FireFox317
+andrewrk, Thanks!
+
+1584395386
+andrewrk
+this week in llvm: * The AVR backend was promoted to a standard backend, built by default.
+
+1584395402
+andrewrk
+note, that applies not to the upcoming llvm 10 but to llvm 11
+
+1584395468
+mikdusan
+neat
+
+1584397890
+pixelherodev
+Thanks for fixing the build.zig problem!
+
+1584400278
+pixelherodev
+I think the source_filename generated by Zig is wrong
+
+1584400288
+pixelherodev
+From the LLVM LangRef, it looks like that should be the absolute path to the file
+
+1584400297
+pixelherodev
+But it just contains the file name without extension
+
+1584400316
+pixelherodev
+I'd have just submitted a patch, but I'm not actually sure if I'm correct here :P
+

@@ -1,0 +1,1620 @@
+1582158542
+andrewrk
+fengb, it looks like you can experiment with SIMD in wasm if you use -target-cpu bleeding_edge
+
+1582158549
+andrewrk
+(or -target-feature +simd128)
+
+1582158561
+fengb
+Great... more features to implement lol
+
+1582158573
+andrewrk
+lol
+
+1582158677
+andrewrk
+fengb, you might find this interesting:
+
+1582158689
+fengb
+I guess it’s easy to do a naive implementation
+
+1582158741
+fengb
+Hmm I should pay attention to the proposals
+
+1582158859
+andrewrk
+damn I can't run the target.zig unit tests because the compiler depends on them
+
+1582158891
+andrewrk
+well I'll know if the code is working, once the code is working ( ͡° ͜ʖ ͡°)
+
+1582159101
+fengb
+Neat features, multi return obviates my silly “jam everything into f64” hack
+
+1582159806
+pixelherodev
+Heh, my lexer's now so fast that I could genuinely make it faster by removing the usage of InStream.readUntilDelimiter and doing a manual scan + memcpy :P
+
+1582159825
+shakesoda
+multireturn? where
+
+1582159849
+pixelherodev
+4 ms, and I might actually be able to reduce that to 1ms if I'm willing to take a few hours to optimize (I'm not)
+
+1582159869
+shakesoda
+multireturn is one of the things i miss deeply when writing everything but lua
+
+1582159893
+fengb
+
+
+1582159917
+pixelherodev
+I feel like multireturn could exist in Zig as syntax sugar over returning a structure... but it'd make the language more complex and probably not be worth it
+
+1582159949
+fengb
+Returning tuples will be a thing so we kinda have multi returns
+
+1582159971
+pixelherodev
+That's an accepted proposal? Neat
+
+1582160199
+pixelherodev
+make that 3 milliseconds :D
+
+1582160238
+pixelherodev
+... 2500 microseconds, rather
+
+1582160314
+pixelherodev
+That was just by stripping out libc :)
+
+1582160336
+pixelherodev
+It's nice that zig's startup time is (relatively speaking) much faster than C's too
+
+1582160522
+fengb
+Progress: my wasm bytecode doesn’t crash! I guess should actually verify it works too
+
+1582161187
+andrewrk
+nice
+
+1582163448
+pixelherodev
+... okay, so after my latest change, everything works fine in debug mode, but in release-fast it behaves differently :(
+
+1582163455
+pixelherodev
+(misparses a string?)
+
+1582163473
+pixelherodev
+The worst part is that it's impossible to debug
+
+1582163476
+pixelherodev
+values are all optimized out
+
+1582163732
+pixelherodev
+Whelp, time to just do more structural changes and hope that fixes it :P
+
+1582163756
+fengb
+Does it work in release-safe?
+
+1582163794
+pixelherodev
+Good point
+
+1582163814
+daurnimator
+pixelherodev: I had a similar issue with my copy of bss. had to use inline assembly so it wouldn't be optimized
+
+1582163842
+pixelherodev
+?
+
+1582163870
+pixelherodev
+fengb, yeah
+
+1582163936
+daurnimator
+pixelherodev: uh, for certain environments, you have to set up your sections. global variables need to be initialised from their initial values in their readonly section. and you need to zero-initialise bss
+
+1582163992
+daurnimator
+the issue was that `memset` got optimized to the compiler builtin... which internally used bss... which wasn't initialised yet...
+
+1582164025
+daurnimator
+you break the loop by writing memset and memcpy by hand without any state.
+
+1582164046
+daurnimator
+
+
+1582164427
+pixelherodev
+Works in every mode but fast :(
+
+1582164480
+pixelherodev
+But in release-small it now outperforms the previous release-fast :P
+
+1582164498
+pixelherodev
+(by like 300 microseconds, but given the scale this runs on that's actually a lot)
+
+1582164554
+pixelherodev
+Hmm, ArrayList.ensureCapacity zero-initializes the new memory?
+
+1582164615
+daurnimator
+it shouldn't....
+
+1582164674
+daurnimator
+it uses .realloc. which in non-release-fast modes will initialise to `undefined` (i.e. 0xaa). and in release-fast it will be.... whatever was there before (which for a fresh anonymous mmap, should be 0)
+
+1582164709
+fengb
+Pretty sure release-small also doesn’t memset or have any safety features
+
+1582164714
+pixelherodev
+... huh, that's odd
+
+1582164727
+pixelherodev
+Found it
+
+1582164735
+pixelherodev
+There's a @memset in
+
+1582164742
+pixelherodev
+to undefined
+
+1582164758
+fengb
+Which should be a noop in safe or fast
+
+1582164768
+fengb
+Er... small or fast
+
+1582164770
+pixelherodev
+It's not
+
+1582164792
+daurnimator
+it should be...
+
+1582164807
+daurnimator
+what are you seeing instead?
+
+1582164816
+fengb
+Look at the assembly output. Any assignment to undefined should be optimized out in non-safe
+
+1582164817
+pixelherodev
+Double checked, and it's not.
+
+1582164866
+pixelherodev
+According to callgrind, ~1/6th of execution time is a memset call
+
+1582164878
+pixelherodev
+Which I'm 99% sure is inlined std.mem.Allocator.realloc
+
+1582164899
+pixelherodev
+Tjere
+
+1582164916
+pixelherodev
+there's only two function calls in ensureCapacity: self.capacity(), which just retrieves current capacity, and realloc
+
+1582164930
+daurnimator
+pixelherodev: which allocator are you using?
+
+1582164955
+pixelherodev
+PageAllocator IIRC
+
+1582164963
+pixelherodev
+Yeah
+
+1582164998
+pixelherodev
+But it shouldn't be allocator specific, the memset is in the Allocator interface's realloc function
+
+1582165159
+daurnimator
+pixelherodev: could you try and show off that memset in e.g. godbolt?
+
+1582165618
+pixelherodev
+Probably note, but that's because I can't possibly read the optimized asm
+
+1582165622
+pixelherodev
+s/note/not
+
+1582165707
+daurnimator
+godbolt is good at helping you see what compiles to what
+
+1582165892
+pixelherodev
+not in release-fast/release-small
+
+1582165909
+pixelherodev
+Try a simple example of ArrayList.ensureCapacity and let me know how it goes ;)
+
+1582165915
+pixelherodev
+(I know, because I tried)
+
+1582167853
+pixelherodev
+Figured out why it wasn't working in release fast mode: there was a latent bug in the lexer that went unnoticed before the refactor, which ended up becoming a problem in other modes upon further changes. Fixing that fixed release-fast mode :)
+
+1582167980
+pixelherodev
+1.2 milliseconds :D
+
+1582168112
+pixelherodev
+(If I set up a bash loop to run it a thousand times, average execution time goes down even further, but that's just abusing the branch predictor to get a meaningless speed improvement)
+
+1582168273
+pixelherodev
+s/bash/shell
+
+1582168536
+pixelherodev
+Interestingly though, that performance improvement doesn't exist on the much larger IR of the lexer itself - or rather, it does, but it doesn't scale to file size :P
+
+1582168579
+shakesoda
+does zig build know about things like vcpkg or do i need to convince it to know
+
+1582168629
+daurnimator
+shakesoda: it does.
+
+1582169124
+shakesoda
+daurnimator: any magical incantation for it?
+
+1582171007
+shakesoda
+looks like i just had to manually add the paths for it and things are alright
+
+1582173692
+andrewrk
+shakesoda, yes, zig build knows about vcpkg and pkg-config
+
+1582173738
+andrewrk
+I think you do artifact.addVcpkgPaths()
+
+1582173745
+andrewrk
+I'm not sure why it's not automatic
+
+1582173768
+andrewrk
+Sahnvour probably knows more
+
+1582173797
+andrewrk
+more information:
+
+1582173951
+andrewrk
+shakesoda, I filed
+
+1582182945
+mikdusan
+oh noes `zig0 test` now depends on self-hosted: stage0 called stage2_detect_dynamic_linker
+
+1582183202
+mikdusan
+(on macOS)
+
+1582183971
+andrewrk
+mikdusan, I think you can prevent that by explicitly providing --dynamic-linker to zig0
+
+1582184006
+andrewrk
+which I think is fair to be required to do since direct use of zig0 is only for debugging
+
+1582184038
+mikdusan
+oh I'll try that.
+
+1582184389
+mikdusan
+yaay that works
+
+1582184979
+mikdusan
+I found another 214 MiB (macOS):
+
+1582184983
+mikdusan
+
+
+1582185014
+mikdusan
+basically: track GenConst and find those that are ref_count=0 and (redundant but !has_side_effects)
+
+1582186351
+andrewrk
+nice!
+
+1582206074
+dimenus
+andrewrk: you weren't kidding when you said building glibc takes awhile :)
+
+1582206082
+dimenus
+(for zig anyway, with all of its targets)
+
+1582206170
+mikdusan
+it'll get much better when zig starts building things in parallel (assuming spinning media is not in play)
+
+1582206223
+fengb
+And chew up more memory :P
+
+1582207510
+dimenus
+this isn't zig building things, i'm building glibc-2.31 because zig doesn't support it yet
+
+1582207516
+dimenus
+
+
+1582208246
+dimenus
+sorry, i should clarify. I'm building glibc 2.31 for the zig compiler itself (all targets)
+
+1582210599
+fengb
+Can I cast between function pointers if all the types are binary compatible?
+
+1582210641
+fengb
+e.g. fn (a: i32, b: *T) i64   => fn (a: u32, b: *T2) u64
+
+1582210676
+mq32
+i'd say for "extern functions" it
+
+1582210678
+mq32
+but i would not rely on that
+
+1582211199
+shakesoda
+argh! luajit doesn't let you do a custom allocator on 64 bit
+
+1582211204
+shakesoda
+i wonder if this was fixed in 2.1 or moonjit
+
+1582211288
+shakesoda
+looks like not
+
+1582211336
+shakesoda
+guess i'll just have to note this one as a quirk
+
+1582211925
+shakesoda
+lua_tostring and stuff fail to translate
+
+1582211934
+shakesoda
+i think it's the same as one of the issues already posted, though
+
+1582212092
+shakesoda
+yeah, it's #4328
+
+1582214408
+forgot-password
+Is it possible to pass zig var args to a c function with var args?
+
+1582214541
+Snektron
+Do you mean a struct literal or old-style varargs
+
+1582214568
+forgot-password
+a struct literal
+
+1582214653
+forgot-password
+The objc_msgSend function definition looks like this in C: id objc_msgSend(id self, SEL op, ...), but I want to write a few wrappers to make it more comfortable to use with Zig
+
+1582214740
+fengb
+Umm... there's a really bad kludge you could use
+
+1582214833
+forgot-password
+Haha, sounds good to me ^^
+
+1582214850
+betawaffle
+i mean isn't objc a kludge anyway?
+
+1582214891
+fengb
+I mean it's super kludgy Zig
+
+1582214956
+fengb
+
+
+1582214973
+fengb
+There might be an actual way to do this sanely >_>
+
+1582214982
+betawaffle
+what about @call?
+
+1582214997
+fengb
+I don't think there's a good way to combine tuples
+
+1582215001
+betawaffle
+++ ?
+
+1582215025
+betawaffle
+can you not do .{ id, op } ++ args
+
+1582215046
+fengb
+Oh was that added? I thought it only worked on homogeneous arrays
+
+1582215052
+betawaffle
+dunno
+
+1582215070
+betawaffle
+i thought i saw mention of it at some point in here
+
+1582215170
+betawaffle
+it seems to compile at least
+
+1582215240
+fengb
+
+
+1582215250
+betawaffle
+ah, yeah
+
+1582215667
+Snektron
+"seems to compile" is deceitful in Zig
+
+1582215700
+forgot-password
+Well, I gotta leave now, but I'll check it out this evening. Thank you :)
+
+1582215829
+fengb
+Yeah Zig doesn't actually compile unless it's referenced :P
+
+1582218892
+Snektron
+I recently realized thats not really that bad as it seems
+
+1582218943
+Snektron
+The only difference between that and other languages is that compile errors are caught, but the code isn't used in either case
+
+1582218972
+andrewrk
+Snektron, also, languages which have generics (which includes, e.g. C++ and Rust) have this same problem with generic functions
+
+1582218993
+andrewrk
+in zig there is less distinction between generic functions and normal functions
+
+1582219050
+Snektron
+Yeah thats true
+
+1582219081
+Snektron
+Sometimes my c++ experience seems to be like Zig in that regard, considering the amount of templates i usually use
+
+1582219088
+companion_cube
+andrewrk: in rust you'll get errors even if you don't use generics
+
+1582219099
+companion_cube
+they're checked at definition time, not instantiation time
+
+1582219155
+andrewrk
+companion_cube, how can it know the types you will pass to it if you never do that?
+
+1582219166
+andrewrk
+let me try to make an example
+
+1582219177
+companion_cube
+in rust, you can only interact with the generic types through traits
+
+1582219181
+companion_cube
+(same as C++ concepts, mostly)
+
+1582219187
+companion_cube
+so you only check them once
+
+1582219195
+Snektron
+You specify explicit requirements
+
+1582219217
+andrewrk
+oh I see, right. my mistake- it only applies to duck typing like c++. that is a really nice property of rust
+
+1582219219
+companion_cube
+exactly, if you do `x == y` where `x:T` you have to say `T : PartialEq`
+
+1582219219
+Snektron
+You cant pass in a type that doesn't satisfy the requirements, and you can't use anything besides the requirements
+
+1582219224
+betawaffle
+tbh, that's something i like about zig is you don't have to constrain your generic arguments
+
+1582219245
+Snektron
+Soon(tm) in c++ with concepts
+
+1582219247
+companion_cube
+betawaffle: it might pose some issues at scale though
+
+1582219249
+fengb
+I wish we could constrain generic requirements heh
+
+1582219260
+betawaffle
+companion_cube: true
+
+1582219286
+betawaffle
+but for prototyping it's really useful
+
+1582219287
+Snektron
+Ye seema useful fengb
+
+1582219299
+Snektron
+I think that proposal about functions as parameter types is a step in the right direction
+
+1582219302
+fengb
+Been doing `instream: var` because it's painful otherwise. But it's painful to debug when I pass in the wrong value
+
+1582219365
+companion_cube
+in D you have this notion of "voldemort types" I think, because of all the `auto` (same as `var`?)
+
+1582219380
+companion_cube
+it's super powerful but you lose a lot of static guarantees, in a way
+
+1582219396
+companion_cube
+your generic functions are not really typechecked, only their instances
+
+1582219593
+andrewrk
+fengb, yeah that's considered a design flaw in zig right now and the issue is
+
+1582219620
+andrewrk
+I'm hoping it can be fixed with some kind of interface language feature, but I have no concrete plan for that yet
+
+1582220083
+Snektron
+Huh? Fixing error sets with interfaces?
+
+1582220086
+companion_cube
+polymorphism + effects is hard 🤷
+
+1582220144
+andrewrk
+Snektron, yes one of the design goals of interfaces for me would be to interact with error sets in a way that lets them compose as you would expect them to
+
+1582220211
+andrewrk
+e.g. maybe an interface itself supports error set inference, something like that
+
+1582220236
+Snektron
+But what does that have to do with that issue?
+
+1582220263
+andrewrk
+well the issue is that you're basically forced to accept `stream: var` rather than `stream: *Stream` and it's mainly because of the error set
+
+1582220321
+companion_cube
+cause you'd need `stream: *Stream(E)` for an inferred E?
+
+1582220435
+Snektron
+But that just seems a problem with comptime parameterizatiom rather than that specific error of not being able to figure out an error set at compile time if a function doesn't return one
+
+1582220436
+andrewrk
+yeah
+
+1582220471
+andrewrk
+oh I think I linked to a different issue than I meant to
+
+1582220491
+andrewrk
+I meant to link to this one:
+
+1582220514
+Snektron
+That explains a lot
+
+1582220594
+companion_cube
+andrewrk: how about associated types?
+
+1582220609
+companion_cube
+instead of `Stream(Error)`, you'd have an interface `Stream` with a field `Error`
+
+1582220628
+companion_cube
+
+
+1582221413
+betawaffle
+has anyone taken the name "zag" for a library yet?
+
+1582221428
+fengb
+Absolutely everybody lol
+
+1582221468
+gchristensen
+do it anyway betawaffle
+
+1582221728
+andrewrk
+it's a rite of passage
+
+1582221766
+andrewrk
+the holy grail is if you can make a simple video game clone using only zig packages named "zag" that all do different things
+
+1582221805
+andrewrk
+I'm pretty sure pixelherodev does `const zag = @import("std");`
+
+1582221811
+shakesoda
+andrewrk: in the future, also while running the thing everyone expected most: zagOS
+
+1582221918
+Snektron
+If it doesn't have window 3.1's ZIGZAG you've failed
+
+1582221971
+andrewrk
+which one is considered more "default"? ARMv8mBaseline or ARMv8mMainline ?
+
+1582222011
+andrewrk
+e.g. should it be generic+v8m => ARMv8mBaseline, or generic+v8m_base => ARMv8mBaseline
+
+1582222148
+shakesoda
+andrewrk: looks like mainline is more common
+
+1582222164
+shakesoda
+according to the ever handy arm cortex m wikipedia page
+
+1582222213
+shakesoda
+unless there just happen to be a lot more M23's than M33 and M35P (maybe?)
+
+1582223146
+pixelherodev
+... I refer to it as Zag, but I've typically imported as std.
+
+1582223155
+pixelherodev
+On the other hand, thanks for giving me a better name for my kernel shakesoda
+
+1582223507
+pixelherodev
+ZagOS has a much better ring to it, and is more accurate anyways
+
+1582223605
+fengb
+Is this in competition with vOS? 🙃
+
+1582224141
+pixelherodev
+Okay, did a quick `find -exec sed`; now everything's ZigZaggy
+
+1582224457
+fengb
+Can someone suggest a less stupid name for my wasm interpreter? :)
+
+1582224481
+araspik
+fengb: 999
+
+1582224533
+fengb
+Less stupid 🙃
+
+1582224557
+fengb
+I like how "Azigly" sounds but the spelling is terrible
+
+1582224560
+pixelherodev
+WASMade
+
+1582224575
+fengb
+A-zig-bee
+
+1582224580
+pixelherodev
+ZWASM
+
+1582224589
+pixelherodev
+zeh-wah-zem
+
+1582224596
+companion_cube
+WebZassembly
+
+1582224597
+pixelherodev
+Has a nice ring
+
+1582224613
+pixelherodev
+WeebASM
+
+1582224625
+pixelherodev
+WeebsAssemble
+
+1582224636
+fengb
+wazm
+
+1582224645
+companion_cube
+I like that one!
+
+1582224647
+pixelherodev
+That's actually a good oen
+
+1582224648
+pixelherodev
+one
+
+1582224685
+fengb
+What really? I tossed that out almost immediately >_>
+
+1582224710
+araspik
+yeah it's not bad
+
+1582224720
+fengb
+Acronym for web assembly zig machine
+
+1582224733
+fengb
+Okay I'll take it. Thanks
+
+1582224761
+fengb
+Luckily I avoided all names in the git so no paper trail :P
+
+1582227970
+betawaffle
+i mean, what about wazm?
+
+1582227984
+betawaffle
+oh, you already had that idea
+
+1582227987
+companion_cube
+:D
+
+1582228005
+betawaffle
+it's not like i have time to read things first
+
+1582228017
+betawaffle
+only after i've already made a mistake
+
+1582228918
+andrewrk
+wazm is good
+
+1582229518
+fengb
+Oh do we have a convention for projects? Like PyFoo, Foo4J, Foo.js, etc.
+
+1582229533
+fengb
+Important questions in life
+
+1582229800
+andrewrk
+libfoo
+
+1582229802
+andrewrk
+eat c's lunch
+
+1582230368
+fengb
+So our output files will be liblibfoo.so? 🙃
+
+1582231016
+andrewrk
+at ok cupid we had, no joke, a build artifact called liblibmodule.so
+
+1582231024
+andrewrk
+which if you think about it, means "library library library library"
+
+1582231061
+fengb
+lol
+
+1582231326
+andrewrk
+maybe this is tooting my own horn but, I really really like programming in zig compared to C++ for the self-hosted compiler bits
+
+1582231339
+andrewrk
+it's so much easier to make changes without introducing regressions
+
+1582231378
+andrewrk
+compile errors be like, hey buddy, remember that thing you needed to do?
+
+1582231443
+shakesoda
+andrewrk: zig is destroying my life and that's a wonderful thing
+
+1582231469
+shakesoda
+andrewrk: i've got some work in the queue on some c++ codebase, and it is hurting my soul so much more than usual
+
+1582231505
+shakesoda
+fortunately, that hasn't started yet, so i can enjoy using zig for myself ;)
+
+1582231514
+Snektron
+Imagine making your own programming language and then programming in ot
+
+1582231520
+Snektron
+Sounds neat
+
+1582231541
+shakesoda
+i've done it before, except my language sucked and i got distracted before really following through
+
+1582231543
+jaredmm
+andrewrk: this is a few days old now, you you were right that __cplusplus isn't defined when running an empty translate. Somehow including Windows headers seems to enable it? Been sick the last two days and couldn't investigate anymore.
+
+1582231576
+shakesoda
+never got far beyond "vaguely working prototype"
+
+1582231623
+andrewrk
+I'm excited for when zig goes into "maintenance mode" and I can actually just use it instead of working on it
+
+1582231625
+Snektron
+Same
+
+1582231667
+fengb
+I find it fascinating that a language can possibly be well-designed to account for edge cases
+
+1582231668
+fengb
+Or rather... most of the time it's not
+
+1582231725
+andrewrk
+jaredmm, this works for me: zig translate-c foo.c -target x86_64-windows-gnu -lc
+
+1582231745
+andrewrk
+that works on any system ^ (where foo.c is #include <windows.h>)
+
+1582231751
+andrewrk
+and __cplusplus is not defined
+
+1582231804
+andrewrk
+this works on any system because zig ships with the ability to build mingw-w64 libc from source, and its headers
+
+1582231873
+andrewrk
+wow, that is one nasty macro translation:
+
+1582231885
+shakesoda
+oh no
+
+1582231950
+fengb
+... is that accurate? o_O
+
+1582231972
+Snektron
+Oh no
+
+1582232052
+jaredmm
+andrewrk
+
+1582232054
+jaredmm
+Oops
+
+1582232078
+jaredmm
+Nevermind, my addled brain isn't working yet. I'm recalling that the problem was that it was missing an enumeration definition.
+
+1582232107
+jaredmm
+I assumed that it was running the __cplusplus code based on how the result looked, but it was actually an empty variable name?
+
+1582232163
+jaredmm
+: struct_tagMOUSEHOOKSTRUCT, is in the resulting definition when it should be `DUMMYDATA: : struct_tagMOUSEHOOKSTRUCT,`, I think. I need to get back into it.
+
+1582232269
+jaredmm
+`MOUSEHOOKSTRUCT DUMMYSTRUCTNAME;` is what the header has
+
+1582232418
+andrewrk
+jaredmm, the next step to diagnosing this is probably to try to recreate a small self-contained test case of C code that translates into different zig code than you would expect
+
+1582232688
+jaredmm
+Yep, that's the plan. I think I did make an example the other day, just need to find it.
+
+1582233551
+fengb
+Can I cast between function pointers if all the types are binary compatible? e.g. fn (a: i32, b: *T) i64   => fn (a: u32, b: *T2) u64
+
+1582233592
+mikdusan
+looks like ziglang.org download bins aren't updating
+
+1582234416
+Snektron
+I think its asking for trouble, fengb
+
+1582234442
+Snektron
+I'd say to restrict it to extern functions because of the abi guarantees
+
+1582234493
+fengb
+My wasm vm jump table can disappear if I can use a function pointer
+
+1582234501
+fengb
+So... I'm asking for trouble :P
+
+1582234562
+andrewrk
+fengb, if you use an explicit calling convention, such as C calling convention, then @ptrCast in this case will be well-defined
+
+1582234578
+andrewrk
+otherwise a @ptrCast between these functions is undetectable undefined behavior
+
+1582234615
+andrewrk
+mikdusan, looks like this:
+
+1582234618
+fengb
+Cool thanks. I guess I have to make a concession with error codes, but I can wrap that
+
+1582234669
+pixelherodev
+Could always make a wrapper function which casts the arguments and calls the real function
+
+1582234674
+pixelherodev
+Aggressive inlining should clean that up also
+
+1582234694
+andrewrk
+I think you both said the same thing
+
+1582234713
+andrewrk
+mikdusan, I wonder if this is related to
+
+1582234726
+mikdusan
+andrewrk: sure has the same smell
+
+1582234753
+Snektron
+fengb, keep in mind that function pointers means an indirect call
+
+1582234760
+Snektron
+Slow
+
+1582234766
+fengb
+Sure I just didn't want 544 different function signatures, which is what I'd need if I couldn't merge the function pointers
+
+1582234768
+Snektron
+A giant switch is probably faster
+
+1582234782
+fengb
+Matrix ate my asterisks
+
+1582234819
+mikdusan
+I would generally look to the first commit where it stopped updating... but I only changed ir_print stuff in that one
+
+1582234821
+fengb
+Yeah there's a billion other things I need to do to speed up this vm >_>
+
+1582234850
+andrewrk
+mikdusan, I pressed the "resubmit" button, and when it fails again it will let me log in
+
+1582234985
+andrewrk
+mikdusan, ok i can reproduce this just by downloading
+
+1582235031
+andrewrk
+=> 0x00007ffff1bee9bd <+1101>:vpcmpeqq %xmm0,%xmm1,%k0
+
+1582235066
+andrewrk
+it's this instruction, inside cpuFeaturesFromLLVM which is part of src-self-hosted/stage2.zig
+
+1582235087
+andrewrk
+so actually I do think this has to do with incorrectly enabling extra cpu features
+
+1582235112
+fengb
+Funnily enough... I can generate the giant switch at comptime so that'd optimize out the FP if I can have reasonably similar
+
+1582235229
+andrewrk
+mikdusan, my sub-architectures branch coincides with this issue, so I'll just make sure it's working before I merge that branch
+
+1582235255
+mikdusan
++1
+
+1582235328
+andrewrk
+mikdusan, oh, derp, I forgot to make the cmake invocation of zig0 cross compile rather than native
+
+1582235346
+mikdusan
+ah
+
+1582235368
+mikdusan
+so it produced libuserland.a with native insts ?
+
+1582235376
+andrewrk
+yes exactly
+
+1582235383
+andrewrk
+it's renamed to libzigstage2.a now btw
+
+1582235420
+mikdusan
+the cross-compile should be a target which then defaults to base features?
+
+1582235470
+andrewrk
+yes we just need to add `-target arch-os` in cmake
+
+1582235529
+andrewrk
+maybe zig0 can support -mcpu=baseline
+
+1582235540
+andrewrk
+that way we don't have to add any cmake logic
+
+1582235554
+mikdusan
+heh i was just trying `zig0 targets` but hey... it's a stage2 feature
+
+1582235728
+mikdusan
+alternatively we have /opt/llvm dependency. are there any llvm/bin/* tools that can show suitable target?
+
+1582235832
+andrewrk
+eehh I think a more reliable solution is a hard coded flag to zig0
+
+1582235858
+mikdusan
+indeed. I just saw what llvm targets look like.
+
+1582236054
+Snektron
+Zig0 = stage1?
+
+1582236165
+andrewrk
+more like stage0
+
+1582236168
+fengb
+Zig0 is the stage1 minus zig userland
+
+1582236172
+andrewrk
+stage1 has some stage2 stuff in it
+
+1582236184
+andrewrk
+bootstrapping is messy :)
+
+1582236187
+fengb
+We use zig0 to build the userland and link it into stage1
+
+1582236378
+Snektron
+Wait so whats the difference between stage1 and 2?
+
+1582236402
+andrewrk
+mikdusan, alright the latest master branch commit should hold us over until #4509 is merged
+
+1582236441
+mikdusan
+zig0 builds a minimalist (explicit) amount of stuff from userland and creates libzigstage2.a; zig (we dropp the `1` suffix) is then built with c++ and links libzigsage2.a which has some exports to C. then in future we will use zig (aka zig1, aka stage1) to build self-hosted stage2 compiler
+
+1582236445
+andrewrk
+Snektron, "stage2" is when stage1 builds The Self Hosted Compiler
+
+1582236461
+andrewrk
+it's explained here:
+
+1582236471
+andrewrk
+zig0 is a sub-step of stage1
+
+1582236526
+Snektron
+Oh right i see
+
+1582236664
+andrewrk
+mikdusan, I also want to note that once we're shipping self-hosted, this problem becomes irrelevant. first of all we won't need zig0/zig. but also, if we did, it could use native CPU features because when stage3 is built that's when we would decide the for-real cpu feature set
+
+1582236682
+andrewrk
+everything until stage3 can be native
+
+1582236782
+mikdusan
+this is all the great-stage2-bootstrap-of-[2015-2020]
+
+1582236783
+fengb
+Stage3 is when stage2 builds zig source?
+
+1582236805
+mikdusan
+stage3 is when self-hosted builds self-hosted in a final, clean step
+
+1582236821
+andrewrk
+right because otherwise we would be shipping a self-hosted compiler
+
+1582236839
+andrewrk
+hmm it's difficult to avoid ambiguity when explaining this
+
+1582236850
+andrewrk
+it's like, consider where the compiler binary bits came from
+
+1582236861
+fengb
+And stage4 would be identical to stage3?
+
+1582236866
+andrewrk
+stage1: they came from gcc compiling .cpp code
+
+1582236873
+andrewrk
+stage2: they came from stage1 compiling .zig code
+
+1582236879
+andrewrk
+stage3: they came from stage2 compiling .zig code
+
+1582236886
+fengb
+Stage4 = we use stage3 to compile again
+
+1582236887
+andrewrk
+only stage3 has zig compiling zig
+
+1582236922
+andrewrk
+right stage4 would be identical. we can test that because release builds are supposed to be reproducible
+
+1582236974
+andrewrk
+that will be a fun set of bug(s). when we find out that stage4 is not identical to stage3
+
+1582237075
+fengb
+I think everything makes sense... but I still find it funny that stage1 uses half of itself to build the rest
+
+1582237265
+andrewrk
+right but after we are shipping self-hosted, that can stop
+
+1582237273
+andrewrk
+this is just a way to make incremental progress
+
+1582237306
+andrewrk
+err maybe I didn't understand your comment
+
+1582237352
+nepugia
+Hey, have a question best expressed in image form:
+
+1582237373
+fengb
+C++ only yields zig0. We use zig0 to link the rest of zig1
+
+1582237402
+companion_cube
+I forgot, didn't some people ask about compiling Zig to C?
+
+1582237404
+andrewrk
+nepugia, lol nice pic
+
+1582237407
+fengb
+We build the bootstraps for our shoes to lift ourselves up
+
+1582237417
+andrewrk
+I thought 8086 is the same as i386?
+
+1582237426
+mikdusan
+stage0 = 100% c++; stage1 = 95% c++ (the same from stage2) + 5% .zig
+
+1582237426
+companion_cube
+that'd be nice for removing the ladder from under zig3
+
+1582237441
+mikdusan
+typoe: "the same from zig0"
+
+1582237445
+andrewrk
+fengb, zig0 builds libzigstage2.a, that does not involve linking. then the same tools that built zig0 link
+
+1582237457
+nepugia
+andrewrk, well i386 is a newer cpu afaik
+
+1582237469
+Snektron
+8086 is 086
+
+1582237492
+Snektron
+So 386 is 3 generations later
+
+1582237495
+mikdusan
+what's llvm minimum x86 ?
+
+1582237502
+Snektron
+3
+
+1582237509
+Snektron
+Maybe
+
+1582237510
+fengb
+Not sure if you're joking... i386 is the first 32 bit extension of 8086 whereas 286 was the 16 bit extension
+
+1582237560
+andrewrk
+nepugia, I think it works if you pass -target-cpu generic -target-feature -x87,-cx8
+
+1582237565
+fengb
+286 = "full" 16-bit, 8086 had (mostly) 8 bit registers and 16 bit memory bus
+
+1582237586
+andrewrk
+oh, 8086 is 16 bit? nvm
+
+1582237607
+mikdusan
+the "6" in 8086 was "oooh 16 bits of something" so number went down from 8088 -> 8086
+
+1582237618
+fengb
+8086 is mostly considered 8bit
+
+1582237627
+andrewrk
+ah ok, my mistake, yes no support for this yet :)
+
+1582237631
+Snektron
+Wait really mikdusan
+
+1582237635
+andrewrk
+maybe this would be a fun target for the non llvm backend
+
+1582237649
+Snektron
+Intel really comes up with the strangest things
+
+1582237671
+Snektron
+andrewrk, is there already something in the works for that?
+
+1582237675
+companion_cube
+wait until you learn about 2048
+
+1582237715
+mikdusan
+Snektron: actually I got it wrong. 8088 was indeed newer.
+
+1582237753
+Snektron
+I assumed it was just the year of release
+
+1582237756
+Snektron
+Or something
+
+1582237788
+fengb
+It's newer but I believe weaker. It was to make things pin compatible with older boards
+
+1582237824
+fengb
+Snektron: 8088 was introduced in 1979
+
+1582237833
+nepugia
+ah, the pc has 8088 not 8086, my mistake (for reference the pictured computer is the IBM personal portable computer)
+
+1582237848
+mikdusan
+(ah yes now I remmber. 8008 was the 8-bit from '72. 8086 was '74, 8088 was '79. things sure moved fast back then).
+
+1582237866
+fengb
+Funny enough... Intel 808x is dead, but Z80 lives on
+
+1582237880
+Snektron
+Thanks, TI
+
+1582237891
+mikdusan
+fengb: in 20 years... "funny enough... C is dead but Zig lives on" :P
+
+1582237901
+fengb
+Nah, that's called progress
+
+1582237968
+fengb
+Oh, Z80 was only 8080 compatible so I don't know much about 8086 >_>
+
+1582237996
+mikdusan
+8008, 8080. octal marketing dept
+
+1582238085
+fengb
+But why did they stick with x86?
+
+1582238175
+mikdusan
+Intel 8008 = 3,500 transistors. Intel 8088 = 29,000. AMD 3990X = 39.5 billion transistors
+
+1582238243
+mikdusan
+6502 = 4,528 transistors
+
+1582238261
+mikdusan
+Z80 = 8,500
+
+1582238540
+fengb
+Eh, Github has pinned issues?
+
+1582238591
+nepugia
+andrewrk, perhaps, how far is the non-llvm backend now?
+
+1582238629
+andrewrk
+100% vaporware
+
+1582238675
+andrewrk
+well we do have the beginnings of an assembler (
+
+1582239076
+dimenus
+andrewrk: i have a quick question about the update libc documentation. What dir is the 'rm -rf $(ls ../lib/libc/include/ | rg gnu) supposed to be run from?
+
+1582239090
+dimenus
+from build or hdrs?
+
+1582239159
+andrewrk
+build. it's referring to $zigcheckout/lib/libc/include. it should be clear if you ls that dir first
+
+1582239203
+andrewrk
+dimenus, btw if you leave your glibc build on your hard drive, you'll be able to use `-Denable-foreign-glibcs` when running the test suite
+
+1582239226
+andrewrk
+
+
+1582239267
+andrewrk
+dimenus, also I think that will incorrectly delete mingw dirs, since that was added after the wiki article was written
+
+1582239282
+andrewrk
+mingw-w64 triples look like, e.g, x86_64-windows-gnu
+
+1582240443
+dimenus
+andrewwk:but that first call doesn't delete anything then, it evaluates to a rm in the build dir instead of the $zigcheckout/lib/libc/include
+
+1582240576
+andrewrk
+well it's not a script, it's instructions for a human to follow. do you get the intent? maybe you can clarify the instructions
+
+1582240650
+andrewrk
+I see the problem you're pointing out
+
+1582240658
+dimenus
+i realize that, which is why I'm trying to clarify what the intent is
+
+1582240731
+andrewrk
+dimenus, I updated the page, should be correct now
+
+1582240796
+dimenus
+andrewrk: perfect, thank you
+

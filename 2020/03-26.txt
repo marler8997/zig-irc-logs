@@ -1,0 +1,2416 @@
+1585180802
+mikdusan
+andrewrk: re memory error detector: 770631cc79a655bc5e21184ca15bdb6192e905de seems ok as I'm able to reproduce ir.cpp:14552 issue both with and without the meat of that commit
+
+1585181506
+andrewrk
+that's good to know
+
+1585182884
+andrewrk
+squeek502, fae6cf09619e7a8e64f61b84cca7d9fcd471262f should fix the issue you were having with zig cc. thanks for the report!
+
+1585182921
+squeek502
+nice, thanks for the quick fix!
+
+1585183750
+andrewrk
+mikdusan, valgrind clean (except for one known thing in llvm) after this:
+
+1585183790
+andrewrk
+the way bound functions work needs to be reworked anyway. ZigValue should not have any references to ir instructions like that
+
+1585183888
+andrewrk
+I don't know why I have to keep learning this same lesson the hard way so many times. test with valgrind!!
+
+1585184054
+mikdusan
+ah nice
+
+1585184120
+andrewrk
+it solved the drone ci issue too. big thanks to TheLemonMan for noticing the valgrind warnings
+
+1585184132
+andrewrk
+also just to be clear I'm pretty sure this was my fault :)
+
+1585184152
+mikdusan
+word is that zig is also your fault so ... you're forgiven :)
+
+1585184175
+mikdusan
+soon we're going to need a valgrind and benchmark CI of some sort
+
+1585184181
+andrewrk
+that's a really good point
+
+1585184181
+fengb
+Should there be CI based valgrind tests?
+
+1585184185
+andrewrk
+yes absolutely
+
+1585184196
+mikdusan
+it doesn't really need the high frequency but it'll be a good canary
+
+1585184202
+andrewrk
+yep
+
+1585184252
+Snektron
+<mikdusan "soon we're going to need a valgr"> Why not include that in the normal CI?
+
+1585184254
+andrewrk
+you know what's nice? not having ASLR
+
+1585184259
+mikdusan
+Snektron: performance
+
+1585184287
+andrewrk
+that's why the issue was repeatable
+
+1585184320
+andrewrk
+it makes sense that the same thing that can make software more difficult to exploit, also makes it more difficult to debug
+
+1585184320
+Snektron
+If its just leak checking, you might get away with custom functionality that has less performance overhead
+
+1585184366
+andrewrk
+we could run a job that only does a few tests with valgrind, not everything, and it'll finish before everything else so we can still use it to block the build if it fails
+
+1585184520
+mikdusan
+if (I_DUNNO) valgrind;
+
+1585184653
+andrewrk
+I really want to get a basic version of self-hosted going so that people can start contributing to it, but I need to focus on bugs & polish for the release
+
+1585184668
+Snektron
+<mikdusan "Snektron: performance"> My reasoning was that you'd wanna valgrind for every target anyway
+
+1585184921
+mikdusan
+Snektron: I'm on board with as CI as practical
+
+1585184926
+mikdusan
+*as much
+
+1585185757
+andrewrk
+hmm lots more valgrind errors on the aarch64 build
+
+1585185847
+andrewrk
+
+
+1585186368
+andrewrk
+oh uh: __static_initialization_and_destruction_0
+
+1585186382
+andrewrk
+is this
+
+1585186442
+andrewrk
+c++ is such a disaster... why do we have to depend on it :'-(
+
+1585186635
+mikdusan
+are
+
+1585186891
+andrewrk
+#llvm is suggesting to patch section names to work around this,
+
+1585187007
+andrewrk
+with line numbers:
+
+1585187686
+mikdusan
+I remember Basic with goto <line_num>
+
+1585189315
+mikdusan
+andrewrk: how much RAM does that VM have?
+
+1585189338
+andrewrk
+I reproduced this on a machine with 128 GiB
+
+1585189348
+andrewrk
+it's some kind of corruption, def not running out
+
+1585189354
+mikdusan
+did you notice the break segment overflow error?
+
+1585189366
+mikdusan
+`brk segment overflow error`
+
+1585189395
+andrewrk
+yeah. I think valgrind is getting confused that libc is statically linked in this case
+
+1585189476
+mikdusan
+ok I just hope you're not seeing a bunch of errors as a side-effect of valgrind getting confused
+
+1585189532
+andrewrk
+the next thing I'm trying is using alpine:3.11 as a base image rather than alpine:edge
+
+1585189538
+andrewrk
+it will take several hours to complete this test
+
+1585189658
+mikdusan
+just to rule it out: have we confirmed shell `ulimit` sizes are not clamped down?
+
+1585190141
+andrewrk
+I'll check
+
+1585190243
+afontain_
+Hi, did someone try to compile a GTK program with `zig cc` already?
+
+1585190554
+andrewrk
+not that i'm aware of
+
+1585190709
+afontain_
+it works on native, but not with --target=x86_64-windows-gnu
+
+1585190784
+afontain_
+if I make binfmt work, I could see if --target=aarch64-linux-gnu and friends work
+
+1585190845
+afontain_
+it seems to fail badly because of several things. One is that long long int is 4 bytes instead of 8.
+
+1585190916
+andrewrk
+you think clang is giving long long int the wrong number of bytes for this target?
+
+1585190941
+afontain_
+I've got hope that it would be possible. If I've understood correctly, zig bundles a patched version of the glibc. Maybe I could find a way to use that one instead of the system ones
+
+1585190946
+afontain_
+*one
+
+1585190956
+afontain_
+*header files
+
+1585191023
+afontain_
+I'd say it's more likely that glibc expects the Linux standard sizes
+
+1585191037
+andrewrk
+there's no glibc in x86_64-windows-gnu, it's mingw-w64
+
+1585191057
+andrewrk
+if you want to cross compile a gtk app you first will have to cross compile gtk
+
+1585191084
+andrewrk
+I'm guessing this use case will be better off with a full cross compilation environment, at least until zig package manager can make these kind of dependency chains easier
+
+1585191192
+afontain_
+well, G_OS_WIN32 is not defined
+
+1585191210
+afontain_
+that's probably a good sign that it's the system headers' fault
+
+1585191368
+andrewrk
+are you sure you have managed to successfully override the compiler?
+
+1585191421
+afontain_
+well, I had to setup wine binfmt so that meson could accept to compile
+
+1585191451
+afontain_
+it would not compile anything with a compiler that build executables that "do not run"
+
+1585191537
+afontain_
+also, 4 bytes long long int is something windows has and linux doesn't have
+
+1585191553
+afontain_
+also, the default result of the compilation is "it works"
+
+1585191554
+andrewrk
+I mean this in a genuinely curious way- what's the point of using zig cc if you already have to do all this work? it sounds like you may be better off with a full cross compilation environment
+
+1585191554
+squeek502
+andrewrk, do you happen to remember the fix/workaround for Illegal instruction when compiling LuaJIT?
+
+1585191597
+andrewrk
+squeek502, hmm. I wonder why I didn't get the illegal instruction when I did it for the blog post
+
+1585191616
+mikdusan
+built on one host then executed on another?
+
+1585191621
+afontain_
+well, it's something I spent less than one hour on
+
+1585191645
+afontain_
+
+
+1585191654
+squeek502
+im running into Illegal instruction while trying to build LuaJIT via a custom cmake script and zig cc
+
+1585191672
+afontain_
+(worked for luajit in an example he gave)
+
+1585191677
+andrewrk
+afontain_, the build system should have a setting for "host compiler" and "target compiler". you would set the "host compiler" to simply "zig cc" and the "target compiler" to the one with the -target parameter
+
+1585191699
+squeek502
+i'll try the default luajit makefile to see if it happens there too
+
+1585191722
+afontain_
+I guess it works better for pure C with no dependencies
+
+1585191753
+andrewrk
+zig package manager will make it work for more complicated projects. but right now- yes it is somewhat limited in the dependency tree complexity
+
+1585191785
+andrewrk
+mikdusan, `ulimit -m` is `unlimited`
+
+1585191898
+squeek502
+andrewrk, nevermind, false alarm on the illegal instruction, i was failing to pass zig cc as the compiler
+
+1585191966
+afontain_
+well, the usual way to do cross-compilation with meson is to use mingw, but that's not packaged into Alpine
+
+1585192080
+afontain_
+I'm not sure I've got enough faith to package that, figure out how to cross compile with meson (yay lack of documentation) to discover I've got no idea how to handle shared libs on Windows
+
+1585192114
+afontain_
+yeah, well, another day maybe
+
+1585192458
+andrewrk
+yeah, I love the enthusiasm. it'll be worth trying this use case again later
+
+1585192474
+andrewrk
+progress is slow, but steady
+
+1585197451
+watzon
+This is a beautiful thing
+
+1585197849
+pltrz
+andrewrk just read the new blog post. super cool stuff man
+
+1585199841
+watzon
+Just maneged to build libevent and libgc (bdwgc) while using zig as a drop in cc replacement
+
+1585199844
+watzon
+*managed
+
+1585201123
+wilsonk
+watzon: sweet
+
+1585203509
+watzon
+What's the best way right now to convert an int to a string?
+
+1585203660
+watzon
+Ruh roh
+
+1585204593
+squeek502
+watzon, maybe something like `fbs = std.io.fixedBufferStream(&buffer)` and then `fbs.outStream().print("{}", .{your_int})`
+
+1585204658
+squeek502
+(assuming you're using the latest master, stream stuff changed recently)
+
+1585204813
+traviss
+you can also do var buf: [20]const u8 = undefined; const s = std.fmt.bufPrint(&buf, "{}", .{i});
+
+1585204873
+squeek502
+ah good to know
+
+1585215315
+kenaryn
+Please what does '-lc' option stand for?
+
+1585215324
+mq32
+"link lib c"
+
+1585215332
+kenaryn
+Thanks buddy
+
+1585215341
+mq32
+same as "-lfoobar" which is "link lib foobar"
+
+1585215383
+kenaryn
+Allright, so it's not quite a acronym but rather a calling convention.
+
+1585215487
+mq32
+well
+
+1585215491
+mq32
+it's a command line parameter ;)
+
+1585215505
+mq32
+it's common amongst nearly all native compilers i know
+
+1585215511
+mq32
+and linkers as well
+
+1585215942
+marijnfs_
+I was playing with adding serialization and deserialization for array types
+
+1585215956
+marijnfs_
+I think it would be cool to add to the standard library but not sure how to do it properly
+
+1585216021
+mq32
+there is std.*.Serializer somewhere
+
+1585216041
+marijnfs_
+
+
+1585216068
+marijnfs_
+yeah that's what I was doing, but you will need an allocator for these types so I made another DeserializeAllocate
+
+1585216071
+marijnfs_
+but it looks ugly
+
+1585216107
+marijnfs_
+the code is only different in the .struct => part
+
+1585216366
+marijnfs_
+i think it's better if i put this code in a deserialize_allocate.zig file and call everything that way
+
+1585219674
+jaredmm
+Having trouble binding a value in ASM. `"movq %%gs:%[offset], %[ret]" : [ret] "=r" (->u64) : [offset] "ir" (offset)`. What's the proper way to accomplish using a variable input as the offset value?
+
+1585220352
+r4pr0n
+why doesnt zig inline a function that is called only once and is being inlined when i make it a inline fn?
+
+1585220368
+r4pr0n
+for context: it's std.fs.File.write
+
+1585220584
+r4pr0n
+and release-mode is small
+
+1585221027
+TheLemonMan
+r4pr0n, LLVM decided that it's not worth the code-size increase
+
+1585221048
+r4pr0n
+well it's actually a code-size decrease
+
+1585221061
+r4pr0n
+that's the thing
+
+1585221078
+TheLemonMan
+the inliner doesn't think so
+
+1585221087
+r4pr0n
+so it's a llvm bug
+
+1585221089
+r4pr0n
+?
+
+1585221178
+TheLemonMan
+the inlining decision is based on a few heuristic tecniques, sometimes it's not perfect
+
+1585221220
+r4pr0n
+but how could the code-size be even increased? i don't get how it comes to that conclusion
+
+1585221235
+r4pr0n
+it's just called once
+
+1585221239
+r4pr0n
+and the function also needs to be in the code
+
+1585221301
+TheLemonMan
+being called just once is not enough to mark that as inlineable
+
+1585221408
+r4pr0n
+why not?
+
+1585221414
+r4pr0n
+how could it even increase the size then?
+
+1585221434
+r4pr0n
+it's statically linked
+
+1585221489
+mq32
+r4pr0n: because when you inline a function, you lose the advantage of having your own stack segment
+
+1585221507
+mq32
+so inlining the function may explode the number of stack management instructions as registers aren't enough anymore
+
+1585221526
+r4pr0n
+oh that makes sense
+
+1585221540
+r4pr0n
+but still, the registers would be enough
+
+1585221697
+TheLemonMan
+just ask the inliner, none of us has a magic ball nor is an inliner by trade
+
+1585221701
+TheLemonMan
+
+
+1585221705
+daurnimator
+TheLemonMan: evening :)
+
+1585221719
+r4pr0n
+thanks
+
+1585221723
+TheLemonMan
+ohai daurnimator
+
+1585221827
+daurnimator
+TheLemonMan: you're probably my only hope for getting bit field support for extern structs into 0.6: any chance you feel like working on that?
+
+1585222241
+TheLemonMan
+eh, that's not under my radar atm :\
+
+1585224300
+sammich
+Hey sorry, i have another casting question, I have a const void pointer, how would i make cast that into a zig array, currently i get a cast discards const qualifier error
+
+1585224336
+TheLemonMan
+do you need a non-const array?
+
+1585224361
+mq32
+@ptrCast(*const u32[8], your_ptr_here)
+
+1585224514
+sammich
+I do not, I'll try this ^, thanks
+
+1585225090
+daurnimator
+TheLemonMan: aw :(
+
+1585225131
+fengb
+It’s `*const [32]u8`
+
+1585225191
+mq32
+fengb: 😱 i have used partially C syntax. I should go and shame myself
+
+1585226327
+BaroqueLarouche
+mq32:
+
+1585226551
+mq32
+yep!
+
+1585228752
+eswtucka
+Hey I'm pretty new to zig, from what I understand is that zig ships with libc, but it tells me "Unable to link against libc: Unable to find libc installation: file not found"?
+
+1585229356
+Cadey
+eswtucka: how did you install zig?
+
+1585229414
+eswtucka
+scoop install ziglang
+
+1585229561
+eswtucka
+I change the target to x86_64-windows-gnu now it worked, I guess zig wants to use the native libc first
+
+1585229878
+BaroqueLarouche
+eswtucka: I thin you are hitting
+
+1585233797
+swills
+andrewrk: i don't suppose i could get you to help me with what we're doing wrong in our llvm 10 build?
+
+1585233809
+swills
+andrewrk: see, we have a port for zig already, it's currently 0.5.0
+
+1585233830
+swills
+it uses the llvm90 port
+
+1585233848
+swills
+so the port for 0.6.0 would use the llvm10 (odd naming i know) port
+
+1585233878
+swills
+and yet, when i try to build with llvm10, it builds zig, but produces a zig that produces broken binaries that crash on startup
+
+1585233926
+swills
+hmm, i wonder if the 0.5.0 port of zig actually works...
+
+1585233971
+andrewrk
+swills, can you build it with debug info and get a stack trace?
+
+1585233984
+swills
+i did
+
+1585234004
+swills
+that's
+
+1585234026
+swills
+that's the trace when running the "test" thing
+
+1585234038
+andrewrk
+hmm, none of these are in zig source files
+
+1585234090
+andrewrk
+it looks like some kind of "locale" issue?
+
+1585234145
+andrewrk
+can you run `zig` with no command line arguments?
+
+1585234221
+swills
+yes
+
+1585234389
+andrewrk
+it works for me on freebsd when I build llvm and clang from source. I think this points to a potential difference in the freebsd package
+
+1585234413
+andrewrk
+maybe you can look at the patches the freebsd llvm/clang package has
+
+1585234426
+swills
+right, that's what i'm trying to track down, the difference in the package
+
+1585234463
+swills
+there's only one patch
+
+1585234486
+swills
+wait, i'm wrong
+
+1585234507
+swills
+all the bits are here:
+
+1585234507
+andrewrk
+I'm not sure zig is relevant here; this is rtld calling iostream.cpp crashing on a locale issue
+
+1585234575
+swills
+
+
+1585234809
+forgot-password
+When I cross-compile for macOS from windows, how does the compiler handle frameworks? Would it be possible to track the required files in the VCS and refer the compiler to those?
+
+1585234821
+forgot-password
+And the other way around, of course ^^
+
+1585234892
+andrewrk
+frameworks are an unsolved prbolem:
+
+1585234965
+forgot-password
+Funny to see it creeping up the milestones, hehe
+
+1585235008
+andrewrk
+heh, yeah, schedule-based releases will do that :)
+
+1585235260
+andrewrk
+TheLemonMan, here's valgrind output after my fixes from last night, inside the aarch64 docker image, but with musl dynamically linked so valgrind can have a better time
+
+1585235261
+andrewrk
+
+
+1585235517
+andrewrk
+gdb backtrace:
+
+1585235559
+andrewrk
+hopefully an assertions enabled build will catch something
+
+1585235705
+TheLemonMan
+yeah I was trying to get llvm to build
+
+1585235731
+TheLemonMan
+but llvm-config is being a massive cunt as usual
+
+1585236077
+TheLemonMan
+and the stack-trace tests are sooo brittle
+
+1585236413
+andrewrk
+yeah that's a bit annoying
+
+1585237348
+junon
+I'm trying to wrap libuv as an exercise, trying to wrap my head around suspend/resume/async/await, getting an error `cannot resolve '@Frame(Loop.sleep)': function not fully analyzed yet`. Is there some trick to using @frame? code here:
+
+1585237412
+andrewrk
+junon, can you show the full compile error output?
+
+1585237419
+junon
+Yep, moment
+
+1585237439
+junon
+andrewrk:
+
+1585237451
+TheLemonMan
+andrewrk, sadly no asserts are tripped :(
+
+1585237490
+andrewrk
+argh
+
+1585237526
+andrewrk
+TheLemonMan, one clue is that after the fix last night that cleaned up valgrind, reverting the merge does make the problem go away
+
+1585237558
+andrewrk
+if you comment out @export of __divtf3
+
+1585237563
+TheLemonMan
+interesting, let me try
+
+1585237710
+andrewrk
+ok I have also been informed that docker uses "cgroups" which may impose memory limits
+
+1585237972
+TheLemonMan
+I've commedted out the __divtf3 export but I still get bad_alloc
+
+1585237993
+andrewrk
+hmm let me try it again. I swear last night that got past the command
+
+1585238042
+TheLemonMan
+try building some zig file, that consistently triggers the crash for me
+
+1585238052
+andrewrk
+any zig file?
+
+1585238115
+TheLemonMan
+I'm compiling test/standalone/hello_world/hello.zig
+
+1585238178
+TheLemonMan
+...the problem seems to be the qnan constants I've added to math.zig
+
+1585238184
+andrewrk
+wat
+
+1585238317
+junon
+andrewrk Docker does indeed use memory cgroups, yes. Dunno the context of your conversation, but there are a number of things you have to be aware of with docker: cgroups (kernel thing), as well as apparmor profiles.
+
+1585238330
+junon
+They affect the environment under which a program runs.
+
+1585238356
+andrewrk
+`cat /sys/fs/cgroup/memory/memory.limit_in_bytes` says 9223372036854771712 so I don't think that's the problem
+
+1585238605
+junon
+andrewrk: is there a good place I can read up on the conceptual end of suspend/resume/async/await?
+
+1585238711
+andrewrk
+junon, I took a look at the code example, and here's the situation: `handle.data = @frame();` this is causing an implicit pointer cast to happen which is forcing the alignment of *@Frame(sleep) to be resolved, which is causing the compile error. There are two ways zig needs to be improved related to this:
+
+1585238735
+andrewrk
+(1) the compile error needs to communicate this better so that it is not necessary to step through the compiler in a debugger to find this out
+
+1585238765
+andrewrk
+(2) this kind of implicit pointer cast should not be forcing the alignment to be resolved. that will make the compile error go away
+
+1585238834
+andrewrk
+junon, there is not a comprehensive place I can link you to, but I can link you to several things that have related information
+
+1585238839
+andrewrk
+
+
+1585238855
+andrewrk
+
+
+1585238867
+andrewrk
+I'm long overdue for writing an async/await blog post
+
+1585238872
+andrewrk
+and docs
+
+1585238971
+junon
+Awesome, thanks. Does what I'm doing look "correct" to you, conceptually? From what I can gather, the async/await system is just stack frame storage/recovery, correct? It should be adaptable to any coroutine framework (in theory) if I understand it correctly.
+
+1585238987
+andrewrk
+that's right
+
+1585238994
+andrewrk
+let me look at the code more closely
+
+1585239067
+junon
+Okay. The part I'm unsure of is around the double frame creation - the real `main` is responsible for creating and ultimately running the main UV loop, so it creates the loop, then the `amain()` frame (which it never manually resumes, not sure how the `resume` stuff fits in), then runs the loop.
+
+1585239097
+junon
+also, the two lines for a single `await loop.sleep()` are a bit messy - is there a way to clean that up? I could just be mis-understanding it.
+
+1585239131
+andrewrk
+those two lines can be changed to `try loop.sleep(1000);`
+
+1585239148
+andrewrk
+no async/await needed there
+
+1585239156
+junon
+Oh neat, okay
+
+1585239172
+andrewrk
+where's the part where uv_timer calls you back and you do something with the handle?
+
+1585239226
+junon
+Haven't gotten that far yet, due to the @frame compilation error.
+
+1585239253
+andrewrk
+this looks like an easy fix (at least the (2) part, let me take a crack at it)
+
+1585239263
+junon
+Okay, sounds great :) Thanks
+
+1585240495
+andrewrk
+junon, if you have a source build of zig master branch you can pull and your code compiles nwo
+
+1585240515
+watzon
+andrewrk: does `zig cc` have a list of flags to ignore right now? I just ran into an error regarding `-fstack-clash-protection` because it's a default flag used by cc/gcc in redhat systems, but it's not supported by clang.
+
+1585240517
+junon
+andrewrk: I'll get on it, I don't have it set up yet but should be trivial. LLVM 10 right?
+
+1585240536
+watzon
+Yessir, newest zig build
+
+1585240542
+andrewrk
+yes, check the readme & wiki, they have updated instructions for every OS
+
+1585240559
+jaredmm
+Having trouble binding a value in ASM. `"movq %%gs:%[offset], %[ret]" : [ret] "=r" (->u64) : [offset] "ir" (offset)`. What's the proper way to accomplish using a variable input as the offset value?
+
+1585240573
+watzon
+Awesome work though, I've managed to use ti as a drop in for several builds so far
+
+1585240589
+junon
+Sounds good. also, here's my first whack at the callback code:
+
+1585240621
+junon
+That's not with your changes on master, though - I'll try those now.
+
+1585240653
+andrewrk
+btw you could do `try check_uv(c.uv_timer_init())` directly, no need to save r
+
+1585240763
+junon
+True. I'm used to working in libuv directly, where these are done with macros and need to have a variable lvalue.
+
+1585240768
+junon
+:D
+
+1585240892
+junon
+btw docs say you can `brew install llvm@10` but this is definitely not the case without some taps I assume.
+
+1585240898
+junon
+Highest right now is llvm@9.
+
+1585240942
+andrewrk
+ah that's right. unfortunately on macos you'll have to wait for homebrew or follow
+
+1585240978
+andrewrk
+sorry, that's more work than necessary. you just need a source build of the dependencies.
+
+1585241065
+junon
+I can easily build llvm10 by itself, that's already set up - I think I can just set the cmake module path to my llvm installation and then Zig's `find_package()` will pick it up. That'll save me a good hour or so.
+
+1585241153
+redj
+
+
+1585241365
+andrewrk
+junon,
+
+1585241370
+andrewrk
+I get a segfault when I run it though
+
+1585241382
+redj
+"<andrewrk> hmmmmmmmmmmmmm. libc++ is basically all stuff we already have in std, but in C++ instead of Zig. Is anyone thinking what I'm thinking?"
+
+1585241383
+redj
+andrewrk: what exactly are you thinking? ;-)
+
+1585241421
+andrewrk
+zig std lib powered libc++ of course
+
+1585241441
+andrewrk
+the libc++ we ship can just be a tiny C++ glue layer
+
+1585241489
+junon
+andrewrk: awesome, will test it out - thanks for the alignOf/alignCast example.
+
+1585241513
+andrewrk
+note also the [*c] pointer was not necessary
+
+1585241542
+andrewrk
+when you see [*c], think "the compiler does not know what kind of pointer that is, and will let me choose the correct one"
+
+1585241650
+junon
+ah okay, it was giving me a compilation error trying to coerce the function pointer type
+
+1585241676
+andrewrk
+you probably needed the `?`
+
+1585241820
+redj
+andrewrk: yeah I was thinking you would still need C++ layer for libc++
+
+1585241844
+redj
+you couldn't do libc++ in zig only
+
+1585241930
+andrewrk
+junon, oh, you're running into
+
+1585241953
+andrewrk
+the workaround is to accept a pointer parameter in the init function
+
+1585242030
+andrewrk
+
+
+1585242072
+andrewrk
+redj, right but, instead of shipping 40K new lines of c++ we could ship ~5K
+
+1585242097
+andrewrk
+and then the zig std lib would get more use too
+
+1585242113
+TheLemonMan
+so keep_bigger_alignment=false now allows to create misaligned pointers?
+
+1585242114
+redj
+right, pretty awesome
+
+1585242142
+andrewrk
+TheLemonMan, yeah, I was considering making that change anyway. it's pretty confusing that you can do @as(*align(1) u8, foo) and then get *align(2) u8 as a result
+
+1585242166
+andrewrk
+however @ptrCast will still keep the bigger alignment, in the same way that it refuses to change const
+
+1585242205
+andrewrk
+TheLemonMan, wait I think I did not understand your question. The point is that when you pointer cast, it will
+
+1585242293
+TheLemonMan
+that's dangerous, I'd expect the compiler to catch that and scream
+
+1585242306
+andrewrk
+I think you misunderstand
+
+1585242329
+andrewrk
+the compiler was doing something questionable before
+
+1585242367
+andrewrk
+this situation is when the source type is
+
+1585242499
+TheLemonMan
+oh, that makes sense
+
+1585242532
+TheLemonMan
+I think I found out why the aarch64 build crashes!
+
+1585242536
+junon
+andrewrk: not from what I can see - the compilation error I was getting was a function pointer type mismatch (the callback needed a [*c] pointer specifically, according to the error). Perhaps a better compilation error would have been that `?` needed to be added, which was not at all obvious from the error.
+
+1585242542
+andrewrk
+TheLemonMan, music to my ears
+
+1585242575
+andrewrk
+junon, did you get this? note: '[*c].cimport:5:11.struct_uv_timer_s' could have null values which are illegal in type '*.cimport:5:11.struct_uv_timer_s'
+
+1585242596
+junon
+Nope, sec
+
+1585242706
+junon
+andrewrk
+
+1585242751
+r4pr0n
+i've seen the "var" type in many function signatures by now, but i can't find it in src-self-hosted/type.zig. what is it? is it just a hardcoded thing for to add in a function for a variadic function?
+
+1585242776
+fengb
+It’s “any type”
+
+1585242807
+andrewrk
+you know.. `anytype` would be a nice keyword for that
+
+1585242816
+fengb
+The compiler will check the actual usage so it’s like comptime duck typing
+
+1585242821
+junon
+`anytype` would be much more obvious than `var` imo.
+
+1585242833
+andrewrk
+if somebody proposes that I will accept it right now
+
+1585242840
+junon
+Sure.
+
+1585242842
+mq32
+junon: would you go for that? :D
+
+1585242847
+mq32
+you got my thumbsup
+
+1585242860
+mq32
+less double-use keywords!
+
+1585242891
+fengb
+Oh I can see why that’s super confusing
+
+1585242913
+fengb
+Should we split `const` as well? 🙃
+
+1585242976
+shakesoda
+i feel like "any" would be appropriate, too
+
+1585242988
+andrewrk
+junon, in your pastes you're using non-pointers
+
+1585243050
+junon
+you mean I use `cb_loop_sleep` as opposed to `&cb_loop_sleep`?
+
+1585243073
+andrewrk
+it says expected pointer, found not a pointer
+
+1585243090
+junon
+Oh for the handle.
+
+1585243120
+andrewrk
+TheLemonMan, I'm on the edge of my seat
+
+1585243123
+shakesoda
+this looks like a case the compiler could pretty easily make a suggestion for
+
+1585243150
+shakesoda
+sometimes i really could use those "did you mean?" suggestions, heh
+
+1585243155
+TheLemonMan
+andrewrk, just a sec, I may also have a patch
+
+1585243172
+shakesoda
+much easier to scan the output than for single character differences
+
+1585243178
+junon
+ah okay, andrewrk this brings me to my original error, which your code fixes: "type '?*.cimport:5:11.struct_uv_timer_s' does not support field access"
+
+1585243188
+junon
+that was the originally confusing part.
+
+1585243204
+shakesoda
+how are you using it? it's an optional, so you'll need to handle that
+
+1585243232
+shakesoda
+i.e. if (optional_thing) |value| { value.whatever = ...; }
+
+1585243234
+andrewrk
+junon, for what it's worth, the `.?` syntax is semantically identical to your `orelse unreachable`
+
+1585243252
+junon
+Ah okay
+
+1585243280
+junon
+but `orelse unreachable` isn't accepted semantically as proper null checking, though - that's the difference it seems.
+
+1585243290
+junon
+Okay great, now I'm to the alignment error, as expected.
+
+1585243292
+andrewrk
+it is
+
+1585243306
+andrewrk
+it desugars to the exact same thing
+
+1585243404
+junon
+`var frame = @ptrCast(*@Frame(Loop.sleep), handle.data orelse unreachable);` -> "<handle's type> does not support field access", whereas changing to the null-unwrap syntax does not error.
+
+1585243434
+junon
+but `.?` is good to know.
+
+1585243459
+junon
+(sorry for the incessant error messages here, I know I'm starting out with some lower-level stuff, hopefully it's not annoying)
+
+1585243506
+andrewrk
+btw mikdusan drone CI runs in a docker image, which you can inspect locally
+
+1585243541
+andrewrk
+oh but you'd need aarch64. send pubkey if you want access to that machine
+
+1585243661
+mikdusan
+does drone run for PR or just master merges?
+
+1585243810
+mikdusan
+ah just master merges
+
+1585243850
+TheLemonMan
+andrewrk, long story short, the LLVM hashtable calls our __divtf3 that somehow fails spectacularly
+
+1585243878
+mikdusan
+but didn't you revert __divtf3 and still get issue?
+
+1585243921
+TheLemonMan
+the makefile needs some extra wiggling to rebuild all the pieces
+
+1585244033
+andrewrk
+mikdusan, I'll uncheck this box that says "Disable Forks"
+
+1585244058
+andrewrk
+done
+
+1585244097
+andrewrk
+TheLemonMan, hmm is it perhaps a bug in the divtf3 implementation? in theory it should just work
+
+1585244123
+TheLemonMan
+everything works fine if we force compiler_rt not to be compiled in release mode...
+
+1585244130
+andrewrk
+that's a great clue
+
+1585244146
+mikdusan
+andrewrk: no probs I was just going to force it to build 39589cffe0bfcfda8d4802cc14fc335f532a7a90 but that Lemon already found that a commit is culprit
+
+1585244200
+andrewrk
+junon, you're good. it's exciting that you're playing with libuv + async/await. I'd love for you to get to a point where it's a demo and can show it off outside the zig community :)
+
+1585244212
+junon
+That's the goal :)
+
+1585244229
+fengb
+I have nothing but dumb comments and nobody has kicked me out yet >_>
+
+1585244246
+mikdusan
+
+
+1585244508
+mq32
+mikdusan:
+
+1585244829
+mikdusan
+mq32: I find myself almost agreeing :(
+
+1585244864
+mq32
+it could also be an IRC builtin
+
+1585246626
+marijnfs1
+anyone have issues with the deps/SoftFloat-3e/COPYING.txt file in git?
+
+1585246649
+marijnfs1
+it prevent me from rebasing because git wants to change the line endings i believe
+
+1585246689
+andrewrk
+marijnfs, you should configure git to not mangle source files on windows. some windows git installations incorrectly come with configuration to mangle source files
+
+1585246716
+marijnfs1
+andrewrk: ah, this is on linux though
+
+1585246741
+andrewrk
+not sure why you would get any problems with that file
+
+1585246774
+marijnfs1
+yeah its confusing, so for you its linux ending?
+
+1585246779
+fengb
+Was it checked in with \r somewhere?
+
+1585246801
+andrewrk
+it was copied verbatim from upstream
+
+1585246989
+marijnfs1
+I think i just need to build git myself, the version here is just old
+
+1585247074
+marijnfs1
+the file has dos endings though, but yeah that should be fine
+
+1585247115
+marijnfs1
+wait git is written in c right, should i try zig cc
+
+1585247180
+andrewrk
+worth a try
+
+1585247372
+marijnfs1
+well seems to work
+
+1585247381
+marijnfs1
+make CC='zig cc' CXX='zig cc' -j12  221.13s user 14.41s system 1009% cpu 23.339 total
+
+1585247384
+marijnfs1
+pretty fast too
+
+1585247420
+fengb
+It should be as fast as Clang right?
+
+1585247520
+mikdusan
+yup
+
+1585247524
+marijnfs1
+make CC='clang' CXX='clang++' -j12  209.47s user 11.62s system 1053% cpu 20.982 total
+
+1585247538
+marijnfs1
+yeah i guess, though the caching could be faster when developing
+
+1585247547
+r4pr0n
+why does the zig stdlib only allow handling ip addresses together with ports? it's e.g. kinda bad for the getAddressList, because i just want to get the address and no port
+
+1585247591
+andrewrk
+r4pr0n, all the std lib networking code is brand new, it probably just needs to get fleshed out more
+
+1585247645
+mq32
+junon, andrewrk: i wrote the anytype proposal before someone forgets it :D
+
+1585247647
+mikdusan
+marijnfs1: curious was your timed test `zig cc` with a Release build of zig?
+
+1585247649
+mq32
+
+
+1585247668
+r4pr0n
+oh okay, thanks for the quick response
+
+1585247679
+fengb
+r4pr0n: are you pron on HN?
+
+1585247695
+junon
+Responded, thanks mq32
+
+1585247782
+andrewrk
+thanks mq32
+
+1585247856
+marijnfs1
+mikdusan: yeah, let me make sure.
+
+1585247866
+r4pr0n
+fengb: no, i don't even know who that is xD
+
+1585247880
+mikdusan
+marijnfs1: there's not much to be gained but I'm wondering if diff is visibile
+
+1585248028
+mikdusan
+btw if zig is being built for older OS versions, and we "released" zig with custom-rolled llvm-10 built against itself, then technically `zig cc` would have advantage of being clang compiler optimized with clang-10 vs. whatever system compiler provided llvm10
+
+1585249143
+mikdusan
+andrewrk: do you recall if the drone docker image (Alpine Linux?) was modified sometime after `Tue Mar 24 11:51:13 2020 -0400` ? commit 39589cffe0bfcfda8d4802cc14fc335f532a7a90 passed drone build. and I just repeated the same commit with PR and it failed with bad std::alloc
+
+1585249263
+Cadey
+mikdusan: older OS versions?
+
+1585249294
+shakesoda
+it occurred to me that arraylist's addone api happily gives you null pointers for things that shouldn't be nullable
+
+1585249339
+andrewrk
+mikdusan, I replaced it last night with
+
+1585249343
+shakesoda
+as a user you can avoid that if you already know, but that's certainly gonna bite someone
+
+1585249372
+andrewrk
+shakesoda, it doesn't give you null pointers, it gives you pointers to undefined memory. there's a big difference
+
+1585249391
+andrewrk
+that's the same thing Allocator.alloc() gives you
+
+1585249460
+Cadey
+does Allocator.alloc() calloc() or malloc()?
+
+1585249461
+shakesoda
+suppose that's true
+
+1585249500
+shakesoda
+I was just thinking that if I put in a *u8 or something in what i've got an array of, i've got bad data in there from how the addone api works
+
+1585249520
+shakesoda
+unless i go and make sure the only way it is ever used is as addOne().* = .{ stuff }
+
+1585249538
+mikdusan
+Cadey: more specifically older compilers. Let's say we build zig for netbsd. need llvm10. bootstrap llvm10 with gcc 7.4 or openbsd boostrap with clang 8.x; now the clang binaries in llvm10 are optimized at those compilers abilities. if we built llvm10 with clang-10 they'd have a slight advantage
+
+1585249550
+fengb
+r4pr0n: oops sorry, nvm >_>
+
+1585249572
+Cadey
+mikdusan: ah for the bootstrap process, makes sense
+
+1585249574
+shakesoda
+which I can do, certainly, but this seems like not the best behavior when I think about it
+
+1585249756
+shakesoda
+oh - I see the real problem here. I didn't see that the append function exists.
+
+1585249773
+andrewrk
+Cadey, the std.heap.c_allocator implementation of Allocator exclusively calls `realloc`
+
+1585249783
+shakesoda
+that'll show me for reading the documentation
+
+1585249803
+andrewrk
+Cadey,
+
+1585250037
+r4pr0n
+fengb: no need to apologize :D
+
+1585250064
+fengb
+Note to self: not all pron are the same
+
+1585250090
+junon
+andrewrk: submitted the proposal I mentioned in q:
+
+1585250287
+junon
+Also, what is the naming convention used: I see three so far; CapitalCase for types, it seems (e.g. `FooBar`), camelCase for std methods (e.g. `getStdout()`) but then types have some snake-case identifiers (e.g. `@TypeOf(x).is_var_args`), not to mention `@TypeOf` kind of breaks this rule, too, since it itself is not a type but a builtin.
+
+1585250307
+fengb
+We could do away with concrete types altogether. Be an ML :P
+
+1585250319
+shakesoda
+junon: PascalCase is also used for things that
+
+1585250335
+junon
+Ah okay, clear
+
+1585250352
+fengb
+snake_case for fields
+
+1585250357
+fengb
+and variables
+
+1585250489
+fengb
+I just arbitrarily case my vARiabLes
+
+1585250489
+junon
+Ah okay good to know
+
+1585250524
+junon
+Just making sure we weren't headed towards being PHP.
+
+1585250528
+junon
+:D
+
+1585250573
+mq32
+junon: @TypeOf(T) returns a Type, just like ArrayList(T)
+
+1585250615
+fengb
+std will be audited before 1.0 so any inconsistencies should be fixed before being stable
+
+1585250634
+fengb
+There's a styleguide change to make enums and unions also snake_cased... but I'm not sure I like that :P
+
+1585250676
+junon
+Whatever is decided is fine as long as it doesn't affect semantics, like Go or whatever languages treat `_` to mean private or something.
+
+1585250694
+mq32
+fengb: i'm a big fan of lower case enums :)
+
+1585250697
+junon
+that stuff drives me nuts, lol
+
+1585250697
+fengb
+Capital is public, lower is private. Obviously
+
+1585250713
+mq32
+junon: But `_` is special!
+
+1585250730
+mq32
+well, but only a single `_` as an identifier
+
+1585250733
+junon
+I meant `_` as a prefix (e.g. `_some_private_field_name`)
+
+1585250737
+fengb
+He means _ by itself, not as a prefix
+
+1585250745
+junon
+`_` by itself is just fine.
+
+1585250789
+junon
+Changing visibility or linkage should not penalize me by having to grep and hit 100 callsites D:
+
+1585250903
+shakesoda
+i've definitely used _whatever fields to indicate "probably don't mess with this"
+
+1585250939
+junon
+sure, though it doesn't change the meaning of it or change how you can interact with it, just by naming it with a `_` prefix.
+
+1585250960
+shakesoda
+yeah it's just a hint to the reader
+
+1585250967
+junon
+Purely cosmetic, as it should be. Convey intent however you'd like, but changing semantics based on the identifier's name is a super annoying thing in some languages.
+
+1585251020
+shakesoda
+for the most part I agree, although certain types of enforcement can be really useful
+
+1585251030
+junon
+I think Python's double underscore is the only really somewhat acceptable version of that, where prefixing with a __ in a class or module expands it to f"_{current_type_or_module_name}__{field_name}"
+
+1585251049
+shakesoda
+e.g. Haxe enforces first letter being capital on type names, because of the interaction with the module system
+
+1585251055
+junon
+Enforcement != semantic meaning.
+
+1585251073
+shakesoda
+this type of thing has no place in zig since it doesn't work fundamentally in a similar way though.
+
+1585251110
+shakesoda
+the only enforced meaning I want would be for lone _ = ignore
+
+1585251124
+shakesoda
+(as it does)
+
+1585251142
+junon
+Yeah, that's always been a 'want' of mine before Zig, too. Glad it's there.
+
+1585251186
+junon
+My knee-jerk reaction to having to use it with unused return values was a negative one, but then I realized the value it added pretty shortly thereafter. It does increase maintenance, though.
+
+1585251217
+shakesoda
+enforcing used or explicitly ignored returns is high value
+
+1585251249
+shakesoda
+although there's a proposal around for a "sloppy" mode that sounds like it'd relax that sort of check, which would be handy for hacking things together quickly
+
+1585251252
+junon
+It just means that all callsites have to be updated if the return value switches between void/non-void.
+
+1585251268
+shakesoda
+not behavior i'd want to have be normal
+
+1585251286
+shakesoda
+junon: as they need to be anyways in most all situations
+
+1585251297
+junon
+I wouldn't say so.
+
+1585251299
+shakesoda
+lest you code yourself in some new bugs
+
+1585251330
+shakesoda
+changing the return types is almost always done with reason, and ignoring returns can regularly be a really bad idea
+
+1585251376
+junon
+For example, my uv wrapper's `Loop.run` returns `!i32`, where the number of remaining handles (or 0 if none) denotes a successful exit; >0 indicates `uv_stop()` was called. >=0 are all successful returns in some use-cases of the library and can be safely ignored in a lot of cases.
+
+1585251404
+junon
+If I returned `!void` before but decided to return `!i32` to expose that to users, that means I'd break all existing users of the library.
+
+1585251447
+junon
+If `_ = try loop.run()` didn't need the `_ =` (as it seems to be enforced) then I could safely return `!i32` in a backwards-compatible manner.
+
+1585251498
+junon
+Thus, all previous `try loop.run()` could remain as-is.
+
+1585251510
+shakesoda
+maybe a good solution would be a way to specify "guaranteed safe to ignore" in the function signature
+
+1585251536
+shakesoda
+enforcing using them is sane behavior, though.
+
+1585251542
+junon
+well, I'd say all return values are safely ignorable, unless they're errors - which we already specify in the return types using `!`.
+
+1585251567
+shakesoda
+ignoring return values can very, very easily get you into hot water, and a lot of bugs in software are from exactly this
+
+1585251584
+shakesoda
+a trivial example here is something that returns memory to the user expecting it to be freed later
+
+1585251609
+shakesoda
+this is extremely common, a lot of memory leaks are caused in
+
+1585251611
+fengb
+I've had more than a handful of bugs in Go because some functions just return an error
+
+1585251632
+junon
+Fair. Perhaps pointer return types cannot be ignored, but value return types can be.
+
+1585251652
+shakesoda
+the value types can very well contain pointers or other important information.
+
+1585251660
+shakesoda
+so again, that's not good enough
+
+1585251673
+shakesoda
+you'd really need the user to declare that it'd be safe
+
+1585251692
+junon
+integral/primitive values cannot unless you're doing pointer to integral conversion, which means you're already in "advanced"-land
+
+1585251716
+shakesoda
+those values can have any kind of important secondary meaning about them.
+
+1585251731
+junon
+I suppose.
+
+1585251764
+junon
+Integral handles I suppose, such as those returned by posix functions or e.g. most graphics libraries.
+
+1585251811
+shakesoda
+there are no situations I can come up with where the compiler can reliably determine, without the function declaring it, that nothing of meaning will come of ignoring a return
+
+1585251828
+shakesoda
+there are plenty of situations where you as the author can know this
+
+1585251845
+junon
+Sure, true.
+
+1585251860
+fengb
+andrewrk has a talk where he showed the perils of C file handling
+
+1585251874
+junon
+I don't need a talk to know the perils of C file handling.
+
+1585251876
+junon
+:D
+
+1585251881
+shakesoda
+fengb: is there anything about C file handling that
+
+1585251890
+fengb
+Ignoring the return value was one of the bugs, along with using a null file instance
+
+1585251899
+junon
+I'd actually say c++'s file streams are worse.
+
+1585251925
+shakesoda
+nearly the entire c++ standard library is far beyond perilous
+
+1585251928
+fengb
+Lemme see if I can find it
+
+1585251930
+junon
+We wasted 4 hours on the classic windows textmode/line ending magic "feature" in our game engine over it.
+
+1585251950
+shakesoda
+but i won't give the perils of posix apis a free pass over it :D
+
+1585251960
+marijnfs_
+how do i run the tests for a specific file in the std lib
+
+1585251974
+shakesoda
+zig test file?
+
+1585252060
+fengb
+zig test [file] --override-lib-dir [stdlib]
+
+1585252077
+shakesoda
+junon: heh, ever run into the problem of files written out from powershell being utf-16, destroying everything by surprise?
+
+1585252108
+shakesoda
+i think i saw an issue that was clearly caused by this on the zig tracker the other day
+
+1585252132
+junon
+No, my co-creator and I refuse to use powershell. Mingw shell for everything but building, and the Visual Studio build console for running `ninja`. :D
+
+1585252148
+junon
+So are byte order marks. Those things are annoying. UTF-8 is perfect as-is.
+
+1585252154
+fengb
+
+
+1585252157
+shakesoda
+well, you'll avoid this particular pain in that case.
+
+1585252173
+shakesoda
+but if someone ever has a surprise utf-16 file, you know what to ask!
+
+1585252182
+marijnfs_
+fengb: --override-lib-dir sets the lib dir there? that would work indeed
+
+1585252222
+fengb
+Yeah, otherwise it uses your zig builtin library, which will get the test runner really confused
+
+1585252225
+shakesoda
+junon: utf-16 is just such a monumentally bad encoding :(
+
+1585252230
+junon
+Yes it is.
+
+1585252234
+shakesoda
+it has all the worst parts of utf-8 and utf-32 in one
+
+1585252253
+FireFox317
+andrewrk, i commented on my PR (windows async io). On linux opening a file can be async too? On windows, opening a file will alwasy be blocking, but then reading and writing from that file can be async (depending on a flag passed in when opening the file)
+
+1585252288
+shakesoda
+without the good parts of either
+
+1585252406
+andrewrk
+FireFox317, thanks for the info. 2 things - (1) the flag to force blocking is still relevant so that you can use `noasync` elsewhere in that stack trace dumping code right? and (2) std.fs has a cross platform abstraction, so if it can be async anywhere, then it is relevant for all OS's even ones that don't have async behavior there
+
+1585252422
+TheLemonMan
+well fuck this bug, I'm throwing in the towel
+
+1585252453
+andrewrk
+tag me in
+
+1585252457
+andrewrk
+any clues?
+
+1585252486
+TheLemonMan
+I've checked the result returned by __divtf3 and it looks just fine
+
+1585252496
+junon
+What is the memory guarantees of a suspend block? If I store the address of a stack-local inside a suspend{}, will it still exist in memory somewhere if referenced outside the frame, before the frame is resumed?
+
+1585252513
+andrewrk
+I agree with mikdusan - something changed in the environment
+
+1585252514
+TheLemonMan
+the code then calls __letf3 and that looks ok too
+
+1585252537
+TheLemonMan
+adding warn()s solves the problem
+
+1585252542
+andrewrk
+wat
+
+1585252544
+junon
+btw andrewrk your fixes to master work (just got zig built). Thank you for that.
+
+1585252579
+TheLemonMan
+I think it's a problem with the optimizer and/or the ABI wrt return values
+
+1585252593
+andrewrk
+junon, all variables are guaranteed to at least live as long as the scope they are in
+
+1585252612
+TheLemonMan
+if you want to check yourself just attach gdb to zig and add a breakpoint on __divtf3
+
+1585252618
+andrewrk
+in async functions, just like normal functions, a local variable's lifetime ends when the function returns
+
+1585252639
+TheLemonMan
+the first and only call is in the C++ stdlib's hashtable implementation
+
+1585252651
+TheLemonMan
+and that's where shit hits the fan
+
+1585252657
+marijnfs_
+do arrays always have a comptime length?
+
+1585252671
+junon
+Does the lifetime of a suspend{} block end before the frame is actually suspended, or after?
+
+1585252691
+andrewrk
+marijnfs, yes array length is part of the type
+
+1585252727
+marijnfs_
+thnks
+
+1585252760
+andrewrk
+junon, the function is considered to be suspended at the start of the suspend block, and resuming picks up
+
+1585252772
+andrewrk
+the reason suspend takes a block is precisely so that you have more control over this possible race
+
+1585252875
+andrewrk
+TheLemonMan, thanks for giving it a shot. tbh I'm pretty intimidated to try to solve this given that you are throwing in the towel. wish me luck
+
+1585252923
+mikdusan
+ok I have to ask, is this correct for drone: -I/drone/src/deps/SoftFloat-3e/source/8086
+
+1585252937
+andrewrk
+junon, libuv is always single threaded right? I think you can compile your zig code with --single-threaded, then
+
+1585252943
+TheLemonMan
+the trick is to check out the results of the code following __divtf3 with and without the optimizations enabled for compiler-rt
+
+1585252950
+andrewrk
+ok
+
+1585252956
+TheLemonMan
+and then check if there's any difference
+
+1585252971
+junon
+Ahhh I see, okay. And no andrewrk, not always. libuv supports (and even has an API for) multiple threads. It's most commonly used as a single threaded framework, though.
+
+1585253036
+FireFox317
+andrewrk, ah thanks, i get it :) now i have one more question. how do i get access to this `async_block_allowed` flag inside `windows.ReadFile`? It is not accessible anymore in `os.zig`. Because in `windows.ReadFile` i have to actually choose whether to suspend or not. Should this somehow be accessible from the handle?
+
+1585253136
+andrewrk
+std.fs code has access to this flag when it calls windows.ReadFile
+
+1585253140
+andrewrk
+so you should add a new parameter
+
+1585253206
+andrewrk
+os.zig can make an assumption based on std.io.mode, but std.fs has access to more information
+
+1585253337
+andrewrk
+mikdusan, hmmmm you may be onto something there
+
+1585253355
+mikdusan
+it's hardcoded in CMakeLists.txt
+
+1585253391
+andrewrk
+one of the folders in SoftFloat-3e is ARM-VFPv2-defaultNaN/ and another is ARM-VFPv2/
+
+1585253427
+TheLemonMan
+another check would be to apply the __divtf3 patch on the latest good LLVM9-based version
+
+1585253437
+andrewrk
+yeah
+
+1585253465
+andrewrk
+mikdusan, we also hard code 8086 .c files
+
+1585253499
+andrewrk
+I really think you might have found the problem mikdusan
+
+1585253527
+mikdusan
+with this bug I'm not betting until I see green-checkmark :)
+
+1585253532
+FireFox317
+the actually read and writes dont go through std.fs, read and writes are called on a `std.fs.File` and just calls the `os.read/write`.
+
+1585253605
+andrewrk
+FireFox317, do you see the part where it does ` if (need_async_thread and self.io_mode == .blocking and !self.async_block_allowed)`
+
+1585253634
+andrewrk
+here it can bypass std.os if necessary
+
+1585253647
+andrewrk
+mikdusan, how on earth did you think to look there?
+
+1585253725
+andrewrk
+TheLemonMan, do you know if we should be using ARM-VFPv2 or ARM-VFPv2-defaultNaN for aarch64?
+
+1585253728
+mikdusan
+I've been hacking at the linux_script. adding probes into env. then it dawned on me. why the fuck can't I see compiler args? so -DCMAKE_VERBOSE_MAKEFILE=1 to the rescue
+
+1585253759
+mikdusan
+*donned ?
+
+1585253773
+andrewrk
+I think it's dawn, like the sun coming up as a big idea over your head
+
+1585253787
+andrewrk
+or maybe you are donning an idea hat
+
+1585253882
+junon
+Oh woah andrewrk I changed the `init()` to the pointer signature as you mentioned and the segfault was resolved, though I don't understand why.
+
+1585253915
+andrewrk
+junon, when you did `return res` it was copying the struct
+
+1585253931
+andrewrk
+and I guess libuv had were pointers in there pointing to fields
+
+1585253979
+junon
+Derp, okay, there's no magical move stuff. Idk why I expected Zig to do any of that.
+
+1585253991
+junon
+Makes sense.
+
+1585254012
+andrewrk
+argh why doesn't cmake let me if() on  architecture
+
+1585254040
+junon
+specifically x86 vs x86_64, or between all architectures (e.g. mips, etc.)?
+
+1585254046
+FireFox317
+andrewrk, yes i see that. but how can i bypass std.os there then? Directly calling windows.readFile? instead of going through the os layer? I just dont see it for some reason
+
+1585254061
+andrewrk
+FireFox317, yes you could directly call windows.readFile
+
+1585254086
+andrewrk
+windows.ReadFileW does not have to match the dll function, and we can rename it if it starts diverging too much
+
+1585254087
+FireFox317
+andrewrk, hmm okay. I thought I had to go through the os layer
+
+1585254103
+andrewrk
+FireFox317, hmm maybe it would help if I told you that it's possible that std.os will get renamed to std.posix
+
+1585254135
+FireFox317
+andrewrk, oh yeah then everything makes sense lol
+
+1585254172
+FireFox317
+thanks for the heads up :)
+
+1585254615
+andrewrk
+mikdusan, still bad_alloc() thrown
+
+1585254629
+andrewrk
+ok but that is still an important fix to make
+
+1585255051
+afontain_
+do someone know of a container with a checked max-size? Something like a [10]T, but where I could have less than 10 elements
+
+1585255158
+afontain_
+I could use an ArrayList and add checks on top of that if it doesn't exist
+
+1585255185
+marijnfs_
+how do I get an outstream with a growing buffer? a fixedbufferstream i assume doesn't grow?
+
+1585255225
+fengb
+You can get a stream from an ArrayList(u8)
+
+1585255542
+marijnfs_
+ah thanks
+
+1585255552
+marijnfs_
+also from a std.Buffer? which is preferred?
+
+1585255657
+andrewrk
+mikdusan, TheLemonMan: I think I have at least a reasonable workaround, which is to disable --bundle-compiler-rt for the drone builds (turning this into an open arm64 issue, rather than broken master builds)
+
+1585256153
+fengb
+Buffer is zero-terminated, so prefer ArrayList if you don't need that termination
+
+1585256196
+junon
+andrewrk:
+
+1585256252
+junon
+Gotta say, first foray into Zig has been quite pleasant. This feels like cheating.
+
+1585256280
+marijnfs_
+fengb: thansk
+
+1585256314
+andrewrk
+junon, :) `async` works on any function btw. if the function happens to not be a function that suspends, it still works correctly
+
+1585256370
+junon
+This is the first time I've ever seen this supported in a language. Any prose on the performance impacts of using these?
+
+1585256373
+andrewrk
+you probably want res1 = await c1; res2 = await c2; res3 = await c3; try res1; try res2; try res3;
+
+1585256384
+andrewrk
+a bit clunky but correct
+
+1585256457
+andrewrk
+each `await` and `return` of async functions costs 1 atomic xchg operation.
+
+1585256480
+junon
+that's cheap.
+
+1585256519
+andrewrk
+llvm unfortunately isn't amazing at optimizing async functions. there's a lot of room for improvement
+
+1585256524
+junon
+Still trying to wrap my head around what each of the keywords does. It's still unclear how `resume` and `await` are different.
+
+1585256534
+marijnfs_
+fengb: how do i actually get a steam for arraylist? it doesn't have a steam() function like buffer
+
+1585256641
+fengb
+Hmm I thought it was added. My mistake
+
+1585256685
+fengb
+Oh it's in a PR >_>:
+
+1585256738
+marijnfs_
+fengb: :)
+
+1585256743
+marijnfs_
+ill use buffer until then
+
+1585256814
+marijnfs_
+i still can't run a test on one file, zig test ~/software/zig/lib/std/io/serialization_allocate.zig  --override-lib-dir ~/software/zig/lib
+
+1585256827
+marijnfs_
+that gives me use of undeclared identifier 'expect'
+
+1585256887
+TheLemonMan
+andrewrk, neither of them, those are for "classic" ARM
+
+1585256915
+TheLemonMan
+yeah whatever workaround is better than having that red cross pop up on every build
+
+1585257342
+mikdusan
+andrewrk: what's the skinny on login access to drone? pubkey/account-name, and then I get a shell into what image?
+
+1585258912
+junon
+Why does e.g. the page_allocator have `fn create(comptime T: type) !*T` but not `fn free(p: *var) void` or something of the like?
+
+1585258943
+junon
+As-is, it returns a value that is not directly compatible with the corresponding `free()` function.
+
+1585259029
+fengb
+allocator.destroy
+
+1585259072
+junon
+Derp, thanks.
+
+1585261009
+donaldallen
+Back for another look at zig after a few months away. Trying to build a fairly simple program that does some printf-y things, but with format. I am getting the following error:
+
+1585261014
+donaldallen
+make[1]: Entering directory '/home/dca/Software/newcash_zig/composite_register'zig build-exe --main-pkg-path .. --single-threaded -I/usr/include -L/usr/local/lib64 -L/usr/lib64 -lsqlite3 -lc `pkg-config --libs gtk+-3.0` composite_register.zigSemantic Analysis [701/1185] /usr/local/lib/zig/std/fmt.zig:319:22: error: container 'std.fs.file.File' has
+
+1585261014
+donaldallen
+no member called 'Error') @TypeOf(out_stream).Error!void {                     ^/usr/local/lib/zig/std/fmt.zig:319:28: note: called from here) @TypeOf(out_stream).Error!void {                           ^./composite_register.zig:86:19: note: called from here        fmt.format(stdout, "{}" ++ sep ++ "{}" ++ sep ++ "{}\n",
+
+1585261015
+donaldallen
+^./composite_register.zig:26:20: note: called from herepub fn main() void {
+
+1585261068
+donaldallen
+Not sure how to get this thing to format (pun intended) correctly. Hope you can read what I just posted.
+
+1585261164
+donaldallen
+Trying to help make this mess readable. The error is occurring here:
+
+1585261168
+donaldallen
+Semantic Analysis [701/1185] /usr/local/lib/zig/std/fmt.zig:319:22: error: container 'std.fs.file.File' has no member called 'Error') @TypeOf(out_stream).Error!void {
+
+1585261212
+donaldallen
+One level up:
+
+1585261280
+donaldallen
+I give up. I'll submit a bug report.
+
+1585261337
+fengb
+Looks like you’re passing a file into format() instead of file.outStream()
+
+1585262740
+FireFox317
+andrewrk, I updated the windows async io PR :)
+
+1585265479
+andrewrk
+thanks!
+
+1585266481
+marijnfs_
+i added a file to std lib, but the test isn't run
+
+1585266487
+marijnfs_
+where is this controlled?
+
+1585266506
+marijnfs_
+i run zig build test-std in the zig root dir
+

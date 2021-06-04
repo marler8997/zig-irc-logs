@@ -1,0 +1,840 @@
+1600820682
+mkchan
+so i can compile my program and run it in release-fast but release-safe and normal debug builds don't finish (they output huge zig-cache folders/.o files and then fail anyway. I'm not sure why it's so large, maybe someone can help me reduce it? Because it basically forces me to throw away asserts and roll my own application-layer flag for a debug build (in release-fast):
+
+1600820685
+mkchan
+
+
+1600820742
+mkchan
+besides the inconvenience of losing out on debug and release-safe mode, it's usable, however
+
+1600820893
+alexnask[m]
+How do they fail in debug mode? Does the compiler crash or is there an error message?
+
+1600821146
+mkchan
+so with build-exe, it outputs a ~6.3GB .o file then crashes with some error, i can get that for you. with zig build and zig-cache it goes up to 32+GB and then i just stop it because it's a bit dangerous to let it go on i suppose
+
+1600821203
+mkchan
+lld error, relocation R_X86_64_32S out of range: 6755902144 is not in [-2147483648, 2147483647]
+
+1600821294
+alexnask[m]
+Can you try `@setRuntimeSafety(false);` in your feedForward functions?
+
+1600821328
+mkchan
+sure
+
+1600821535
+mkchan
+ok so release-safe compiles with @setRuntimeSafety(false) and outputs the same sizes as release-fast but debug still blows up
+
+1600821640
+alexnask[m]
+hm
+
+1600821795
+mkchan
+actually the release safe binary is 837KB and release-fast is 165KB, sorry
+
+1600821837
+mkchan
+also even release-fast doesn't compile on windows
+
+1600821848
+mkchan
+LLVM out of memory
+
+1600822367
+daurnimator
+justin_smith: FYI std.LinearFifo is a ringbuffer.
+
+1600822498
+daurnimator
+though it doesn't use any atomics; at least right now....
+
+1600825330
+mkchan
+upon developing a bit further and actually passing in some real values instead of zero-initializing the network in the same code above, the compiler just runs out of memory and dies. basically using comptime this way is not feasible
+
+1600825403
+daurnimator
+mkchan: the current comptime implementation is.... memory hungry
+
+1600825414
+daurnimator
+mkchan: the one in stage2 should be much better
+
+1600825445
+mkchan
+any idea when that'll be in zig master?
+
+1600825522
+daurnimator
+sorry 2020 has thrown off my crystal ball
+
+1600825598
+fengb
+Rumor is by 0.8.0 release
+
+1600825732
+mkchan
+that's at least 6 months away assuming 0.7.0 is close (with huge optimism)
+
+1600826776
+mkchan
+ok, i'll store this code in a gist and revisit it then. I'll just refactor this to define the type non-generically so i can continue with my app
+
+1600832251
+justin_smith
+reposting while it's quieter: I'm working on a blog post about the translation of the example jack simple client from C to Zig, any feedback / review of the code and the refactor are welcome (in particular if I'm missing something that would simplify / improve the code and make it on par with mainstream zig code that I'm missing)
+
+1600832834
+lunamn
+justin_smith: cool stuff!! afaik its discouraged to use c pointers ([*c]u8) directly (and may be even fully disallowed in the future, i can't find the specific issue about it), and if i recall correctly, ?[*:0]u8 would be the nicer type as [*c]u8 coerces to that. another point is that at the end of main() you call free and close the jack client but
+
+1600832834
+lunamn
+you could put a 'defer { _ = c.jack_client_close(client); }' right after the client's initialization
+
+1600853516
+ifreund
+justin_smith: here's my suggestions:
+
+1600853579
+ifreund
+notably, you can just use the null keyword instead of defining your own
+
+1600853601
+ifreund
+also, you don't need to export the callback functions, just sest them to callconv(.C)
+
+1600853621
+ifreund
+the rest of the changes are just minor bits of cleanup
+
+1600853914
+ifreund
+you could also just use return instead of all the exit calls in main(), though that's more subjective
+
+1600861800
+simp2979
+Hey!
+
+1600861836
+simp2979
+I'm a novice at programming and new to zig, so I was messing around with Zig's std lib to see a bit about how it worked, especially the start.zig code
+
+1600861910
+simp2979
+I have a gist with some printf debugging I did to see how some of it was executed in a windows build
+
+1600861947
+simp2979
+
+
+1600862037
+simp2979
+(not familiar with irc much or how code formatting might work so bear with me)
+
+1600862039
+simp2979
+CRTStartup
+
+1600862146
+simp2979
+I have been looking at this for a while and I can't seem to tell how and why `WinMainCRTStartup`, and `callMain` etc are all being called twice and with no respect to the (hacky) local vars I threw in there.
+
+1600862172
+simp2979
+(I apologize for the borderline offensive way I went about this printf debugging in advance :P  )
+
+1600862279
+simp2979
+Is there any place I can look to get an understanding of what's happening here? Thanks in advance! :)
+
+1600862336
+simp2979
+(The gist purposely has a revision without the edits I made to start.zig so you can see the diffs)
+
+1600862377
+ifreund
+simp2979: perhaps you're seeing output from the startup code for the zig build system?
+
+1600862383
+ifreund
+how are you running your program?
+
+1600862488
+simp2979
+I have the build.zig file linked.
+
+1600862515
+simp2979
+With that said I don't know that much about the zig build system, it should be the default from regular old init-exe, iirc
+
+1600862594
+simp2979
+Oh, sorry
+
+1600862596
+simp2979
+I misread.
+
+1600862611
+simp2979
+I'm calling it via a .bat file that I forgot to link.
+
+1600862633
+simp2979
+```@echo offrem echo %cd%:call ..\..\env\zig.exe build runrem echo ---rem call ..\..\env\zig.exe test src\main.zigrem call ..\..\env\zig.exe run src\main.zig```
+
+1600862652
+simp2979
+(still don't know irc formatting well, let me repost)
+
+1600862657
+simp2979
+@echo offrem echo %cd%:call ..\..\env\zig.exe build runrem echo ---rem call ..\..\env\zig.exe test src\main.zigrem call ..\..\env\zig.exe run src\main.zig
+
+1600862663
+simp2979
+nope, sorry again
+
+1600862719
+simp2979
+the important thing there is that the only thing not commented out via `rem` is `call ..\..\env\zig.exe build run`
+
+1600862736
+simp2979
+so just `zig build run`
+
+1600862843
+simp2979
+Hmm, so calling `kanto.exe` directly seems to so all of that once, but then the order still places "all your codebase" in the middle.
+
+1600862944
+simp2979
+So why is `zig build run` returning in this nested fashion? is the `WinMainCRTStartup` being used in `zig.exe`? In any case that gives me a direction to look. Thanks ifreund.
+
+1600863390
+ikskuh
+`WinMainCRTStartup` is ony of the windows entry points into your executable
+
+1600863405
+ikskuh
+so everyone should use these (windows afaik doesn't execute the function called main)
+
+1600863421
+simp2979
+Uhh, clarify what you mean.
+
+1600863452
+simp2979
+iirc WinMainCRTStartup is how windows, by default, enters, which normally calls all the CRT stuff behind the scenes.
+
+1600863465
+simp2979
+(if you're using msvc or whatever)
+
+1600863525
+simp2979
+But in start.zig, `main` is indeed called via a definition of CRTStartup which is exported at comptime.
+
+1600863618
+simp2979
+but it looks like using `zig build` with the `run` step calls it twice, for whatever reason (and the prints there are nested) I assume it has to do with the build system.
+
+1600863707
+ifreund
+simp2979: when zig builds and runs your build.zig file, the start code is run
+
+1600863758
+ifreund
+there's nothing very special about the zig build system, you can see the wrapper code in std/special/build_runner.zig
+
+1600863758
+simp2979
+Oh, okay, so that's how zig.exe handles the build file, it compiles the code and runs it on the target platform.
+
+1600863765
+simp2979
+I guess the nesting is what threw me off.
+
+1600863814
+simp2979
+>  you can see the wrapper code in std/special/build_runner.zig
+
+1600863818
+simp2979
+Thanks!
+
+1600863823
+simp2979
+I'll look there.
+
+1600864092
+simp2979
+Yep. This explains, thanks again ifreund! :D
+
+1600864109
+ifreund
+no problem!
+
+1600879032
+justin_smith
+lunamn: ifreund: thanks for the read and suggestions, checking it out now
+
+1600879142
+justin_smith
+lunamn: I tried changing "var ports_raw: [*c][*c]const u8 = undefined;" to "var ports_raw: [*c][*:0]const u8 = undefined;" but this fails, as I'm using the return value of a C function directly and the type isn't compatible
+
+1600879174
+justin_smith
+I could hide this usage of [*c] the same way I did all the others, directly using the return value of a C function and relying on inference
+
+1600879186
+justin_smith
+or I could use inline casts surrounding the call
+
+1600879198
+justin_smith
+but IMHO that's not eliminating the problem, that's just shuffling / hiding it
+
+1600879295
+justin_smith
+oh, after another sip of coffee this indeed works: "var ports_raw: [*c]?[*:0]const u8 = undefined;"
+
+1600879332
+justin_smith
+I need to do some pointer exercises to really understand what's going on here, the docs are short but don't directly inform what I see in real code yet...
+
+1600879349
+ifreund
+you really don't need the ports_raw thing, see the diff I linked :)
+
+1600879360
+justin_smith
+ifreund: looking at that next, thanks
+
+1600879383
+ifreund
+[*c] will coerce to any optional zig pointer type
+
+1600879408
+ifreund
+so [*c][*c] will coerce to ?*?[*:0]u8 for example
+
+1600879475
+justin_smith
+ifreund: thanks so much, this is reinforcing that the thing I really need to master is the ? prefix on pointers...
+
+1600879484
+ifreund
+this type can be read as "an optional pointer to a single optional 0-terminated string of u8s"
+
+1600879502
+ifreund
+in pure zig code you don't generally need as much ?s
+
+1600879508
+ifreund
+in C anything can be null though
+
+1600879538
+justin_smith
+ifreund: but the original was a pointer to an array of null terminated strings, the first null string meaning the end of the strings
+
+1600879544
+justin_smith
+or maybe I misunderstand
+
+1600879561
+ifreund
+oh I could have read that wrong
+
+1600879571
+justin_smith
+it's just coincidence that in the simple client code the first port name is always used
+
+1600879578
+justin_smith
+in real code you might iterate the port names
+
+1600879584
+ifreund
+in that case the zig type would be [*:null]?[*:0]u8
+
+1600879604
+justin_smith
+stopping on the first "empty string" which thanks to unboxed arrays is the same as "null element in the array"
+
+1600879616
+justin_smith
+ifreund: I'll try that thanks again
+
+1600879653
+ifreund
+might need ?[*:null]?[*:0]u8 actually, though arguably you shouldn't
+
+1600879709
+justin_smith
+ifreund: I spent a while meditating on that null that could simultaneously be read as "zero length string" and "last element placeholder for null terminated array of strings", I wonder if that has a name
+
+1600879726
+ifreund
+those aren't the same though
+
+1600879747
+ifreund
+a zero length string in c is  a non-null pointer to a null byte
+
+1600879747
+justin_smith
+ifreund: how would the bytes in memory be different? an extra pointer dereference right?
+
+1600879755
+justin_smith
+right, got it
+
+1600879765
+justin_smith
+baby brain still learning basics
+
+1600879770
+ifreund
+no worries :)
+
+1600879978
+justin_smith
+ifreund: wow, this is really extensive, and there's a lot I can learn from it
+
+1600880077
+ifreund
+glad it'll be useful, only took me a couple minutes :)
+
+1600880125
+justin_smith
+"var ports_raw: ?[*:null]?[*:0]const u8 = undefined;" did the trick, I'd tried something similar but was missing the ? prefixes
+
+1600880229
+ifreund
+if you use `orelse` on every get_ports() call you can likely get rid of the first ?
+
+1600880388
+justin_smith
+ifreund: also, with that declaration for ports_raw, how would I index it?
+
+1600880468
+justin_smith
+ports_raw[0] is invalid as it's an array
+
+1600880495
+ifreund
+well, you can't safely index a sentinal terminated pointer without iterating it to see how many entries there are
+
+1600880574
+justin_smith
+ahh, so I'd have a loop, and at some point break from the loop with the port I want, or I'd get a count, allocate an array, and index that...
+
+1600880576
+ifreund
+if you know better than the compiler you can of course @ptrCast() it to a [*] pointer instead of [*:null]
+
+1600880602
+justin_smith
+right, but I know it can be null (client with no ports)
+
+1600880617
+justin_smith
+which would be a zero length array
+
+1600880627
+ifreund
+you can also use std.mem.span() to turn it into a slice and then use a for loop
+
+1600880646
+justin_smith
+cool, working on other suggestions and I'll mark that as promising for later
+
+1600880651
+ifreund
+e.g. for (std.mem.span(ports)) |port| { // do something }
+
+1600880703
+justin_smith
+that looks like precisely the semantics I'd want (maybe building a linked list now that I think of it...)
+
+1600881478
+justin_smith
+lunamn: I was able to include both of your suggestions, they are pushed to gh
+
+1600881629
+justin_smith
+ifreund: do I read this correctly, that std.heap.c_allocator.destroy is guaranteed to work on data that some library allocated via malloc and returned to my code?
+
+1600881697
+leeward
+If you're linking to C code, why not use free?
+
+1600881720
+justin_smith
+leeward: that's what I had originally, but ifreund had a useful set of changes including that one
+
+1600881725
+ifreund
+yes, std.heap.c_allocator() wraps malloc/free/destroy
+
+1600881731
+justin_smith
+great
+
+1600881748
+ifreund
+you can just use free, but I apprectiate the type safety of the the zig allocator interface
+
+1600881834
+justin_smith
+ifreund: is it surprising that std.heap.c_allocator wouldn't show up here?
+
+1600881869
+ifreund
+not terribly, the online docs for the standard library are quite WIP
+
+1600881887
+leeward
+It is a bug though.
+
+1600881888
+ifreund
+i'd recommend just browsing the source, ZLS also helps
+
+1600881903
+ifreund
+indeed
+
+1600881904
+justin_smith
+so to find things like that I'd browse the stdlib code, or see it used in someone else's code
+
+1600881907
+justin_smith
+cool
+
+1600881933
+leeward
+Yeah, the stdlib sources are still the best place to look to find things.
+
+1600881959
+justin_smith
+code reading is also a good way to learn better style / idioms, so looks like that's where I'm headed
+
+1600881968
+justin_smith
+might actually make that lock free stuff today
+
+1600883533
+justin_smith
+ifreund: I pushed changes to the repo based on your feedback, I hope it's OK to use your name in the commit / blog post since it was in the diff
+
+1600883754
+ifreund
+sure, my name is fairly public knowledge :)
+
+1600883868
+fengb
+Mr Freund??
+
+1600883933
+ifreund
+who would have guessed? :P
+
+1600884461
+companion_cube
+andrewrk: did you think further about `block { … break }` ?
+
+1600884673
+andrewrk
+I'll open a proposal
+
+1600884746
+companion_cube
+:)
+
+1600888157
+nikki93
+can you use inline for or sth like that to define a struct with members based on some list?
+
+1600888173
+ifreund
+nikki93: you want @Type()
+
+1600888189
+nikki93
+like eg. if you had a func that takes some struct type and returns a type with the same members as that one (maybe with some filter) + some others or sth
+
+1600888268
+ifreund
+note that support for creating structs with @Type() is fairly new, so you'll need a recent master build
+
+1600888473
+nikki93
+ooh interesting. so you build a type info then you can make a type out of it. cool
+
+1600892784
+marijnfs
+why can't i perform the binary ~ in a comptime int?
+
+1600892837
+Nypsie[m]
+I assume it's because comptime int doesn't have any bitsize
+
+1600892853
+marijnfs
+would i have to intcast it or something?
+
+1600892855
+Nypsie[m]
+So you'd have to explicity coerce it to a type with @as(..., int)
+
+1600892891
+Nypsie[m]
+i.e. `const x = ~@as(u8, 100)`
+
+1600892900
+marijnfs
+ok that seems to work
+
+1600892909
+marijnfs
+it @as better than @intCast?
+
+1600892967
+Nypsie[m]
+For comptime int yes
+
+1600893018
+ifreund
+@as() is always safe
+
+1600893046
+Nypsie[m]
+True, but the input must be comptime known, right?
+
+1600893098
+ifreund
+not necessarily
+
+1600893107
+Nypsie[m]
+Ah ok, good to know :)
+
+1600893116
+ifreund
+you can use as to cast from a runtime known u32 to usize for example
+
+1600893158
+ifreund
+and yeah, always use @as() over @intCast() or similar if you can
+
+1600893955
+marijnfs
+i'm now defining an enum, and i have some values that are assigned 127
+
+1600893974
+marijnfs
+but I get the error that it doesn't fit a u5
+
+1600893979
+marijnfs
+why does it want u5?
+
+1600894005
+marijnfs
+basically there is a skip in the enum values, so total of enums in there is not so large
+
+1600894201
+ifreund
+u5 is the smallest type that can represent enough distinct numbers for all of your enum variants
+
+1600894332
+marijnfs
+ifreund: but if i specifically mention a value of 127 then it doesn't fit
+
+1600894379
+ifreund
+you can use enum(u8) then
+
+1600894993
+marijnfs
+ifreund: that seems to be what i need
+
+1600895002
+marijnfs
+would make sense if zig can figure that one out
+
+1600895097
+ifreund
+well, I'm not sure it should implicitly use more bits than necessary to represent all variants
+
+1600895335
+marijnfs
+ifreund: but if one of the values is 127, it needs at least 7 bits right?
+
+1600895336
+marijnfs
+not 5
+
+1600895434
+marijnfs
+i'm trying to use the enum to define different values that happen when reading input
+
+1600895440
+marijnfs
+but it's hard to compare to an enum?
+
+1600895450
+marijnfs
+how do i compare some u8 in this case to an enum
+
+1600895474
+ifreund
+say you have an enum with 4 variants, the minimum number of bits to represent all 4 variants is ld(4) = 2
+
+1600895498
+ifreund
+@enumToInt()/@intToEnum()
+
+1600895542
+marijnfs
+i see enumToInt, that does get a bit cumbersome when dealing with c libraries
+
+1600895555
+ifreund
+you may just want some constants in a namespace
+
+1600895572
+marijnfs
+yeah i guess you could represent the enum, but still would need some table to convert to the int value afterwards?
+
+1600895583
+marijnfs
+ifreund: yeah that could work too i guess
+
+1600895610
+marijnfs
+if i put them in a struct the have sort of a namespace?
+
+1600895633
+ifreund
+yes, a struct without fields is what I mean by a namespace
+
+1600895696
+ifreund
+the "would need some kind of table" thing is why zig doesn't let you use 127 as the value of an enum(u5), it would make @enumToInt()/@intToEnum() not free
+
+1600895772
+marijnfs
+so the range of numbers you use has to be equal to the unique items
+
+1600903540
+justin_smith
+I'm trying to build the head of the main repo, wondering if anyone can make heads or tails of these linking errors 200~
+
+1600903561
+justin_smith
+maybe my system is oddly configured, it's manjaro arm64
+
+1600903644
+justin_smith
+perhaps I don't have a minimum clang version?
+
+1600903695
+tdeo
+i think the build script is supposed to detect that, weird
+
+1600903865
+justin_smith
+what I'm really trying to do is run some tests in std, I'll just point the distro "zig" to the std in my git repo instead of self hosting for now
+
+1600904062
+justin_smith
+next question: file has a relative import and I get - "error: import of file outside package path ../std.zig" - is there a flag / path to set?
+
+1600904236
+justin_smith
+I'm feeling like I'm missing a basic step by step "how to run tests against files in the dev repo" guide
+
+1600904383
+alexnask[m]
+Have you read this document: <
+
+1600904406
+justin_smith
+alexnask[m]: that's what I was likely missing thanks
+
+1600904636
+justin_smith
+alexnask[m]: make fails, it seems like an llvm error, this means I can't run the tests in std files without editing them / porting them?
+
+1600904711
+justin_smith
+I"m not trying to run the test suite for all of std, I just want to run the tests against one specific file
+
+1600904712
+alexnask[m]
+You should just run the `zig build test <flags>` steps in your git repo
+
+1600904739
+alexnask[m]
+Ah well you can prob `zig test <path/to/file>`
+
+1600904746
+justin_smith
+then I need a version of master, or a distro, that isn't broken
+
+1600904770
+alexnask[m]
+I thought you had a working `zig` and wanted to test stdlib changes
+
+1600904775
+justin_smith
+right
+
+1600904792
+justin_smith
+zig test gets weird errors because the file hard-codes a path inside the repo
+
+1600904802
+justin_smith
+so there's two versions of std and things are just broken
+
+1600904809
+justin_smith
+maybe I'll just change the test to not do that
+
+1600904822
+alexnask[m]
+I see, check out `zig build --help`, there are a variety of test filters
+
+1600904840
+justin_smith
+I want the tests in this file, filtering it isn't the solution
+
+1600904914
+justin_smith
+I'll just get rid of `const std = @import("../std.zig");` and make the other chnages that might require
+
+1600905083
+justin_smith
+ok, changing an import of "../std.zig" to "std" seems to do what I need
+
+1600905098
+justin_smith
+it would be nice to be able to build locally too but that looks like a much more complex can of worms
+

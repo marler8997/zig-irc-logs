@@ -1,0 +1,3088 @@
+1594512110
+Shucks
+@ikskuh, zpm didn't built for me btw. `.\src\main.zig:726:16: error: no member named 'kv' in struct 'std.hash_map.GetOrPutResult'`
+
+1594512119
+ikskuh
+oh yeah
+
+1594512125
+ikskuh
+i didn't maintain it for some while
+
+1594512133
+ikskuh
+you might need to patch it up to the new hashmap api :D
+
+1594512154
+Shucks
+some day maybe ;D
+
+1594512163
+ikskuh
+:D
+
+1594512168
+ikskuh
+yeah, same here ^^
+
+1594512176
+Shucks
+std.os.windows isn't complete yet huh?
+
+1594512176
+ikskuh
+i need vacation to patch up all projects
+
+1594513884
+shcv
+why is zig assuming that my []const u8 is 128bits long?
+
+1594513906
+shcv
+or is that the length of the pointer, as 2x usize?
+
+1594513908
+daurnimator
+shcv: how did you get it?
+
+1594513971
+daurnimator
+`someptr[0..128/8]` will actually give you a `*[16]T`
+
+1594514151
+shcv
+I'm creating a data structure with comptime K = [] const u8, and calling a function with parameter key: var via a method in that structure, passing in "key". The function gets the size of the key it's passed with @bitSizeOf(@TypeOf(key)). I realized it probably isn't getting the right size, since that's actually a runtime value; so is it giving the size of the representation of a slice?
+
+1594514206
+shcv
+er, to make that a little clearer, passing "key" -> method(K) -> function(key: var) -> @bitSizeOf(@typeOf(key))
+
+1594514353
+fengb
+Yeah @sizeOf([]const u8) is always 2x usize
+
+1594514379
+fengb
+What you want in this case is slice.len * @sizeOf(u8)
+
+1594514664
+shcv
+suppose my slice is less than usize long; how can I copy it into a usize?
+
+1594514738
+shcv
+@bitCast doesn't work because the sizes don't match
+
+1594514741
+fengb
+You can convert the usize into bytes. Something like std.mem.copy(u8, std.mem.asBytes(&num), slice)
+
+1594514755
+fengb
+Requires a memcopy because the size doesn’t match
+
+1594514757
+shcv
+and going the other way?
+
+1594514762
+shcv
+oh
+
+1594514766
+shcv
+I see I think
+
+1594514774
+shcv
+making it an as-bytes pointer?
+
+1594514879
+fengb
+asBytes converts any pointer into a byte slice so you can copy raw bytes into existing memory
+
+1594514903
+fengb
+You’ll probably want to initialize the usize to 0 as well
+
+1594514912
+shcv
+yep
+
+1594514993
+shcv
+ok, I think that worked; thanks
+
+1594515486
+ifreund
+the github repo now has exactly 6k stars
+
+1594517088
+adamkowalski
+How do you create a ArrayList from a array literal?
+
+1594517105
+adamkowalski
+For example a std.ArrayList([]const u8)
+
+1594517122
+adamkowalski
+Can I create it from something like .{"hello", "world"}
+
+1594517355
+shakesoda
+i'm pretty sure you have to copy into it if you want to do that
+
+1594517363
+oats
+adamkowalski: I don't see any functions that directly copy that and make a new one
+
+1594517378
+oats
+but you could use the insertSlice method on ArrayList
+
+1594517488
+oats
+might be better to just make your own convenience function
+
+1594517543
+adamkowalski
+the goal is just to make my unit tests cleaner and so I don't want to create the array list and then append the elements one by one
+
+1594517583
+adamkowalski
+I was hoping to just declaratively write out the data structure and then compare them for equality
+
+1594517650
+adamkowalski
+Can I do something like ArrayList([]const u8).fromOwnedSlice(allocator, .{"foo", "bar"})
+
+1594517677
+oats
+fromOwnedSlice requires that the slice was allocated by that allocator, unfortunately
+
+1594517795
+adamkowalski
+okay well is there something in that vain that I can do? If the tests contain that much procedural logic it distracts from the point of the test.
+
+1594517807
+adamkowalski
+In c++ I would just write std::vector<int>{1, 2, 3};
+
+1594517815
+adamkowalski
+or in rust I could write vec![1, 2, 3]
+
+1594517820
+adamkowalski
+Theres nothing like that for zig?
+
+1594517940
+ikskuh
+adamkowalski: .init(), appendSlice()
+
+1594518180
+adamkowalski
+Why doesn't this work?
+
+1594518182
+adamkowalski
+
+
+1594518182
+adamkowalski
+var foos = std.ArrayList([]const u8).init(&leak_count.allocator);
+
+1594518185
+adamkowalski
+try foos.appendSlice(&[_][]u8{"foo"});
+
+1594518443
+oats
+adamkowalski: what doesn't work about it?
+
+1594518863
+adamkowalski
+
+
+1594518863
+adamkowalski
+try foos.appendSlice(&[_][]u8{"foo"});
+
+1594518863
+adamkowalski
+./tests/tokenizer_tests.zig:24:35: error: expected type '[]u8', found '*const [3:0]u8'
+
+1594519883
+oats
+adamkowalski: try replacing '[]u8' with '.'
+
+1594519889
+oats
+.{"foo"}
+
+1594519964
+adamkowalski
+
+
+1594519964
+adamkowalski
+./tests/tokenizer_tests.zig:24:26: error: inferred array size invalid here
+
+1594519964
+adamkowalski
+try foos.appendSlice([_].{"foo"});
+
+1594520025
+oats
+try foos.appendSlice(&[_].{"foo"});
+
+1594520041
+oats
+slice literal syntax is a bit unwieldy, I wish there were some sugar
+
+1594520060
+adamkowalski
+Same compile error
+
+1594520100
+adamkowalski
+yeah I might write a generic function which reflects on the type of thing passed in, iterates over the members of the anonymous struct and appends each to an array list, then returns it
+
+1594520126
+adamkowalski
+but it seems a bit strange there isn't an easy way of just saying give me a vec given an allocator and some literals
+
+1594520134
+oats
+try foos.appendSlice(&[_][]const u8{"foo"});
+
+1594520137
+oats
+just spitballing here
+
+1594520179
+adamkowalski
+Hey that worked!
+
+1594520183
+adamkowalski
+Thanks a lot :)
+
+1594520191
+oats
+yay, sure
+
+1594520204
+oats
+I wonder why it wouldn't take the anonymous array
+
+1594520303
+oats
+ArrayList([]const u8).from(alloc, .{"foo", "bar"})
+
+1594520311
+oats
+I don't think I see a reason that couldn't be written
+
+1594520326
+fengb
+Tuples can’t coerce into slices right now, only arrays
+
+1594520344
+oats
+right
+
+1594520364
+oats
+but that would be kinda like std.debug.warn, right? taking a var parameter and doing some struct reflection magic
+
+1594520381
+fengb
+There’s a bit of work trying to get &.{foo, bar} to work but it gets tricky internally
+
+1594520403
+fengb
+That’s possible but it actually generates a function per tuple len. So probably not ideal
+
+1594520441
+adamkowalski
+How come something like this won't work
+
+1594520443
+adamkowalski
+
+
+1594520443
+adamkowalski
+fn arrayListFromSlice(allocator: *std.mem.Allocator, slice: [][]const u8) !std.ArrayList([]const u8) {
+
+1594520443
+adamkowalski
+var arrayList = std.ArrayList([]const u8).init(&leak_count.allocator);
+
+1594520443
+adamkowalski
+try arrayList.appendSlice(slice);
+
+1594520446
+adamkowalski
+return arrayList;
+
+1594520450
+adamkowalski
+}
+
+1594520458
+adamkowalski
+Sorry I'll start posting onto some sort of gist site
+
+1594520480
+oats
+again, error please? :P
+
+1594520561
+adamkowalski
+
+
+1594520561
+adamkowalski
+./tests/tokenizer_tests.zig:15:74: error: expected type '[][]const u8', found '*const [1][]const u8'
+
+1594520561
+adamkowalski
+const foos = arrayListFromSlice(&leak_count.allocator, &[_][]const u8{"foo"});
+
+1594520598
+fengb
+You need []const []const u8
+
+1594520656
+fengb
+This creates a slice from implicit, which is a const in Zig: &[_][]const u8{"foo"}
+
+1594520730
+adamkowalski
+thanks! the nested const works
+
+1594520762
+adamkowalski
+If I make it take in a comptime T: type to make it work across different types of slices how much is my compile time going to be effected?
+
+1594520784
+adamkowalski
+Will that only generate one function per type? So it would be the same slow as if I had actually wrote each of those functions myself?
+
+1594520825
+adamkowalski
+Also how does errdefer interact with panics? If something panics, does stack unwinding happen and then all your errdefers run and clean up your resources?
+
+1594520855
+oats
+I do not believe panics will run errdefers
+
+1594520857
+adamkowalski
+Or if you get a stack overflow, or a out of bounds error with an array, does everything leak
+
+1594520863
+oats
+nor regular defers
+
+1594520910
+adamkowalski
+Okay, so non recoverable errors leak. I figured but I wanted to know if there is a magic solution
+
+1594520937
+adamkowalski
+Also is it like Erlang where you if you have multiple processes, and one panics, does that kill everything. Or can the rest of the processes run and recover
+
+1594520950
+fengb
+Yeah panics are unrecoverable
+
+1594521022
+adamkowalski
+Okay so how are decisions made about what is recoverable/unrecoverable errors?
+
+1594521048
+fengb
+Typically unreachable / panic means dev error
+
+1594521076
+fengb
+Error return is an application error
+
+1594521091
+adamkowalski
+so it's for invariants which you want to hold and if they are ever invalidated you must terminate
+
+1594521138
+fengb
+Um... I don’t quite understand type theory
+
+1594521196
+oats
+adamkowalski: basically yeah. "this shouldn't happen. send an angry email to the dev"-type situation
+
+1594521242
+adamkowalski
+Sounds good, thanks for all the help
+
+1594521260
+oats
+thanks for flying zig air
+
+1594521268
+adamkowalski
+fengb: I pretty much just meant it's your contract/precondition/assertion you must hold before you call a particular function
+
+1594521378
+fengb
+Yeah sounds about right
+
+1594525732
+companion_cube
+well done on the 501c3, must not have been easy
+
+1594527182
+adamkowalski
+Is there some documentation for the zig build system?
+
+1594527207
+adamkowalski
+I'm finding unit testing pretty confusing, if I run zig test filename then things seem to work
+
+1594527222
+adamkowalski
+However, I need to use relative paths for things to be found
+
+1594527249
+adamkowalski
+If I use the build system I can say b.addTest("filename.zig")
+
+1594527267
+adamkowalski
+then do .addPackage(.{.name = "name", .path= "filename"})
+
+1594527275
+adamkowalski
+now I can refer to the package like what the standard library does
+
+1594527292
+adamkowalski
+now I can run all my tests, but how do I get --test-filter working again?
+
+1594532039
+pixelherodev
+Oh they leeft
+
+1594532041
+pixelherodev
+left*
+
+1594532052
+pixelherodev
+I was going to point out that I'm literally adding support for a platform which C doesn't target right now :P
+
+1594532097
+dch
+mmm was the stream recorded yesterday anywhere? so far i found a weird pasta "recipe", cabbage references (not in pasta thankfully), and a pre-show.
+
+1594532203
+pixelherodev
+lol
+
+1594532208
+pixelherodev
+It'll probably be uploaded soonish
+
+1594532239
+dch
+patience grasshopper then
+
+1594532370
+pixelherodev
+Yeah, exactly
+
+1594532378
+pixelherodev
+All the previous ones have been recorded, I can't imagine this one wasn't
+
+1594532559
+pixelherodev
+andrewrk: didn't want to bring this up pre-showtime because I figured you had more important things on your mind; I opened a PR to alter CBE per our earlier discussion (C becomes an ObjectFormat, alongside ELF, WASM, etc, instead of a special cased bool in {link,main,module}.zig)
+
+1594532588
+pixelherodev
+The test case internally uses a bool, as it currently doesn't have a method of specifying object format, but eventually I'll probably patch it to support those too
+
+1594532689
+pixelherodev
+Anywho, going to sleep now; I plan on finishing 16-bit ELF support tomorrow, then taking a few days off from Zig to finish off Ikiru and Scas so that I'll have fewer obligations competing for my time :)
+
+1594533922
+discipulus
+Why does the emacs zig-mode run test in ReleaseFast mode?
+
+1594534072
+squeek502
+dch,
+
+1594534087
+dch
+^5
+
+1594535452
+andrewrk
+squeek502, you really confused me at the beginning of the show, haha
+
+1594535468
+squeek502
+me?
+
+1594535482
+andrewrk
+oh I'm so sorry, I got you mixed up with ryan worl
+
+1594535493
+squeek502
+haha :)
+
+1594535518
+andrewrk
+my mental hash table of user names to real names had a hash collision :)
+
+1594535528
+squeek502
+the ryan conglomerate
+
+1594535548
+andrewrk
+yeah, understandable, coming from the Andrew conglomerate. honestly I've never met an Andrew I didn't get along with
+
+1594540751
+daurnimator
+andrewrk: 0 length slices seem to not set .ptr?
+
+1594542417
+Shucks
+Heya
+
+1594543016
+Shucks
+is there something to get a string representation of a type in zig?
+
+1594543832
+daurnimator
+Shucks: @typeName
+
+1594544116
+Shucks
+That answers my question but thats not exactly what im looking for. I basically wan't to print a string representation of any zig variable.
+
+1594544124
+Shucks
+Like nim's ´repr`
+
+1594544440
+squeek502
+Shucks, maybe std.fmt.bufPrint or std.fmt.allocPrint?
+
+1594544464
+squeek502
+std.fmt.bufPrint(buf, "{}", .{your_value});
+
+1594544527
+squeek502
+that'll give you a string representation using std.fmt.format:
+
+1594544621
+squeek502
+those docs aren't updated actually, here's the latest:
+
+1594544783
+squeek502
+if instead you just want to print it out, then std.debug.print("{}", .{your_value}); will do the same thing
+
+1594544871
+squeek502
+(this is for latest master, if you're on 0.6.0 the API might be different)
+
+1594545045
+Shucks
+Thats what im trying but I guess I just get the type and the memory location of it.
+
+1594545259
+squeek502
+ah yeah thats how it prints slices/arrays, not sure if there's a way to get it to print the elements
+
+1594545460
+Shucks
+Aye, it works for structs
+
+1594545857
+Shucks
+So the next newbie question I'm wondering: Would I be able to cast t into Vec2?
+
+1594546048
+squeek502
+my guess would be no, or possibly 'not easily'
+
+1594546065
+squeek502
+but i dont know much about packed structs
+
+1594546103
+daurnimator
+Shucks: hmm. I think @bitCast will work for that example
+
+1594546104
+lemmi
+you can probably get away with a memcpy, but i'd rather do the manual assignments and have the compiler/optimizer figure out the rest
+
+1594546181
+squeek502
+Shucks, @bitCast does work:
+
+1594546188
+squeek502
+prints Vec2{ .x = 5.0e+00, .y = 4.0e+00 }
+
+1594546226
+Shucks
+perfect. So zig fits for my purposes.
+
+1594547678
+ifreund
+shachaf: thought you might be curious what it was: calling c._exit(0) instead of std.os.exit(0) fixed it.
+
+1594547696
+ifreund
+now I need to figure out why :D
+
+1594548445
+shachaf
+ifreund: That's interesting. Not sure what else std.os.exit does. Some atexit cleanup?
+
+1594548485
+ifreund
+yeah that's what the man page says
+
+1594548561
+ifreund
+I couldn't reproduce in a minimal program so I think libwayland might cause some atexit things to happen
+
+1594551364
+ikskuh
+awww yiss! Rename 'var' type to 'anytype' #5846 merged into master!
+
+1594551368
+ikskuh
+Thanks, Vexu!
+
+1594551940
+azarus
+Is there documentation for std.debug.warn, for its formatting parameters?
+
+1594551954
+azarus
+I currently want to format floating point numbers and want to print them to stdout.
+
+1594552007
+ikskuh
+std.debug.warn is deprecated
+
+1594552020
+ikskuh
+it's now std.debug.print or std.log.{err,crit,warn,notice,…}
+
+1594552035
+ikskuh
+otherwise, look at the documentation comment of std.fmt.format
+
+1594552041
+ikskuh
+it's the root of all formatting in zig
+
+1594552174
+azarus
+ikskuh: ah, alright then. Are there docs for std.debug.print? I can't seem to find any at
+
+1594552194
+ikskuh
+no, that doc is horrible outdated
+
+1594552196
+ikskuh
+read the source!
+
+1594552202
+ikskuh
+use ZLS!
+
+1594552212
+azarus
+oh heh alright then
+
+1594552218
+ikskuh
+std.debug.print is pretty much only "output this to stdout and ignore all errors"
+
+1594553698
+ikskuh
+pixelherodev: i finally wrote my answer to #3786
+
+1594553701
+ikskuh
+got longer than i expected
+
+1594553714
+ikskuh
+_Vi, you were discussion ABI as well:
+
+1594554056
+_Vi
+ikskuh, What is Zig community and developers' stance on dynamic linking in general? If they were building a Zig-centered operating system, would it primarily use shared objects like typical today's operating systems?
+
+1594554108
+azarus
+Once Zig matures a bit, having an exercism track for it might be nice.
+
+1594554350
+ikskuh
+_Vi: I'm strongly against dynamic linking if not necessary (think plugins)
+
+1594554363
+ikskuh
+it just makes deployment harder, your program bigger and your code less optimized
+
+1594554411
+_Vi
+ikskuh, Is it because of typical RAM got orders of magnitude bigger the dynamic linking starting to fall out of favour for new developments?
+
+1594554533
+ikskuh
+nah
+
+1594554564
+ikskuh
+dynamic linking has some pros (you could update libs without recompiling)
+
+1594554576
+ikskuh
+it makes some licencing stuff easier
+
+1594554595
+ikskuh
+but in general, i think dynamic linking was never really about saving RAM
+
+1594554644
+ikskuh
+my strongest argument against dynamic linking is imho the space you save when not linking dynamically
+
+1594554666
+ikskuh
+imagine you link against a huge library, but only use one function
+
+1594554679
+ikskuh
+with zig/static linking, you only get this function in your app, probably inlined even
+
+1594554685
+_Vi
+(replied in the issue)
+
+1594554692
+ikskuh
+with dynamic library, you drag in
+
+1594554743
+_Vi
+Is the idea of supporting Swift ABI in Zig a good one?
+
+1594554769
+ikskuh
+i haven't looked at it
+
+1594554778
+ikskuh
+but it should be possible imho
+
+1594554810
+ikskuh
+> But that performance hit is only expected to be around the ABI surface, not around private functions.
+
+1594554816
+ikskuh
+Have you read my argumentation with struct layouts?
+
+1594554826
+_Vi
+As far as I understand, you don't have to be Switch to use Swift ABI (like with "C ABI"). And although there are some peculiarities in it, it is considered a good engineering work by some article (even abstracting away from Apple world).
+
+1594554917
+_Vi
+ikskuh, "Have you read my argumentation with struct layouts?" -> No, but I think I know what to expect there. Structs mentioned in exported functions are also counted as "around ABI surface".
+
+1594554928
+ikskuh
+yes
+
+1594554931
+ikskuh
+but structs in zig are special
+
+1594554933
+ikskuh
+really special
+
+1594554947
+ikskuh
+"you don't read from a field? → don't emit that field in the binary"
+
+1594554962
+ikskuh
+zig allow reordering structs to have maximum perf
+
+1594554970
+ikskuh
+all of this would be gone with an ABI
+
+1594554981
+ikskuh
+we have extern structs already which follow the C ABI
+
+1594554985
+_Vi
+ikskuh, In Swift ABI, structures are dynamically laid out by default (there are hidden fields that point to what is stored where). There is special "frozen" attribute to make them faster (and laid out simpler), but making changes to it not semver-compatible.
+
+1594555035
+ikskuh
+> Can Zig ever be a "main system programming language for a shared libraries-based platform" without such ABI?
+
+1594555039
+ikskuh
+Yes, by using C Abi
+
+1594555044
+ikskuh
+which is the sane way for
+
+1594555060
+ikskuh
+(or any old, anyways)
+
+1594555079
+ikskuh
+C++ suffers heavily from this
+
+1594555080
+_Vi
+In any case a document that describes Swift ABI is worth reading prior to thinking about defining some new ABI for a high-level-ish language.
+
+1594555093
+ikskuh
+zig is not high-level-ish :D
+
+1594555126
+ikskuh
+can you link me the swift abi specification?
+
+1594555167
+_Vi
+I don't know where is the specification, but the article I read is this:
+
+1594555190
+ikskuh
+no specification → i'm not even considering it a "good" or even an "ABI" :D
+
+1594555206
+_Vi
+"I don't know where" != "no".
+
+1594555215
+_Vi
+(I haven't programmed any Swift)
+
+1594555263
+ikskuh
+yeah but i couldn't find any yet ;)
+
+1594555298
+_Vi
+Maybe it's a work in progress.
+
+1594555345
+_Vi
+On of main points of Swift ABI compared to C ABI is that you can add things to public structures and preserve ABI compatibility for ahead of time compiled code.
+
+1594555366
+ikskuh
+you can do that in C as well
+
+1594555379
+_Vi
+(Obviously, at the cost of additional indirection and special associated metadata stored in the library)
+
+1594555387
+ikskuh
+no
+
+1594555392
+ikskuh
+additional metadata being "size"
+
+1594555397
+ikskuh
+wonderful example:
+
+1594555399
+ikskuh
+WinAPI
+
+1594555410
+ikskuh
+It has several versions of the same struct with the same C function
+
+1594555610
+_Vi
+ikskuh, What is your vision of Zig-based operating system userland? Will there be a "main system library"? Will it have raw syscalls as primary stable interface? How would security updates in crypto libraries be rolled out? Will there be high-performance plugins (e.g. for audio effects) or apps would be expected to e.g. use WebAssembly for plugins?
+
+1594555644
+ikskuh
+i don't see how a "zig based operating" system does require
+
+1594555665
+ikskuh
+you
+
+1594555708
+ikskuh
+also: do you really want an operating system only zig programs can run on?
+
+1594555715
+_Vi
+ikskuh, For dynamic libraries, obviously. If no dynamic libraries then other questions need to be answered.
+
+1594555717
+ikskuh
+that's utterly madness
+
+1594555728
+ikskuh
+also here:
+
+1594555742
+ikskuh
+why having a Zig ABI ruling out *all other languages exsiting*?
+
+1594555770
+ikskuh
+"oh, you can't use C on that operating system, you cannot load the standard libraries"
+
+1594555830
+_Vi
+ikskuh, Don't understand those last lines.
+
+1594555844
+ikskuh
+yeah, i figured
+
+1594555854
+ikskuh
+that's why you're still discussing :D
+
+1594555885
+ikskuh
+programs on CPU arches have a "common ABI" as i explained to you
+
+1594555886
+_Vi
+ikskuh, The general question is about though experiment about writing an operating system + some apps without any legacy baggage (such as existing C code).
+
+1594555897
+ikskuh
+i know
+
+1594555900
+ikskuh
+but that doesn't change a thing
+
+1594555919
+ikskuh
+when you have an ABI for zig specifics
+
+1594555924
+ikskuh
+people will use slices in all functions
+
+1594555926
+ikskuh
+C doesn't have slices
+
+1594555931
+ikskuh
+ruling out all C programs on that OS
+
+1594555935
+ikskuh
+ruling out all C# programs
+
+1594555938
+ikskuh
+all python
+
+1594555940
+ikskuh
+all Rust
+
+1594555941
+ikskuh
+…
+
+1594555947
+_Vi
+ikskuh, So would you then define a "Common ABI" and use if for shared libs? Or would you avoid shared libs entirely?
+
+1594555960
+ikskuh
+i would use the common abi ALREADY DEFINED
+
+1594555978
+ikskuh
+because it's the sane thing to do not breaking with all existing infrastructure we already have
+
+1594555991
+ikskuh
+which would happen if your shared objects use an ABI with zig types in it
+
+1594556104
+_Vi
+ikskuh, "already defined", "existing infrastructure" -> It's not a question about practical things. It's more about dreaming than about doing. Imagine you have create your own CPU arch from scratch. It happens to have kernel mode and user mode. It happens to have protected memory for user mode. How would you design software part of the picture.
+
+1594556200
+ikskuh
+<_Vi>  Imagine you have create your own CPU arch from scratch. It happens to have kernel mode and user mode. It happens to have protected memory for user mode. How would you design software part of the picture.
+
+1594556207
+ikskuh
+i already did that and i'm working on the software parts
+
+1594556209
+ikskuh
+
+
+1594556215
+ikskuh
+so i know what i'm talking about
+
+1594556346
+ikskuh
+the point is: "zig abi" isn't really a nice thing to have, sticking to a smaller ABI surface is way more sane
+
+1594556350
+ikskuh
+even if it means more work
+
+1594556427
+_Vi
+ikskuh, Can there be a smaller ABI surface that is nonetheless bigger than C ABI?
+
+1594556450
+_Vi
+(not full Zig abi, but still enables many niceties)
+
+1594556458
+ikskuh
+not really
+
+1594556593
+_Vi
+I see "slices" mentioned multiple times above. How do they affect ABI? Aren't they just equivalent to a pair of arguments: pointer + size?
+
+1594556791
+_Vi
+So there can be, for example, ".CWithSlices" ABI that is like ".C" ABI, but slice-typed function arguments automatically lowered into a pair of arguments.
+
+1594556969
+ifreund
+an abi is only useful if you can get people to speak it. Everyone already speaks c abi, breaking from this would lead to greatly reduced reusibility and interopreability of your software.
+
+1594556987
+ikskuh
+we could define just slices on C ABI as structs
+
+1594557105
+ifreund
+get everyone to start writing C code with struct { char *ptr; size_t len; } char_slice;
+
+1594557444
+blinghound
+I want to wrap a simd vector/matrix c library into a zig library for open source use, what's the best way to alias a c function?
+
+1594557457
+blinghound
+should I just use inline functions?
+
+1594557506
+_Vi
+There are multiple ways to pass a slice using C ABI: two arguments vs one argument to a struct. Pointer first or length first. "C-with-slices" ABI is supposed to formally bless one of those ways, making nicer to use from Zig code and nudge other languages and libraries to also start using that specific way of passing a slice.
+
+1594557705
+ikskuh
+_Vi: to my knowledge, there's not even a differene between those two :D
+
+1594557901
+ikskuh
+
+
+1594557906
+gonz_
+Do we have any venues through which to get Zig swag like mugs and stuff, potentially contributing to the foundation?
+
+1594557916
+ikskuh
+for the C abi/x86, it's the same code that gets emitted :D
+
+1594557934
+ikskuh
+gonz_, there's a inofficial store for merch
+
+1594557956
+gonz_
+Oh, right, I found it now. The Teespring one?
+
+1594557994
+ifreund
+this one yeah:
+
+1594564322
+Shucks
+Im trying to wrap some stuff from the win api. How would I define a null terminated char array string?
+
+1594564331
+Shucks
+its that one:
+
+1594564608
+ikskuh
+you can use a sentinelled pointer:
+
+1594564621
+ikskuh
+[*:0]const u8 // pointer to const u8 which is terminated by 0
+
+1594564651
+epmills
+hey, everyone.  what's the idiomatic way to read characters from the terminal without echoing (e.g. to read a password)?
+
+1594564664
+ikskuh
+epmills: there's no way to currently do that
+
+1594564668
+ikskuh
+at least no standard way
+
+1594564681
+Shucks
+mh, that gives me a empty result
+
+1594564683
+ikskuh
+you have to change your terminal emulator mode
+
+1594564726
+ikskuh
+hm?
+
+1594564822
+Shucks
+Guess im using it wrong because I actually define that struct to undefined. Not sure tho
+
+1594564825
+Shucks
+
+
+1594564837
+blinghound
+error: unable to resolve typedef child typepub const __m256 = @compileError("unable to resolve typedef child type"); // C:\Portable Apps\zig\lib\zig\include\avxintrin.h:34:15
+
+1594564839
+epmills
+thanks, ikskuh.  saw this in the 0.6 release notes ("nofmal added a basic Linux termios implementation") but wasn't sure how to apply.
+
+1594564874
+blinghound
+trying to compile against a c library that uses simd instructions and I'm getting this error when trying to use a function from it
+
+1594564877
+epmills
+was translating from rust using termion crate.  maybe i can look the crate's src and figure out.
+
+1594564906
+ikskuh
+
+
+1594564917
+ikskuh
+you can look here for reference non-echong on windows and linux
+
+1594564972
+epmills
+cheers, ikskuh - much appreciated
+
+1594565301
+shcv
+g
+
+1594565521
+shcv
+how does one use doc comments?
+
+1594565543
+ikskuh
+write ///
+
+1594565543
+ikskuh
+:D
+
+1594565562
+ikskuh
+doc comments always comment the object after the doc comment
+
+1594565580
+shcv
+but how do I view them? or test that they worked they way I wanted?
+
+1594565603
+shcv
+I'm also curious how one might add a doc comment to a whole module
+
+1594565611
+shcv
+or file I guess
+
+1594565658
+shcv
+I could make a struct in the file containing all of the functions, and add a doc comment to that, but that would add an extra layer of names... unless I import the namespace?
+
+1594565697
+ifreund
+/!
+
+1594565703
+ifreund
+oops, //!
+
+1594565716
+ifreund
+see e.g. std.log
+
+1594565783
+shcv
+interesting
+
+1594565937
+Shucks
+where can I read about that `?` and `!` before type definition?
+
+1594566814
+Shucks
+found out ? is optional ;p
+
+1594566948
+ikskuh
+Shucks,
+
+1594567039
+Shucks
+oh, nice website
+
+1594568580
+epmills
+agreed.  i love zig but i struggle without examples.  sites like ziglearn.org really help so thanks!
+
+1594569462
+Shucks
+Yup. Hope it will complete soon
+
+1594569483
+Shucks
+Still hard to find stuff like string handling
+
+1594569489
+Shucks
+Like a simple split can be found nowhere ;D
+
+1594569495
+ifreund
+std.mem
+
+1594569521
+ifreund
+std.mem.split in particular iirc
+
+1594570311
+Shucks
+Still messing around with that script. Seems like the windows api doesn't accepts anything else than [MAX_PATH]u8. Could I cast that array later to a null terminated string?
+
+1594570380
+ikskuh
+yes
+
+1594570390
+ikskuh
+you can use that array and pass it to std.mem.span
+
+1594570393
+ikskuh
+or just use indexOf:
+
+1594570415
+ikskuh
+const str = if(std.mem.indexOf(u8, &array, 0)) |i| array[0..i] else &array;
+
+1594571335
+Shucks
+Weird that doesn't does anything. I'm pretty sure because my array isn't filled with null characters. "undefined" actually gives every field the highest value?
+
+1594571531
+ifreund
+it's 0xaa in debug/release-safe
+
+1594571572
+ifreund
+actually undefined in release-fast
+
+1594571731
+blinghound
+what is the case convention for public constants? PI for example
+
+1594571773
+ifreund
+just foo.pi afaik
+
+1594571792
+blinghound
+awesome, thanks!
+
+1594571830
+ifreund
+std.math.pi is a thing fyi
+
+1594571833
+ifreund
+np
+
+1594571860
+ifreund
+we also have tau
+
+1594571897
+Shucks
+build-exe without any args should give me a debug build right?
+
+1594571931
+ifreund
+yes, that should be the default
+
+1594571941
+ikskuh
+ifreund, help me! i'm stuck :D
+
+1594571957
+ifreund
+ikskuh: what do I do??
+
+1594571964
+ikskuh
+i've installed wtype
+
+1594571973
+ikskuh
+it made my sway broken
+
+1594571975
+Shucks
+Weird, gdb is not hitting any breakpoint on that build
+
+1594572045
+ikskuh
+now i'm stuck, can't change the workspace, can't open new terminals and can't switch to another vconsole
+
+1594572083
+ifreund
+that's probably related to
+
+1594572098
+ifreund
+are you running sway master or 1.4?
+
+1594572126
+ikskuh
+can't tell you, i'm still stuck
+
+1594572149
+ikskuh
+wtype seemed to change my keyboard layout
+
+1594572157
+ifreund
+ah, you probably can't switch VT either
+
+1594572163
+ikskuh
+ack
+
+1594572167
+pixelherodev
+andrewrk: did you see my (in-IRC) proposal to add details to Models as a replacement for linker scripts?
+
+1594572176
+ikskuh
+can't open dmenu as well :D
+
+1594572194
+ikskuh
+oh i should ask in sway-devel :)
+
+1594572204
+ifreund
+really the only thing to do is a hard reboot :/
+
+1594572234
+ifreund
+but I'm guessing this should be fixed by
+
+1594572493
+ikskuh
+ssh+reboot sounds smoother
+
+1594572546
+ifreund
+yeah if you have another machine to ssh in with do that
+
+1594572567
+ikskuh
+mobile phone + connectbot <3
+
+1594572770
+Shucks
+I should be able to use gdb from mingw to debug zig code right?
+
+1594572780
+shcv
+ikskuh: is magic sysrq enabled?
+
+1594572787
+ikskuh
+i don't think so
+
+1594572804
+pixelherodev
+ConnectBot = :)
+
+1594573282
+pixelherodev
+Meh, just going to do it and PR
+
+1594573286
+pixelherodev
+Worst case I waste ten minutes
+
+1594573350
+pixelherodev
+Hmm, not Model actually
+
+1594573375
+pixelherodev
+that would be good for *CPU*-specific changes, this is about the broader hardware
+
+1594573907
+Shucks
+Anyone else having issues debugging zig code on windows? Gdb just says no debugging symbols found on zig binaries.
+
+1594574141
+epmills
+thoughts on embedding version and git hash into executable?  build.zig the right spot?
+
+1594574350
+pixelherodev
+epmills: definitely possible, and yes, ZBS is the way to go
+
+1594574355
+pixelherodev
+look at std.ChildProcess
+
+1594574378
+pixelherodev
+I use `git describe --abbrev=0`
+
+1594574400
+pixelherodev
+You can also use `--dirty=+` if you want a `+` added to the revision if there are uncommitted changes
+
+1594574518
+epmills
+cheers, pixelherodev.  yeah, i like having that dirty flag in there as well.  i use it with rust in build.rs.
+
+1594574585
+epmills
+with rust, i can pass an env var that is avail via env! macro to embed in source.  is there a similar comptime embed of env vars in zig as well (can't remember)?
+
+1594575220
+pixelherodev
+epmills: build options?
+
+1594575227
+pixelherodev
+@import("build_options") IIRC
+
+1594575596
+epmills
+pixelherodev: investigating... thx!
+
+1594575634
+pixelherodev
+No problem :)
+
+1594576749
+leeward
+Shucks: You should, but I've heard there are issues. gdb certainly does work on Linux.
+
+1594576806
+Shucks
+well I wanna play a bit with the windows api and zig
+
+1594576862
+leeward
+I think there are some Windows users around who use the msvc libc and vscode.
+
+1594577237
+Shucks
+I'm still that confused about the behaviour of `undefined`
+
+1594577307
+fengb
+undefined is 0xaa (repeating of course)
+
+1594577326
+fengb
+If you convert those values to hex, they should all be 0xaaaa
+
+1594577460
+Shucks
+So 0xaa is not null. How should I "null terminate" szModule and szExePath
+
+1594577539
+pixelherodev
+Are those strings?
+
+1594577603
+Shucks
+yea
+
+1594577665
+ifreund
+with a 0?
+
+1594577697
+ifreund
+that's what null termination means in the context of c strings
+
+1594577757
+pixelherodev
+Look into sentinel-terminated slices
+
+1594578034
+Shucks
+ifreund, Yes, but if undefined fills that fields with 0xaa thats actually not 0 right? pixelherodev,
+
+1594578041
+Shucks
+wops. replied to early
+
+1594578060
+Shucks
+Gonna check it out. Thanks for now =)
+
+1594578063
+ifreund
+no, undefined is not 0
+
+1594578086
+ifreund
+I'm not totally understanding what you want to do tbh
+
+1594578106
+ifreund
+create a string and pass it to C?
+
+1594578154
+Shucks
+Im calling that win api function:
+
+1594578194
+pixelherodev
+Then yeah, you want a sentineled slice
+
+1594578221
+Shucks
+thats [*:0]const Char right?
+
+1594578261
+ifreund
+that works to, but is a pointer not a slice
+
+1594578312
+ifreund
+the a sentinal terminated slice would be [:0] and stores a length as well as the ptr
+
+1594578425
+ifreund
+it looks like this api wants arrays though, so all you need to do is put the bytes of your string at the start of the array and the put a 0 right after it
+
+1594578485
+pixelherodev
+`[:0]const Char`.ptr == `[*:0]const Char`
+
+1594578500
+pixelherodev
+Is Char != u8?
+
+1594578524
+ifreund
+lol might be UTF16
+
+1594578537
+pixelherodev
+hahahaha
+
+1594578539
+pixelherodev
+hahahahahahahahahahaha
+
+1594578541
+pixelherodev
+Sorry, but
+
+1594578702
+Shucks
+
+
+1594578704
+Shucks
+:p
+
+1594578810
+scientes
+
+
+1594578862
+pixelherodev
+Whelp, there goes my amusement
+
+1594578863
+scientes
+Shucks, in all seriousness there is a gcc bug that complains that uint8_t doesn't have strict aliasing, as it IS NOT char
+
+1594578883
+pixelherodev
+uint8_t != char; uint8_t == unsigned char
+
+1594578885
+pixelherodev
+That's not a bug
+
+1594578893
+scientes
+not unsigned char either
+
+1594578898
+pixelherodev
+...?
+
+1594578908
+scientes
+pixelherodev, char is special in the c11 standard
+
+1594578916
+scientes
+for strict aliasing rules
+
+1594578918
+ikskuh
+unsigned char for all platforms  with CHAR_BITS = 8
+
+1594578933
+ikskuh
+scientes: afaik aliasing is allowed for char, unsigned and signed char
+
+1594578934
+pixelherodev
+scientes: wait, really?
+
+1594578936
+pixelherodev
+Huh
+
+1594578943
+Shucks
+
+
+1594578948
+scientes
+and the GCC devs agree, but do not want to add another type
+
+1594579174
+pixelherodev
+Wait, so GCC isn't actually complying to the C11 standard?
+
+1594579218
+scientes
+pixelherodev, no, it is missing a possible optimization by keeping unsigned char and uint8_t the same type
+
+1594579888
+leeward
+I have worked on a platform where `unsigned char` was 16 bits wide.
+
+1594579891
+leeward
+It's a thing.
+
+1594579986
+ikskuh
+leeward, so CHAR_BITS was 16? near :D
+
+1594579988
+ikskuh
+*neat
+
+1594580099
+scientes
+I don't consider that neat
+
+1594580102
+scientes
+I consider it a PITA
+
+1594580117
+leeward
+ikskuh: I don't know if neat is the word I'd use, but yeah. They had a uint8 type in their platform headers, but it was also actually 16 bits wide. Not a good feature in a system with 1k for global memory.
+
+1594580139
+scientes
+that breaks the C standard
+
+1594580140
+ikskuh
+:D
+
+1594580145
+ikskuh
+scientes: why?
+
+1594580146
+scientes
+oh no, it doesn't
+
+1594580155
+scientes
+because the standard is funky
+
+1594580157
+leeward
+It would break the C standard if it had claimed to support stdint.h
+
+1594580158
+ikskuh
+char is defined to be at
+
+1594580207
+fengb
+PDP7 was an 18bit architecture
+
+1594580215
+scientes
+ugggh
+
+1594580220
+ikskuh
+:D
+
+1594580221
+scientes
+the llvm model is much better
+
+1594580221
+fengb
+Back before we standardized around octets
+
+1594580237
+fengb
+C has a lot of historical baggage :P
+
+1594580248
+scientes
+fengb, it isn't c++
+
+1594580250
+leeward
+So much historical baggage.
+
+1594580280
+fengb
+Well C++ also tried to add the kitchen sink
+
+1594580286
+fengb
+3 times
+
+1594580294
+scientes
+and the bathroom sink too
+
+1594580344
+leeward
+I have a copy of C89 somewhere...
+
+1594580365
+scientes
+have you looked at tcc?
+
+1594580380
+scientes
+beautiful compiler
+
+1594580705
+leeward
+Yeah, C99 CHAR_BIT is at least 8, but implementation defined.
+
+1594580859
+leeward
+C is such a deceptively complex language. C++ gets a lot of flak for being impossible to grok, but C is so crufty its surface area is huge too.
+
+1594581006
+scientes
+not if you keep the implementation sane
+
+1594581016
+scientes
+the biggest problem is UB, and zig does that much saner
+
+1594581046
+ikskuh
+scientes: sadly, a lot of C stuff people like to do is UB
+
+1594581059
+ikskuh
+"ah yeah, unaligned access sometimes tend to crash, why is the compiler so stupid?!"
+
+1594581083
+fengb
+x86 programmers you mean :P
+
+1594581084
+scientes
+that is based on supporting hardware however
+
+1594581105
+fengb
+UB is “fine” if it’s implementation defined
+
+1594581106
+ikskuh
+fengb: nah, ARM
+
+1594581106
+scientes
+and hardware that supports unaligned is harder to build, because of when it straddles a cache line
+
+1594581117
+scientes
+but it does mean better code density
+
+1594581122
+fengb
+But ARM actually crashes though...
+
+1594581125
+ikskuh
+scientes: not even cache lines, but actual RAM access is harder
+
+1594581127
+scientes
+fengb, not any more
+
+1594581133
+ikskuh
+cortex-m3 does
+
+1594581173
+epmills
+trying to get code that works from binary and 'zig run'.  @import("build_options") not avail in latter (obviously)...
+
+1594581188
+epmills
+but can i catch the failing import and provide a default value?
+
+1594581461
+leeward
+scientes: Anything is fine if you keep the implementation sane. That's a high bar.
+
+1594581546
+pixelherodev
+scientes: gotcha
+
+1594581550
+pixelherodev
+thanks for the explanation
+
+1594581594
+leeward
+epmills: You should be able to get the run mode with comptime variables, and check before trying to @import.
+
+1594581629
+pixelherodev
+leeward: C is nowhere
+
+1594581648
+leeward
+pixelherodev: I didn't say it was, I said it was bigger than people tend to think.
+
+1594581651
+pixelherodev
+I'm not going to say C isn't more complex than I'd like, because it is, but conflating the two is just
+
+1594581689
+pixelherodev
+"[Like C++,] C's surface area is huge too" is what I read, but that might have been me misreading what you were saying
+
+1594581690
+leeward
+C is much bigger than most C programmers realize. C++ wears its complexity on its sleeve.
+
+1594581790
+gonz_
+It's not as if most things in C++ are there to be explicit about its complexity, though.
+
+1594581807
+leeward
+I'm putting C in the same class as C++ because they're both above the "hold the whole thing in head at once" threshold. C++ is still orders of magnitude bigger, but they're both over the limit.
+
+1594581879
+leeward
+gonz_: C++ programmers know that things like templates and copy constructors are complex features that require care in their use.
+
+1594582048
+leeward
+Not that I'm excusing C++. I avoid it every chance I get. I'm just saying that C has an undeserved reputation for simplicity.
+
+1594582158
+leeward
+epmills: There's also `zig build run` if that's an acceptable substitute for `zig run`
+
+1594582199
+gonz_
+I'm with you that the complexity of languages extends beyond their language surface area.
+
+1594582296
+gonz_
+It just doesn't seem to me like most of C++'s complexity is it being clear about its complexity inherited from C, but rather just a long series of additions by people interested in adding things + the hidden and unintuitive behavior those things create + the inherent complexity of C, still unclear
+
+1594582339
+codic56
+heyo, i notice that the hello world  example has a return type of !void for the main function. what's the difference between void and !void?
+
+1594582341
+epmills
+leeward: thx - i'll check it out
+
+1594582359
+gonz_
+codic56: `!void` means it has no return value but may return an error.
+
+1594582371
+gonz_
+`!` alone before a type means an inferred error type
+
+1594582373
+leeward
+codic56: !void is an error union of void and an inferred error enum.
+
+1594582393
+gonz_
+`SomeErrorUnion!ReturnType` means we are specifically returning just that error union or the return type.
+
+1594582397
+codic56
+ah okay
+
+1594582405
+codic56
+i see, thank you!
+
+1594582417
+gonz_
+Use inferred error unions when you can, they're nice. :)
+
+1594582433
+codic56
+also, what's the difference between a returntype of void and noreturn?
+
+1594582435
+gonz_
+You also don't have to worry about messing this up, Zig takes care to check whether or not you can return an error.
+
+1594582450
+leeward
+Functions that return void return, there's just no data.
+
+1594582452
+oats
+gonz_: I would have guessed that it's better practice to explicitly enumerate your errors, no?
+
+1594582459
+leeward
+noreturn means they never return.
+
+1594582494
+gonz_
+oats: There's no technical downside and sometimes you actually have to because the error union can't be inferred.
+
+1594582509
+gonz_
+oats: But I've found that it never really makes things much nicer to be specific.
+
+1594582521
+leeward
+oats: Not necessarily. If you have a function that might only return one member of an error enum, the caller's catch block still has to either handle all the possible values in that enum or have an "else".
+
+1594582533
+gonz_
+You'll always get exhaustive checks regardless in `catch` and friends.
+
+1594582540
+codic56
+leeward: but main never returns does it?
+
+1594582555
+oats
+codic56: just as an example, os.exit() is noreturn because it terminates the program right then
+
+1594582564
+leeward
+codic56: It can, if it doesn't have any infinite loops in it.
+
+1594582570
+leeward
+That's one way to terminate a program.
+
+1594582573
+codic56
+leeward: ah, okay
+
+1594582577
+codic56
+oats: i see, I get it now. thanks!
+
+1594582613
+oats
+gonz_, leeward: good points, thanks!
+
+1594582645
+oats
+I was starting to have some trouble in a little side project keeping track of all the errors that could bubble up, in one error set
+
+1594582668
+gonz_
+oats: I will say that I used to be specific about it, but ended up removing most of the cases because it just became a burden when adding more `try X` calls.
+
+1594582731
+leeward
+@typeInfo.error_type is implemented now, right?
+
+1594582738
+gonz_
+In cases where you very much need a function to be specific and always only return a very specific set of errorss I think it makes a lot of sense.
+
+1594582757
+gonz_
+But for the most part the part I want is just exhaustive checks and correct bubbling up.
+
+1594582824
+codic86
+how can i make a function that accepts a string of any length?
+
+1594582848
+leeward
+codic86: fn foo(string: []const u8) void {}
+
+1594582849
+oats
+codic86: well, a string is just a slice of bytes
+
+1594582851
+codic86
+if i make it accept []u8 it says that it finds *const [stringlength:0]u8
+
+1594582854
+codic86
+ah okay
+
+1594582858
+gonz_
+codic86: `fn takesAString(string: []const u8) R`
+
+1594582862
+oats
+yeah, it needs to be const :)
+
+1594582953
+leeward
+At some point (after self-hosted is working) we'll do an error message niceness pass, and anything where it expected (T) but found (thing that could be coerced to const T, but not to T) it will suggest adding const to your parameter type.
+
+1594582988
+codic86
+what i'm trying to do is create a println function
+
+1594583056
+leeward
+stdout.print takes another argument: .{} if you don't have any {}s in your format string.
+
+1594583066
+codic86
+ah k
+
+1594583073
+leeward
+I think what you want is `try stdout.print("{}\n", .{s});` though.
+
+1594583085
+codic86
+but then it says unable to evaluate constant
+
+1594583086
+codic86
+ah
+
+1594583110
+leeward
+Also, you'll have an issue since you're calling it without a try block in main. `try println("hi");`
+
+1594583128
+leeward
+That's another one of the hard-to-interpret error messages.
+
+1594583139
+codic86
+ah
+
+1594583142
+leeward
+Oh, and println isn't noreturn, it's void.
+
+1594583153
+codic86
+yeah, i realized
+
+1594583156
+leeward
+:)
+
+1594583170
+codic86
+stdout.print("{}\n", .{s}); this says that expression value is ignored for some reason
+
+1594583178
+codic86
+but if i assign it to _, it says i ignored an error
+
+1594583182
+leeward
+That sounds like a missing `try`
+
+1594583214
+oats
+_ = try stdout.print("{}\n", .{s});
+
+1594583245
+oats
+huh, so you can't tell zig to ignore the returned error as well?
+
+1594583255
+oats
+I thought that would be included in the _ =
+
+1594583265
+fengb
+foo() catch unreachable;
+
+1594583267
+gonz_
+You can do `thing catch unreachable`
+
+1594583273
+gonz_
+It's intentionally ugly
+
+1594583276
+fengb
+It’s intended to look kludgy
+
+1594583281
+fengb
+Ha
+
+1594583283
+gonz_
+:D
+
+1594583288
+leeward
+If you want to ignore an error, you have to do it the ugly way, yeah.
+
+1594583305
+oats
+"Zig: making the wrong thing ugly"
+
+1594583311
+leeward
+The path of least resistance is to bubble errors up. That's by design.
+
+1594583620
+codic86
+i'm still confused, i got to
+
+1594583644
+oats
+codic86: you still need the 'try' in front of 'stdout.print()'
+
+1594583657
+oats
+zig doesn't like it when you pretend that function won't return an error :P
+
+1594583667
+leeward
+Line 8 doesn't need the "_ =", and line 4 needs "_ = try"
+
+1594583697
+leeward
+Think of an error union as a wrapped type. It might be an error, it might be the type. You have to unwrap it to resolve which it is. That's what `try` does.
+
+1594583762
+leeward
+The return type for stdout.print is Error!void. To get at the void, you have to unwrap the returned value.
+
+1594583772
+leeward
+So it looks like line 4 doesn't need a _ either.
+
+1594583790
+leeward
+
+
+1594583831
+leeward
+The only return value Zig will let you ignore is {}, which is the only value of type void.
+
+1594584022
+codic86
+Perfect, it works now!
+
+1594584042
+codic86
+This is a strange concept that I'm not really used to, but I'll try to get used to it
+
+1594584058
+leeward
+codic86:
+
+1594584074
+leeward
+codic86: try to get used to it, and you will eventually catch on.
+
+1594584084
+leeward
+sorry, I can't help myself.
+
+1594584109
+codic86
+yep, thanks
+
+1594584119
+codic86
+leeward: what do you mean?
+
+1594584150
+leeward
+try/catch jokes are bad.
+
+1594584205
+codic86
+ohhhh lol i didn't even catch that
+
+1594584209
+leeward
+codic86: What languages are you coming from?
+
+1594584217
+leeward
+/facepalm
+
+1594584240
+codic86
+well, i've done python and ruby in the past, and in terms of compiled languages i've done go, nim, and c++
+
+1594584253
+codic86
+i also know a bit of web js
+
+1594584282
+leeward
+Ok, so nothing with algebraic data types (C++17 notwithstanding, because they're awful to use)
+
+1594584314
+codic86
+nope, why?
+
+1594584337
+leeward
+That's what optionals and error unions are.
+
+1594584363
+fengb
+It’s kinda like checked exceptions if each failable function needed its own try
+
+1594584394
+leeward
+We should get a good explanation somewhere. That is a broader than average set of languages.
+
+1594584396
+fengb
+Or Go if the if nil is hidden behind try
+
+1594584426
+codic86
+fengb: ahh okay
+
+1594584446
+fengb
+The only major difference is that Go lets you ignore the error sometimes, whereas Zig usually forces you to try or catch it
+
+1594584482
+codic86
+With Go I just write the error to _ instead of a variable (since then I have to use the variable) when I'm sure that I can ignore it
+
+1594584488
+fengb
+I can assign the error in Go and just never bother checking it. Zig is a bit more anal
+
+1594584503
+fengb
+Yeah but you can also assign to err and forget to check
+
+1594584509
+leeward
+Take Go's multiple return values and wrap them up in a single type. That's what an error union is.
+
+1594584524
+fengb
+Zig decided that was bad so you need a more explicit silence
+
+1594584571
+leeward
+"Communicate intent precisely." - zig zen bullet #1
+
+1594584811
+scientes
+leeward, C has multiple return values in the ABI
+
+1594584815
+scientes
+even if the language does not have it
+
+1594584838
+leeward
+scientes: return structs by value
+
+1594584847
+scientes
+I know
+
+1594584852
+leeward
+It's in the language, just basically nobody uses it.
+
+1594584869
+scientes
+because it isn't really part of the language
+
+1594584874
+scientes
+it isn't like in go
+
+1594584881
+leeward
+It definitely isn't like Go.
+
+1594584912
+scientes
+they don't use it because you have to have your function have two names
+
+1594584915
+scientes
+which is stupid
+
+1594585174
+leeward
+Huh?
+
+1594585194
+leeward
+
+
+1594585273
+scientes
+leeward, yeah your function is named f and foo_t
+
+1594585289
+scientes
+that is why people don't use it
+
+1594585368
+leeward
+Because the return type needs a name?
+
+1594585433
+leeward
+The struct could just as easily have been called err_int_t.
+
+1594585852
+Shucks
+I gave up. Im just not able to convert that array into a []const u8 :p
+
+1594585890
+gonz_
+An array coerces to a []const slice with `&array`
+
+1594585907
+scientes
+not anymore
+
+1594585911
+scientes
+use [0..]
+
+1594585912
+leeward
+What?
+
+1594585922
+leeward
+When did that change back?
+
+1594585923
+gonz_
+wut
+
+1594585927
+scientes
+it now stays a slice, although i think it still implicitely casts
+
+1594585933
+scientes
+*now stays an array
+
+1594585959
+scientes
+unless it changed back
+
+1594585961
+ifreund
+that's what coerces means no?
+
+1594585982
+scientes
+well, something changed in that area
+
+1594585994
+scientes
+because it use to be really hard to cast from array to slice
+
+1594585997
+scientes
+and now you can
+
+1594586013
+scientes
+but then i think it was fixed up so it stays an array
+
+1594586036
+ifreund
+anyhow, you can probably pass &array to whatever wants a slice
+
+1594587800
+blinghound
+I'm aware of @Vector, but how can I manually use intrinsics like avx?
+
+1594587880
+leeward
+Is there a builtin for the max value of an integer type? I can't seem to find it.
+
+1594587935
+leeward
+blinghound:
+
+1594587959
+ikskuh
+<scientes> because it use to be really hard to cast from array to slice
+
+1594587964
+ikskuh
+not really since 0.5
+
+1594587979
+ikskuh
+once arrays coerced to slices implicitly, now pointer-to-array coerces to slice implicitly
+
+1594588072
+blinghound
+leeward thanks for the link! Is there anything higher level at the moment? If not I'll definitely use this
+
+1594588108
+ikskuh
+nope
+
+1594588120
+ikskuh
+you could implement a AVX-Module which exposes those functions
+
+1594588121
+leeward
+blinghound: Not that I know of, but I haven't done anything with vector instructions in Zig.
+
+1594588138
+blinghound
+leeward is this what you were looking for btw
+
+1594588145
+scientes
+you could use the llvm intrinsics for arch-specific stuff
+
+1594588146
+ikskuh
+but i don't think it's a good idea to expose those intrinsics to the language itself
+
+1594588148
+leeward
+It is! Thanks.
+
+1594588153
+scientes
+you can call llvm intrinsics directly
+
+1594588160
+scientes
+its a bit of a hack however
+
+1594588185
+scientes
+and llvm has arch-specific intrinsics, like avx2
+
+1594588196
+blinghound
+scientes actually those might be perfect for what I'm trying to achieve
+
+1594588219
+scientes
+you have to look at the llvm source to get the names
+
+1594588226
+blinghound
+ah crap lol
+
+1594588231
+scientes
+and then see how zig uses an intrinsic to allocator memory on wasm
+
+1594588245
+scientes
+blinghound, it isn't that hard with git grep
+
+1594588250
+scientes
+to find what you need
+
+1594588298
+blinghound
+is the wasm memory allocator in the zig repo?
+
+1594588308
+blinghound
+I'll have a try grepping
+
+1594588308
+scientes
+you might also be able to call them by their gcc intrinsic name
+
+1594588516
+blinghound
+that might be easier for now actually
+
+1594588544
+scientes
+I said "might", I haven't tried it
+
+1594588571
+blinghound
+is it possible now to cast an array of f32s to a zig Vector without a copy?
+
+1594588601
+scientes
+blinghound, yeah,
+
+1594588617
+scientes
+there is am implicit cast
+
+1594588646
+Shucks
+I did that with @bitCast today I guess
+
+1594588667
+scientes
+the bitCast that got merged doesn't seem to work correctly
+
+1594588733
+Shucks
+Well that worked for me:
+
+1594588750
+Shucks
+casting t into vec2. Not sure how the built in vecs look like
+
+1594588778
+ikskuh
+omg. paste.sh wtf.
+
+1594588792
+ikskuh
+yu cannot select full words to copy them. the site will then js-alert
+
+1594588809
+scientes
+Shucks, the built in vec is just llvm vector type
+
+1594588846
+Shucks
+ah alright
+
+1594589541
+shcv
+how much do y'all recommend zig-network vs std for udp networking?
+
+1594589572
+Shucks
+learn
+
+1594589575
+Shucks
+ops*
+
+1594589583
+ikskuh
+shcv: std doesn't do UDP atm
+
+1594589589
+ikskuh
+zig-network does UDP on both windows and linux :)
+
+1594589590
+leeward
+std is pretty incomplete.
+
+1594589591
+ikskuh
+(tested)
+
+1594589620
+pixelherodev
+andrewrk: ping me when you have a chance to discuss ELF16 / CBE design a bit more :)
+
+1594589629
+shcv
+that makes it a pretty easy decision then
+
+1594589637
+shcv
+would be nice if there were a few more examples :P
+
+1594589652
+ikskuh
+oh yeah, i could link my stuff
+
+1594589663
+ikskuh
+give me a second
+
+1594589699
+pixelherodev
+ikskuh: why not merge your UDP into STD?
+
+1594589726
+ikskuh
+if this, we should merge zig-network in one piece
+
+1594589772
+ikskuh
+shcv: search here for multicast_sock
+
+1594589773
+ikskuh
+
+
+1594589781
+ikskuh
+xnet is now called zig-network and i should replace that file ther :D
+
+1594589842
+shcv
+ikskuh: thanks
+
+1594589855
+ikskuh
+it does everything you want from UDP
+
+1594589861
+ikskuh
+Multicasting :D
+
+1594589870
+ikskuh
+btw, zig-network does
+
+1594589885
+shcv
+has anyone done raw IP networking?
+
+1594589890
+ikskuh
+(because it's not in IPv6)
+
+1594589926
+shcv
+that's probably good enough
+
+1594589952
+shcv
+though I'm not that familiar with udp multicast
+
+1594589977
+ikskuh
+udp multicast is neat
+
+1594589984
+ikskuh
+you join a multicast group (IP) + port
+
+1594589999
+ikskuh
+and every joined user receives the messages for that group
+
+1594590012
+ikskuh
+it's like you've bound your socket to an IP not local to your computer
+
+1594590219
+shcv
+interesting
+
+1594590229
+shcv
+what's the magic number stuff in your header for?
+
+1594590265
+leeward
+shcv: raw IP networking...in Zig? Or in general?
+
+1594590287
+shcv
+either really
+
+1594590300
+leeward
+Yeah, I spent 6 years working on network devices.
+
+1594590312
+shcv
+cool
+
+1594590313
+leeward
+Haven't really touched it in Zig though, except to try opening a socket.
+
+1594590423
+ikskuh
+shcv, where exactly?
+
+1594590444
+ikskuh
+leeward, have you experience with lwIP or other "embedded" network stacks?
+
+1594590452
+shcv
+L#1261
+
+1594590485
+ikskuh
+that's a classic magic number
+
+1594590489
+ikskuh
+protocol identifier
+
+1594590509
+shcv
+so, for your dunstblick protocol?
+
+1594590540
+ikskuh
+yeah
+
+1594590545
+ikskuh
+oh man…
+
+1594590550
+ikskuh
+possible talk #4 :D
+
+1594590557
+ikskuh
+but i need to make a nicer demo yet
+
+1594590586
+leeward
+ikskuh: We used the BSD network stack for the things I worked on. Only the management interface actually had a real network stack hooked up though, so it didn't consume much in the way of resources.
+
+1594590600
+ikskuh
+ah
+
+1594590609
+ikskuh
+i want to replace the windows network stack in a project of mine
+
+1594590616
+ikskuh
+because it is buggy and i need faster arping
+
+1594590677
+leeward
+Last I looked, Windows incorporated a very old version of BSD's stack. There was even a resolv.conf file tucked away somewhere.
+
+1594590684
+ikskuh
+haha
+
+1594590701
+ikskuh
+my plan is: disable ipv4, ipv6 and use lwIP + libpcap
+
+1594590901
+andrewrk
+pixelherodev, no I did not see your proposal, can you do it in a github issue?
+
+1594590945
+leeward
+ikskuh: I'm so glad I don't have to support Windows.
+
+1594590965
+ikskuh
+leeward: legacy…
+
+1594591397
+shcv
+where does the msg.numberOfBytes come from?
+
+1594591467
+shcv
+nvm, I found it
+
+1594591752
+shcv
+how does your UdpBaseMessage work for receiving messages? it doesn't look like it would necessarily be large enough to handle the incoming message, and I don't really know how extern unions work either...
+
+1594591848
+andrewrk
+daurnimator, if you add orderedRemove to hash maps, you should be able to remove the array list of header entries from Headers
+
+1594591857
+Shucks
+How would I find the index of 0 here?
+
+1594591893
+andrewrk
+Shucks, it looks like you've already figured it out, no?
+
+1594591905
+shcv
+wouldn't you just put 0 instead of " "?
+
+1594591907
+Shucks
+well that returns "null"
+
+1594591942
+Shucks
+using 0 says expected type '[]const u8', found 'comptime_int'
+
+1594591973
+ikskuh
+shcv: for udp, i can tell the OS that my buffer that large and any message longer than that will be truncated
+
+1594592024
+shcv
+maybe [_]u8{0}[0..] ? I'm not sure how to do literal slices... or maybe "\x0" would work
+
+1594592037
+andrewrk
+Shucks, oh, look for the scalar functions
+
+1594592041
+andrewrk
+indexOfScalar
+
+1594592099
+Shucks
+that did it. Thanks
+
+1594592235
+shcv
+ikskuh: I think I see; os.recvfrom passes buf.len to to system.recvfrom, so it should Just Work™
+
+1594592243
+ikskuh
+yep
+
+1594592446
+ikskuh
+i'm gone for the night.
+
+1594592453
+ikskuh
+good luck!
+
+1594592503
+shcv
+g'night
+
+1594592589
+Shucks
+gnight
+
+1594592851
+pixelherodev
+andrewrk: I could, but it's more of an idea I tossed out for immediate discussion and less an actual concrete plan
+
+1594592864
+pixelherodev
+Plus after thinking it over I realized it wasn't a very good idea, either
+
+1594593045
+pixelherodev
+andrewrk, ikskuh: one option for the short term would be to tweak my emulator to have 64KiB of RAM and no ROM, allowing us to hold off on figuring out linker scripts but still get the raw CPU codegen working
+
+1594593062
+pixelherodev
+That'd require most of the
+
+1594593680
+ifreund
+pixelherodev: RE the joinZ helper function I think you may be right but am not confident enough to open a PR changing the param to comptime
+
+1594593739
+Shucks
+So zig's tables are hashmaps?
+
+1594593749
+ifreund
+tables?
+
+1594593775
+Shucks
+like python dicts
+
+1594593804
+pixelherodev
+... you mean our HashMaps? :P
+
+1594593811
+ifreund
+there are no language-level tables/dicts in zig...
+
+1594593812
+pixelherodev
+Yes, our HashMaps are HashMaps XD
+
+1594593831
+ifreund
+there are hashmaps in the std
+
+1594593846
+Shucks
+pixelherodev, thanks ;p
+
+1594593862
+pixelherodev
+Thank ifreund; he actually gave useful info lol
+
+1594593870
+pixelherodev
+I just gave you a tautology :P
+
+1594593880
+Shucks
+thank you aswell ;)
+
+1594593908
+ifreund
+:D
+
+1594593908
+leeward
+pixelherodev is as helpful as pixelherodev.
+
+1594593915
+ifreund
+true that
+
+1594593919
+leeward
+The first rule of tautology club is the first rule of tautology club.
+
+1594593930
+pixelherodev
+What have I done.
+
+1594593939
+pixelherodev
+(What I have done is what i have done, I know)
+
+1594593948
+leeward
+Hey, I stopped.
+
+1594593991
+leeward
+Note the heroic use of restraint.
+
+1594594477
+pixelherodev
+haha
+

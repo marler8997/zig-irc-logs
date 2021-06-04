@@ -1,0 +1,2032 @@
+1579134423
+daurnimator
+What's the elf header with the stack size again?
+
+1579134450
+shachaf
+For what platform?
+
+1579134473
+shachaf
+I think GNU_STACK nominally has it but Linux ignores the value and I don't know anywhere where it's used.
+
+1579134628
+daurnimator
+shachaf: I'm chatting with linux people now and seeing if they want to fix that
+
+1579134792
+daurnimator
+anyone remember what the field is?
+
+1579134801
+daurnimator
+PT_GNU_STACK seems to just be a flag for executable or not?
+
+1579134829
+shachaf
+I think there was some idea of using the size field to specify the stack size.
+
+1579134849
+shachaf
+But as far as I know no one actually does that and it's just left blank.
+
+1579134874
+daurnimator
+oh found an LLVM patch that adds it to p_memsz in PT_GNU_STACK
+
+1579136068
+andrewrk
+daurnimator, I completed the application for software freedom conservancy
+
+1579136577
+daurnimator
+andrewrk: great :) I'll poke karen
+
+1579136601
+daurnimator
+andrewrk: also I think GSoC applications opened today; are you okay to fill out an application?
+
+1579136620
+daurnimator
+steph is around here somewhere so I can ask her questions
+
+1579136634
+andrewrk
+how does that work? does a project fill out an application, rather than a student?
+
+1579136688
+daurnimator
+shachaf: linkers appear to have a `-z stack-size` argument to fill it in. Just finished talking to kees and he thinks he can add support for it on the linux side
+
+1579136745
+andrewrk
+oh brilliant. I would love to see linux honor that
+
+1579136769
+daurnimator
+andrewrk: you apply to be a GSoC org, you can then put out a request for students who apply to work for our org; GSoC then allocate us X students based on our recommendations/number of slots available. first time orgs usually get 2 slots.
+
+1579136780
+andrewrk
+ok filling that out now
+
+1579136844
+daurnimator
+andrewrk: awesome.
+
+1579137066
+andrewrk
+daurnimator, would you be interested in being in charge of the GSoC organization application?
+
+1579137072
+daurnimator
+andrewrk: sure
+
+1579138676
+epmills
+sure i'm missing something here but banging my head...
+
+1579138732
+epmills
+on a mac, what is the diff between 'zig build-exe --name works hello.zig' and 'zig build-exe --name vomits -target x86_64-macosx hello.zig'?
+
+1579138767
+epmills
+specifying the target results in 'dyld: Symbol not found: ___error'
+
+1579138956
+daurnimator
+epmills: 1. you're missing the third part of that triple? 2. without a target it compiles specifically for the host CPU's features (vs generically for "all" x86_64 macs)
+
+1579138991
+epmills
+would that be 'gnu' (iirc the default) or something else?
+
+1579139104
+epmills
+and for (2) since i
+
+1579139165
+andrewrk
+epmills, macos has proven to be the most problematic target to cross compile for
+
+1579139187
+andrewrk
+when you don't provide -target, it's native. when you do provide -target, it's cross compiling
+
+1579139207
+andrewrk
+with -target, zig does not implicitly depend on any system things
+
+1579139310
+daurnimator
+andrewrk: if linux supported the stack-size; what would the major wins be for us?
+
+1579139405
+epmills
+thx andy and daurnimator.  in light of that, i was trying to create a build.zig that would loop over an inline for to generate binaries for mac and linux...
+
+1579139436
+epmills
+but was unable to come up with the build.zig equivalent of 'zig build-exe hello.zig'
+
+1579146946
+daurnimator
+I've created this page:
+
+1579150216
+andrewrk
+daurnimator, given that zig knows how big of a stack it needs, and it might exceed the 8 MiB that linux gives us, it would allow us to avoid putting code before main() that checks if we need more than 8 MiB, mmaps it separately, and switches the stack pointer to it. Basically, linux is allocating a stack for us but it sometimes allocates a too-small stack
+
+1579150731
+daurnimator
+andrewrk: don't stack probes take care of that for us?
+
+1579151120
+andrewrk
+no; we need to preallocate the entire stack
+
+1579151191
+daurnimator
+Why doesn't stack probing take care of it for us?
+
+1579151391
+andrewrk
+with stack probing, function calls can cause OOM crashes. this is not acceptable
+
+1579151410
+andrewrk
+we need to be able to preallocate resources and then have them guaranteed to be available
+
+1579151428
+andrewrk
+consider an embedded use case, for example
+
+1579151712
+fengb
+andrewrk: oh I think what I really wanted is separate make and make install:
+
+1579151739
+fengb
+I didn't even think that I was somehow installing into the build dir
+
+1579152433
+andrewrk
+fengb, yeah that's the problem with cmake not letting us run a command on install :(
+
+1579152708
+fengb
+Ah okay
+
+1579152749
+fengb
+I was really confused why make was copying the lib folder into build but it makes some sense when that’s the install path
+
+1579152924
+andrewrk
+basically because of the cmake limitation, we don't have `make`, we only have `make install`
+
+1579153638
+daurnimator
+andrewrk: okay so this is aiming for the overcommit_memory=2 usecase?
+
+1579154231
+andrewrk
+daurnimator, yes. also: it improves determinism of timing of code. for example you wouldn't want to be performing a live music show, and have a function call which needed to allocate stack memory take longer than the effects processing budget
+
+1579154257
+andrewrk
+it also affects the "99 percentile" of e.g. web servers
+
+1579154280
+daurnimator
+andrewrk: so does that mean we can turn off the stack probe for such situations?
+
+1579154800
+andrewrk
+yes, it's intended to turn off the stack probe in release-fast mode for example
+
+1579155354
+mikdusan
+andrewrk: I seem to have gotten this to work for non-windows builds. Not sure what to do for Windows:
+
+1579155356
+mikdusan
+
+
+1579155822
+mikdusan
+oh I have an idea how to solve windows too
+
+1579156139
+hryx
+mikdusan:  I finally have a sec to fix that range bug in #4155 - I'm hot on the trail of something here
+
+1579156454
+mikdusan
+cool. I'm interested to see the solve
+
+1579157423
+rageoholic
+So does anyone know how to pass linker flags via build.zig
+
+1579157443
+rageoholic
+I wanna specify the windows subsystem and mainCRTStartup as the entry point
+
+1579157462
+rageoholic
+But I have no idea how to do that and reading std/build.zig sheds no light on it
+
+1579157548
+mikdusan
+which subsystem?
+
+1579157568
+rageoholic
+The windows subsystem, as opposed to the console subsystem
+
+1579157590
+rageoholic
+The point is I need linker flags
+
+1579157620
+rageoholic
+And no it has nothing to do with the linux subsystem
+
+1579157627
+rageoholic
+MS just can't name anything
+
+1579157674
+daurnimator
+rageoholic: look into std/start.zig?
+
+1579157707
+mikdusan
+I seem to recall subsystem can be part of -target spec. And maybe it is already smart enough to figure out a few things
+
+1579157796
+rageoholic
+So how do I pass stuff to the target spec
+
+1579157803
+rageoholic
+Also it would have nothing to do with startup
+
+1579157823
+rageoholic
+NT does this stuff before it yields to your process
+
+1579157887
+mikdusan
+oh --subsystem is a command option for zig. I'm not sure how to use it with build.zig tho
+
+1579157907
+rageoholic
+Yeah it feels like you should be able to pass that flag
+
+1579157983
+mikdusan
+try setting the enum value directly in LibExeObjStep object. field name is subsystem
+
+1579158073
+rageoholic
+OK that sets my entry point to winmain
+
+1579158087
+rageoholic
+Now I can just forward that to main and I should be good
+
+1579158141
+rageoholic
+Or better, pass the linker flag for the entry point to be mainCRTStartup
+
+1579158152
+rageoholic
+Which would mean I can use the same entry point everywhere
+
+1579158247
+rageoholic
+Otherwise I'll have to do main's work
+
+1579158273
+rageoholic
+Well zig's entry point main's work, where it sets up envp stuff and all the like
+
+1579158582
+rageoholic
+Oh well. Time for an issue.
+
+1579158606
+rageoholic
+Or to check the issues I guess
+
+1579158932
+rageoholic
+Yeah experimenting shows I can't export a reasonable winmain fascimilie to satisfy the linker
+
+1579159156
+mikdusan
+rageoholic: maybe this helps:
+
+1579160032
+hryx
+mikdusan: don't let me distract/bore you, but if you are interested, I'm trying to figure out my new fix caused an even newer problem:
+
+1579160058
+hryx
+(I left a comment there explaining the situation)
+
+1579160147
+mikdusan
+i'll take a look shortly; just need to hack cmake a bit more
+
+1579160211
+hryx
+sweet, at your leisure
+
+1579160752
+mikdusan
+hryx: zig0 crashes on a barebones hello.zig
+
+1579160779
+mikdusan
+ie: no need to go as far as libuserland
+
+1579160815
+hryx
+oh dang, that is good to know. I should learn how to build zig0 and debug it alone
+
+1579160823
+mikdusan
+so zig0 is always built
+
+1579160886
+hryx
+good find - I'll take a quick look at this
+
+1579160971
+mikdusan
+just remember zig0 is not fully functional. whatever zig relies on libuserland for, zig0 panics
+
+1579161075
+hryx
+gotcha. I've reproduced what you mentioned with an empty `export fn main() void {}`
+
+1579161251
+mikdusan
+just added a reduction; this one helps when using --verbose-ir  ... really removes a lot of cruft
+
+1579161332
+hryx
+awesome, thanks a ton! Now I gotta figure out why this instruction->child has become a nullptr. I'll check out --verbose-ir here
+
+1579161429
+hryx
+weirdly, it crashes when checking an enum switch case, not an integer as I would have guessed
+
+1579162050
+mikdusan
+re: the base (master) logic. I'm just not grok'ing it:
+
+1579162147
+mikdusan
+using the reduction; first it checks 1...10, and let's assume TRUE. then it completely jumps past CheckProncheckSwitchProngs
+
+1579162223
+hryx
+mikdusan: that happens on master? Hm, I thought that would be covered by the compile-error test case
+
+1579162263
+mikdusan
+well it's working but I'm not understanding why... ie. not understanding the IR
+
+1579162285
+hryx
+Also, I have confirmed this new segfault is not because of the tautology elision. I reverted that part and still crashes. So this splitting up of CheckSwitchProngs was naughty somehow
+
+1579162287
+hryx
+I see
+
+1579162627
+mikdusan
+oh so wait... the IR dump of entry() (IR first pass, aka IR0) can be read as runtime, and then during IR analysis is where the comptime eval is causing @checkSwitchProngs to be skipped
+
+1579162783
+hryx
+is that with your reduction on master? if so then that should be a bug
+
+1579162837
+hryx
+the thing with my branch is that `some_u8 < 100000` will become comptime true even before we get to second-phase analysis
+
+1579162861
+hryx
+(which also results in skipping prong check, hence this whole exploration)
+
+1579162863
+mikdusan
+I mixed it up. that's what was happening with your branch couple of days ago
+
+1579162893
+hryx
+ah, whew! same number of bugs as originally expected then :>
+
+1579163015
+mikdusan
+so how's this sound: tautological-comparison should be hooked into the analysis of switch
+
+1579163039
+hryx
+I am really starting to think it belongs there
+
+1579163105
+hryx
+the deal is, there was already other tautological comparison stuff before I ever touched it, it was just for stuff like `false == true`; I only extended it to consider type sizes
+
+1579163134
+hryx
+so I added code below there. it would probably all have to move
+
+1579163220
+hryx
+but I agree, if I understand you correctly mikdusan -- those resolutions/elisions could be moved to the analysis phase
+
+1579163306
+mikdusan
+that's my current thinking, also false == true, heh, I doubt there are overlapping unit tests for that; which is why tautological for false == true never caused any test to fail
+
+1579163366
+mikdusan
+but i'd say try to move tautological to analysis if that is possible, and as a followup move the false/true tautological in another PR
+
+1579163438
+hryx
+ha, right. It also already resolved expressions like `some_u8 <= -1`, fwiw
+
+1579163458
+hryx
+ok, that sounds good, I'll go down that path for now. Thanks so much for your input, it was super helpful!
+
+1579163572
+mikdusan
+so sorry I forgot about something; looking over your PR
+
+1579163711
+mikdusan
+it's really strong that you put this elision in ir_analyze_bin_op_cmp_numeric
+
+1579163888
+hryx
+what do you mean?
+
+1579163913
+mikdusan
+is there something that can be done with build and/or analyze switch_br to make it work?
+
+1579164057
+hryx
+hm, maybe yeah. but actually, I don't grasp what switch_br is yet
+
+1579164093
+hryx
+what is "br" an abbreviation for?
+
+1579164201
+mikdusan
+branch(es) I suppose
+
+1579164231
+mq32
+Do i understand the proposal in #4151 right that it would allow pretty much arbitrary unicode identifiers?
+
+1579164242
+hryx
+mikdusan: sounds obvious now that you mention it, ha
+
+1579164291
+mikdusan
+hryx: check fn ir_analyze_instruction_switch_br()
+
+1579164298
+mikdusan
+jump to the loop for cases
+
+1579164391
+mikdusan
+i am not sure yet but... the last `continue;` condition -- could that be where the comptime comes into play?
+
+1579164691
+mikdusan
+IrInstructionSwitchBr has switch_prongs_void
+
+1579164725
+mikdusan
+i'm going to try something real quick
+
+1579164744
+hryx
+Ohh, I think I'm starting to see this a little better now. For some reason I thought that by the time a SwitchBr is analyzed it's already too late. But it retains information about the expressions (ranges, cases) it seems
+
+1579164779
+hryx
+holy cow there's a lot to learn just for a pretty small change to ir.cpp, ha
+
+1579164797
+mikdusan
+I know... andrew is a machine for writing all this
+
+1579164825
+hryx
+'tis legendary
+
+1579164850
+mikdusan
+the other day I was making reductions for test cases and his fixes were outpacing me. lol
+
+1579164943
+hryx
+haha, I love it
+
+1579164946
+hryx
+﻿mq32: I think so - is there something that seems ambiguous in that regard?
+
+1579165193
+mikdusan
+I really don't want to see any kind of whitespace allowed for identifiers
+
+1579165216
+mikdusan
+or digits of any kind for first char/codepoint
+
+1579165399
+mikdusan
+oh boo; an idea didn't pan out
+
+1579165427
+hryx
+;_;
+
+1579165641
+hryx
+I'll have to come back to it again tomorrow. sadly I can only work on zig nights and weekends for precious wee moments at a time
+
+1579165651
+hryx
+I am already a pumpkin
+
+1579165655
+mikdusan
+np. ttyl.
+
+1579165665
+hryx
+later
+
+1579166241
+mikdusan
+hryx: I think it's even simpler...
+
+1579166369
+mq32
+hryx: no, but i had some problem grasping the basic idea of the proposal as i don't know unicode ranges by codepoint ^^
+
+1579166387
+mq32
+mikdusan: i don't even want to see non-ascii-characters in identifiers
+
+1579166390
+mikdusan
+hryx: i'll add comments to PR
+
+1579167622
+s-ol
+hey, im trying to parse enums from string values
+
+1579167636
+s-ol
+with @memberCount() and @memberName() I can get the string representations
+
+1579167657
+s-ol
+but once I have a match, how do I get the enum value? I can't assume that the member index is the integer representation
+
+1579167885
+s-ol
+ah, I should just iterate over @typeInfo(T).Enum.fields instead I guess
+
+1579168027
+s-ol
+hm, but now i'm having trouble getting this to build: 'values of type 'std.builtin.EnumField' must be comptime known, but index value is runtime known'
+
+1579169148
+mikdusan
+s-ol: std.meta.stringToEnum()
+
+1579169399
+s-ol
+hah, there we go :P thanks mikdusan
+
+1579169456
+s-ol
+ouf, so all I was missing was 'inline' in front of for
+
+1579180536
+tane
+hodwy
+
+1579180594
+mq32
+hey tane
+
+1579182542
+tane
+
+
+1579182574
+tane
+__zig_probe_stack is the symbol name, sorry
+
+1579183462
+wilsonk
+tane: hmm, strange I thought that used to work for me. Just tested and got the same result. Something must have changed recently, I suppose
+
+1579183728
+wilsonk
+tane: I linked with libuserland.a and it seems to work, just so you know. Someone else can probably explain in depth why...I just assume that the new-ish pre-calculated stack size code is the reason (there was a change to handle recursion issues, IIRC)
+
+1579184152
+TheLemonMan
+tane, you need --bundle-compiler-rt
+
+1579185145
+tane
+wilsonk, TheLemonMan thank you
+
+1579185230
+tane
+works!
+
+1579185990
+leeward
+tane: -fno-stack-check will get you the same result, but with a different set of tradeoffs.
+
+1579186203
+tane
+nice, thanks
+
+1579186457
+TheLemonMan
+yeah no, you lose the protection against stack overflows
+
+1579186606
+tane
+sure, "nice" wrt. have the option :)
+
+1579186754
+fengb
+scientes: you really should push hard on the lld removal. Gotta win the reds
+
+1579186805
+leeward
+TheLemonMan: Protection against stack overflows is nice, but smaller binaries are sometimes nicer.
+
+1579186853
+TheLemonMan
+given that they only work on x86/x64 and only on linux I'd say that's not true
+
+1579186888
+TheLemonMan
+the handful of bytes you're losing is
+
+1579187037
+leeward
+Oh, the stack protection stuff doesn't work on freestanding?
+
+1579187092
+TheLemonMan
+nah, you need a MMU (or PU) to make it work
+
+1579187138
+TheLemonMan
+just mark the end of the stack as RO and you're done
+
+1579187535
+leeward
+Well that's different then.
+
+1579188691
+BaroqueLarouche
+TheLemonMan, andrewrk: so lib/special/compiler-rt doesn't need to be a 1:1 port from LLVM ?
+
+1579188801
+TheLemonMan
+BaroqueLarouche, I only take inspiration from their implementation
+
+1579188849
+BaroqueLarouche
+btw this is how it looks in Thumb ARM7TDMI
+
+1579188868
+TheLemonMan
+I always try to understand the problem, the general algorithm, the way it's implemented and then hammer out some pure Zig code that passes the tests
+
+1579188909
+TheLemonMan
+alright, mrc is not valid in thumb mode
+
+1579188926
+TheLemonMan
+that has nothing to do with linux :P
+
+1579188963
+BaroqueLarouche
+I looked at the "faulting" commit and was only used for Linux
+
+1579188979
+BaroqueLarouche
+I'll add the test for thumb and the new implementation tonight
+
+1579189043
+TheLemonMan
+I can probably slip a fix for that in #4198 if you want
+
+1579189068
+BaroqueLarouche
+oh nice!
+
+1579189140
+TheLemonMan
+are you porting all the GBATEK definitions too? :)
+
+1579189152
+BaroqueLarouche
+that's the plan
+
+1579189161
+TheLemonMan
+I'd love to write some GBA/NDS homebrew using Zig
+
+1579189343
+BaroqueLarouche
+NDS is quite a beast compared to the GBA
+
+1579189632
+BaroqueLarouche
+My plan: Finish porting/adapting the TONC tutorial, fill the missing pieces, do a 1.0 tutorial. Then go back to zigimg and implement most popular image format and then finish the asset baking pipeline
+
+1579189646
+BaroqueLarouche
+s/tutorial/release
+
+1579189710
+TheLemonMan
+sounds good, if you stumble across ARM-related bugs and/or missing intrinsics feel free to CC me and I'll have a look ASAP
+
+1579189721
+BaroqueLarouche
+TheLemonMan: will do :)
+
+1579189733
+leeward
+I'm getting error messages as strings from a C library, and trying to print them out shows me the pointer's address. This must be a thing that's happened before.
+
+1579189801
+leeward
+std.debug.warn("{}", .{u8Ptr})
+
+1579189816
+TheLemonMan
+leeward, try "{s}"
+
+1579189849
+leeward
+TheLemonMan: nope
+
+1579189904
+TheLemonMan
+what's the type of u8Ptr ?
+
+1579189952
+leeward
+const char*
+
+1579189960
+leeward
+is what the C library returns
+
+1579190002
+TheLemonMan
+yeah, I mean what's the type in Zig
+
+1579190060
+leeward
+How can I tell?
+
+1579190079
+TheLemonMan
+@TypeOf ?
+
+1579190080
+leeward
+I got gdb attached and managed to print out the message I needed.
+
+1579190084
+leeward
+I guess that would work :P
+
+1579190107
+TheLemonMan
+or just run `zig translate-c <file>` and examine the output
+
+1579190137
+leeward
+type
+
+1579190138
+leeward
+sigh
+
+1579190190
+leeward
+I guess I could run that on the header.
+
+1579190245
+leeward
+Nope, that's a deeper rabbit hole.
+
+1579190263
+leeward
+When I print @TypeOf the message, it prints "type"
+
+1579190345
+TheLemonMan
+the type should be `[*c]const u8`
+
+1579190460
+leeward
+Ah, so I should cast it to a sentinel-terminated array?
+
+1579190509
+leeward
+Hey, that did it.
+
+1579190548
+TheLemonMan
+yeah, if you scavenge trough the typeinfo properties and cross-reference fmt.zig you'll see that C pointers ignore the format string
+
+1579190639
+TheLemonMan
+leeward, you may want to propose something like this patch
+
+1579190674
+TheLemonMan
+so that "{s}" works as intended even with C pointers
+
+1579190738
+leeward
+TheLemonMan: Yeah, that's probably a good idea.
+
+1579190753
+TheLemonMan
+BaroqueLarouche, let's keep the aeabi_read_tp defined only if we target linux, it's the best solution at the moment
+
+1579190768
+BaroqueLarouche
+TheLemonMan: sounds good
+
+1579190821
+TheLemonMan
+thank you Azure (and sr.ht) for the random failures
+
+1579190950
+fengb
+
+
+1579190961
+fengb
+format sentinel strings*
+
+1579191051
+TheLemonMan
+the problem is that `u8Ptr` has a pointer type of .C and not .Many
+
+1579191079
+fengb
+Oh good point
+
+1579191166
+fengb
+Shoudl we coerce `[*c]` to `[*:0]`?
+
+1579191312
+TheLemonMan
+I think that's the correct way to go, once you write @ptrCast you swear up and down that you know that pointer is zero-terminated
+
+1579192302
+metaleap
+afternoon! so you cant import relative files from parent dirs '../../foo.zig' without "setting up packages" but neither the wiki nor langref has a section on doing so. in fixed-issue #2024 andrew says: "So the idea here is that you'll have to map your packages in as packages". anyone got a sample? std.build is under-documented/-commented to the newb (most matches for 'pkg' seem related to `pkg-config`). say your repo is a lib with a `build.zig` and a
+
+1579192303
+metaleap
+`src/` dir but also has subfolders `cmd/foo/main.zig`, `cmd/bar/main.zig` that import the lib in `[reporoot]/src/`
+
+1579192355
+metaleap
+and have their own build.zigs
+
+1579192384
+fengb
+
+
+1579192391
+metaleap
+(tho thats not necessary as long as the dep-to-parent-files works)
+
+1579192401
+metaleap
+fengb: thx much!
+
+1579194329
+andrewrk
+TheLemonMan, does
+
+1579194644
+TheLemonMan
+andrewrk, BaroqueLarouche said he's gonna update the PR later today
+
+1579194696
+BaroqueLarouche
+as soon as I arrive home tonight
+
+1579194726
+TheLemonMan
+for some reason #4199 is stuck in the CI limbo (the Azure mark is green even though it cannot find any build when you click on it) so feel free to blindly merge it :)
+
+1579194741
+TheLemonMan
+I have no idea why it happens nor how to unfuck it
+
+1579194868
+andrewrk
+TheLemonMan, it's probably a transient problem with azure. if it doesn't go away in a day or two I'll look into it
+
+1579194906
+andrewrk
+I have a windows computer here that I run the windows tests on if the CI is unavailable for whatever reason
+
+1579194928
+TheLemonMan
+it looks more a problem with GH as the sr.ht build is stuck too
+
+1579194935
+andrewrk
+ah
+
+1579195906
+BaroqueLarouche
+andrewrk: @ptrCast doesn't work to call naked function in non-naked function:
+
+1579196047
+andrewrk
+BaroqueLarouche, it's a regression, let me fix it in master real quick
+
+1579196112
+BaroqueLarouche
+Thanks :)
+
+1579196112
+leeward
+Sounds like a test case!
+
+1579196341
+TheLemonMan
+nah it never worked
+
+1579196375
+TheLemonMan
+you have to do `var foo = my_naked_fn; var bar = @ptrCast(fn () callconv(.C) void, foo); bar();`
+
+1579196410
+TheLemonMan
+if you ptrCast a comptime-known fn the old ZigFnEntry (or whatever it's called) is not forgotten
+
+1579196421
+BaroqueLarouche
+Ohh
+
+1579196450
+TheLemonMan
+so once you try to call the casted fn the compiler is too smart and picks the original fn definition
+
+1579196799
+andrewrk
+ok well I have a patch running through the tests
+
+1579196813
+andrewrk
+but yeah good point the `var` will work around this
+
+1579197111
+TheLemonMan
+if the patch is a silly one-liner I'll eat my hat~
+
+1579197166
+andrewrk
+
+
+1579197197
+andrewrk
+I should probably go through and understand why the type from the fn ref can't be unconditionally used, but instead this patch only uses the calling convention from the type
+
+1579197213
+andrewrk
+hmm this test case should have args
+
+1579197236
+BaroqueLarouche
+You should test return values as well
+
+1579197261
+andrewrk
+yeah this is no good. I'll open an issue, the solution is more involved
+
+1579197313
+TheLemonMan
+I'd always trust the fn_type (and shouldn't the fn_entry type always be the same ?)
+
+1579197372
+andrewrk
+this should be the patch:
+
+1579197377
+TheLemonMan
+beware of what you do in a .Naked function, corrupting the stack is really easy
+
+1579197379
+andrewrk
+it's revealing hidden bugs though
+
+1579197396
+andrewrk
+the fn_entry type will mismatch the fn_type if you @ptrCasted
+
+1579197406
+andrewrk
+e.g. the fn_entry type could be callconv(.Naked) but fn_type callconv(.C)
+
+1579197437
+TheLemonMan
+yeah, so isn't it better to always trust fn_type ?
+
+1579197452
+andrewrk
+yeah, but it's uncovering bugs
+
+1579197481
+andrewrk
+so solution is to always trust fn_type, and fix the bugs
+
+1579197509
+TheLemonMan
+one more yak to shave! o/
+
+1579198773
+BaroqueLarouche
+working now :)
+
+1579199171
+andrewrk
+BaroqueLarouche, nice, would you mind adding a TODO comment with a link to
+
+1579199209
+companion_cube
+oooh, looking at the old stream about comptime, it's great
+
+1579199227
+BaroqueLarouche
+andrewrk: done
+
+1579199253
+andrewrk
+thanks
+
+1579199286
+andrewrk
+companion_cube, I evolved the contents of that stream into the "road to zig 1.0.0" talk
+
+1579199313
+companion_cube
+which I've watched, but this is more detailed (the IR! fun!)
+
+1579199372
+TheLemonMan
+(for some definition of fun, heh)
+
+1579199829
+TheLemonMan
+BaroqueLarouche, hmm, are you getting a call to __clzsi2 when targeting thumb? I can't get LLVM to emit it when targeting the ARM instruction set
+
+1579199866
+BaroqueLarouche
+
+
+1579199870
+BaroqueLarouche
+uncomment those
+
+1579200138
+TheLemonMan
+oh armv4t, that's why it emits a libcall
+
+1579200179
+TheLemonMan
+adding a builtin that calls `clz` isn't much useful if the builtin is only called iff `clz` isn't available heh
+
+1579200246
+companion_cube
+the IR explanations are great…
+
+1579200420
+BaroqueLarouche
+companion_cube: this video ?
+
+1579200427
+companion_cube
+yep
+
+1579200715
+TheLemonMan
+BaroqueLarouche, what's the debugger interface you've implemented in your gba probject?
+
+1579200897
+BaroqueLarouche
+TheLemonMan: you can write to a log in some emulators, I use mGBA which also have a GDB server
+
+1579200924
+TheLemonMan
+oh, it's mGBA protocol
+
+1579200929
+TheLemonMan
+I've always used
+
+1579200959
+BaroqueLarouche
+I think that was VisualBoyAdvance protocol
+
+1579201172
+TheLemonMan
+
+
+1579201173
+TheLemonMan
+hah
+
+1579201233
+BaroqueLarouche
+indeed lol
+
+1579201251
+TheLemonMan
+anyway, cya!
+
+1579201825
+tane
+what's the difference between pub fn and fn struct methods?
+
+1579201958
+BaroqueLarouche
+it's similar to public vs private in C++, you can't access non-pub fn from outside the struct
+
+1579202018
+tane
+this is not how it behaves here, that's why I asked :)
+
+1579202056
+tane
+I have a `pub const X = struct { ... fn foo(self: Self) ... }` and can still call `foo` from another site
+
+1579202091
+metaleap
+tane: every member in a pub type is pub, cant hide them afaik
+
+1579202108
+metaleap
+(ie there's no priv(ate) keyword =)
+
+1579202156
+tane
+so, non-pub methods are only worth anything in comptime generated types in the user code and in my own module?
+
+1579202211
+metaleap
+essentially pub-or-not visibility is for your top-level decls, not nested members these are all visible
+
+1579202351
+tane
+works for comptime-generated types
+
+1579202604
+tane
+ok, so "methods", i.e. functions taking "Self" ignore "pub", but all other functions in the struct, e.g. `init` do adhere to it
+
+1579202653
+metaleap
+ah was only thinking of the former, so the "static methods" (to use oop slang) need pub or else are hidden? funky
+
+1579202668
+tane
+yes, source of my confusion
+
+1579202685
+tane
+I wonder what the rationale is, from my POV this is maximally confusing :)
+
+1579202997
+mikdusan
+I think it's more an evolved thing. Good reasons led to `pub` modifier for decls... and the reasons for `pub` modifier for fields was not as convincing/clean/straightforward. Fields inevitably leads to talk about protected, private, and to compare, Swift even has a 4th (package?) or somesuch.
+
+1579203049
+tane
+well, I don't mind something missing, but that feels inconsistent
+
+1579203236
+metaleap
+fields and self-methods need the actual "instance" / self, so these methods might be sugar turning into fn-typed fields or so whereas the "static" methods are sugar for merely namespacing what turns into top-level funcs. just guessing at how this could have occurred. but yeah, "inconsistent" in a way, at least for the "lang end-user"
+
+1579203292
+metaleap
+although the "instance members are always visible to the consumer" could be a somewhat-more-consistent-feeling rule-of-thumb easy to remember
+
+1579203433
+tane
+hm
+
+1579205003
+fengb
+Fields need to reserve memory so it's not actually encapsulated well. Trying to hide it can bring other troubles (see C++ private fields)
+
+1579205168
+mikdusan
+fengb: but how to hide `_NSAKEY: []const u8,` :P
+
+1579206195
+metaleap
+iterating down-to-0 is a chore: `var i = myslice.len - 1; while (i > -1) : (i -= 1) {...}` -> integer overflow. fine, @intCast to iSize, then for the [indexer] need to @intCast back to usize...
+
+1579206949
+metaleap
+std.fmt --- are there plans for a sort-of string-quoting (e.g. by zig rules) param such as {q} (similar to go's `fmt.Sprintf("%q", "Hi") == "\"Hi\""`) or does it exist elsewhere?
+
+1579207109
+metaleap
+i mean i could steal std.json's WriteStream.writeEscapedString for my purposes but there might have in the `zig fmt` or self-hosted compiler (or other) efforts already been the need and now hidden somewhere I'm not aware of
+
+1579207111
+Snektron
+metaleep, consider `var i = myslice.len; while (i > 0) { i -= 1; ... }`
+
+1579207117
+Snektron
+metaleap*
+
+1579207181
+metaleap
+Snektron: thats a cool approach! i went with while(true) and decremented-or-break in sub branch but yours is neater & safer
+
+1579209885
+adamkowalski
+is there some trick to passing anonymous list literals to a function which expects an fixed sized array?
+
+1579210067
+andrewrk
+adamkowalski, that's a weakness in the language right now which I hope to address
+
+1579210092
+andrewrk
+the workaround is to @as(T, .{foo})
+
+1579210129
+andrewrk
+oh that might not actually be a workaround
+
+1579210739
+fengb
+Could Zig recognize that it's a homogeneous tuple?
+
+1579210967
+andrewrk
+it's not actually fixed size arrays that is the problem, it's casting to a slice I believe
+
+1579210985
+andrewrk
+@as([]const u8, .{"foo", "bar"})
+
+1579211003
+andrewrk
+that's what I was thinking of anyway. coercing to arrays already works
+
+1579211007
+fengb
+Oh
+
+1579211028
+andrewrk
+problem is zig lost the ability to automatically take a reference behind your back
+
+1579211036
+fengb
+Yeah that makes sense. I was trying to do that with `&.{}`... which didn't work
+
+1579211078
+andrewrk
+maybe it should though
+
+1579211100
+andrewrk
+especially since if you do it without & it tells you to put a & on it
+
+1579211117
+andrewrk
+worth a proposal at least
+
+1579211144
+fengb
+
+
+1579211171
+fengb
+At some point, these early internet memes will be forgotten, and then I will be completely unintelligible
+
+1579211578
+andrewrk
+tbh I don't understand that one
+
+1579211589
+andrewrk
+educate me
+
+1579211607
+mikdusan
+G.I. Joe ?
+
+1579211704
+andrewrk
+I don't get it, does he get the stick or not?
+
+1579211878
+adamkowalski
+andrewrk: I don't think it works casting to arrays. I get a compiler error that starts with TODO:
+
+1579211941
+adamkowalski
+./src/eager/matrix_multiply.zig:61:32: error: TODO: type coercion of anon list literal to array
+
+1579211971
+fengb
+It was a dumb GI Joe skit. He says "Give him the stick DON'T GIVE HIM THE STICK" in 2 seconds
+
+1579211995
+fengb
+I feel old now
+
+1579212038
+adamkowalski
+
+
+1579212057
+adamkowalski
+can somebody look at that test case and see if this is a issue with anon literals or if i'm crazy haha
+
+1579212061
+adamkowalski
+I feel like that should work
+
+1579212328
+frmdstryr
+When is the code in a suspend block called?
+
+1579212367
+frmdstryr
+Is it run when the frame is resumed or before it suspends?
+
+1579212368
+andrewrk
+frmdstryr, immediately; the important thing about a suspend block is the
+
+1579212413
+andrewrk
+in a multi-threaded context, it is possible to have one thread in the suspend block, and another thread simultaneously executing after it
+
+1579212430
+mikdusan
+andrewrk: rfc
+
+1579212485
+frmdstryr
+I'm confused... why even have any code in a suspend block then vs just putting it before a suspend statment?
+
+1579212572
+andrewrk
+frmdstryr, in single-threaded applications it does not matter. in multi-threaded applications, because of a race condition of another thread resuming
+
+1579212604
+andrewrk
+mikdusan, nice! I couldn't figure out how to do this
+
+1579212652
+mikdusan
+if you're ok with MSVC continuing with ZIG_SKIP_INSTALL_LIB_FILES, but make/ninja generators using `make` vs `make install` I'll PR this.
+
+1579212711
+andrewrk
+as far as msvc is concerned, I agree, let's have it do the skip thing. I don't think it even needs to be a setting
+
+1579212745
+andrewrk
+uh, hmm. scratch that. it matters for the CI creating the .zip file
+
+1579212771
+mikdusan
+for my own confirmation then: keep ZIG_SKIP_INSTALL_LIB_FILES behavior but only for MSVC ?
+
+1579212795
+andrewrk
+yes. make default be ON. ci script will want to turn that OFF
+
+1579212801
+andrewrk
+one more thing -
+
+1579212840
+andrewrk
+ah I see what you did
+
+1579212853
+andrewrk
+it's a little bit messy since it will do the building libuserland thing twice
+
+1579212863
+andrewrk
+but it should be fine
+
+1579212878
+mikdusan
+yeah... this was my second attempt at solving. first one ended in head shaking ... lots of head shaking
+
+1579212899
+andrewrk
+nice work
+
+1579212904
+andrewrk
+cmake can be incredibly frustrating
+
+1579212933
+andrewrk
+we can't really rely on the CI to test this
+
+1579212952
+mikdusan
+yeah i'll go through the 3 platforms manually
+
+1579212974
+andrewrk
+not all heroes wear capes
+
+1579212995
+pixelherodev
+Is it worth giving meson (or some other build system) a try instead of CMake?
+
+1579213012
+andrewrk
+in my opinion, not really, it would just be churn
+
+1579213109
+andrewrk
+we're stuck with cmake basically forever, due to it being the most ubiquitous option
+
+1579213170
+andrewrk
+although if
+
+1579213260
+fengb
+Let's just reintroduce autotools 🙃
+
+1579213261
+andrewrk
+well, llvm depends on cmake. so that's another reason to not deviate
+
+1579213274
+andrewrk
+anything other than cmake is "another" dependency when bootstrapping
+
+1579213361
+BaroqueLarouche
+I use VS CMake integration to build Zig from source
+
+1579213435
+leeward
+That's the first time I've read the Grand Plan for Bootstrapping the Universe, and I like it.
+
+1579213552
+leeward
+It will make package maintainers' jobs super simple. It's almost like you have experience with the kinds of headaches maintainers get.
+
+1579213921
+Snektron
+build.zig for llvm
+
+1579214001
+leeward
+I feel like there should be a make clone for Zig that's called move, so you could have command lines like "move zig" "take_off_every" is an option too, but pretty verbose.
+
+1579214052
+Snektron
+why should there be a make clone? theres already build.zig
+
+1579214052
+pixelherodev
+toe
+
+1579214061
+leeward
+Solely for the name. No other reason.
+
+1579214117
+leeward
+pixelherodev: People would just call it toe though.
+
+1579214151
+andrewrk
+you can make arbitrary step names: zig build main screen turn on
+
+1579214266
+leeward
+Too contrived.
+
+1579214275
+BaroqueLarouche
+imagine now recreating the Zero Wing intro in Zig on Genesis/Megadrive
+
+1579214284
+leeward
+I want a tutorial for the package manager that instructs one on setting up us the bomb.
+
+1579214332
+BaroqueLarouche
+leeward: hahahahaha
+
+1579214975
+shakesoda
+can you spit out working zig binaries for any particularly ancient cpus?
+
+1579214986
+leeward
+Does x86 count?
+
+1579214991
+shakesoda
+like m68k, 6502, z80
+
+1579215004
+shakesoda
+or like old mips
+
+1579215022
+andrewrk
+shakesoda, are you aware of `zig targets` ?
+
+1579215027
+shakesoda
+this thought is just prompted by the phrase "zig on genesis/megadrive"
+
+1579215032
+shakesoda
+andrewrk: i am not!
+
+1579215040
+shakesoda
+let's have a look...
+
+1579215068
+andrewrk
+this matches LLVM
+
+1579215076
+leeward
+`zig targets`  includes, among others, scarc, riscv32, mips...
+
+1579215122
+leeward
+That is a long list of C ABIs.
+
+1579215194
+BaroqueLarouche
+shakesoda: no, LLVM should at least have a m68k in my opinion, being used in a lots of computers, consoles and arcade board
+
+1579215223
+BaroqueLarouche
+6502 is not very suited for stack-based languages
+
+1579215232
+leeward
+BaroqueLarouche: But does Apple make products with it?
+
+1579215233
+shakesoda
+no m68k in the list here
+
+1579215237
+andrewrk
+m68k, 6502, z80 are all in scope
+
+1579215248
+BaroqueLarouche
+leeward: not anymore
+
+1579215255
+andrewrk
+good place to start would be
+
+1579215272
+shakesoda
+i think armv4t covers the gameboy advance though, and that's in here :D
+
+1579215286
+andrewrk
+zasm support is basically a prerequisite for any non-llvm-supported architecture
+
+1579215299
+BaroqueLarouche
+shakesoda: and already working on it
+
+1579215307
+shakesoda
+wonderful
+
+1579215347
+leeward
+Ooh, it supports itanium. That makes me a little sad.
+
+1579215362
+andrewrk
+why?
+
+1579215388
+leeward
+andrewrk: It's a reminder that even Intel couldn't kill the x86 ISA.
+
+1579215403
+andrewrk
+ah
+
+1579215450
+shakesoda
+leeward: at least arm appears to have a serious shot at it for many purposes
+
+1579215501
+leeward
+shakesoda: Certainly in the growth markets. I'll be ok if ARM takes over the world.
+
+1579215528
+leeward
+Fun fact: my Linux x86_64 machine can execute ARM binaries.
+
+1579215530
+shakesoda
+i'm looking forward to the ongoing encroach of arm pc's
+
+1579215542
+shakesoda
+user space qemu?
+
+1579215553
+leeward
+Nope, it's in the kernel.
+
+1579215601
+shakesoda
+very much on this note, i'm planning to pick up one of these approx next month ->
+
+1579215626
+shakesoda
+an actually affordable arm laptop, with about the specs i want :D
+
+1579215628
+leeward
+Ooh, fancy
+
+1579215633
+shakesoda
+looks like a great little dev machine
+
+1579215638
+leeward
+Holy carp, $200?
+
+1579215641
+shakesoda
+yes!
+
+1579215641
+pixelherodev
+` zasm support is basically a prerequisite for any non-llvm-supported architecture` I consider this a challenge to have my backend working first :)
+
+1579215672
+pixelherodev
+How does the pinebook pro compare to a 3rd-gen i5 with 8GB of RAM? Not sure how to compare ARM vs x86
+
+1579215682
+pixelherodev
+Specifically for working with Zig
+
+1579215685
+shakesoda
+that i5 would murder it
+
+1579215692
+pixelherodev
+Figured as much
+
+1579215703
+shakesoda
+if it were a snapdragon 8cx model or something it'd be faster than the i5, though
+
+1579215706
+fengb
+Probably easier to cross compile and copy over the binary
+
+1579215723
+pixelherodev
+Might be worth it anyways
+
+1579215726
+shakesoda
+fengb: nah - should be fine to build on it
+
+1579215732
+pixelherodev
+It's cheap enough anyways, and zig builds faster
+
+1579215783
+fengb
+Fine sure. But it's really slow :P
+
+1579215786
+shakesoda
+the performance gap is almost negligible on higher end socs than the rk3399
+
+1579215799
+shakesoda
+when we're talking mobile hw that is
+
+1579215850
+leeward
+Some day
+
+1579215851
+fengb
+I started testing my stuff on my "server" Linux running Celeron. I ended up compiling on my mac and copying stuff over because it's so bad
+
+1579215863
+pixelherodev
+Oh god yeah
+
+1579215865
+leeward
+The performance per watt is up there, which is a thing that servers care about.
+
+1579215869
+shakesoda
+leeward: i suspect it will be pretty soon
+
+1579215870
+pixelherodev
+I had a $150 Celeron laptop for a while there
+
+1579215877
+pixelherodev
+Perf per watt was really
+
+1579215878
+fengb
+Also a testament of how great Zig's cross compiling is, where I didn't even have to do much work
+
+1579215885
+pixelherodev
+Battery life was nearly 20 hours
+
+1579215891
+pixelherodev
+(once I swapped to Linux ofc)
+
+1579215900
+pixelherodev
+But performance was a joke
+
+1579215912
+fengb
+I mean, I bought it for dirt cheap. It's for serving files so it does the job, but  it's also the only native Linux box I'm running
+
+1579215955
+pixelherodev
+If my current worst-case compilation time is ~7 seconds with Zig, what would be a reasonable time to expect on a PineBook?
+
+1579215960
+pixelherodev
+The other advantages of it might be worth it
+
+1579215992
+pixelherodev
+I mean, self-repairable laptop for $200
+
+1579216027
+shakesoda
+i can't give any kind of reasonable estimate, but i'd be somewhat surprised if it were worse than 10s
+
+1579216055
+Snektron
+Alright, so some Vulkan calls return a result which is either an error code or a success code. I wanted to adopt VkResult into an error set, such that Vulkan calls can be neatly handled by Zig's error mechanism
+
+1579216056
+shakesoda
+if i had a pi 4 on hand i could give a pretty reasonable number, since they're both a72 designs
+
+1579216070
+Snektron
+However im not quite sure what to do with calls which can return different success codes
+
+1579216097
+Snektron
+For example, vkAcquireNextImageKHR can return VK_SUBOPTIMAL_KHR, which is not an error
+
+1579216118
+daurnimator
+> for example you won't find RISC-V chips in practice without integer multiplication
+
+1579216121
+Snektron
+Anyone have an opinion?
+
+1579216142
+shakesoda
+although the pi might be unnaturally slow because of the sd, compared to anything else
+
+1579216194
+fengb
+Pinebook uses eMMC, which isn't exactly fast
+
+1579216195
+shakesoda
+the pinebook pro's emmc would be way faster, and it supports m.2 drives
+
+1579216205
+shakesoda
+emmc isn't super fast, but it's faster than sd lol
+
+1579216207
+fengb
+Ohhh m2
+
+1579216210
+leeward
+Snektron: Return an enum?
+
+1579216263
+Snektron
+leeward, thats one of the solutions i considered yes
+
+1579216286
+leeward
+Seems like a reasonable one: !SuccessMode
+
+1579216382
+Snektron
+basically i had one of these in mind: 1) treat success results as error, as anything but VK_SUCCESS probably needs to be handled. 2) turn functions returning both success codes (other than VK_SUCCESS) into !SuccessCode, which is what you propose 3) Don't do any of this and just return a VkResult  enum value
+
+1579216421
+fengb
+`error.NotError =>`
+
+1579216454
+Snektron
+yeah pretty much
+
+1579216478
+leeward
+My visceral reaction to error.NotError is not a happy one, but it comes from people abusing exceptions as control flow. Errors in Zig don't have the same drawbacks as exceptions, so it's worth thinking about.
+
+1579216504
+andrewrk
+Snektron, I have an opinion. anything that is "it worked" should not be an error. if you're trying to make something have a more zig friendly API, wrap it, give it capability to set flags or other state, and only return error when the thing didn't work
+
+1579216572
+andrewrk
+you could also have a wrapVkErr() function which does `VK_SUBOPTIMIAL_KHR => unreachable` and equivalent for the "it still worked" codes. for functions where these things are possible, handle those cases explicitly before calling wrapVkErr()
+
+1579216612
+Snektron
+Hmm
+
+1579216621
+pixelherodev
+shakesoda, oh right thanks - I think I know someone with a Pi 4
+
+1579216625
+leeward
+Yeah, assume that people will call the function with try. If it succeeds but their program crashes, they'll be displeased.
+
+1579216638
+andrewrk
+or maybe `VK_SUBOPTIMAL_KHR => return error.SuboptimalSettings` but still take the strategy to handle it explicitly before calling wrapVkErr
+
+1579216650
+pixelherodev
+Oh wait right, the discussion after that is valid
+
+1579216651
+leeward
+pixelherodev: You might be able to use an in-ram FS to get past the whole SD card thing.
+
+1579216696
+pixelherodev
+eMMC is definitely better than, say, a HDD, right?
+
+1579216706
+pixelherodev
+Might not be SSD fast, but it's not
+
+1579216721
+andrewrk
+I have an eMMC file system. it's fast
+
+1579216726
+leeward
+pixelherodev: Do you care more about bandwidth or latency?
+
+1579216742
+Snektron
+leeward, i'm pretty sure that anything not VK_ERROR_* won't cause the program to crash
+
+1579216768
+leeward
+Snektron: So probably don't put your limited successes in an error then.
+
+1579216793
+Snektron
+andrewrk, im not sure where that case statement might be applied
+
+1579216805
+Snektron
+To be clear, my implementation idea was as follows:
+
+1579216818
+pixelherodev
+leeward, ?
+
+1579216829
+Snektron
+there will be two "parts": the raw Vulkan calls, which are extern and all that
+
+1579216843
+pixelherodev
+That sounds like what I'm doing for my C UI library
+
+1579216863
+Snektron
+Then a Zig-wrapper on top of that, part of which maps a VkResult error enum code into a Zig error
+
+1579216864
+pixelherodev
+Instead of rewriting it in Zig, it has a 1:1 binding layer and then a Zig wrapper built on top of it
+
+1579216875
+leeward
+pixelherodev: Spinning disks can still be fast for sequential reads.
+
+1579216903
+Snektron
+The main reason for that is that Vulkan calls have a specified set of errors they can return, but which cannot be expressed through the C ABI of course
+
+1579216973
+Snektron
+Anyway, i'm also considering what to do with return values
+
+1579217024
+Snektron
+Most Vulkan return values are passed via out parameters. I was considering doing something similar to how Vulkan-Hpp works: If there's only one out-parameter, wrap the function and make it a return value instead
+
+1579217098
+Snektron
+Together with the error mechanism and some wrapping, that could make for a pretty nice binding
+
+1579219073
+andrewrk
+a useful and possibly fun project for a zig community member to make, once #3927 lands, would be a program that you run on a computer to have it report the "native" CPU name and feature set
+

@@ -1,0 +1,572 @@
+1607299394
+ifreund
+haven't really seen anything related to that recently
+
+1607320156
+andrewrk
+leeward, yes you were working around a bug that was fixed
+
+1607320202
+andrewrk
+where did you leave off with msp430? what were you trying to do and got stuck?
+
+1607338110
+betawaffle
+oh man, the io_uring code in std is so clean!
+
+1607338471
+ifreund
+yeah, it's thanks to the dude working on this neat project:
+
+1607340016
+daurnimator
+is it still based on my PR?
+
+1607340035
+daurnimator
+(
+
+1607340196
+ifreund
+not directly afaict but it was probably a large influence alonside liburing
+
+1607340861
+betawaffle
+where can i find what `root.event_loop` is expected to be if it's defined?
+
+1607345685
+ifreund
+betawaffle: the same interface as std.event.Loop I suppose
+
+1607345755
+ifreund
+at least that's what I assume looking at the definition of std.event.Loop.instance
+
+1607360006
+DrDeano
+is there a safe way from going from a element of a union back to the union itself, `@ptrCast` seems to work.
+
+1607360094
+ifreund
+DrDeano: pretty sure that's UB for standard zig unions though is totally fine for extern unions
+
+1607360103
+ifreund
+
+
+1607360125
+ifreund
+tldr: @fieldParentPtr() is what you want but it isn't implemented yet
+
+1607360146
+DrDeano
+I did try using this, but yes, only works for structs
+
+1607360153
+DrDeano
+would this work for tagged unions
+
+1607360221
+ifreund
+with that proposoal implemented, yes. Currently your only option is to @ptrCast() which may or may not work
+
+1607360230
+ifreund
+though I guess we could look at how the compiler implements them
+
+1607360238
+DrDeano
+thanks ifreund
+
+1607360249
+DrDeano
+i have found @ptrCast does work for now
+
+1607360315
+ifreund
+yeah so that's technically UB but I don't expect that to actually break :D
+
+1607360840
+fengb
+It can easily break if the hidden tag location is moved
+
+1607361404
+ifreund
+hmm, right llvm could decide to do that for whatever reason
+
+1607361838
+fengb
+One of those cases where a non-safe mode would probably work more consistently because it doesn't have a secret tag >_>
+
+1607361908
+marler8997
+DrDeano I'm curious what your use case is for using @fieldParentPtr on a tagged union, do you have code to share?
+
+1607362104
+DrDeano
+it is for the VFS in Pluto:
+
+1607362278
+DrDeano
+marler8997 it is for going from a FileNode/DirNode to Node
+
+1607373786
+swanprince
+Hey, I watched andrewrk's video on creating a chat server. I'm not familiar with how much progress has been made in that area, but how suitable is Zig for building a fully-fledged chat server, something like a Matrix homeserver?
+
+1607373830
+andrewrk
+async I/O and std lib networking are still experimental
+
+1607373881
+andrewrk
+if you want to participate in the development of these features, then it would be a good time to get involved. if you are more focused on the application being robust and stable, you should wait a couple release cycles
+
+1607373938
+ifreund
+as the author of a relatively large project in zig, I'd say go for it if you want to. You will eventually hit zig bugs but for me zig's features have made it worth it over C despite that
+
+1607373991
+ifreund
+if you want the everything "just works" experience though it'd be best to wait a bit longer
+
+1607374341
+swanprince
+Understood. I'd like to build something like that as a learning experience. Matrix seems like a good idea, but I'm wondering how a non-Python homeserver would perform.
+
+1607374501
+oats
+swanprince, iirc a golang homeserver is under development, and is intended to eventually replace synapse
+
+1607374514
+oats
+not trying to discourage you from zig or anything :P
+
+1607374531
+swanprince
+Yeah, I'm aware of dendrite
+
+1607374551
+oats
+I also would be excited to run not-synapse :P
+
+1607374553
+ifreund
+matrix is very complex
+
+1607374642
+swanprince
+Yeah, that's true, but it supports a ton of features
+
+1607374676
+ifreund
+more features isn't always a good thing really
+
+1607374691
+ifreund
+see: C++ vs C/Zig
+
+1607374770
+swanprince
+Also true
+
+1607374802
+seadragon-droid
+Does anyone know where I can find details about the use-after-free detection in the general purpose allocator? I tried to look through the source in the stdlib but couldn't find any clues
+
+1607374837
+swanprince
+Since the homeserver has an open specification, you could choose a subset of features and implement those
+
+1607374905
+oats
+swanprince: couldn't that risk incompatibilities and issues when interacting with other servers?
+
+1607375029
+andrewrk
+seadragon-droid, the source is only 655 lines of code
+
+1607375046
+andrewrk
+555 if you don't count docs
+
+1607375142
+andrewrk
+in summary: std.heap.page_allocator uses a trick where it uses a global, atomic, monotonically increasing address hint rage for requesting pages from the OS. this means that we go through the entire address space before re-using addresses. so if a UAF happens in such a page it will cause a segfault rather than undefined behavior
+
+1607375182
+andrewrk
+GPA backed by page allocator uses this trick for large allocations, and for small allocations, will not re-use slots, and will explicitly detect UAF and print diagnostics
+
+1607375321
+swanprince
+oats: I would guess there are ways to account for that. You don't need a fully-spec'd server to interact. There are plenty of experimental servers which people are dogfooding right now, and they can interact with Synapse servers. Correct me if I'm wrong, but Synapse doesn't completely implement the spec.
+
+1607375652
+seadragon-droid
+andrewrk: Thanks for details. I agree the implementation is straightforward to read, and I'm doing my best to grok the details
+
+1607375685
+andrewrk
+I'm happy to answer questions
+
+1607375769
+seadragon-droid
+Page fault due to monotonically increasing pages makes sense for the large allocations (although I imagine freestanding support for that fault is fairly varied?) What's the mechanism for UAF for small allocations?
+
+1607375988
+andrewrk
+in case you missed it, there's a brief docs section there under a heading titled "Basic Design". UAF detection is done the same way as leak detection - there is a bit for every slot to track whether it is used, and slots are never re-used
+
+1607376057
+andrewrk
+hm a better name would be Design Overview rather than Basic Design
+
+1607376080
+hlolli
+Over the last week, I've encountered this error quite often "Unreachable at /build/source/src/stage1/analyze.cpp:890 in get_slice_type. This is a bug in the Zig compiler.". Not really a question, but thought I'd mention it 4wiw.
+
+1607376114
+andrewrk
+the next step towards getting it fixed is a minimal test case to reproduce the issue
+
+1607376138
+andrewrk
+before you do any work to come up with such a case, search around the issues - it's possible someone else already did the work
+
+1607376143
+hlolli
+andrewrk, ok will do! I wasn't sure if this is well known or not :)
+
+1607376210
+hlolli
+seems to be not reported yet, so I'll try to make a reproduceable case.
+
+1607376448
+ifreund
+looks like 0.7.1 is blocked on all windows issues aside from the one deadlock now :D
+
+1607376628
+andrewrk
+hopefully #7309 will make it easier to debug windows issues :)
+
+1607376644
+seadragon-droid
+andrewrk: Yes I saw that part thankfully - I might be missing something but my understanding is that the allocator knows the slot is freed but I don't see how it would detect a dereference to the freed memory. i.e. the dereference seems "safe" since the slot is not reused but it doesn't seem to be "detected"
+
+1607376685
+andrewrk
+seadragon-droid, ahh I see. right, UAF is not detected in this case, it is merely safe. sorry, I got mixed up with Double Free which is detected
+
+1607376695
+g-w1
+is everything else ready for when the issues get solved 0.7.1 will release, or are there more TODOs besides the issues?
+
+1607376733
+andrewrk
+seadragon-droid, there is one more factor here however, which is that we set the memory to undefined upon free. so a UAF read will likely be detected, especially once we have detection of branch-on-undefined
+
+1607376748
+andrewrk
+g-w1, I do have some release notes to type up
+
+1607376754
+andrewrk
+the issues is the main thing though
+
+1607377036
+seadragon-droid
+andrewrk: Ah! I was wondering if undefined detection might become part of it. I'll keep my eyes on that one then
+
+1607377306
+nore
+so I got curious and I read the code of the GPA, it seems to me that in this line
+
+1607377308
+seadragon-droid
+Glad to hear it too, because I wasn't wholly convinced it was a good idea to have silent safety for debug/releasesafe that isn't shared by releasefast (not desirable to have certain memory bugs only in releasefast mode)
+
+1607377454
+nore
+(not sure if I should ping someone)
+
+1607378291
+nore
+andrewrk: do you think it's normal, or is it a bug? (I'm asking you since you seem to be the author of the code)
+
+1607378966
+andrewrk
+I'm working on something else at the moment, will take a look in a little bit
+
+1607379059
+andrewrk
+thanks for sponsoring zig, hlolli :)
+
+1607379091
+nore
+thanks! (I was just making sure that it didn't go unnoticed, I hope it's not that I misunderstood the code)
+
+1607379162
+ifreund
+nore: the line you linked doesn't seem to be the one you are talking about...
+
+1607379184
+ifreund
+or maybe I misunderstood
+
+1607379220
+nore
+ifreund: what I meant is that at this point, self.total_requested_bytes should be reset, but we modified it line 485
+
+1607379235
+nore
+(and the reset code does not run, since it is inside an errdefer=
+
+1607379238
+nore
+*)
+
+1607379240
+ifreund
+ah I see, the errdefer wouldn't trigger as we return 0 not an erro
+
+1607379281
+nore
+yes
+
+1607379301
+hlolli
+andrewrk no problem, I wish this project all the best, I hope it may bring me powers :)
+
+1607379638
+ifreund
+nore: yeah afaict you're right, you should totally open a PR :D
+
+1607379925
+leeward
+That thing about errors that are silently corrected in safe modes is definitely right. Those will lead to bad bugs.
+
+1607379945
+leeward
+If it's not handled in release fast, it should crash in debug.
+
+1607380190
+leeward
+Ooh, that's fun. I got an error in stage2: "TODO implement mappings for c_longdouble"
+
+1607380280
+ifreund
+leeward: it's not that the error is silently corrected, it's noisy about the double free, it's that the codepath makes the reporteded total requested bytes incorrect
+
+1607380352
+leeward
+ifreund: Ah, ok. Still a bug, but not quite as awful.
+
+1607380382
+leeward
+Still pretty bad sounding.
+
+1607380460
+ifreund
+not super terrible, it doesn't affect the behavior just the reporting
+
+1607380471
+ifreund
+well spotted though by nore :)
+
+1607380678
+nore
+thanks :) opened #7332 with a fix
+
+1607380764
+leeward
+Well, this is an easy thing to fix. I just have to implement the mapping for c_longdouble. Not entirely sure why it needs it, since I'm not using any floating point code, but...it's stage1 so I'm not going to worry about it.
+
+1607380779
+leeward
+Hah, and it works!
+
+1607380815
+ifreund
+nice
+
+1607380967
+betawaffle
+Is @setCold(false) useful?
+
+1607381060
+leeward
+I like trivial-to-review PRs.
+
+1607381163
+ifreund
+betawaffle: maybe if inside a branch where @setCold(true) has been previously used?
+
+1607381164
+leeward
+betawaffle: That there is a good question.
+
+1607381186
+leeward
+The documentation suggests it applies to whole functions.
+
+1607381193
+fengb
+setCold is currently function level. There's an issue to make it block based
+
+1607381232
+leeward
+Would it make sense even if block based though? It's not like a nested block could be hot while its parent is cold.
+
+1607381243
+betawaffle
+As long as that’s planned, I’m ok. I was wondering why it accepted an argument.
+
+1607381296
+andrewrk
+betawaffle, I believe there is a proposal to replace it with @cold() and have it apply to code paths rather than functions
+
+1607381336
+justin_smith
+similar to c if(unlikely(expr)) ... ?
+
+1607381363
+fengb
+leeward: that's why it's called setCold, not setHot 🤓
+
+1607381383
+leeward
+Hah, I just noticed there isn't a predict_false type feature. That makes sense.
+
+1607381454
+leeward
+The docs say "Tells the optimizer that a function is rarely called."
+
+1607381542
+andrewrk
+a useage pattern with @setCold would be `const some_value = @import("build_options").foo;` @setCold(some_value)
+
+1607381611
+dominikh
+has marking things cold actually proven to make a meaningful difference?
+
+1607381611
+betawaffle
+Fair enough
+
+1607381614
+ifreund
+could that not just as easily be `if (some_value) @setCold()`?
+
+1607381650
+betawaffle
+Not if it applies to code paths.
+
+1607381671
+ifreund
+true
+
+1607381697
+ifreund
+though the argument could be made that comptime branches shouldn't count
+
+1607381718
+betawaffle
+Yep!
+
+1607382426
+andrewrk
+logically, `if (true) @cold()` would apply to the outer branch as well
+
+1607382447
+andrewrk
+similar to how `if (true) unreachable;` can be simplified to `unreachable`
+
+1607382512
+dominikh
+if you argue based on executed control flow, not syntax, yeah. which I suppose makes sense if you treat @cold as a function call
+
+1607382526
+dominikh
+though people might expect it to be block scoped
+
+1607382596
+dominikh
+would you expect `if (sometimes_true) @cold()` to apply to code that follows the `if`, sometimes? that doesn't seem easy to reason about by reading the code
+
+1607382880
+andrewrk
+what I mean is even if it is block scoped, and it is `if (true) @cold()` then you can conclude that the outer block is cold as well, through logical deduction
+
+1607382925
+dominikh
+yes, but I am questioning whether the compiler should make that conclusion or not.
+
+1607382966
+dominikh
+because if it's block scoped, it is not obvious that the deduction matches the programmer's intent
+
+1607383133
+andrewrk
+I'm pretty sure it mathematically, logically does
+
+1607383183
+dominikh
+in the control flow, machine executing code sense, yes. not in the human, writing block-based code in an editor sense
+
+1607383250
+dominikh
+`if (true) const x = 1` does not add x to the outer scope, even though logically, x exists on all paths.
+
+1607383298
+earnestly
+This is more of a concern where C could end up eschewing NULL checks
+
+1607384076
+leeward
+Why the heck is this compiler generating a JMP instruction with an offset of 0? This is weird sauce.
+
+1607384193
+leeward
+Oh well, moving on...
+
+1607384834
+fengb
+It's an extra strong noop
+
+1607384912
+leeward
+It's a little weird the ISA even allows it. It's a 2-cycle noop.
+
+1607384931
+leeward
+All this talk about orthogonality of the instruction set...
+
+1607384952
+fengb
+That may take longer depending on how the branch is interpreted :)
+
+1607384989
+leeward
+msp430 all jxx instructions are 2 cycles, according to the user guide.
+
+1607385015
+leeward
+"independent of a successfull[sic] Jump or not"
+
+1607385062
+fengb
+Oh... jumps don’t take extra time?
+
+1607385080
+fengb
+No pipeline or something?
+
+1607385175
+leeward
+Well, jumps take 2 cycles, which is longer than most instructions, but no pipelines.
+
+1607385214
+leeward
+That includes the branches.
+

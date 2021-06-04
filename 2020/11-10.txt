@@ -1,0 +1,1884 @@
+1604966408
+FireFox317
+andrewrk, ah yes i see
+
+1604966603
+andrewrk
+I do wonder what in zig source code is eventually calling that function
+
+1604966634
+andrewrk
+I think it's probably the call to LLVMDumpModule
+
+1604966661
+andrewrk
+which we want to be able to do, even for release llvm + debug zig. so I think the solution would probably be, in the zig-bootstrap build script -DLLVM_ENABLE_DUMP=ON
+
+1604966697
+FireFox317
+okay i will try if that fixes it
+
+1604966974
+ifreund
+hmm, I wonder how hard it would be to write firmware for my new avr-based keyboard in zig
+
+1604967064
+ifreund
+I mean qmk works fine but it is pretty macro heavy C code
+
+1604967214
+teratorn
+im returning !MyStruct from an fn... but when I return self.err, which is an enum of error values, it says I have to return MyStruct
+
+1604967228
+teratorn
+i want error union type
+
+1604967282
+g-w1
+return error.Makeitup
+
+1604967296
+g-w1
+an error set is not same as enum
+
+1604968128
+FireFox317
+andrewrk, Nice! That fixed it indeed
+
+1604968151
+andrewrk
+beautiful, and now you can build zig from source without MSVC
+
+1604968163
+FireFox317
+exactly!
+
+1604968180
+FireFox317
+still have to see if it actually runs, but i got an exe
+
+1604968238
+FireFox317
+andrewrk, do you want this flag in the zig-bootstrap repo too? Because it is only needed when building zig in debug mode, which currently the script is not doing
+
+1604968271
+andrewrk
+hmm not sure. the zig-bootstrap build script is kinda like "executable documentation" I'm not sure how to factor this discovery into it
+
+1604968404
+FireFox317
+Hmm maybe we can add it to the ziglang wiki on how to build zig on windows
+
+1604969019
+FireFox317
+andrewrk, #7043 was needed for zig-bootstrap to work
+
+1604969113
+FireFox317
+will try tomorrow to run it on windows. goodnight
+
+1604971970
+g-w1
+what is the point of .sema_failure_retryable in stage2? is seems like in every use case it is always the same as .sema_failure
+
+1604973269
+andrewrk
+g-w1, it's for stuff like "out of disk space" where you could report an error to a user and then expect to be able to retry it and get a different result
+
+1604973338
+teratorn
+not sure how to make this compile:
+
+1604973345
+g-w1
+thx
+
+1604973370
+teratorn
+.\amp.zig:70:40: error: expected type 'AmpBox', found 'ParseError'
+
+1604973372
+teratorn
+return self.err;
+
+1604973388
+teratorn
+i thought this would make it return an error union?
+
+1604973390
+g-w1
+errors in zig arent enums
+
+1604973433
+g-w1
+you cuold make return type union(enum) { err: ParserError, amp_box: AmpBox}
+
+1604973435
+g-w1
+this would work
+
+1604973452
+pixelherodev
+ParserError should be `const ParserError = error {`
+
+1604973461
+pixelherodev
+Then you can do `ParserError!AmpBox` for the return type
+
+1604973489
+pixelherodev
+g-w1: that's a
+
+1604973520
+teratorn
+nice i will try thx all
+
+1604973539
+g-w1
+I know, if they were trying to return an enum as an error,
+
+1604973548
+teratorn
+can error unions be exposed to C client?
+
+1604973560
+pixelherodev
+I don't think so
+
+1604973582
+pixelherodev
+If this is for a C API, then g-w1's suggestion is - ah wait no, the union tag isn't accessible in C either
+
+1604973614
+pixelherodev
+If the goal is to have an interface usable in C, then either a) define bindings and let inlining / LTO fix the performance cost, or b) redesign the interface to only use `extern` types
+
+1604973636
+pixelherodev
+e.g. `extern struct` with a tag and a union should be usable for a C interface, I think
+
+1604979781
+teratorn
+there is no typedef in zig?
+
+1604979797
+g-w1
+const NewType = OldType;
+
+1604979801
+g-w1
+it is just const :P
+
+1604979817
+teratorn
+cool!
+
+1604979832
+g-w1
+why are some stage2 issues being marked as 0.7.1 milestone?
+
+1604979989
+lunamn
+g-w1: i think 0.7.0 is the first release to have a bug fix release planned, after 0.1. see more at
+
+1604980045
+g-w1
+I know, but isn't the current zig compiler stage1? this is what is confusing me
+
+1604980075
+teratorn
+
+
+1604980076
+teratorn
+.\amp.zig:105:25: error: expected type 'ParseError', found '@typeInfo(@typeInfo(@TypeOf(std.array_list.ArrayListAligned(u8,null).appendSlice)).Fn.return_type.?).ErrorUnion.error_set'
+
+1604980076
+teratorn
+^
+
+1604980076
+teratorn
+try self.key_data.appendSlice(bytes[self.key_data_fetched..bytes_remaining]);
+
+1604980107
+teratorn
+i have a try statement in a fn that returns an error union... how do i merge these extra errors from the trys?
+
+1604980231
+lunamn
+g-w1: current zig master is a mix of stage1 and stage2
+
+1604980246
+lunamn
+if i understand it correctly
+
+1604980251
+lunamn
+(likely not)
+
+1604980279
+g-w1
+i know, but the issues that are being marked are only stage2 (
+
+1604980294
+lunamn
+teratorn: you can either use inferred error sets or merge error sets with the || operator
+
+1604980325
+lunamn
+g-w1: ah i see. no idea then
+
+1604980349
+g-w1
+teratorn, you could add OutOfMemory to the ParserError or do this: merge error sets     pub fn decode_box(self: *AmpDecoder, bytes: [*]u8, size: usize) (ParseError || std.mem.Allocator.Error)!AmpBox {
+
+1604980376
+fengb
+Some parts of the current compiler are actually written in Zig
+
+1604980461
+fengb
+Bootstrapping creates a zig0, which is the only C++ code, and we use that to build some of the Zig code to get the full stage1 compiler
+
+1604980484
+andrewrk
+g-w1, fwiw the stage2 label means it's more likely to get worked on sooner (at least by me)
+
+1604980507
+andrewrk
+thanks for reporting #6976 btw
+
+1604980574
+g-w1
+np
+
+1604980634
+g-w1
+I see your fix (had the exact same idea), but does it not fix the problem that the compiler will output an empty executable when the analysis fails?
+
+1604980650
+andrewrk
+that's intentional
+
+1604980671
+g-w1
+is it so that you can do incrimental compilation? if so cool!
+
+1604980674
+andrewrk
+yep
+
+1604980688
+andrewrk
+zig will make progress on an executable even when the compilation fails
+
+1604980699
+g-w1
+thats soo cool
+
+1604980834
+andrewrk
+the only thing remaining for that to be true is serialization of zig's incremental compilation metadata
+
+1604980843
+andrewrk
+currently that information only exists in memory
+
+1604980867
+g-w1
+I assume that will go hand in hand with a language server?
+
+1604980969
+andrewrk
+oh hell yeah. this whole architecture is designed first for that use case, and
+
+1604980985
+andrewrk
+hence the (now fixed) bug where the CLI did the wrong thing
+
+1604981265
+teratorn
+g-w1, ok excellent, im glad merging them is easy!
+
+1604982518
+adamkowalski
+what's the proper way to use hash map when your key "may" be a string or something else?
+
+1604982526
+adamkowalski
+normally I use an autohashmap
+
+1604982537
+adamkowalski
+but if I have a string I use stringhashmap
+
+1604982550
+adamkowalski
+but if I want to be generic over the type I'm not sure what to do
+
+1604982570
+adamkowalski
+and what do you use if it's a struct where the fields may be strings?
+
+1604982700
+adamkowalski
+is there a way to control the hash function being used on a per struct basis?
+
+1604984718
+teratorn
+how do you declare an []u8 array literal?
+
+1604984920
+teratorn
+well , i need to define some static binary data and get a [*]u8 to it
+
+1604984930
+teratorn
+is that easy?
+
+1604985166
+novaskell
+I'm not sure you want a `[*]u8`  to it as you should always try to get away from it quickly. What's the end goal here? Also
+
+1604985284
+teratorn
+need C api
+
+1604985292
+daurnimator
+teratorn: `&[_]u8{your,chars,here}`
+
+1604985360
+teratorn
+how do i cast it to [*]u8 ?
+
+1604985408
+daurnimator
+it will coerce
+
+1604985442
+teratorn
+lies
+
+1604985444
+teratorn
+.\amp.zig:209:28: error: expected type '[*]u8', found '*const [26]u8'
+
+1604985445
+teratorn
+var b = dec.decode_box(b1, b1.count).?;
+
+1604985445
+teratorn
+^
+
+1604985505
+daurnimator
+[*]u8 is not const
+
+1604985525
+daurnimator
+i.e. it can't take static binary data.
+
+1604985543
+daurnimator
+if it was `[*]const u8` it would coerce.
+
+1604985629
+teratorn
+is there a way to get the size of such an array literal?
+
+1604985637
+teratorn
+like sizeof in C?
+
+1604985649
+daurnimator
+.len
+
+1604985660
+daurnimator
+but also @sizeOf
+
+1604985663
+teratorn
+ah
+
+1604985667
+daurnimator
+but only if you have the actual array literal
+
+1604985672
+daurnimator
+not a pointer to the array literal
+
+1604985683
+daurnimator
+which in C is a blurred line
+
+1604989962
+teratorn
+having trouble understand how to store HashMaps in an ArrayList... I seem to be adding keys, but in the end it prints that the map has 0 keys...
+
+1604990012
+nixel
+teratorn: approximately where are you modifying the map?
+
+1604990044
+nixel
+It's hard to help when most of the pasted file is irrelevant to the issue
+
+1604990075
+teratorn
+lines 80,103,162
+
+1604990080
+nixel
+(oh, and since this probably isn't obvious: hi, this is pixelherodev. I'm just playing with ircrc on 9front :)
+
+1604990287
+teratorn
+the map im modifying is in an arraylist in a struct.... i add keys and values, then i remove the map and return it at one point
+
+1604990292
+teratorn
+but then it has 0 keys
+
+1604990425
+daurnimator
+teratorn: I think HashMap doesn't make a copy of the key/value you pass; if you're passing in pointers (which I think you are?) then you need to make sure they live on.
+
+1604990508
+teratorn
+oh i want copies
+
+1604990570
+daurnimator
+teratorn: also note std.log for logging instead of the stdout prints you have
+
+1604990603
+daurnimator
+and std.debug.print for the printf based debugging I also see in there
+
+1604991006
+teratorn
+daurnimator, so how am i storing pointers? how do i change it to store the byte buffers themselves?
+
+1604991071
+daurnimator
+teratorn: you should think about lifetime of the data -> as long as they exist in the hashmap, you're going to want your keys/values to live.
+
+1604991085
+daurnimator
+teratorn: which may mean you e.g. `mem.dupe()` your keys
+
+1604991141
+daurnimator
+teratorn: oh also, for tests use `testing.allocator`
+
+1604991235
+teratorn
+how could the count go to 0 if dangling pointers remain in the map though?
+
+1604991335
+daurnimator
+I didn't get to that yet; saw all the other issues first
+
+1604991339
+daurnimator
+and now I have to head out
+
+1604991350
+teratorn
+ah, thanks anyway
+
+1604992335
+novaskell
+you're writing over it somewhere
+
+1604992479
+novaskell
+so by the time you finish reading one pair it's gone
+
+1604993339
+teratorn
+oh i think i get it
+
+1604993361
+teratorn
+i init a new hashmap  on the initial state of the state machine. i need to keep the exiting one if it exists
+
+1604993370
+teratorn
+novaskell, good call thank you!
+
+1604993374
+teratorn
+wonderful help here today
+
+1604993383
+teratorn
+zig is exceeding my expectations
+
+1604993714
+novaskell
+note, I'd write an iterator over length prefixed items instead of a parser in one go then write something like this `var it : Iterator = .{ .bytes = b1 }; while (it.next()) |kv| try map.put(kv.key, kv.value);` since the format is simple
+
+1604993832
+novaskell
+since then you just handle one pair at a time
+
+1604994240
+teratorn
+yeah its amp-protocol.net nice and simple :-)
+
+1604994271
+teratorn
+making a zig C API lib and hoping to wrap it for many languages with SWIG perhaps, and compile for JS via WASM
+
+1604994345
+pixelherodev
+the AMP protocol is Google's garbageware, right?
+
+1604994372
+pixelherodev
+ah phew, no
+
+1604994836
+teratorn
+its a terribly overloaded TLA :)
+
+1604995245
+teratorn
+
+
+1604995265
+teratorn
+having trouble understand why my hashmap is empty at the end of the test when im expecting it to have 2 k/v pairs
+
+1604995271
+teratorn
+*understanding
+
+1604999549
+daurnimator
+teratorn: I never see 'writing new AmpBox to box_buffer' printed
+
+1604999620
+daurnimator
+oh wait yes I do
+
+1604999765
+daurnimator
+teratorn: ah ha: your `box.put` is only putting into a copy on the stack
+
+1605000057
+daurnimator
+which you probably didn't realise because you made `box` `var` rather than `const`
+
+1605000840
+daurnimator
+which potentially gives a rationale for `fifo.readableSliceMut` to be public as you'll see
+
+1605002026
+daurnimator
+teratorn:
+
+1605014040
+Kena
+Hi. Please can somebody tell me why `expect((-1.9 + 1.45) == -0.45);` produces an test failure?
+
+1605014060
+ikskuh
+Kena: do you know about floating point precision?
+
+1605014114
+Kena
+expect there exist single et double precision mechanism defined by a spec intitled like IEEE 754, do i do not
+
+1605014124
+Kena
+*no, I do not.
+
+1605014152
+ikskuh
+okay
+
+1605014157
+ikskuh
+floating point is lossy
+
+1605014177
+Kena
+Do I have to read endless scientic paper or is there a explanation somewhere in the official zig site?
+
+1605014178
+ikskuh
+for simplicity, imagine you can only use numbers that end on 0/8th to 7/8th
+
+1605014194
+ikskuh
+there's no official zig explanation as it's not at all zig specific
+
+1605014200
+ikskuh
+just let me talk for a moment ;)
+
+1605014203
+Kena
+You're right.
+
+1605014203
+daurnimator
+Kena: it's nothing specifically to do with zig; it happens in all languages.
+
+1605014235
+ikskuh
+so, with our simple numbers, we can make "0.125", "0.5" and "0.875" precise
+
+1605014248
+ikskuh
+but if you write "0.2", you probably get "0.125" or "0.25"
+
+1605014260
+ikskuh
+so 0.2+0.2 is not 0.4
+
+1605014267
+ikskuh
+because 0.125 + 0.125 is not 0.5
+
+1605014272
+ikskuh
+(assuming rounding happens)
+
+1605014282
+ikskuh
+floating points have the same problem, but at a much finer granularity
+
+1605014292
+ikskuh
+so 0.5 is perfectly representable as a float
+
+1605014293
+ikskuh
+0.4 is not
+
+1605014300
+ikskuh
+it's just veeeery close to 0.5
+
+1605014302
+ikskuh
+*0.4
+
+1605014314
+ikskuh
+so what happens when you add two numbers is that you get these imprecisions
+
+1605014317
+daurnimator
+`lua -e 'print((-1.9 + 1.45) == -0.45, string.format("%.17g", -1.9+1.45), string.format("%.17g",-0.45))'` ==> `false-0.44999999999999996-0.45000000000000001`
+
+1605014324
+ikskuh
+and == is not a good way to compare floats
+
+1605014329
+ikskuh
+there's a function in std though
+
+1605014334
+ikskuh
+deltaEq i think
+
+1605014380
+daurnimator
+ikskuh: `approxEqAbs`?
+
+1605014384
+ikskuh
+ah yes
+
+1605014418
+teratorn
+daurnimator, cool, great! but why do you have to have index %= the buffer length?
+
+1605014435
+daurnimator
+teratorn: it's a ring buffer
+
+1605014459
+teratorn
+oh
+
+1605014470
+teratorn
+so the head isnt necessarily at the physical end
+
+1605014509
+daurnimator
+head is the offset (from buf.ptr) of the head of the fifo
+
+1605014521
+teratorn
+and I dont understand the line that begins  "break:"
+
+1605014562
+daurnimator
+teratorn:
+
+1605014675
+Kena
+thank you iksuh. But was it a single precision floating point explanation or floating point in general?
+
+1605014705
+daurnimator
+Kena: "Float literals have type comptime_float which is guaranteed to have the same precision and operations of the largest other floating point type, which is f128. "
+
+1605014712
+alexnask[m]
+This applies to all floating point numbers
+
+1605014746
+alexnask[m]
+floating point types*
+
+1605014758
+Kena
+Thank you both.
+
+1605014787
+Kena
+But that doesn't tell us is f128 have single or double precision lol.
+
+1605014841
+ikskuh
+f128 have quadruple precision
+
+1605014843
+ikskuh
+double = f64
+
+1605014847
+ikskuh
+single = f32
+
+1605014848
+ikskuh
+half = f16
+
+1605014854
+ikskuh
+quadruple = f128
+
+1605014887
+Kena
+yes thank you buddy, I just saw the quad precision on wikipedia. I'll complete my zig memorandum, thank you for your patience.
+
+1605014905
+Kena
+mister Xavier
+
+1605014944
+teratorn
+how do you do a for loop or foreach over a range of ints?
+
+1605014996
+Kena
+you assign your range of ints in a variable and iterate over it, then capture the payload and process it with the block
+
+1605014997
+ikskuh
+var i: usize = start; while(i < end) : (i += 1) { }
+
+1605014999
+alexnask[m]
+`var a: usize = ...; while (a < b) : (a += step) { }`
+
+1605015341
+ifreund
+'oy
+
+1605015352
+glamhoth
+o/
+
+1605015436
+alexnask[m]
+allô
+
+1605015935
+g-w1
+in stage2, an error set is represented as a *Decl. will the items in the error set be represented as Decl.scope.cast(Scope.Container)? type.zig:3111 is where im looking for the items in the error set
+
+1605016085
+g-w1
+this is the comment for container, so i was wondering if it also applies to error sets? :         /// struct, enum or union, every .file contains one of these.
+
+1605016794
+g-w1
+ah I think I have to cast it to Scope.LocalVal then cast that to zir.inst.ErrorSet then use the positionals field on that
+
+1605017738
+g-w1
+ok so to find the error set I had to do this:                 var error_set_a = a.cast(Payload.ErrorSet).decl.scope.cast(Module.Scope.LocalVal).inst.cast(zir.Inst.ErrorSet).positionals;
+
+1605017756
+g-w1
+this seems kinda wrong, is it?
+
+1605019376
+Kena
+Another noobie question, please why does `expect(std.math.maxInt(u10) == 1_000_000);` return a success? How can 1023 considered equal to 1 million?
+
+1605019649
+ikskuh
+it doesn't
+
+1605019655
+ikskuh
+at least not on 0.7
+
+1605019655
+ikskuh
+comptime { if(std.math.maxInt(u10) == 1_000_000) unreachable; }
+
+1605019694
+ikskuh
+same on 0.7
+
+1605019696
+ikskuh
+*0.6
+
+1605019707
+ikskuh
+is your expect executed?
+
+1605019727
+Kena
+I do not now, it is in a test block.
+
+1605019744
+Kena
+I'm using 0.7.0 on windows 10.19H1
+
+1605019765
+Kena
+s/now/know
+
+1605019820
+Kena
+I must miss something because all expect return success in other snippets of code even with absurd values.
+
+1605019872
+g-w1
+are you doing zig test or zig run
+
+1605019880
+Kena
+zig test
+
+1605019896
+Kena
+How can I now if a instruction is not executed?
+
+1605019900
+Kena
+s/now/know
+
+1605019907
+g-w1
+add @compilerError
+
+1605020055
+Kena
+const std = @import("std");test "expect testing" {    if (std.math.maxInt(u10) == 1_000_000) @compileError("The failed test has been correcly executed.");}
+
+1605020076
+Kena
+`zig test my_file.zig` passes.
+
+1605020108
+Kena
+that mean I do not test anything since I began reading ziglearn.org :/
+
+1605020276
+g-w1
+even with panic it doesn't work. interesting
+
+1605020293
+Kena
+If passes also with comptime block I do not understand.
+
+1605020304
+Kena
+const std = _whitelogger "expect testing" {    comptime {        if (std.math.maxInt(u10) == 1_000_000) @compileError("The failed test has been correcly executed.");    }}
+
+1605020343
+Kena
+const std = import("std); test "expect testing" {    comptime {        if (std.math.maxInt(u10) == 1_000_000) @compileError("The failed test has been correcly executed.");    }}
+
+1605020428
+Kena
+is it a bug related to Windows or did I miss a thing?
+
+1605020559
+dutchie
+
+
+1605020567
+g-w1
+it is the same on me linux
+
+1605020628
+ikskuh
+for me, it fails
+
+1605020649
+alexnask[m]
+And my axe
+
+1605020655
+alexnask[m]
+I mean, it fails on windows too :)
+
+1605020664
+ikskuh
+yeah, wine too
+
+1605020671
+ikskuh
+you sure you use the right file? ;)
+
+1605020687
+dutchie
+interestingly i
+
+1605020691
+dutchie
+
+
+1605020714
+alexnask[m]
+The if with the compileError passes which is a bug for sure
+
+1605020739
+RodBiren
+Hello everybody, new to zig and I made a total of one extremely minor doc contribution, so I am still learning. I just had a question about how to properly declare an extern "c" struct.
+
+1605020825
+ikskuh
+const Struct =extern struct { };
+
+1605021173
+RodBiren
+Oh, That makes a lot more sense than "extern "c" const Point = struct {}"
+
+1605021180
+RodBiren
+Thank you
+
+1605021911
+Kena
+I submitted the bug on github alexnask[m]  #7050
+
+1605022003
+dutchie
+i think that's actually correct behaviour, on reflection
+
+1605022023
+dutchie
+the compiler can at comptime see that those are unreachable and ignore them
+
+1605022042
+alexnask[m]
+oh waiot im dumg
+
+1605022048
+Kena
+after reflexion or compile-time reflection you mean?
+
+1605022050
+dutchie
+it's just a more complicated way of writing `if (false) { @compileError("") }`
+
+1605022054
+alexnask[m]
+dumb*, should be != instead of == >.>
+
+1605022095
+g-w1
+were all dumb
+
+1605022101
+Kena
+Allright, so I can safely remove the issue?
+
+1605022115
+alexnask[m]
+I closed it dw, sorry about that :P
+
+1605022140
+Kena
+Thank you, sorry for the inconvenience.
+
+1605022546
+g-w1
+why is -femit-zir not working
+
+1605022570
+g-w1
+also, is the textual representation of zig in stage1 same as stage2?
+
+1605022585
+g-w1
+*textual representation of zir
+
+1605022594
+travv0
+nope
+
+1605022724
+g-w1
+LLVM11 arch is out!! finally!
+
+1605024145
+teratorn
+how do I get the nanoTimestamp() function in scope?
+
+1605024181
+g-w1
+const nanoTimestamp = std.time.nanoTimestamp
+
+1605024186
+ikskuh
+damn, too slow :D
+
+1605024988
+TheLemonMan
+hello people, how's 0.7 treating you?
+
+1605025012
+Kena
+From a performance point of view, does `import("std")` slow down the software by importing all even not used standard API?
+
+1605025028
+Kena
+Hello LemonGuy
+
+1605025056
+fengb
+No, the compiler only does rudimentary parsing on import by default because it's lazy
+
+1605025064
+scientes
+Kena, zig is statically linked, like fengb just said
+
+1605025084
+scientes
+oh yeah, also the lazy parsing thing
+
+1605025090
+scientes
+so it doesn't even really read that code
+
+1605025099
+scientes
+only the test suite does that
+
+1605025101
+fengb
+It takes the hit on file access/read, but it only does real work once you reference the variables you need
+
+1605025158
+Kena
+Allright! But static and dynamic linking aren't explained anywhere, except the former one happens at link-time. But I don't know/understand what does it involves/implies/offers.
+
+1605025176
+scientes
+linking really is a different issue
+
+1605025181
+fengb
+So doing something like `@import("std").debug.warn("foo", .{})` means it'll only import std.zig and std/debug.zig
+
+1605025182
+scientes
+sorry for confusing you
+
+1605025189
+Kena
+lol
+
+1605025194
+Kena
+thanks guys
+
+1605025197
+fengb
+None of the other files are pulled in or analyzed because Zig is really lazy
+
+1605025216
+scientes
+lazy zig is a awesome feature
+
+1605025219
+Kena
+Allright, the lazy evaluation mechanism I understand.
+
+1605025227
+fengb
+(Well I guess it also imports os, io, and fmt due to those dependencies)
+
+1605025243
+fengb
+But it doesn't pull in all of std
+
+1605025301
+Kena
+yes but lazy evaluation do not raise errors compilation when a ill-defined branch is considered dead, which can introduce regression much later if the branching should be altered.
+
+1605025319
+fengb
+That is true yes
+
+1605025352
+scientes
+I aspire to be as lazy as zig in my daily life :)
+
+1605025636
+TheLemonMan
+let's throw away the ziguana and adopt a sloth as mascotte!
+
+1605025656
+g-w1
+sonic
+
+1605026042
+TheLemonMan
+sanic
+
+1605026145
+gonz_
+Are there any packages people would use for HTTP client stuff right now?
+
+1605026178
+g-w1
+ziget
+
+1605026340
+dutchie
+i need to solve that problem at some point, though i was half-planning to just use libcurl
+
+1605026412
+TheLemonMan
+yak shaving ftw
+
+1605026440
+TheLemonMan
+once the http library is done it's time to tackle the ssl library and so on...
+
+1605026448
+dutchie
+yeah, currently i have a half-bald libmpv-shaped yak
+
+1605026462
+g-w1
+is the plan to include a big stdlib? or to reccomend outside libs?
+
+1605026463
+dutchie
+then i can move onto the https one
+
+1605027387
+g-w1
+can someone else confirm that -femit-zir is broken in stage1 before i report an error?
+
+1605027414
+pixelherodev
+It's not
+
+1605027423
+pixelherodev
+g-w1: ZIR is a stage2 detail
+
+1605027431
+pixelherodev
+emit-zir makes no sense in stage1
+
+1605027436
+g-w1
+there is no stage1 ir?
+
+1605027443
+pixelherodev
+There is. emit-ir
+
+1605027450
+pixelherodev
+There is no stage1
+
+1605027452
+teratorn
+can i run tests with full optimizations?
+
+1605027454
+pixelherodev
+It has a different IR
+
+1605027459
+g-w1
+-femit-ir not found
+
+1605027468
+pixelherodev
+teratorn: yes, but generally harmful
+
+1605027481
+pixelherodev
+Most of the time the optimizations take more time than the tests would
+
+1605027544
+teratorn
+how?
+
+1605027562
+pixelherodev
+zig test --release-fast I think?
+
+1605027574
+s-ol
+hey, anyone know how come a release-small freestanding wasm32 binary with essentially nothing in it is 52k?
+
+1605027586
+s-ol
+i compiled the code piece from here:
+
+1605027595
+teratorn
+ah, -O ReleaseFast
+
+1605027616
+s-ol
+i dont have any toolchain set up on this laptop so I cant inspect the file well, but it seems to contain a bunch of junk math symbols
+
+1605027695
+teratorn
+hmm, my test case is stuck
+
+1605027706
+teratorn
+how do i get a stack trace on windows :/ ?
+
+1605027712
+pixelherodev
+you optimized?
+
+1605027717
+teratorn
+either way
+
+1605027720
+pixelherodev
+It might just be hangin - ah
+
+1605027730
+teratorn
+its hung using no cpu
+
+1605027737
+teratorn
+but supposed to be in a 1000000 for loop
+
+1605029244
+sergeeeek[m]1
+Is there a reason why expression blocks use a weird break blk; syntax instead of just return?
+
+1605029244
+sergeeeek[m]1
+Or similar to rust where last expression without a semicolon is a return statement
+
+1605029697
+g-w1
+it is so that you can have nested blocks
+
+1605031007
+Kena
+Does someone know the status of a issue related to not priting a result in the absence of a newline character? I've been subject to the same bug accidentally and I do not remember the number's issue.
+
+1605031049
+g-w1
+this has to due with terminal buffering i think
+
+1605031218
+Kena
+A bad conversion between CRLF and LF in the text editor you mean?
+
+1605031281
+g-w1
+when doing std.debug.print("no new line", .{}); what happens?
+
+1605031381
+Kena
+yes your minimal case do the trick: nothing is printed in stdout.
+
+1605031419
+g-w1
+what terminal are you using. the new windows terminal
+
+1605031426
+Kena
+This was published somewhere in the netherland of the 1400 issues.
+
+1605031438
+Kena
+I'm using powershell.
+
+1605031453
+fengb
+Huh, isn't stderr supposed to flush regardless of terminating newline?
+
+1605031488
+Kena
+I do not know.
+
+1605031494
+g-w1
+Kena, when you do "#include <stdio.h> int main() {printf("doesthiswork");}" and compile it does it work
+
+1605031500
+g-w1
+(this is c)
+
+1605031601
+Kena
+let me look at the doc 1 second I do not know how to test a .c file
+
+1605031611
+g-w1
+zig cc :P
+
+1605031633
+Kena
+lol indeed.
+
+1605031834
+Kena
+i'm running `zig cc test15.c -lc -target native-native-gnu` . I thought the target was a default value for 0.7.0 but it returned `error: unable to create compilation: WindowsSdkNotFound` so I passed it anyway.
+
+1605031865
+g-w1
+does zig cc test15.c -o test15 not work?
+
+1605031883
+Kena
+It's still compilling! (with a warning)
+
+1605031921
+Kena
+Allright, done. It hasn't returned anything in stdout.
+
+1605031949
+g-w1
+sounds like a problem with buffering in powershell. when you print the \n it works?
+
+1605031993
+Kena
+in zig yes, in C I do not know yet.
+
+1605032105
+andrewrk
+o/ TheLemonMan
+
+1605032154
+Kena
+In fact, I didn't run it , I just compiled it. How do you run a C program on Windows?
+
+1605032189
+andrewrk
+zig run hello.c
+
+1605032292
+Kena
+thanks, now it tells me `test15.c:1:10: fatal error: 'stdio.h' file not found`
+
+1605032350
+Kena
+by the way g-w1, `zig cc test15.c -o test15 -lc -target native-native-gnu` produces `error: FileNotFound`
+
+1605032387
+g-w1
+interesting. well to fix the error with zig run do `zig run test15.c -lc` to link the c standard library
+
+1605032437
+Kena
+Compiling is a whole new world for me because I was only learning the language's syntax hitherto.
+
+1605032455
+Mat5
+G'Day. I tried to build the Zig bootstrap sources for version 0.7.0. However this failed for the test suite at linking stage. From the error log, it seems the glib interface is not correctly detected.
+
+1605032566
+Mat5
+does one know how to fix this?
+
+1605033294
+andrewrk
+Mat5, which target?
+
+1605033345
+Mat5
+native (AMD64, Arch linux)
+
+1605033416
+andrewrk
+try this triple and cpu instead: native-native-musl native
+
+1605033432
+andrewrk
+what this does is everything native except use musl to static link libc
+
+1605033458
+Mat5
+thanks, will post about the result later (build need some time)
+
+1605033476
+andrewrk
+but an error report would be appreciated for the other one because last I checked, that also worked
+
+1605033596
+Mat5
+ok
+
+1605038609
+plakband
+Why is this allowed
+
+1605041034
+andrewrk
+plakband, I think you found a neat little compiler bug
+
+1605041089
+plakband
+andrewrk: yay!
+
+1605041101
+plakband
+Want me to open an issue?
+
+1605041195
+andrewrk
+yes please
+
+1605041878
+data-man
+Zig in GH topics. Soon. ™
+
+1605041973
+andrewrk
+data-man, congrats on getting it merged :)
+
+1605041992
+andrewrk
+so what does that mean in practice?
+
+1605042105
+data-man
+Zig will appear on
+
+1605042215
+data-man
+But it will take some time to update.
+
+1605042431
+develonepi3
+andrewrk: Do you think zig has a place in HDL? I am trying to get back into FPGAs.  I ask since, I just read that LLVM is being used for HDL.
+
+1605042489
+andrewrk
+develonepi3, hmm that's a good question that I don't think I am qualified to answer. however I bet some people around here may know the answer
+
+1605042573
+develonepi3
+andrewrk: They are using C and claim LLVM some features that make it a good choice.
+
+1605042613
+andrewrk
+do you know which llvm target that corresponds to?
+
+1605042666
+virgohg_
+If LLVM were migrated to Zig, it would be epic.
+
+1605042744
+andrewrk
+I don't think that there exists any universe in which that happens
+
+1605042809
+virgohg_
+If Zig proves itself worthy of migrating to for LLVM, then why not?
+
+1605042837
+andrewrk
+it's millions of lines of c++
+
+1605042837
+companion_cube
+it'd be a lot of effort with no clear reward for people doing it
+
+1605042898
+virgohg_
+Yeah, but the technical debt always accumulates.
+
+1605042923
+ifreund
+more likely would be a new project with similar scope/goals written in zig
+
+1605042953
+ifreund
+llvm is too big to port
+
+1605042970
+g-w1
+maybe factoring out the codegen of the self hosted backend?
+
+1605043045
+develonepi3
+andrewrk: I can't find which version yet. This is the only info I have for now "
+
+1605043341
+develonepi3
+andrewrk: There is a website "
+
+1605043451
+andrewrk
+ikskuh, who do you think we have in this channel who would be interested in this topic that develonepi3 is bringing up?
+
+1605043510
+ikskuh
+pixelherodev, and me probably. i think either firefox and lemonman also are interested in lowlevel stuff
+
+1605043529
+ikskuh
+and develonepi3: the answer is quite simple: no sequential programming language is suited for FPGA
+
+1605043556
+ikskuh
+people try, but they fail
+
+1605043565
+ikskuh
+the reason is that FPGAs are not computers
+
+1605043576
+ikskuh
+and programming languages are tailored for sequential computers
+
+1605043663
+ikskuh
+programming langauges assume stuff like registers, stacks,
+
+1605043696
+develonepi3
+I have used MyHDL and now I see Chisel.  This is also geared to RISC-V world.
+
+1605043718
+develonepi3
+To compete with ARM.
+
+1605043787
+ikskuh
+can you elaborate?
+
+1605043804
+ikskuh
+i've taken a quick look at chisel and MyHDL, but i don't really see the appeal in them
+
+1605043814
+develonepi3
+For TLV Steve Hoover is using M4 with a product sandpiper.
+
+1605043891
+develonepi3
+Well at AWS some foks are running up to 1600 cores for things like face detection and Machine Learning.
+
+1605043986
+ikskuh
+i can't really follow
+
+1605044001
+ikskuh
+what is a "core" in that context?
+
+1605044045
+develonepi3
+Steve Hoover is using java to control the M4 which generates System Verilog.
+
+1605044100
+develonepi3
+See
+
+1605044138
+ikskuh
+so the original question was if Zig is suitable for HDLs and my answer to that is: definitly not
+
+1605044158
+yZ5vlALg86lP
+may i ask what the difference is between `buf` and the return value []u8 in `pub fn bufPrint(buf: []u8, comptime fmt: []const u8, args: var) BufPrintError![]u8`?
+
+1605044214
+ikskuh
+yZ5vlALg86lP: buf is a backing storage, the return value is a slice of the backing storage containing the result
+
+1605044321
+yZ5vlALg86lP
+couldn't the backing storage be also be already a slice?
+
+1605044335
+ikskuh
+yes, it's a slice ([]u8)
+
+1605044369
+ikskuh
+you pass in a set of bytes that is enough for the formatting (this is backing storage)
+
+1605044382
+ikskuh
+and bufPrint will fill that storage with a formatted string
+
+1605044412
+ikskuh
+and will return the portion of the backing storage which was filled
+
+1605044507
+yZ5vlALg86lP
+ah. so the two values could be the same, and if i know that in advance i could just _ = bufPrint() catch ...;
+
+1605044541
+yZ5vlALg86lP
+where the two values = the return value and buf
+
+1605044578
+novaskell
+develonepi3: there's also clash-lang (haskell) and an attempt to compile haskell directly
+
+1605044607
+ikskuh
+yZ5vlALg86lP: no, you should not ignore it
+
+1605044614
+ikskuh
+the returned value will surely have a different length
+
+1605044618
+ikskuh
+usage example:
+
+1605044639
+ikskuh
+var backing_store: [256]u8 = undefined ; // 256 byte of memory to store our formatted string
+
+1605044676
+ikskuh
+var formatted = try std.fmt.bufPrint(&backing_store, "{}", .{ 10 }); // this will format the number into the string
+
+1605044697
+ikskuh
+// formatted is a pointer to backing_store, but with len=2 instead of len=256
+
+1605044713
+yZ5vlALg86lP
+i'm doing: var hex: u[64] = undefined; and then _ = bufPrint(hex, "{x:0>64}", someother[32]u8) catch ...
+
+1605044730
+ikskuh
+backing_store is still 256 bytes long. 2 of which are defined by bufPrint,  254 which are undefined
+
+1605044754
+yZ5vlALg86lP
+eh. not even
+
+1605044755
+ikskuh
+this is a special case: your backing store is exactly as long as the formatted result
+
+1605044765
+yZ5vlALg86lP
+the var hex: is actually allocated, not undefined.
+
+1605044777
+ikskuh
+yeah, doesn't matter in that case
+
+1605044794
+ikskuh
+got to go
+
+1605044794
+yZ5vlALg86lP
+so i can in my case just ignore the return value. thanks!
+
+1605044798
+yZ5vlALg86lP
+thanks!
+
+1605044808
+ikskuh
+i wouldn't ignore the return value, it's bad practise ;)
+
+1605044813
+ikskuh
+but it works in that special case
+
+1605044833
+ikskuh
+have a good night (or appropriate time zone respective greeting)
+
+1605044843
+yZ5vlALg86lP
+you too
+
+1605044907
+yZ5vlALg86lP
+i use the bufPrint to fill a field in a struct, and that field of the struct is the backingstore, i dunno what to do with the return value from bufPrint really
+
+1605044934
+yZ5vlALg86lP
+i could compare it to be the same as the backingstore slice. but i dunno if that makes any sense.
+
+1605047814
+hch
+exploring golang and zig in depth at the same, let's see how it goes
+
+1605048428
+RodBiren
+Apparently trying to cross compile easily?
+
+1605048452
+Seich
+:q!
+
+1605048586
+g-w1
+I am trying to impliment type equality checking for error sets and am a little confused to get the elements of the error set. i have `a.cast(Payload.ErrorSet).?.decl.scope.cast(Module.Scope.Container).decls`. but this doesn't give me the items in the error set? from my debugging in gdb, the scope of the decl of a Type.Payload.ErrorSet is a container but at line 2702 in type.zig it says that error set is not a
+
+1605048589
+g-w1
+container. what should I cast the scope to? this confused me a bunch. any help would be appreciated.
+
+1605048600
+g-w1
+this is in stage2 of the self hosted compiler
+
+1605048777
+teratorn
+what's the format specifier to specify float precision?
+
+1605048858
+companion_cube
+%.4f I guess?
+
+1605048883
+teratorn
+well i have a {} placeholder in a log.err formate
+
+1605048982
+ifreund
+teratorn: see the doc comment of std.fmt.format
+
+1605049179
+teratorn
+hmm. im trying {e:.2} and {:.2} and it doesnt matter :/
+
+1605049576
+teratorn
+i dun get it
+
+1605050145
+teratorn
+ifreund, do you know what im doing wrong?
+
+1605050498
+ifreund
+teratorn: {:.9} seems to work fine for me
+
+1605050652
+teratorn
+oh maybe it works i just dont want engineering notation
+
+1605050736
+teratorn
+ifreund, i dont see a specifier for regular decimal notation.. (?)
+
+1605050745
+fengb
+Should be {d}
+
+1605050776
+fengb
+
+
+1605050810
+ifreund
+from the doc comment: "`d`: output numeric value in decimal notation"
+
+1605050850
+teratorn
+my brain thinks decimal for d , from C
+
+1605051198
+teratorn
+fengb, how about formatting locale-aware numbers? i.e. 1,000,000
+
+1605051212
+ifreund
+ew please no
+
+1605051228
+ifreund
+locales in libc was a massive mistake
+
+1605051245
+teratorn
+well i didnt suggest that necessarily
+
+1605051277
+ifreund
+maybe I misunderstand what you mean by "locale-aware numbers" then?
+
+1605051303
+teratorn
+well it could be a library
+
+1605051318
+teratorn
+something needs to implement nation and culture-specific formatting
+
+1605051325
+fengb
+You can make a custom format wrapper
+
+1605051365
+fengb
+
+
+1605051417
+ifreund
+yeah that definitely should be separate from the standard library imo
+
+1605051428
+ifreund
+anything so subjective and fluid should be really
+
+1605052614
+yZ5vlALg86lP
+is there any std fn to delete a directory recursively?
+
+1605052628
+yZ5vlALg86lP
+couldn't find any on cursory search in os.zig
+

@@ -1,0 +1,900 @@
+1583971343
+mikdusan
+the horror of posix reserved names; ending `_t`, beginning `str` `mem` `wcs` `is` `to` and `E`:
+
+1583971347
+mikdusan
+
+
+1583971381
+pixelherodev
+Had to refactor a lot of code after realizing that
+
+1583971656
+fengb
+It's amazing what could be solved with proper namespacing >_>
+
+1583972973
+daurnimator
+mikdusan:
+
+1583973171
+mikdusan
+daurnimator: ah thanks 86 pages of productivity!
+
+1583973440
+pixelherodev
+Ugh, good to know
+
+1583973503
+pmwhite
+Thanks for the help guys. This is basically what I ended up doing: `while (!std.mem.allEqual(u8, std.mem.asBytes(&list[i]), 0)) {}`
+
+1583973665
+daurnimator
+pmwhite: what was the std.mem.zeroes error you got before?
+
+1583973884
+pmwhite
+our of bounds pointer access at @sizeOf(T), where T is the parameter passed to std.mem.zeroes.
+
+1583973950
+pmwhite
+I was trying to use it as the sentinal. The function works when it goes at runtime, but when it stands as a sentinel, it has to be comptime.
+
+1583973991
+daurnimator
+pmwhite: I'm confused... please share a sample?
+
+1583974015
+pmwhite
+`var x = std.mem.zeroes(T);` works fine.
+
+1583974057
+pmwhite
+`var xs: [*:std.mem.zeroes(T)]const T = c_function();` gives the error.
+
+1583974250
+pmwhite
+looks like it has something to do with the generated c struct because I'm having trouble making a small repro.
+
+1583974405
+daurnimator
+pmwhite: does `[*:comptime std.mem.zeroes(T)]` help?
+
+1583974421
+mikdusan
+am I missing something? probably. but `var xs: [*:null]?*T =`
+
+1583974446
+daurnimator
+mikdusan: its not a *T but a T
+
+1583974497
+pmwhite
+daurnimator: doesn't help. how can I see the translate-c output to see what the generate c struct is?
+
+1583974530
+daurnimator
+pmwhite: option 1. use `zig translate-c` . options 2. dig around in zig-cache/ for cimport.zig
+
+1583974599
+daurnimator
+mikdusan: they're probably using a pattern where a C array is written like: `static const struct foo bar[] = { {"blah", 42}, {"more", 123}, {0} };` and then they need to read through in from zig.
+
+1583974603
+mikdusan
+daurnimator: your suggestion works: `var xs: [*:comptime std.mem.zeroes(Foo)]Foo = undefined;`
+
+1583974668
+mikdusan
+`@compileLog(@TypeOf(xs)` --> | [*:(struct Foo constant)]Foo
+
+1583974704
+daurnimator
+mikdusan: the `comptime` shouldn't be required (theorectically) right?
+
+1583974755
+mikdusan
+it needs a comptime; because it's a value, not a type
+
+1583974763
+pmwhite
+That breaks.
+
+1583974791
+pmwhite
+comptime breaks as well.
+
+1583974848
+pmwhite
+I thought comptime was only used to force a function to be evaluated when it otherwise could be just compiled. Like, it removes the need for the compiler to make a judgement call. Here, it is completely necessary for the call to be made at comptime.
+
+1583974929
+mikdusan
+pmwhite: hmm... removing extern from `extern struct`
+
+1583974957
+pmwhite
+Yeah, that works, but you can't make translate-c do that.
+
+1583975057
+pmwhite
+Also, I kinda expected for loops to work with sentinal terminated pointers. I guess that would fall under the hidden-function call rule though.
+
+1583975067
+pmwhite
+Is there an iterator at least?
+
+1583975297
+mikdusan
+I tried a few variations, bottom line: `_ = comptime std.mem.zeroes(T);` fails when T is `extern struct` with some kind of "out of bounds pointer access" error
+
+1583975821
+pmwhite
+Essentially the same error.
+
+1583975939
+pmwhite
+The error happens because of the `@memset` call.
+
+1583975947
+andrewrk
+pixelherodev, mikdusan and to all lurkers: in case it isn't clear, those reserved names do not apply to zig
+
+1583976058
+andrewrk
+pmwhite, if daurnimator's code example is accurate, you shouldn't need to check all the fields, just one of them that is otherwise not supposed to be null
+
+1583976115
+andrewrk
+mikdusan, there are a bunch of cases where an expression is implicitly comptime. one example is in the array length expression. another example is in the sentinel expression. so an explicit `comptime` is not necessary (or if it is then it's a bug)
+
+1583976160
+pmwhite
+Oh, that's true.
+
+1583977509
+daurnimator
+andrewrk: it does apply to gen-h though :)
+
+1583977538
+andrewrk
+good point
+
+1583977549
+daurnimator
+pmwhite: when you send long messages they come through as matrix links.... can you try to avoid that?
+
+1583977566
+daurnimator
+or I guess it's as good as a pastebin....
+
+1583977573
+andrewrk
+I was going to say, it seems perfect to me
+
+1583977617
+pmwhite
+Wait, really. I had no idea it was doing that. If you'd like me to quit it, I can, but it sounds like it's actually just fine.
+
+1583977672
+daurnimator
+andrewrk: what do you mean "just one of them that is otherwise not supposed to be null"
+
+1583977736
+andrewrk
+daurnimator, in your example, the first field which is presumably a `const char *`
+
+1583977770
+andrewrk
+I doubt the C code is checking all the fields to detect if it's a sentinel
+
+1583977810
+daurnimator
+andrewrk: I just made that example up; I just picked a random type :P
+
+1583979772
+pmwhite
+I've been confused for a while what the sprintf equivalent for zig is. std.fmt.format seems like it might be it, but I'm completely confused how to use it.
+
+1583979831
+BaroqueLarouche
+Philip White:  You're looking for std.fmt.bufPrint
+
+1583980258
+pmwhite
+suprised I missed that. I think allocPrint might actually be what I want.
+
+1583981161
+fengb
+Did bitshifting bound checks change?
+
+1583981326
+fengb
+Ah yes, apparently I was failing to correctly check my bounds
+
+1583983067
+andrewrk
+fengb, do you have any perf benchmarks for your project? Im curios if the stream changes had any impact
+
+1583984673
+andrewrk
+gonna have to postpone packed struct fixes/improvements until after 0.6.0. sorry folks
+
+1583987579
+mikdusan
+i tried to trick github comments by hand-editing a line-range to ir.cpp so that it shows the code section... but nope. github doesn't like that big file 😠
+
+1583987664
+andrewrk
+If I can store the meaning of a 1.4 MiB C++ code file, GitHub should be able to display it in a web browser
+
+1583987675
+andrewrk
+If I can store the meaning in my head of a 1.4 MiB C++ code file, GitHub should be able to display it in a web browser
+
+1583987711
+andrewrk
+j/k. anyway in zig this is less of a problem since whether functions are in the same file or not has less semantic meaning
+
+1583988294
+mikdusan
+... just throwing shade at github. My only real gripes are file-size limit, and no darkmode
+
+1583991807
+fengb
+andrewrk: nope, though I could theoretically cobble something together. It would also stress test my parser
+
+1583992140
+fengb
+Lemme see if it can parse my emulator (lol)
+
+1583993863
+fengb
+Seems about the same for sync mode. Maybe 2-3% faster
+
+1583993893
+fengb
+Not able to test async cause Mac >_>
+
+1583994015
+fengb
+The new api is a lot easier to get right 👍
+
+1583994032
+fengb
+Trying to find the right &stream was pretty annoying heh
+
+1583995458
+andrewrk
+noted
+
+1583995976
+plumm
+andrewrk: what did you mean for #4427 being self hosted?
+
+1583995987
+plumm
+just implemented in the self hosted version?
+
+1583996294
+andrewrk
+there's a whole mechanism for self-hosting parts of the compiler
+
+1583996542
+plumm
+oh. i added the zig info command but i was gathering a bunch of the info with methods that i don't think are the self hosted variants
+
+1584005980
+TheLemonMan
+fengb, the stdlib has some functions to read varints off a stream
+
+1584006021
+TheLemonMan
+they're stashed in debug.leb, the discoverability is not that great
+
+1584012215
+daurnimator
+TheLemonMan: many varints are different varints :P
+
+1584012225
+daurnimator
+Also I noticed that there is no stream.writeStruct
+
+1584013022
+TheLemonMan
+daurnimator, hm? I haven't seen any other varint encoding in the wild
+
+1584013064
+daurnimator
+TheLemonMan: what's debug.leb128? high byte = continuation byte?
+
+1584013074
+TheLemonMan
+yep
+
+1584013095
+TheLemonMan
+signed&unsigned, we use it in the debug info parser
+
+1584013117
+daurnimator
+utf8-style?
+
+1584013139
+TheLemonMan
+yep
+
+1584013172
+daurnimator
+no I mean: utf8 is a different varint coding to pure high byte = continuation
+
+1584013243
+TheLemonMan
+well the msb is still the discriminant between single-byte and multi-byte
+
+1584013275
+daurnimator
+single byte and multi byte yes... but not an indication of if this is the last byte
+
+1584013378
+TheLemonMan
+you can see utf8 as a leb-encoded value with a sub-encoding applied to its content
+
+1584013396
+daurnimator
+yes. but debug.leb128 would fail at decoding it :P
+
+1584013507
+TheLemonMan
+hmm, you probably can, if you special case the single-byte case
+
+1584020732
+mq32
+> This view will soon be deprecated in favor of the new notifications experience. Learn more about notifications.
+
+1584020760
+mq32
+does anyone here has a positive experience?
+
+1584020816
+alexnask
+I tried it for a bit and switched to the old one shortly after :p
+
+1584020843
+mq32
+yeah, me too
+
+1584020884
+mq32
+old/current one is much clearer
+
+1584020957
+daurnimator
+old one I have a pattern I know of when to open new tabs and trick it in regards to read-notifications
+
+1584020971
+daurnimator
+it has been pretty awkward in the past
+
+1584020974
+daurnimator
+I think I just need to get used to the new one
+
+1584020990
+mq32
+i read most notification in my mail client
+
+1584021060
+fengb
+The new display is too verbose
+
+1584021102
+daurnimator
+mq32: I just use the mail ones for notifications. people so often fix typos etc that I want to see them on github anyway
+
+1584021146
+mq32
+<fengb> The new display is too verbose
+
+1584021157
+mq32
+yeah, i think there's too much informational noise
+
+1584027479
+fengb
+`const FifoStream = struct {  const OutStream = std.io.OutStream(*Self, Error, write);` be ever so slightly nicer to have anon functions :P
+
+1584027511
+mq32
+fengb: yep!
+
+1584027718
+fengb
+Anyone know how I can rerun a Github action?
+
+1584029620
+andrewrk
+huh, TIL rust has a "support tiers" system like zig. I wonder which came first
+
+1584029630
+andrewrk
+"Apple is no longer supporting 32-bit targets, and so, neither are we. They have been downgraded to Tier 3 support by the project."
+
+1584029657
+TheLemonMan
+can't wait 'till Apple drops support for x86 altogether
+
+1584029744
+andrewrk
+ha. what arch would they use instead?
+
+1584029784
+TheLemonMan
+there was some talk about switching to ARM
+
+1584029806
+TheLemonMan
+but deep down I hope for a resurgence of the beloved MIPS
+
+1584029892
+mq32
+TheLemonMan: what about RiscV? But AARCH64 for desktop would be neat, too
+
+1584029916
+andrewrk
+mips was the target arch of my uni compilers course
+
+1584029938
+andrewrk
+we were supposed to generate C code with some arbitrary restrictions, but I thought that was lame so asked the prof if I could output mips instead
+
+1584029938
+mq32
+yeah, here as well ^^
+
+1584029960
+andrewrk
+no offense to nim :P
+
+1584029960
+TheLemonMan
+risc-v is quite nice for embedded stuff because you can mix and match whatever ISA features you need
+
+1584030096
+shakesoda
+andrewrk: apple is expected to be switching macs to arm within the next, like, year
+
+1584030118
+andrewrk
+orly? that is news to me
+
+1584030153
+shakesoda
+i'd be pretty surprised if we didn't see at least one arm mac in 2021, the writing has been on the wall for a while
+
+1584030181
+fengb
+Still just a rumor
+
+1584030187
+andrewrk
+the iphone already uses arm right?
+
+1584030200
+shakesoda
+yes, iphone and ipad have always been arm
+
+1584030325
+shakesoda
+their latest rounds of SoC's are no slackers, it's not even slightly a stretch of the imagination that they'll be able match or beat the performance they're getting out of intel already
+
+1584030376
+shakesoda
+mostly though, they stand to gain a lot of money by not having to pay intel.
+
+1584030418
+fengb
+Their chips are also much better power efficiency
+
+1584030422
+fengb
+But... software
+
+1584030454
+shakesoda
+I suspect all the macos software has worked on arm for a long time, but third party stuff will be a rough transition (again)
+
+1584030479
+shakesoda
+I'll bet anything this is why they have dropped 32-bit though
+
+1584030489
+fengb
+And no more bootcamp D:
+
+1584030504
+andrewrk
+^ good thing zig supports arm windows
+
+1584030524
+shakesoda
+fengb: well... not for x64 at least
+
+1584030530
+mq32
+shakesoda: I own a Oculus Quest and i'm absolutely astonished about the performance they get out of a mobile GPU
+
+1584030534
+mq32
+and CPU
+
+1584030541
+fengb
+Is arm windows still a thing?
+
+1584030544
+shakesoda
+sure is
+
+1584030546
+mq32
+yep
+
+1584030558
+shakesoda
+mq32: yeah, it's quite amazing how far mobile tech has come
+
+1584030562
+mq32
+yeah
+
+1584030577
+shakesoda
+and the quest SoC is a couple generations old, too
+
+1584030584
+mq32
+VR was like "you need a > 1000$ gaming rig to do at least mediocre VR"
+
+1584030594
+mq32
+and now it's like "yeah, just use this glorified android smartphone! :D
+
+1584030685
+mq32
+oh, neat!
+
+1584030691
+mq32
+you do gamedev for money?
+
+1584030692
+shakesoda
+the one thing i hate about it is that android is utterly terrible to develop for
+
+1584030695
+shakesoda
+mq32: yeah
+
+1584030714
+mq32
+a friend of mine has the "honour" to work with the newest Snapdragon 865
+
+1584030748
+mq32
+he said, some colleagues use their mobile phone prototype with the snapdragon and a LARGE cpu cooler to compile their build of the linux kernel
+
+1584030749
+shakesoda
+how many driver bugs are we talking :D
+
+1584030764
+mq32
+as it's much faster than their i7 laptops :D
+
+1584030777
+shakesoda
+heh, I believe it
+
+1584030907
+Snektron
+my uni compiler targeted risc-v
+
+1584030911
+shakesoda
+on this exact note, I want arm workstations to become conventionally available, and the laptop situation is pretty sparse
+
+1584030923
+Snektron
+but personally im still rooting for mill processors
+
+1584030928
+fengb
+My uni targeted Java bytecode -_-
+
+1584030945
+Snektron
+no wait, risc-v was the emulator i wrote
+
+1584030947
+shakesoda
+it's like... get a pinebook pro (not doable currently, because coronavirus), get some expensive snapdragon 8cx laptop, or use some sbc
+
+1584030955
+Snektron
+the compiler course was mips
+
+1584030976
+shakesoda
+fortunately, I happen to love working with sbc's
+
+1584030977
+Snektron
+sadly they had us write a simple pascal clone
+
+1584031096
+shakesoda
+andrewrk: fwiw, zig's excellent support for cross target stuff is a
+
+1584031099
+shakesoda
+zig on all the things!
+
+1584031197
+mq32
+<shakesoda> zig on all the things! +2!
+
+1584031226
+andrewrk
+I was able to compile llvm 10 on pine book
+
+1584031231
+fengb
+RIIZ
+
+1584031296
+mq32
+neat!
+
+1584031312
+mq32
+also, one day we need plan9 support for the compiler
+
+1584031357
+companion_cube
+why though? :p
+
+1584031368
+fengb
+Why... not
+
+1584031385
+fengb
+Support all the things
+
+1584031392
+companion_cube
+ah, you mean the OS, not the idea of everything is a file?
+
+1584031418
+mq32
+the OS itself, yes
+
+1584031429
+fengb
+Does anyone run Plan9?
+
+1584031436
+fengb
+I've always been curious
+
+1584031443
+mq32
+i want to take a closer look at plan9 as a user, my latest experience with ACME was awesome
+
+1584031455
+mq32
+their editor is just crazy
+
+1584031487
+mq32
+i'll try to get p9 running on a RPI
+
+1584033726
+mikdusan
+Snektron: yeah I'd love to see impl of some mill ideas like implicit-zero stack frames, hardware instr for frame alloc, which incidentally also stores return addresses somewhere off-stack
+
+1584034475
+TheLemonMan
+an off-memory return address stack sounds interesting, does any modern/ancient ISA have that?
+
+1584035523
+fengb
+... we're closer to Y2038 than Y2K. I feel so old
+
+1584035611
+TheLemonMan
+do we have something a-la C static-local variables?
+
+1584035821
+fengb
+`const Foo = struct { pub var static: u32 = undefined; `
+
+1584035926
+TheLemonMan
+hm, that's cool
+
+1584041748
+pixelherodev
+Can't wait till PineBook is back in stock :(
+
+1584042434
+shakesoda
+pixelherodev: really makes me wish i jumped on it the first time around
+
+1584042495
+shakesoda
+i was a bit unsure about finances on the last round they were actually in stock :(
+
+1584045463
+Snektron
+i'm still waiting on decent x86 laptops
+
+1584045720
+mq32
+<Snektron> i'm still waiting on decent x86 laptops
+
+1584045727
+mq32
+Lenovo Thinkpad E595
+
+1584045735
+mq32
+at least i'm super-happy with it
+
+1584046032
+Snektron
+Thanks for the suggestion, but i'll just wait a few months until those new ryzen's hit the shelves
+
+1584046950
+marijnfs
+what changed with the BufferedOutStream?
+
+1584047120
+andrewrk
+the vtable is comptime now. the API is easier to use
+
+1584048221
+SyrupThinker
+Hi, I'm interested in appliying for GSoC and was wondering what scope the self hosted linker should have
+
+1584048311
+SyrupThinker
+Because I could only possibly test Linux (amd64, arm64) and Windows (amd64)
+
+1584048341
+SyrupThinker
+And also what kind of input and output format should be supported
+
+1584048485
+SyrupThinker
+Actually nevermind, I've read all issues but the actually relevant one -.-
+
+1584048871
+SyrupThinker
+Ok, having actually understood what was actually meant by self-hosted linking (I was getting too exited I guess), I think that this might be too short of a task especially with self-host cache hash already being worked on
+
+1584048926
+andrewrk
+SyrupThinker,
+
+1584048959
+andrewrk
+the test targets that you have access to would be a great start
+
+1584048971
+andrewrk
+these kind of things can be done piecemeal
+
+1584048999
+andrewrk
+btw just so you know we were not granted GSoC funding, so the Zig project would not be able to pay you for your time
+
+1584049080
+SyrupThinker
+Ah, well I'm interested on working on something regardless :) Might aswell do this short task the if I'm not bound by bureaucracy
+
+1584049106
+TheLemonMan
+lol @ "short task"
+
+1584049134
+andrewrk
+every day I think I'm going to work on a "short task"
+
+1584049142
+SyrupThinker
+I was referring to self host linking, not an actuall full linker ;)
+
+1584049196
+SyrupThinker
+I'm fine doing less exiting helpful stuff, it was just a concern with the requirements, which don't matter if I don't apply for anything
+
+1584049345
+andrewrk
+there's lots of helpful stuff to varying degrees of exciting labeled "Contributor Friendly"
+
+1584049641
+andrewrk
+TheLemonMan, oh nice, I thought you were going to not want your name associated with the ntdll thing
+
+1584049682
+TheLemonMan
+ntdll is still fine, I'm against peeking&poking the undocumented bits
+
+1584049694
+andrewrk
+got it
+
+1584049769
+TheLemonMan
+github diff view is absolutely atrocious for doing code reviews :\
+
+1584050030
+andrewrk
+TheLemonMan, I'm about to audit the std lib and change OS bits time_t to be 64-bit:
+
+1584050053
+andrewrk
+would appreciate your code review on that when it's done
+
+1584050110
+andrewrk
+it affects arm, i386, mips, powerpc
+
+1584050463
+TheLemonMan
+oh that's gonna be fun
+
+1584050567
+andrewrk
+wow look at this madness
+
+1584050573
+andrewrk
+struct timespec { time_t tv_sec; int :8*(sizeof(time_t)-sizeof(long))*(__BYTE_ORDER==4321); long tv_nsec; int :8*(sizeof(time_t)-sizeof(long))*(__BYTE_ORDER!=4321); };
+
+1584050592
+andrewrk
+explanation:
+
+1584050610
+andrewrk
+somebody wants comptime
+
+1584050744
+TheLemonMan
+who needs comptime when you can abuse unnamed bitfields
+
+1584051029
+andrewrk
+ok I think I understand the situation\
+
+1584051148
+andrewrk
+musl didn't break ABI, but it did change the size of time_t and structs that contain time_t fields. so as far as upgrading goes, #4725 is basically done. but we have our own task to update zig std lib to time64 for these architectures
+
+1584051184
+andrewrk
+which basically amounts to carefully changing the struct ABIs and time_t to i64, and calling time64 syscalls
+
+1584051255
+andrewrk
+and we can call the time64 variants of musl once that's done. I don't know what glibc's plan is
+
+1584052960
+wilsonk
+andrewrk: Sound might be a little messed up on wine, just so you know. I made up a quick SDL example with square sine audio output..this works on Linux, cross compiles fine (using clashproto dir structure) and runs well on windows, but the sound is garbled using win64. So there might be some issues when using libsoundio also? Not totally sure, but just wanted to mention it in case you try with clashproto again
+

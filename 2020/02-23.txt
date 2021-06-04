@@ -1,0 +1,1000 @@
+1582416990
+metaleap
+lsp progress for the day: got the symbols-listing/hierarchy/outline to a useful-enough (and seemingly unbugged for now) state for me
+
+1582416993
+metaleap
+with that and fmt in place, finally can move on to the harder but higher-payoff features.
+
+1582423033
+pixelherodev
+So I had a bright idea which is probably going to make life a lot easier: going through the upstream LLVM lexer to ensure mine matches its behavior :)
+
+1582423078
+pixelherodev
+Was actually more interested in the AST than the lexer, as I was having a bit of trouble working out a good design for the AST
+
+1582427126
+pixelherodev
+Hmm. So apparently, enums don't show up in gdb correctly :(
+
+1582427140
+pixelherodev
+`print token.token_type` -> `.TailMarker`, but stepping through the code it follows the correct path
+
+1582427149
+pixelherodev
+That is, the value is correct, but GDB reports it incorrectly
+
+1582427510
+pmwhite
+That was my experience as well.
+
+1582427923
+pixelherodev
+pmwhite, any suggestions?
+
+1582427998
+pixelherodev
+Ah, found a way
+
+1582428013
+pixelherodev
+Take the address, cast to enum tag type, dereference
+
+1582428318
+pmwhite
+I never actually worked around it, so that's helpful.
+
+1582428358
+pmwhite
+Is gdb scriptable at all? Like, could you make a custom command or something for that?
+
+1582428384
+pixelherodev
+I think so?
+
+1582428388
+pixelherodev
+Found the root of the problem though
+
+1582428390
+pixelherodev
+The address is wrong
+
+1582428392
+pmwhite
+Not sure if that would save much effort.
+
+1582428408
+pixelherodev
+That is, if you have `const a = struct { b: ENUMTYPE }`:
+
+1582428447
+pixelherodev
+Where A is an instance of `a`: `print *(unsigned char*)(&A)` gives the correct result, but `print *(unsigned char*)(&A.b)` doesn't
+
+1582428465
+pixelherodev
+because the address of A.b in the debug info is incorrect'
+
+1582428498
+pixelherodev
+Filing bug report now
+
+1582430893
+pixelherodev
+What's the difference between `const a: fn()void` and `const a: (fn()void)*`?
+
+1582430918
+daurnimator
+You're about to multiply the second one? :P
+
+1582431018
+pixelherodev
+Rephrase: are they both just function pointers?
+
+1582431029
+daurnimator
+The second one is going to be a compile error isn't it?
+
+1582431034
+pixelherodev
+I don't think so
+
+1582431040
+pixelherodev
+IIRC that's what I used for something in my kernel
+
+1582431045
+pixelherodev
+But I haven't touched that in a while so...
+
+1582431054
+daurnimator
+did you mean `const a: *(fn()void)`
+
+1582431081
+pixelherodev
+Retraction: nope, it's not
+
+1582431088
+pixelherodev
+Yeah
+
+1582431098
+pixelherodev
+Would that be a pointer to a function pointer, or a function pointer?
+
+1582431110
+pixelherodev
+function pointer or a pointer to one *
+
+1582431113
+pmwhite
+Former
+
+1582431123
+pixelherodev
+Alright, thankses
+
+1582431155
+pmwhite
+Fn types are already function pointers I believe.
+
+1582431202
+pmwhite
+Because you can't move function values, so they always have to be pointers.
+
+1582431246
+pixelherodev
+Right, makes sense
+
+1582431252
+pixelherodev
+Just wanted to clarify
+
+1582431269
+pmwhite
+So there is no point to adding extra syntax to indicate that it is a pointer. This is my understanding anyway.
+
+1582431414
+daurnimator
+pmwhite: so..... why
+
+1582431518
+daurnimator
+like.... I should be able to do: `const func = try mmap(...., @sizeOf(somefunc), ... │PROT_EXEC,....); func.* = somefunc; func.*();`
+
+1582431779
+pixelherodev
+Relative addresses will be incorrect
+
+1582431884
+pixelherodev
+Simply put, it requires ABI guarantees which don't exist
+
+1582432340
+pmwhite
+Not sure what the use of moving function would be anyway.
+
+1582432475
+pixelherodev
+Well, combined with CRNG, could be used for security?
+
+1582432500
+pixelherodev
+Have a hook at the beginning of main that automatically relocates all functions to randomized offsets, rewriting addresses
+
+1582432511
+pixelherodev
+s/addresses/addresses
+
+1582432532
+pixelherodev
+that is, if main calls `a()`, and a is relocated to DEADCODE, the call would be rewritten
+
+1582432641
+pixelherodev
+I am explicitly not saying this is a good idea
+
+1582433655
+pmwhite
+As in, you are making no judgement of its goodness?
+
+1582433874
+pixelherodev
+s/.*/This is definitely a bad idea though/
+
+1582434592
+daurnimator
+
+
+1582435196
+pixelherodev
+That sounds like a compiler-rt function
+
+1582435291
+pixelherodev
+Zig probably has a port of
+
+1582435578
+daurnimator
+pixelherodev: note the `--bundle-compiler-rt` argument: it should have bundled it in.... but I don't see it there
+
+1582435671
+pixelherodev
+Ahh, right
+
+1582447078
+daurnimator
+Why is riscv32 tier 4 instead of tier 3?
+
+1582451913
+Snektron
+In what situation would Allocator.realloc be called with new_size < old_mem.size ?
+
+1582451943
+Snektron
+I noticed that in PageAllocator, realloc just calls shrink if thats the case, and the new alignment is smaller (or equal)
+
+1582452005
+Snektron
+But every buffer returned by the PageAllocator should be page aligned right? So that would mean shrink can be called if the new alignment is smaller or equal to the page alignment (or whatever alignment the buffer just happened to be)
+
+1582452057
+Snektron
+assumed old_align is the alignment requested on the previous alignment and not what the buffer happened to be
+
+1582452660
+Snektron
+I think something is wrong with my linux installation, because if i recompile Zig it starts to rebuild everything regardless of what changed
+
+1582452769
+mikdusan
+hmm... I've only ever seen "unconditional-like" rebuilds when system clock has been changed radically, or something wrong with it (not in zig build specifically, just depenendencies in general)
+
+1582452783
+mikdusan
+sometimes a network share is involved
+
+1582452814
+Snektron
+mkdusan, i've noticed it happens with other projects as well
+
+1582452826
+Snektron
+The strange thing is that its usually fixed if i use gcc instead of clang
+
+1582452829
+Snektron
+but not with Zig
+
+1582452849
+mikdusan
+.ccache ?
+
+1582452852
+Snektron
+afaik my system clock is normal, and everythink is on my local ssd
+
+1582452895
+Snektron
+I'm not using ccache on either my laptop or desktop
+
+1582452998
+mikdusan
+any special filesystem mounting options used?
+
+1582453006
+Snektron
+not that i know of
+
+1582453149
+Snektron
+Does zig support va_arg functions yet?
+
+1582453152
+mikdusan
+this is a very generic lead; maybe whatever file is in the dependency chain being updated, is not actually being updated because of some permissions problem
+
+1582453262
+Snektron
+hmm, maybe
+
+1582453291
+Snektron
+i'd expect something to throw an error about not being able to write that file though
+
+1582453310
+mikdusan
+"rebuild everything" . do you mean using zig.exe to build things, or using cmake/clang to build zig.exe ?
+
+1582453346
+daurnimator
+Snektron: you mean why would you shrink memory?
+
+1582453395
+Snektron
+daurnimator, i mean why would i shrink memory with realloc
+
+1582453403
+daurnimator
+Snektron: e.g. you have an hashmap have removed some entries: you may want to give up some space back to the OS; but if it fails, you don't mind and having extra space is fine
+
+1582453417
+daurnimator
+Snektron: the key point is: realloc is allowed to fail; shrink is not allowed to
+
+1582453444
+Snektron
+mikdusan, it looks like its actually not recompiling the entire think, just 146 objects
+
+1582453515
+Snektron
+daurninator, but why would i call the function thats allowed to fail instead of the one thats not allowed to fail?
+
+1582453543
+daurnimator
+Snektron: because it could be faster.
+
+1582453567
+Snektron
+ah, thats a valid reason
+
+1582453601
+daurnimator
+also: shrink might "not fail" by just lieing about freeing the memory
+
+1582453677
+Snektron
+anyway, suppose i have a c function that accepts a parameter via a c vararg. Can i `extern` that function in zig?
+
+1582453696
+Snektron
+Its about mremap in this case, it accepts an optional parameter
+
+1582453703
+daurnimator
+Snektron: uh..... sometimes: sometimes it works; other times I've gotten errors with TODOs in them
+
+1582453712
+Snektron
+hm
+
+1582453758
+Snektron
+Should i just use the syscall regardless of whether c is linked?
+
+1582453779
+Snektron
+s/c/libc/
+
+1582453787
+daurnimator
+no?
+
+1582453803
+daurnimator
+Are you sure its actually a vararg and not a weird thing like open() ?
+
+1582453816
+Snektron
+no its really a vararg
+
+1582453859
+daurnimator
+looks like a weird thing like open() to me
+
+1582453892
+Snektron
+`extern void *mremap (void *__addr, size_t __old_len, size_t __new_len, int __flags, ...) __THROW;` (from sys/mman.h)
+
+1582453896
+mikdusan
+Snektron: another hint: I manually set some random .cpp files in zig's source tree to a future timestamp in '2021. It rebuilds them everytime.
+
+1582453947
+daurnimator
+Snektron: but I have a hunch it will "just work" for you anyway
+
+1582453961
+daurnimator
+Snektron: give it a go :)
+
+1582454056
+Snektron
+daurninator, i see what you mean with the weird think like open, but im not sure whats the difference between a c vararg that is used as optional or used as an actual vararg
+
+1582454299
+Snektron
+mikdusan, i think i'm just going to live with it for now
+
+1582454346
+mikdusan
+if you have an idea which source .h/.cpp files are being recompiled, take a long listing and eyeball their timestamps
+
+1582454349
+mikdusan
+but ok
+
+1582454424
+Snektron
+yeah but like i said, its not limited to zig
+
+1582454548
+Snektron
+hmm, looks like lld
+
+1582454625
+Snektron
+time stamps arent in the future or anything
+
+1582454954
+mikdusan
+yeah but it could be any file in the dep chain that causes this. llvm headers, libs, whatever. anyhow, I'll leave it at that; this smells like a timetsamp issue
+
+1582454990
+Snektron
+I've just enabled ZIG_FORCE_EXTERNAL_LLD so that it skips building LLD, that saves enough time such that its not as bothersome
+
+1582455059
+Snektron
+daurnimator, it didn't work. I suspect its because the last parameter of mremap is a pointer
+
+1582455076
+daurnimator
+Snektron: can you share the code?
+
+1582455153
+Snektron
+ah, nevermind, i passed a zig type instead of a pointer
+
+1582455198
+mikdusan
+Snektron: assuming no network mounts search from root and if that comes back empty then I lead you on a wild goose chase: (touch now.txt; find / -newer now.txt)
+
+1582455303
+Snektron
+that returns a whole bunch of /proc and /sys paths
+
+1582455316
+mikdusan
+`find /home /usr` should do it
+
+1582455454
+Snektron
+nothing apart from some misconfigured directory permissions which don't coincide with anything related to zig
+
+1582455475
+mikdusan
+I'm out of ideas :(
+
+1582455546
+Snektron
+well with the cmake flag it at least its not so bad now, and i'll probably need to get a new laptop soon-ish anyway so its fine. Thanks for the help
+
+1582456312
+daurnimator
+Snektron: I assume you'll send a PR to the std lib?
+
+1582456352
+Snektron
+Yes
+
+1582461072
+mq32
+brain fart: error: type '@TypeOf(.Environment.init).ReturnType.ErrorSet!.Environment' does not support field access
+
+1582461097
+mq32
+this error message may have an additional "Check if you forgot to catch an error" text or something
+
+1582465428
+daurnimator
+I just updated to latest zig master and things seem to be broken....
+
+1582465449
+daurnimator
+running tests for a module I have around I get: Segmentation fault at address 0x0. ???:?:?: 0x0 in std.target.Set.empty_workaround (c)
+
+1582465471
+daurnimator
+oh. I was missing -lc
+
+1582466063
+mq32
+oh
+
+1582466072
+mq32
+std.fmt.format isn't able to print recursive structures anymore
+
+1582466146
+mq32
+is there an issue for that already?
+
+1582472059
+dimenus
+am i blind or do we not have a strlen equivalent in the stdlib?
+
+1582472219
+dimenus
+for cstrs I mean
+
+1582472325
+daurnimator
+dimenus: mem.len
+
+1582472346
+daurnimator
+dimenus: see also
+
+1582473167
+mq32
+daurnimator: do you know if we have an error-save (so no checked ub) float-to-int cast?
+
+1582473188
+daurnimator
+mq32: no idea
+
+1582473215
+daurnimator
+when is the behaviour undefined?
+
+1582473230
+daurnimator
+and do you mean a bitcast or an actual conversion
+
+1582473233
+mq32
+conversion
+
+1582473242
+mq32
+@floatToInt will panic when the float is out-of-range or is a non-integer value
+
+1582473252
+mq32
+we have std.math.cast, but that will only cast integers
+
+1582479474
+jessermeyer
+Are types and their properties supposed to be reported in PDBs?
+
+1582479488
+jessermeyer
+Visual Studio knows what type a declaration is, but it doesn't know what the type itself is.
+
+1582481090
+frett27_
+i'm facing a link issue, trying to bind to levedb : ../zig/zig test levedbtest.zig --library c -lleveldb -lc++
+
+1582481102
+frett27_
+raise : Build Dependencies...lld: error: unable to find library -lc++abi
+
+1582481122
+frett27_
+ubuntubox, i checked the llvm dependencies
+
+1582481136
+frett27_
+all installed in llvm 9 and zig master compiles fine
+
+1582481157
+frett27_
+any ideas ?
+
+1582481161
+mq32
+you have to specify the library path explicitly
+
+1582481168
+mq32
+zig does never reference your system libraries by default
+
+1582481173
+frett27_
+no ? which one ?
+
+1582481185
+mq32
+for linux? probably /usr/lib
+
+1582481208
+frett27_
+i look
+
+1582481300
+frett27_
+llvm libs are in  /usr/lib/llvm-9/lib in my case, adding the path change nothing
+
+1582481302
+frett27_
+use@use-HP-Pavilion-dv6-Notebook-PC:~/zigleveldb$ ../zig/zig test levedbtest.zig --library c -lleveldb -lc++ -L/usr/lib/llvm-9/lib
+
+1582481302
+frett27_
+Build Dependencies...lld: error: unable to find library -lc++abi
+
+1582481348
+mq32
+where is your c++abi.so or c++abi.a located?
+
+1582481369
+frett27_
+use@use-HP-Pavilion-dv6-Notebook-PC:~$ locate c++abi.so
+
+1582481417
+frett27_
+"/usr/lib/llvm-9/lib/libc++abi.so.1
+
+1582481418
+frett27_
+"
+
+1582481435
+mq32
+i think you have to put -L before referencing the library
+
+1582481437
+frett27_
+there is an other one also in "/usr/lib/x86_64-linux-gnu/libc++abi.so.1
+
+1582481588
+frett27_
+same result, i tried several command lines
+
+1582481589
+frett27_
+use@use-HP-Pavilion-dv6-Notebook-PC:~/zigleveldb$ ../zig/zig test levedbtest.zig --library c -L/usr/lib/llvm-9/lib -lstdc++ -lleveldb
+
+1582481590
+frett27_
+Build Dependencies...crtn [2] Compile C Objects [1/1] crtn.S...lld: error: unable to find library -lstdc++
+
+1582481711
+mq32
+hm
+
+1582481719
+mq32
+i've never tried to use a c++ library with zig
+
+1582481732
+frett27_
+this is the first time for me
+
+1582481739
+frett27_
+seems related to :
+
+1582481745
+frett27_
+ubuntu specific
+
+1582481757
+mq32
+have you installed -dev libs?
+
+1582481763
+frett27_
+yep
+
+1582481791
+mq32
+hm, can't help you there
+
+1582481795
+mq32
+don't have ubuntu at my hands
+
+1582481841
+frett27_
+indeed thanks for your help, i'll try to get more insights
+
+1582481848
+frett27_
+about the generated options,
+
+1582481852
+frett27_
+by zig
+
+1582481856
+frett27_
+thank's
+
+1582482243
+frett27_
+ok, got the point
+
+1582482244
+frett27_
+
+
+1582482252
+frett27_
+Note that programs using C++ object files must always be linked with g++, in order to supply the appropriate C++ libraries. Attempting to link a C++ object file with the C compiler gcc will cause "undefined reference" errors for C++ standard library functions
+
+1582482266
+frett27_
+leveldb is a c++ library
+
+1582482272
+frett27_
+with c headers
+
+1582482295
+frett27_
+but i'm not sure i can link both, if it needs cpp linker
+
+1582484110
+jessermeyer
+Still curious about my PDB question.
+
+1582484129
+frett27_
+mq32: finally, was missing a libc++abi-9-dev, works with this command line : ../zig/zig test levedbtest.zig --verbose-cc  -lleveldb -lc++ -lc++abi -lc
+
+1582484191
+frett27_
+jessermeyer: don't know
+
+1582484215
+jessermeyer
+Wanting to get a hunch from folks here before spinning up an Issue on the repo.
+
+1582484768
+pixelherodev
+I'd report the issue
+
+1582484787
+jessermeyer
+Roger that.
+
+1582484804
+jessermeyer
+BTW, anyone following the ALSR discussion on the PIE issue?  Am I off base?
+
+1582485075
+jessermeyer
+ALSR for buffer overrun protection strikes me as extremely heavy handed compared to alternatives, but I cannot deny the benefit.
+
+1582485099
+andrewrk
+ASLR is standard in most linux distributions
+
+1582485123
+andrewrk
+I think it's an appropriate default for ReleaseSafe mode
+
+1582485284
+jessermeyer
+If the goal is to adhere to standards, whatever they are, then there isn't much room for discussion.
+
+1582485413
+andrewrk
+I think you misunderstand me
+
+1582485475
+andrewrk
+being standard in most linux distributions is an argument for ASLR not being too heavy handed, and for it being an appropriate default for ReleaseSafe mode
+
+1582485873
+jessermeyer
+'Too heavy handed' is with reference to the threat model when ASLR was implemented, which was before spectre, meltdown, etc.
+
+1582486073
+jessermeyer
+I would be shocked if the Linux kernel would have invested in ALSR if it knew its value would be limited to buffer overruns.  It was designed for a different problem.
+
+1582486091
+jessermeyer
+I expect to see ASLR rolled back over time, or until the cache model for modern CPUs changes somehow.
+
+1582486297
+andrewrk
+I do not expect to see this
+
+1582486781
+jessermeyer
+What do the impacts of that paper tell you about the viability of ASLR as a security measure?
+
+1582486853
+shakesoda
+got dear imgui working in my zig sandbox with cimgui
+
+1582486865
+shakesoda
+didn't run into anything weird with integrating the c++ stuff in the build
+
+1582486894
+shakesoda
+now i can think instead about making something useful show up on screen ;)
+
+1582486917
+jessermeyer
+nice!
+
+1582487127
+andrewrk
+jessermeyer, ASLR was never understood to be foolproof. it's a hardening measure
+
+1582487185
+andrewrk
+the exploit in that article requires ability to run turing complete code in a sandbox, btw, which is not always available to an attacker. one might even say rarely available to an attacker
+
+1582487362
+jessermeyer
+My argument is that its hardening measure is substantially less in the presence of these exploits.
+
+1582487395
+jessermeyer
+Agreed. The article is specific to web browser security.
+
+1582487440
+jessermeyer
+I'm not well versed on what to assume attacker capabilities are.  No idea.
+
+1582487481
+jessermeyer
+But if an attacker is leveraging a buffer overflow (which comes from the discussion in the thread), we are in a turing complete scenario, so I think we can assume that capability, I think for Zig broadly.
+
+1582487540
+gchristensen
+[citation needed]
+
+1582487553
+jessermeyer
+For which claim?
+
+1582487561
+gchristensen
+buffer overflow -> turing complete
+
+1582487642
+jessermeyer
+I forget how many bytes of overrun you need to take complete control of the execution pipeline.  I recall Chandler Carruth specifying this in one of this security talks ... Let me find that.
+
+1582487703
+andrewrk
+typically as an attacker you need to hard code a (correct) address when exploiting a buffer
+
+1582487757
+jessermeyer
+Yes, which AFAIK, can be determined with this new side channel attack.
+
+1582487773
+jessermeyer
+Or are you saying you need a turing machine to run the attack in the first place?
+
+1582488062
+gchristensen
+that attack seems to require turing completeness in the uncompromised environment to pull off
+
+1582488108
+gchristensen
+most buffer overflow attacks are much less exotic and aslr is an effective solution
+
+1582488162
+gchristensen
+I'm looking forward to processors implementing capability-based security, revoking the authority to jump to those pointers -- like that early experimental intel chip.
+
+1582488510
+jessermeyer
+Thanks for the discussion on this topic.  Things for me to think and read more about.
+
+1582489252
+jessermeyer
+I can't find where Carruth made his claims about turing complete attacks, but I did find the related paper.  Reading it.
+
+1582489270
+jessermeyer
+Those interested:
+
+1582489305
+jessermeyer
+"Unlike previous attacks, ours combines a large number of short instruction sequences to buildgadgetsthat  allow  arbitrary  computation.   We  show  how  to  build  such  gadgets  using  the  shortsequences  we  find  in  a  specific  distribution  ofgnulibc,  and  we  conjecture  that,  because  of  theproperties of thex86 instruction set, in any
+
+1582489306
+jessermeyer
+sufficiently large body ofx86 executable code there willfeature sequences that allow the construction of similar gadgets.  (This claim is our thesis.)  "
+
+1582489353
+jessermeyer
+I don't know how these results from 2007 have survived, and how they are to be considered in light of side-channel attacks.
+
+1582489497
+jessermeyer
+'... argument applies to the interaction between our techniques and address space layoutrandomization (ASLR). Those gadgets that do not require knowledge of addresses on the stack canbe used directly in the Shacham et al. [26] derandomization framework.  Some of those gadgets thatdo require knowledge of addresses on the stack could likely be
+
+1582489498
+jessermeyer
+rewritten not to require it'
+
+1582489590
+jessermeyer
+~in light of
+
+1582493415
+metaleap
+whats the deal with std.Mutex.deinit()? all 3 defs of it in std/mutex.zig have the same `self.* = undefined;` no-op-ish logic
+
+1582493472
+metaleap
+wouldnt like to turn all my `defer held.release()`s into `defer { held.release(); held.deinit(); }` if it's not ever actually going to do any
+
+1582493889
+fengb
+In safe mode, it’ll set the memory to 0xaaaaaa and probably crash if it’s reused
+
+1582495143
+metaleap
+fengb: makes sense thx
+
+1582495145
+mq32
+i don't think requiring a mutable reference for deinit is a good idea
+
+1582495160
+mq32
+this enforces variables that never be mutated to be non-const
+
+1582498292
+andrewrk
+mq32, deinitializing them is mutation
+
+1582498324
+andrewrk
+metaleap, zig's safety features do not yet take advantage of this, but there are quite a few things where setting things to undefined will activate safety protections
+
+1582498351
+andrewrk
+for example, branching on undefined. `x = undefined; if (x) ` will cause a safety panic
+
+1582498451
+metaleap
+sounds good
+
+1582498485
+mq32
+hm. maybe i think too c++y for this...
+
+1582498489
+shakesoda
+it seems reasonable to keep it mutable in the scope you own it and pass it around as const if needed
+
+1582498501
+shakesoda
+that's what i've been doing
+
+1582498514
+shakesoda
+seems natural enough?
+
+1582499364
+adamkowalski
+suppose somebody gives you a nested anonymous struct like so .{ .{ 1, 2, 3 }, .{ 4, 5, 6 } } into a var parameter. How do I detect properties about it's length and element type?
+
+1582499452
+adamkowalski
+do I need to look at the type info and check the fields to see if each one is of the same type, and count the number of fields?
+
+1582501494
+metaleap
+adamkowalski: yes. `inline for (@typeInfo(@TypeOf(my_var_arg)).Struct.fields)`
+
+1582502106
+Cadey
+hey andrewrk do you know what kind of insane bullshit hackery would be needed to get Zig to build binaries that TempleOS can use?
+
+1582502347
+mq32
+Cadey: Convert ELF files to whatever binary format TempleOS uses
+
+1582502362
+mq32
+also write your own syscall wrapper with a freestanding target
+

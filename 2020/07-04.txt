@@ -1,0 +1,1840 @@
+1593820918
+Snektron
+Is cache_hash.zig ready for usage in build.zig? i'm trying to write some code generation stuff
+
+1593821644
+andrewrk
+probably not quite yet
+
+1593821733
+Snektron
+Right. Do you have a recommendation for an alternative approach?
+
+1593823426
+leeward
+Oh cool, llvm isn't filling in the interrupt vectors when it generates this code. That explains a bit.
+
+1593825491
+andrewrk
+lemmi, in your hash map example code for Euler 14, is the ensureCapacity intended to be a true upper bound? or is it just a heuristic?
+
+1593825585
+andrewrk
+I'm observing 22022059 puts even though the ensureCapacity sets it to 2000000
+
+1593825775
+leeward
+Right, of course. The linker does that, and llvm uses gcc's linker for avr.
+
+1593826362
+leeward
+\o/ executing Zig code on an AVR, it's not crashing, and functions are working.
+
+1593826375
+leeward
+It's an awful pile of hacks on top of kludges, but it works.
+
+1593826419
+leeward
+And it works in debug mode!
+
+1593826452
+leeward
+Next step: simplify this linker command.
+
+1593826605
+leeward
+andrewrk: It looks like some of the experimental llvm targets use GCC's ld to link. Does Zig have any way to deal with this? If not, I think we'll have to emit .o files and link them in a separate step. I'm certainly not in a hurry to add ld as an actual Zig dependency, but maybe it could use it if it's available?
+
+1593826861
+andrewrk
+it's not planned for zig to ever be a driver of external system tools
+
+1593826872
+andrewrk
+we'll gain support for linking avr within the zig project itself
+
+1593826903
+andrewrk
+our goal is not to catch up to gcc; it's to surpass it :)
+
+1593827024
+leeward
+Ok, so for all the llvm targets that use gcc as a linker the plan is to implement (or add a configuration for) a linker in Zig?
+
+1593827054
+leeward
+I'm guessing that's ultimately true for all the targets llvm has, regardless of how it handles them.
+
+1593827065
+andrewrk
+yes, or ditch the llvm backend altogether in favor of the pure self hosted one
+
+1593827113
+leeward
+Ok, cool. Ambitious, but cool.
+
+1593827312
+leeward
+found a 3A USB power supply, so it's time to try building Zig on an RPi 1B again.
+
+1593831951
+yeti
+leeward: do you have some public notes about zig+AVR in the net?
+
+1593832014
+leeward
+yeti: not yeti
+
+1593832050
+yeti
+sleep on it...  ;-)
+
+1593832693
+yeti
+is there a way to ask zig/llvm on a system to detect the nedded cpu settings?
+
+1593832757
+leeward
+needed cpu settings for what?
+
+1593832773
+leeward
+like, for targeting your build host?
+
+1593832789
+yeti
+I stlll have crashes on Pi2 and Cubietruck
+
+1593832799
+leeward
+'cause that's native-native-native
+
+1593832805
+leeward
+or just no -target
+
+1593832844
+yeti
+te downloaded armhf zig crashes compiling some c files
+
+1593832864
+yeti
+the self build one needes some extra flags not to use wrong instructions
+
+1593832925
+yeti
+zig-bootstapp -j# native-native-native native   would work?
+
+1593833115
+yeti
+I've bootstraps running with   arm-linux-musleabihf baseline (and nativ)  on 2 Pi2 and 2 Cubietrucks  but am not really sure that it is the right triple
+
+1593833175
+yeti
+raspian on pi2, devuan on cubie3
+
+1593833204
+andrewrk
+I need some more hash map benchmarks to figure out if #5786 is an improvement or not
+
+1593833238
+yeti
+Lets hope for no blackouts by thunderstor,... I'm prpard to maybe need to wait a week
+
+1593834262
+lemmi
+andrewrk: i was running straces and just put in a number such that only one allocation was necessary.
+
+1593835382
+lemmi
+andrewrk: my thought was to not benchmark the allocator, so i just tried a couple of numbers and 2M were good enough.
+
+1593839292
+leeward
+yeti:
+
+1593843408
+yeti
+\o/    thanks!
+
+1593846697
+andrewrk
+lemmi, makes sense, thanks
+
+1593846778
+andrewrk
+hmm yes I think that is a bug. also you can use @splat(16, true) instead of the array cast
+
+1593846991
+lemmi
+andrewrk: yeah, i had about 10 versions of this and was just short of doubting my sanity :D
+
+1593847171
+andrewrk
+lemmi, it appears to be a bug in @bitCast which you can work around with @ptrCast
+
+1593847186
+andrewrk
+const u = @ptrCast(*const u16, &v).*;
+
+1593847236
+lemmi
+ok, good to know
+
+1593847239
+lemmi
+thx
+
+1593870884
+lemmi
+soo.. i believe my swiss table is taking shape. i can insert and get. no deleteion or automatic grow/shrink, but still.
+
+1593871304
+ifreund
+lemmi: nice! you're ahead of my implementation then, I got distracted with other projects :D
+
+1593871330
+lemmi
+and i think i managed to do this with compelete parametric vecotr sizes
+
+1593871354
+lemmi
+so should we get hardare that can do 2k wide simd, this should still work :>
+
+1593871379
+ifreund
+well, doesn't that mean that you have a minimum allocation of 2k slots + the ctrl bits?
+
+1593871395
+ifreund
+i guess for some massive servers that could be a sane thing to do
+
+1593871492
+lemmi
+i wasn't saying it made any sense
+
+1593871507
+ifreund
+:D
+
+1593871544
+lemmi
+no, but should also work the other way around. there might be a groupsize that's beneficial to architectures even without simd support
+
+1593871563
+lemmi
+just because fiddling around the metadata and not comparing values might save some time
+
+1593871602
+ifreund
+yeah, parameterizing it is definitely the way to go
+
+1593871644
+ifreund
+google's impl kinda did this, they use 8 for non SSE capable hardware and 16 for SSE2 stuff
+
+1593871858
+lemmi
+awesome. i actuelly can fill it up to capacity and replace existing keys. it correctly fails if i want to insert an anknown key in a full table
+
+1593872171
+lemmi
+even on a full table the amount of actual key compaisons is ridiculously small.
+
+1593872209
+ifreund
+yeah it's kinda amazing
+
+1593872241
+ifreund
+I'm finishing up my gtk patch then I need to get back to work on mine
+
+1593872264
+ifreund
+I only got as far as implementing the group sse stuff, didn't start the table yet
+
+1593872825
+lemmi
+ok, the rust implementation allows the table to fill to 7/8 before doubling the capacity
+
+1593874784
+KoljaKube
+When interacting with C APIs, is there some nice way of translating to sentinel-terminated slices without having them leak all over my wrappers that I'm missing?
+
+1593878232
+lemmi
+ifreund: in case you are interested, this is where i'm at for today:
+
+1593878271
+lemmi
+tomorrow i'll try to get deletion going and i'll try to match the hashmap api
+
+1593884248
+pixelherodev
+andrewrk: so should the CBE use an alternate Function impl?
+
+1593884266
+pixelherodev
+e.g. replace the entire backend with an API-compatible interface, the same way we have Scope.File and Scope.ZIRModule ?
+
+1593884301
+pixelherodev
+That seems the best way to preserve current behavior by default and make the C backend independent of architecture options but still able to handle architecture properly
+
+1593884881
+shakesoda
+has anyone managed to make a build.zig that spits out android apks
+
+1593884920
+shakesoda
+i figure it'd just be a matter of setting the right post build things, but i most certainly do not know what they would be
+
+1593885044
+leeward
+well, arm-linux-android is a target.
+
+1593885056
+leeward
+I have no idea what goes into an apk though.
+
+1593886210
+marler8997
+I've been spending too much time maintaining my own version of the windows APIs, going back and forth between developing my apps and maintaining the windows declarations
+
+1593886229
+leeward
+That sounds awful.
+
+1593886234
+pixelherodev
+That sounds like MS
+
+1593886236
+marler8997
+I'd be willing to go through the standard library and start filling it out
+
+1593886243
+leeward
+pixelherodev: That's what I said!
+
+1593886245
+marler8997
+if that's what zig wants
+
+1593886249
+pixelherodev
+;)
+
+1593886270
+pixelherodev
+marler8997: wait, we don't have windows support already?
+
+1593886278
+pixelherodev
+You mean low level std.os stuff is missing? or std.os.system?
+
+1593886282
+tgschultz
+we have some of the API in std
+
+1593886286
+marler8997
+std.ow.windows
+
+1593886289
+marler8997
+*std.os.windows
+
+1593886305
+marler8997
+I'd say about 70% of the time the function or declaration I need is not there
+
+1593886319
+tgschultz
+there is a
+
+1593886345
+marler8997
+So I'm just constantly fixing up my own version, it's getting old having to go back and forth between my app and windows declarations
+
+1593886396
+leeward
+That's probably valuable work for the standard library, if you're willing to put it in.
+
+1593886398
+tgschultz
+when I was maintaining my own windows lib it was ~3Mb of source
+
+1593886399
+marler8997
+I'm willing to put in work to start working on the standard library, but it will be alot of work and I want to make sure this is the direction zig wants before I start
+
+1593886434
+marler8997
+I'm not even sure if Zig wants all the windows declarations in the standard library
+
+1593886448
+leeward
+Well, get andrewrk to weigh in. He's the most authoritative.
+
+1593886458
+marler8997
+yeah I'll wait for his thoughts
+
+1593886497
+marler8997
+while I'm at it, one thing I would love is a good description of the standard library organization
+
+1593886538
+marler8997
+would take alot of guesswork and investigation work away
+
+1593886549
+leeward
+You mean like what each of the things at the top level is for?
+
+1593886560
+pixelherodev
+std.os = low-level cross-platform primitives
+
+1593886568
+pixelherodev
+std.os.system = low-level platform-specific primitives
+
+1593886570
+marler8997
+a description of the organization at the file/directory structure level
+
+1593886580
+pixelherodev
+std.PrettyMuchEverythingElse = high-level cross-platform APIs
+
+1593886584
+pixelherodev
+:P
+
+1593886591
+marler8997
+isn't std.os supposed to be posix?
+
+1593886597
+ifreund
+i was under the impression that std.os was posix
+
+1593886599
+pixelherodev
+marler8997: sorta, yeah
+
+1593886607
+pixelherodev
+But it also binds to Windows, no?
+
+1593886608
+marler8997
+there's also std.os.windows, std.os.windows.bits
+
+1593886611
+marler8997
+std.c
+
+1593886616
+marler8997
+like what's supposed to go in each one
+
+1593886639
+pixelherodev
+std.os is a POSIX API that maps either directly to the native system or to wrappings, no?
+
+1593886647
+ifreund
+hmm, I wonder if there's discussion somewhere on github that can be dug up
+
+1593886647
+pixelherodev
+e.g. std.fs.File goes through std.os
+
+1593886652
+pixelherodev
+and it works on Windows
+
+1593886681
+ifreund
+I assume that some windows stuff will map well to posix, but some likely wont
+
+1593886686
+pixelherodev
+marler8997: std.os.$SYSTEM.bits = platform constants
+
+1593886688
+marler8997
+in any case, the goal isn't to have this information only availabe on this irc
+
+1593886697
+pixelherodev
+std.os.$SYSTEM = platform-specific APIs
+
+1593886701
+marler8997
+but to have a document that anyone can refer to when they need to know where to find something, or where to add something
+
+1593886707
+pixelherodev
+Agreed
+
+1593886713
+pixelherodev
+That's definitely a worthwhile endeavor
+
+1593886734
+ifreund
+I think the best course of action would be to open an issue for this tbh
+
+1593886737
+pixelherodev
+`std.ow.windows` Freudian slip? ;)
+
+1593886743
+marler8997
+lol
+
+1593886747
+marler8997
+I can do that
+
+1593886749
+leeward
+Top level doc comments in all the zig files under lib/std would probably go a long way towards that.
+
+1593886752
+ifreund
+then the issue becomes this documentation
+
+1593886771
+pixelherodev
+marler8997: you can freudian slip?
+
+1593886776
+pixelherodev
+sorry, I'll stop now ;)
+
+1593886796
+ifreund
+oh, there is
+
+1593886815
+ifreund
+so I think the way forward is for std.os.windows to have all the windows stuff
+
+1593886827
+ifreund
+and for the pure-posix interface to move to std.posix
+
+1593886843
+ifreund
+marler8997: ^
+
+1593886857
+marler8997
+ok
+
+1593886887
+pixelherodev
+Is std.os deprecated then? Or is it a wrapper that's neither POSIX nor Windows that supports both?
+
+1593886912
+leeward
+It will be, once 5019 is done?
+
+1593886918
+leeward
+deprecated
+
+1593886930
+ifreund
+i think it becomes just a namespace for non-posix system interfaces
+
+1593886995
+leeward
+It seems like an equivalent move would be std.os.write -> std.os.posix.write
+
+1593887027
+leeward
+but I guess posix is sufficiently special.
+
+1593887169
+pixelherodev
+Hmm, that doesn't make sense
+
+1593887172
+pixelherodev
+Full deprecation
+
+1593887182
+pixelherodev
+Like I said, all of the high-level APIs go through std.os
+
+1593887183
+ifreund
+yeah, it's pretty subjective, but you're totally right that std.os.posix.write would be more consistent
+
+1593887220
+pixelherodev
+std.os.posix.write makes sense, but there should
+
+1593887224
+pixelherodev
+(or to BYOS layer)
+
+1593887242
+pixelherodev
+(etc)
+
+1593887283
+ifreund
+i disagree
+
+1593887310
+ifreund
+std.os should map directly/nearly directly to the system calls and give full power/flexiblity
+
+1593887343
+ifreund
+the rest of the std (e.g. std.fs) provides higher level abstractions that work on all operating systems
+
+1593887509
+marler8997
+here the issue:
+
+1593887514
+ifreund
+for example, we probably keep std.os.linux for non-posix stuff like io_uring
+
+1593887536
+leeward
+std.io.writer is the place for wrapping std.os.X.write.
+
+1593887579
+leeward
+Combined with std.fs.File, assuming that's what write writes to.
+
+1593887869
+ai19
+Hi :)
+
+1593887883
+ai19
+Has anybody tried to use ncurses with zig?
+
+1593887943
+leeward
+ai19: Probably.
+
+1593887946
+ai19
+I get nothing but a long strain of error messages.
+
+1593887962
+leeward
+Do you have a small example you can post?
+
+1593887983
+leeward
+(godbolt.org has syntax highlighting if you're looking for a place to put it)
+
+1593887994
+ai19
+Sure, are there any rules about pasting code?
+
+1593888011
+leeward
+Don't dump it in the channel; link to it.
+
+1593888013
+ai19
+OK, I'll go to godbolt.org
+
+1593888162
+ai19
+So, this is a simple Hello World code in C that compiles and links just fine with -lncurses:
+
+1593888245
+ai19
+
+
+1593888267
+ai19
+The second is an attempt to convert it to Zig. I'm trying to learn some Zig by example.
+
+1593888296
+ai19
+Which doesn't work at all on my system :)
+
+1593888498
+ai19
+Maybe I need to write a build file that tells zig where to find the library files.
+
+1593888637
+ifreund
+you can just do @cInclude("ncurses.h");
+
+1593888672
+ifreund
+you'll need to pass -l ncurses or create a build.zig and use linkSystemLibrary("ncurses") though
+
+1593888772
+ifreund
+you'll also need to link libc with -lc or linkLibC()
+
+1593888794
+leeward
+Huh, I've always used linkSystemLibrary("c").
+
+1593888853
+leeward
+ai19: You might find this helpful:
+
+1593888891
+ifreund
+
+
+1593888894
+leeward
+It's not exactly what you want to do, but the build.zig has the things you need.
+
+1593888916
+ifreund
+and the build.zig
+
+1593888927
+leeward
+Or that
+
+1593888957
+ifreund
+the _ = c.foo() is needed because these ncurses functions all return things and zig won't let you silently throw away the returned values
+
+1593889001
+leeward
+Those return values should probably get used once you have anything working.
+
+1593889007
+ifreund
+probably yeah :D
+
+1593889139
+pixelherodev
+ifreund: that's what I was saying though
+
+1593889185
+pixelherodev
+e.g. std.os.write -> std.os.$SYSTEM.write , with e.g. std.fs.File -> std.os.write
+
+1593889203
+ifreund
+pixelherodev: perhaps I misunderstood though
+
+1593889223
+pixelherodev
+Or I wasn't clear
+
+1593889234
+ai19
+oh, excellent, thanks a bunch, @ifreund and @leeward :-)
+
+1593889241
+ifreund
+I kinda doubt that std.os.write can map directly to a systemcall for every OS in the universe though
+
+1593889243
+leeward
+\o/
+
+1593889256
+ifreund
+ai19: no problem, good luck with your zig journey!
+
+1593889267
+ai19
+I guess I was thinking too simple.
+
+1593889292
+pixelherodev
+`Anyone who says that they're great at communicating but 'people are bad at listening' is confused about how communication works.` :P
+
+1593889311
+ifreund
+you can also build that zig main snippet I sent with zig build-exe -lc -lncurses main.zig
+
+1593889316
+scientes
+ifreund, even when you don't have an OS it is pretty close
+
+1593889338
+ifreund
+perhaps write was a bad example to use there :P
+
+1593889339
+leeward
+For write, sure, but what about creation?
+
+1593889340
+pixelherodev
+leeward: linkLibC is basically just a `if (!linked_libc) {linkSystemLibrary("c") linked_libc = true}` IIRC, except faster
+
+1593889342
+pixelherodev
+Slightly
+
+1593889366
+pixelherodev
+It goes through a lower-level API, which means avoiding e.g. checking pkg-config for libc
+
+1593889421
+leeward
+File creation varies pretty widely across operating systems. I don't know if there's a single sane interface that would unify them.
+
+1593889433
+pixelherodev
+If that were true std.fs.File wouldn't be possible ;)
+
+1593889454
+leeward
+Not true, because that's a special case.
+
+1593889459
+ifreund
+I don't think std.fs gives you all the control the syscalls do
+
+1593889493
+leeward
+Right, what ifreund said.
+
+1593889528
+leeward
+If it needs to, it can compose syscalls or only use a few options in one.
+
+1593889718
+ai19
+ifreund: thanks :) It's been like 15 years ago that I goofed around a bit with ncurses in C. Used it in Python CLI apps quite extensively though. 3 years ago, I became a great Go fan, but then Youtube suggested to me a talk by Andrew Kelly about Zig, so that got me curious. So I'm trying to see whether it's easier using ncurses through cgo, or trying to learn Zig and use it from there.
+
+1593889750
+shakesoda
+does dir api let me get fds, i want to do memory mapped file io
+
+1593889763
+shakesoda
+i can do it with c stuff if i need to of course
+
+1593889770
+ai19
+But of course, I really like the idea of Zig trying to be a better C :)
+
+1593889801
+shakesoda
+using c apis via zig can get you in a lot of awkward situations just from zig actually caring
+
+1593889817
+shakesoda
+or awkward situations because of macros that didn't translate
+
+1593889828
+shakesoda
+or at least didn't translate correctly
+
+1593889841
+ai19
+yeah, C macros could be a pitfall
+
+1593889862
+shakesoda
+it's one i run into a lot, the workarounds aren't difficult but it can be tedious.
+
+1593889890
+ifreund
+depends on the C really, and what the macros are doing
+
+1593889897
+ifreund
+some apis translate quite nicely
+
+1593889916
+shakesoda
+the failure rate for macros, especially ones with parameters, is... really high
+
+1593889937
+shakesoda
+in my experience, that is
+
+1593889942
+pixelherodev
+shakesoda: I've done MMIO
+
+1593889946
+pixelherodev
+I used std.os.open IIRC
+
+1593889959
+shakesoda
+for normal code, though, the translation is usually fine
+
+1593889983
+leeward
+For what it's worth, SDL is very usable without any hacking.
+
+1593889986
+shakesoda
+i think the only c interop problem i've had in recent memory was from passing structs by value
+
+1593889988
+pixelherodev
+I did std.os.openZ to get the handle
+
+1593890001
+shakesoda
+leeward: sdl is exactly a case where some of the macros in basic things fail to translate
+
+1593890013
+shakesoda
+lua, too :(
+
+1593890023
+yeti
+leeward: your zig bink test runs if assembled with naken_asm too
+
+1593890041
+yeti
+just the directives naken doesnt understand got filtered via a small awk oneliner
+
+1593890049
+leeward
+shakesoda: I've built small programs that work unmodified though.
+
+1593890055
+yeti
+awk 'BEGIN {print".avr8"} /^[\t ]*\./ {print";"$0;next} 1 ' main.s > main.naken.s
+
+1593890083
+yeti
+I've a duemilanove blinking now
+
+1593890084
+leeward
+yeti: Nifty!
+
+1593890148
+shakesoda
+leeward: yes, it's plenty usable
+
+1593890192
+shakesoda
+i remember running into a few small issues
+
+1593890211
+shakesoda
+not a big deal since that's just a convenience, of course
+
+1593890242
+shakesoda
+lua has more annoying problems
+
+1593890301
+shakesoda
+so my lua.zig has to reimplement several macros, heh
+
+1593890370
+pixelherodev
+shakesoda: lua.zig?!
+
+1593890373
+pixelherodev
+Does it work with luajit?
+
+1593890380
+pixelherodev
+No, the internals are different
+
+1593890392
+pixelherodev
+I wonder how much work it'd be to get LuaJIT working
+
+1593890398
+shakesoda
+pixelherodev: it works fine with luajit
+
+1593890409
+leeward
+yeti: I'd like to get the timer version working, but...really don't want to play the crazy linker games that might be required to put an ISR in place.
+
+1593890456
+shakesoda
+the thing you can't do with luajit is connect it to zig allocators
+
+1593890461
+shakesoda
+otherwise things are fine.
+
+1593890513
+shakesoda
+i didn't eve have to do weird stuff, just some macro workarounds.
+
+1593890521
+shakesoda
+*even
+
+1593890548
+pixelherodev
+Huh
+
+1593890550
+pixelherodev
+neat
+
+1593890566
+pixelherodev
+Couldn't you connect it to an allocator if you exported an interface though?
+
+1593890576
+shakesoda
+not luajit.
+
+1593890580
+shakesoda
+it rejects it
+
+1593890582
+pixelherodev
+e.g. `export fn jitalloc` `export fn jitfree` ?
+
+1593890585
+pixelherodev
+Why not?
+
+1593890597
+shakesoda
+it specifically enforces not using a custom allocator on 64 bit
+
+1593890600
+pixelherodev
+@cDefine(BLAH_ALLOC "jitalloc")?
+
+1593890602
+pixelherodev
+Ohh
+
+1593890604
+pixelherodev
+Okay
+
+1593890605
+pixelherodev
+So you can't do it in C either?
+
+1593890616
+shakesoda
+correct, not a zig issue
+
+1593890655
+shakesoda
+you'd have to hack the check out of luajit and make sure your allocator meets its needs.
+
+1593890689
+shakesoda
+not sure how this interacts with gc64
+
+1593890701
+pixelherodev
+Uh
+
+1593890704
+pixelherodev
+I don't think that's true
+
+1593890708
+pixelherodev
+There's a define for it
+
+1593890712
+pixelherodev
+LUAJIT_USE_SYSMALLOC
+
+1593890717
+pixelherodev
+If that's unset it allows custom allocators IIRC
+
+1593890732
+pixelherodev
+`#if LJ_64 && !(defined(LUAJIT_USE_VALGRIND) && defined(LUAJIT_USE_SYSMALLOC))`
+
+1593890739
+pixelherodev
+That's the condition for not exporting some APIs
+
+1593890742
+shakesoda
+hmmmm, well, i just let it be
+
+1593890784
+pixelherodev
+Hmm
+
+1593890786
+yeti
+leeward: I'm just starting to fail with zig... from blink to ISR still is a bit too far for me
+
+1593890791
+shakesoda
+luajit using its own allocator doesn't actually hurt me, it just slightly annoys me for the inconsistency in bookkeeping
+
+1593890792
+pixelherodev
+It might be that that switches between
+
+1593890821
+pixelherodev
+`* Undocumented, but hey, that's what we all love so much about Windows. */`
+
+1593890823
+pixelherodev
+lol
+
+1593890824
+yeti
+leeward: and on Pi2, Cubietruck and on Zsun no luck so far (armhf and mips)
+
+1593890856
+yeti
+but ommmmmmm...
+
+1593890881
+leeward
+Well, the pi should be easier. It's actually a supported architecture for llvm.
+
+1593890920
+yeti
+it complains about missing armv6k instructions because of yield... on bootstrapping
+
+1593890923
+yeti
+:-(
+
+1593890932
+yeti
+armhf should be arm7
+
+1593890978
+yeti
+well... raspians arkhf on pi1 might be different
+
+1593890991
+yeti
+to run on that arm6+hf chip
+
+1593891013
+shakesoda
+raspbian is armv6jzf-s or something.
+
+1593891015
+yeti
+but cubie3's A20 is "normal" armhf
+
+1593891039
+shakesoda
+i.e. armv6 + vfp2
+
+1593891064
+shakesoda
+i always forget the terms the compiler wants for that
+
+1593891094
+shakesoda
+arm1176jzf-s is probably what i'm thinking
+
+1593891166
+yeti
+armv7l <<< both... pi2 and cubie2/3
+
+1593891175
+yeti
+pi1 is that v6 thing
+
+1593891187
+shakesoda
+also pi zero
+
+1593891196
+yeti
+yes
+
+1593891204
+scientes
+armv7 really is much nicer
+
+1593891214
+shakesoda
+i have a handful of pi 0s
+
+1593891235
+shakesoda
+and some 3s and a 4 now. life is so simple on the 4...
+
+1593891997
+pixelherodev
+Is the pi 4 more or less efficient than three?
+
+1593892087
+leeward
+It doesn't require a binary blob to get running.
+
+1593892103
+pixelherodev
+Whoa
+
+1593892198
+leeward
+They should have called them 3.1, 3.141592, 3, and 3.14.
+
+1593892230
+ifreund
+heh
+
+1593892238
+leeward
+I don't actually know when the first 0 is in pi...huh
+
+1593892274
+shakesoda
+pixelherodev: considerably more efficient
+
+1593892275
+leeward
+Wow, it's the 33rd digit.
+
+1593892623
+pixelherodev
+3.141592653589 is all I remember
+
+1593892627
+pixelherodev
+So, no zeroes
+
+1593892649
+pixelherodev
+UEFI is a fustercluck and I hate it
+
+1593892688
+shakesoda
+pixelherodev: i'm not interested in the details of it, i just want to see standardized booting and acpi stuff on arm, so every damned machine doesn't need its own extremely specific os image
+
+1593892697
+pixelherodev
+Sure, I agree with the goal there
+
+1593892702
+shakesoda
+it's one of the great frustrations of working on arm machines vs x86
+
+1593892702
+pixelherodev
+I don't think EFI is the right solution.
+
+1593892712
+leeward
+uboot?
+
+1593892717
+pixelherodev
+I want something more akin to "jump to address X"
+
+1593892750
+pixelherodev
+I don't like firmware having support for a) filesystems b) loadable modules c) graphics drivers d) etc
+
+1593892764
+pixelherodev
+It's BS, it's needless complexity, and it's more points of failure
+
+1593892776
+shakesoda
+if it gets me operating systems actually working, i will take it
+
+1593892782
+shakesoda
+but it's totally overengineered, for sure
+
+1593892785
+pixelherodev
+Sure, but you can get that goal without EFI
+
+1593892797
+pixelherodev
+I want to see x64 machines with BIOS :P
+
+1593892798
+shakesoda
+the big thing is just hardware discovery stuff i guess
+
+1593892802
+pixelherodev
+Literally yeah
+
+1593892806
+pixelherodev
+This isn't the 90s
+
+1593892818
+pixelherodev
+Every OS can do all the important stuff themselves
+
+1593892823
+pixelherodev
+They shouldn't be reliant on firmware
+
+1593892826
+pixelherodev
+It's also why I hate ACPI
+
+1593892833
+pixelherodev
+ACPI is *neat*, but
+
+1593892838
+pixelherodev
+That's not really a good reason to use it IMO :P
+
+1593892857
+pixelherodev
+I take that back
+
+1593892858
+pixelherodev
+I love ACPI
+
+1593892861
+pixelherodev
+I hate AML
+
+1593892871
+ikskuh
+pixelherodev: AT or ATX power? :D
+
+1593892873
+pixelherodev
+I don't like the idea that OSes need a full freaking VM just for power management
+
+1593892883
+pixelherodev
+I mean, really?
+
+1593892897
+pixelherodev
+A turing-complete VM environment... for something that should be static?
+
+1593892919
+shakesoda
+i will suffer the details if my systems start getting some cross compatible os images
+
+1593892936
+shakesoda
+i will suffer a lot of horrible, horrible details for that
+
+1593892955
+shakesoda
+and i will fully agree with you that they are indeed horrible
+
+1593893055
+pixelherodev
+To me, I'd rather not settle like that
+
+1593893067
+pixelherodev
+Better to take the time to do it right the first time
+
+1593893077
+pixelherodev
+Even if it means dealing with the awful status quo for a bit longer
+
+1593893088
+pixelherodev
+gah you've got to be kidding me
+
+1593893097
+pixelherodev
+libxkbcommon just started segfaulting out of nowhere
+
+1593893107
+pixelherodev
+Didn't upgrade
+
+1593893134
+pixelherodev
+Rather, it segfaults if I have any
+
+1593893181
+shakesoda
+uefi is pretty much what we're going to end up with regardless, i'm fairly sure, since we've already got it and arm moving into more spaces where it applies
+
+1593893196
+pixelherodev
+Boo
+
+1593893202
+pixelherodev
+So let's work on a replacement!
+
+1593893204
+pixelherodev
+I know!
+
+1593893232
+pixelherodev
+It should just
+
+1593893245
+pixelherodev
+detect boot drive
+
+1593893258
+pixelherodev
+Load a specified blob of data off of it
+
+1593893260
+pixelherodev
+and execute
+
+1593893263
+shakesoda
+time to convince arm that sbbr should just do that
+
+1593893272
+shakesoda
+s/do/be/
+
+1593893277
+pixelherodev
+sbbr?
+
+1593893315
+shakesoda
+
+
+1593893317
+pixelherodev
+Gotcha
+
+1593893326
+pixelherodev
+That's disgusting
+
+1593893329
+pixelherodev
+Ugh
+
+1593893337
+pixelherodev
+Three awfuls for the price of one
+
+1593893390
+shakesoda
+meanwhile in embedded:
+
+1593893420
+shakesoda
+you'll still be unhappy with this, i promise
+
+1593893586
+pixelherodev
+WHY
+
+1593893589
+pixelherodev
+WHY WOULD YOU DO THAT
+
+1593893594
+pixelherodev
+UEFI is bad enough on desktop stuff
+
+1593893605
+pixelherodev
+Why the bleep would you use it for embedded?!
+
+1593893620
+pixelherodev
+Ugh
+
+1593893628
+pixelherodev
+It's like they're trying to out-x86 x86!
+
+1593893656
+shakesoda
+i think i'll take it over the /entire/ legacy mess that x86 has
+
+1593893685
+pixelherodev
+I'd much prefer, like
+
+1593893687
+pixelherodev
+RISC-V
+
+1593893689
+pixelherodev
+or xtensa
+
+1593893697
+shakesoda
+i was pretty happy with the uefi available on the pi 3, haven't tried it on the 4
+
+1593893750
+shakesoda
+everyone directly targets pi though, so it mostly just gets you a boot menu if you want it
+
+1593893765
+shakesoda
+which, well, whatever in this case.
+
+1593893788
+shakesoda
+it'd be more useful with more ecosystem
+
+1593897616
+forgot-password
+Is there a canonical way to create custom build steps? The way I do it right now is just to have a separate Zig file that I add via addExecutable and have it executed on the desired build step. But this gets rather messy, because I have to generate all file paths in the main build.zig and pass them via addArg
+
+1593897655
+ikskuh
+forgot-password: there's sme "addCustomBuildStep" afaik
+
+1593897656
+forgot-password
+Say I need to package a dynamic library in some directory structure with some meta information
+
+1593897682
+forgot-password
+Huh, I'll take a look, thank you
+
+1593897762
+forgot-password
+Ah, there is addInstall*File
+
+1593898522
+ifreund
+forgot-password: I've got some custom steps in river's build.zig:
+
+1593898679
+forgot-password
+Awesome, thanks!
+
+1593899759
+andrewrk
+pixelherodev, the Function impl (from codegen.zig) is referenced by ElfFile (from link.zig). I think even ElfFile will be replaced by a different abstraction for a C backend. Inside Module where it interacts with anything related to "bin_file" I think will be modified to support an alternate concept of an output file
+
+1593899793
+andrewrk
+that's where to break the chain. edit the code where Module interacts with "bin_file", to do something else in the case of targeting .c source
+
+1593900283
+shakesoda
+hmmmm, i can't get asm output right now from zig on compiler explorer
+
+1593900324
+shakesoda
+everything just says no output: objdump returned 1
+
+1593900417
+leeward
+shakesoda: seems to be working fine for me with the default function (square)
+
+1593900505
+shakesoda
+leeward: i can't get it to give me output for anything :(
+
+1593900522
+shakesoda
+it builds and i get the right program output, but not the dump
+
+1593900528
+leeward
+
+
+1593900787
+shakesoda
+leeward: i have no idea why things are working in this tab if i mess with this, but not in the others i've got (with the same input)
+
+1593900792
+shakesoda
+bizarre
+
+1593900896
+leeward
+That is pretty funky.
+
+1593900929
+leeward
+Clear cookies?
+
+1593900991
+shakesoda
+ah, "compile to binary" was checked and broke it
+
+1593901051
+leeward
+\o/
+
+1593901052
+leeward
+sorta
+
+1593901313
+andrewrk
+I think it's pretty neat that the new hash map lets you choose whether to store the hash of each entry with a comptime parameter
+
+1593901332
+andrewrk
+and AutoHashMap is unchanged, it uses heuristics to pick a good default for this parameter
+
+1593901356
+ikskuh
+andrewrk: how's performance ?
+
+1593901370
+andrewrk
+did you see the chart that ryan posted?
+
+1593901375
+ikskuh
+sadly, no
+
+1593901378
+andrewrk
+
+
+1593901399
+andrewrk
+oh he's in the channel, I should just say squeek502 :)
+
+1593901433
+squeek502
+hello
+
+1593901450
+andrewrk
+I suspect for strings it will be even better since AutoHashMap will now decide to store hashes of strings, avoiding potentially costly equality checks
+
+1593901454
+ikskuh
+wooow neat
+
+1593901468
+squeek502
+was planning on trying strings as well
+
+1593901472
+ifreund
+nice!
+
+1593901475
+shakesoda
+do we know how this compares to other hashmaps elsewhere?
+
+1593901486
+andrewrk
+shakesoda, no, and that's a good point
+
+1593901499
+ifreund
+I'm working on a swiss tables implementation so we'll see soon
+
+1593901507
+ifreund
+lemmi is as well :D
+
+1593901514
+shakesoda
+i'd be curious to know how it is compared to robin hood or so
+
+1593901536
+andrewrk
+this is using robin hood
+
+1593901543
+ifreund
+it's a lot more complex though and might not be a good fit for the standard library
+
+1593901547
+squeek502
+shakesoda, some links to C++ benchmarks here, but obviously not 1:1 comparable at all:
+
+1593901570
+shakesoda
+andrewrk: and now i know
+
+1593901685
+andrewrk
+the tricks that #5786 uses: * robin hood hashing * separate entries array from indexes array * power of 2 index array length to avoid modulus (that actually made a significant difference, to my surprise)
+
+1593901705
+ikskuh
+yeah, using bit tricks is still faster
+
+1593901707
+andrewrk
+* store hash in the entries (optional with a comptime parameter)
+
+1593901712
+ikskuh
+as it uses way less hardware components
+
+1593901727
+pixelherodev
+andrewrk: gotcha, thanks
+
+1593901740
+ifreund
+swiss tables use cool simd stuff
+
+1593901752
+pixelherodev
+I'd had a few ideas on how to get started, but I figured it was better to delay it a bit and make sure we were on the same page ;)
+
+1593901752
+ifreund
+and are way nicer to implement in zig than c++ :)
+
+1593901753
+andrewrk
+what does it use simd for?
+
+1593901797
+andrewrk
+oh one more trick: * for small (currently <= 8) number of entries, there's no indexes at all, it's just linear scan on the entries ArrayList
+
+1593901799
+ifreund
+it stores metadata on what entries are in use in part of the allocation, and can use simd to check a hash against 16 slots at once
+
+1593901832
+andrewrk
+The really nice thing about this impl is that I can now change this code:
+
+1593901848
+ifreund
+relevant part of the talk if you're curious:
+
+1593901878
+andrewrk
+these are sets, and should be using hash maps, but I was worried about all the memory overhead of a table, since there are many decls. but with this optimization that makes hash maps take up only a single pointer sized integer more space than an array list for small entry counts, it's no problem to upgrade these fields to tables
+
+1593901897
+andrewrk
+plus now iterating over them is as easy as iterating over array lists
+
+1593901902
+shakesoda
+andrewrk: the mod thing making a big difference reminds me of gpus, heh
+
+1593901917
+shakesoda
+mod in a shader ends up compiling as something like 31 instructions
+
+1593901930
+shakesoda
+they're a lot nastier than you'd think
+
+1593902027
+pixelherodev
+Alrighty, will get started on CBE tonight :D
+
+1593902029
+andrewrk
+ifreund, I get it now, e.g. you can skip over 16 slots with 1 instruction, knowing none of them contain the entry. this would allow the array to get more full before needing to reallocate
+
+1593902037
+andrewrk
+neat
+
+1593902099
+ifreund
+yeah for sure
+
+1593902153
+andrewrk
+pixelherodev, if it gets too confusing, here's a strategy that I sometimes do when coding: make a branch. make
+
+1593902157
+ifreund
+this c++ code I'm reading is absolutely drowning in complexity, I think the Zig impl will be far more readable
+
+1593902215
+pixelherodev
+andrewrk: that hopefully shouldn't be needed
+
+1593902222
+pixelherodev
+After my last PR, I'm pretty comfortable with stage2
+
+1593902224
+pixelherodev
+:)
+
+1593902417
+shakesoda
+
+
+1593902434
+shakesoda
+i figured there'd be some kind of punishment for abusing the for
+
+1593902569
+shakesoda
+but instead it's just ugly and nothing else of note
+
+1593902977
+shakesoda
+i saw this sort of thing in one of the old issues, so i wanted to see what it actually does if you use it.
+
+1593903606
+jaredmm
+What's the best way to handle cimport redefinition errors when including a header file that includes other (often system) headers with the least amount of manual glue?
+
+1593903650
+ifreund
+jaredmm: usually it's best to only have one @cImport block in your code base to avoid such errors
+
+1593903720
+ifreund
+e.g. create a c.zig file with nothing but pub usingnamespace @cImport({ // all the stuf });
+
+1593903722
+jaredmm
+I knew that wasn't going to get the right answer because of a lack of clarity. When importing certain Windows headers with a single c.zig file, I'll often see redefinition errors for "__".
+
+1593903760
+jaredmm
+I'm fairly certain this is caused by issues in cimport itself and how some intrinsic functions are handled (three months ago I thought I knew and couldn't resolve it).
+
+1593903779
+ifreund
+huh, I haven't run into anything like that before
+
+1593903807
+shakesoda
+that sounds like something i ran into the other month and don't remember what i did with
+
+1593904437
+jaredmm
+There might be a header on Windows to stop it from happening, but the core of the issue (if my brain remembers almost four months ago, now that I think about it) was that you'd have something like #define __$some_absolute_nonsense
+
+1593904514
+jaredmm
+The identifier then stops at __ because $ is dumb and you get a bunch of duplicate untranslatable things that aren't relevant to what I'm working on but annoy me anyway.
+
+1593904614
+jaredmm
+shared\specstrings_strict.h is the Windows header that gets pulled in and causes it.
+
+1593904933
+squeek502
+andrewrk, here's the hashmap insertion benchmark for strings:
+

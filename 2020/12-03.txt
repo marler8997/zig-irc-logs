@@ -1,0 +1,4496 @@
+1606954097
+marler8997
+14 open issues
+
+1606954322
+pixelherodev
+Yep :)
+
+1606978366
+pjz
+I have a const []u8 that I got from @embedFile... presuming the sizes match, how do I cast it to a [x][u]u8?
+
+1606985521
+ifreund
+pjz: casting const to mutable and modifying the memory would be UB
+
+1606985551
+ifreund
+if you're ok with a *const [x][u]u8 then a @ptrCast() should work fine
+
+1606996223
+ikskuh
+heya
+
+1606996255
+koakuma
+Hey
+
+1606996287
+koakuma
+
+
+1606996322
+koakuma
+Anyone knows what is happening here? I've never done dev on Windows and I don't understand anything about this error
+
+1606996348
+ikskuh
+is there a reason symbols might be unresolved on windows, but not on linux? they are defined in the correct def file
+
+1606996558
+koakuma
+Hmmm, dunno. The PR that causes the error only changed some of the endianness macros, it shouldn't have any effect on lld, right?
+
+1606996562
+koakuma
+
+
+1606998600
+ikskuh
+nevermind my previous question
+
+1607008662
+marler8997
+andrewrk, been thinking about what you said about concrete types vs generics, it's making me think about what Zig would look like without generics, actually, I think it could be done. Basically any time you would need generics, you just use indirection instead (this is what Python does under the hood).  Something to ponder about
+
+1607008951
+ifreund
+marler8997: I'm curious about what you're saying but I don't follow. You mean zig without comptime? "generics" are kind just a side affect of that feature
+
+1607009180
+ikskuh
+marler8997: can you elaborate that?
+
+1607009199
+ikskuh
+every variable in python is just of zig type "anytype" :D
+
+1607010284
+marler8997
+comptime and generics are orthogonal
+
+1607010309
+marler8997
+by generics the only thing I mean is "anytype"
+
+1607010336
+marler8997
+so, replace every anytype with AnyType, which contains a pointer to a value and type metadata
+
+1607010376
+companion_cube
+Then it has runtime costs
+
+1607010379
+marler8997
+This may seem like it incurs runtime overhead, but the idea is that Zig's optimizer should be able to remove any overhead incurred
+
+1607010407
+companion_cube
+How do you allocate such values?
+
+1607010445
+marler8997
+companion_cube, well first, you wouldn't need to allocate anything if the optimizer determines you don't need to
+
+1607010476
+g-w1
+would this allow types to be used at runtime?
+
+1607010478
+ikskuh
+i think it's a horrible idea and adding more complexity than there is right now
+
+1607010498
+marler8997
+otherwise, if you do need the overhead, the compiler has multiple methods available such as 1) instantiating multiple functions (basically what generics do today) 2) instantiating one function that supports variant types
+
+1607010499
+dominikh
+I shouldn't have to write my code differently depending on how good the optimizer was, especially because optimizer decisions change over time
+
+1607010512
+companion_cube
+marler8997: allocations are explicit, the optimizer won't remove them AFAIK
+
+1607010542
+ikskuh
+marler8997: relying on the optimizer is a horrible idea and imho leads to bad design desitions
+
+1607010547
+marler8997
+companion_cube: you wouldn't allocate anytype parameters explicitly
+
+1607010552
+dominikh
+if the compiler has to fall back to generating multiple functions, anyway, what's the benefit of having dynamic dispatch sometimes?
+
+1607010567
+ikskuh
+AnyType is not anytype though
+
+1607010580
+dominikh
+actually, what's the benefit at all here?
+
+1607010582
+marler8997
+I would hold up making any judgements on the topic without fully understanding it
+
+1607010583
+ikskuh
+your proposed AnyType doesn't seem to have compile time invariants
+
+1607010599
+g-w1
+would this be dynamic dispatch for anytype?
+
+1607010608
+marler8997
+g-w1, yes
+
+1607010610
+ikskuh
+also why a pointer?
+
+1607010614
+ikskuh
+and what type has that metadata?
+
+1607010621
+ikskuh
+std.builtin.TypeInfo?
+
+1607010627
+ikskuh
+is it runtime accessible?
+
+1607010630
+dominikh
+ikskuh: pointer because your AnyType needs to have a known, fixed size now
+
+1607010643
+marler8997
+is it runtime accessible, it could be or it could not be
+
+1607010669
+marler8997
+why a pointer?  because Zig's model requires parameters to have a fixed size
+
+1607010691
+marler8997
+so, you would code all these things like they are available at runtime
+
+1607010697
+ikskuh
+so you cannot ever store a value of anytype
+
+1607010698
+marler8997
+but then the optimizer could remove everything
+
+1607010699
+companion_cube
+`&dyn Any`, in rust parlance..
+
+1607010699
+ikskuh
+*AnyType
+
+1607010714
+companion_cube
+(which is not optimized away)
+
+1607010715
+g-w1
+this actually seems like a way to make zig simpler imo
+
+1607010717
+ikskuh
+because i can not store a value in AnyType
+
+1607010730
+ikskuh
+you can also do everything with todays semantics
+
+1607010731
+marler8997
+AnyType wouldn't be a pointer
+
+1607010741
+dominikh
+there's nothing unique here, it's just a pointer to type information or a vtable or however you want to implement it, and a pointer to the data. Rust's dyn, objects in many dynamic languages, interface values in Go, ...
+
+1607010742
+ikskuh
+but it conains a pointer
+
+1607010743
+marler8997
+I mean, it wouldn't bey *AnyType
+
+1607010756
+ikskuh
+no, it would be "*i32"
+
+1607010760
+marler8997
+yes it contains a pointer
+
+1607010761
+ikskuh
+which means i either need an allocator
+
+1607010764
+ikskuh
+to free the value
+
+1607010770
+ikskuh
+or i do not own the value
+
+1607010770
+marler8997
+well, not necessarily, the poitner could be optimized away
+
+1607010776
+companion_cube
+Sounds like a fat pointer with type info, or a vtable
+
+1607010776
+ikskuh
+which means i'm not do decide to store it for later use
+
+1607010795
+ikskuh
+marler8997: const T = struct { foo: AnyType };
+
+1607010799
+ikskuh
+var t: T = undefined;
+
+1607010803
+marler8997
+ikskuh yes, you're no longer the one who decides these things, the optimizer does, that is a key difference here
+
+1607010809
+ikskuh
+{ var i: i32 = 10; t = { .foo = i }; }
+
+1607010816
+ikskuh
+log.info("{}", .{ t });
+
+1607010822
+ikskuh
+now i have accessed invalid memory
+
+1607010824
+marler8997
+fn foo(x: AnyType) void { }
+
+1607010827
+marler8997
+foo(100)
+
+1607010834
+ikskuh
+point is:
+
+1607010840
+ikskuh
+i can store values that are passed as anytype
+
+1607010847
+ikskuh
+but cannot store AnyType
+
+1607010861
+marler8997
+you can store anytype
+
+1607010865
+marler8997
+I mean AnyType :)
+
+1607010896
+marler8997
+but keep in mind, the optimizer can remove any need to store AnyType at runtime
+
+1607010897
+ikskuh
+
+
+1607010914
+ikskuh
+only if i ever allow AnyType to be used as arguments
+
+1607010921
+ikskuh
+and forbid it to be stored anywhere except the stack
+
+1607010922
+marler8997
+no
+
+1607010932
+ikskuh
+otherwise it will be a footgun par excellence
+
+1607010933
+marler8997
+even if you use AnyType as an argument, it doesn't mean you'll need to support it at runtime
+
+1607010938
+dominikh
+marler is proposing to use dynamic dispatch when the optimizer can optimize the pointer indirection away, and to fall back to monomorphization if it can't. I still fail to see the benefit of that, but hey
+
+1607010943
+ikskuh
+as it's a pointer, but you don't need to pass a pointer
+
+1607010967
+ikskuh
+and i can't see how that wouldn't be the biggest footgun ever
+
+1607010968
+marler8997
+dominikh I don't know what monomophization means but it
+
+1607010975
+ikskuh
+i don't even talk about dispatch or whatsoever
+
+1607010985
+marler8997
+ikskuh you wouldn't pass a pointer
+
+1607010987
+dominikh
+marler8997: generate multiple copies of a function, one per concrete type of the generic argument
+
+1607010990
+companion_cube
+ikskuh: you mean, only if it's a ref :)
+
+1607011000
+companion_cube
+As in C++ or rust
+
+1607011006
+ikskuh
+companion_cube: marler8997 said it's always a ref
+
+1607011009
+marler8997
+dominiky, the optimizier would HAVE to support that as well
+
+1607011033
+marler8997
+it's always a "ref" in terms of source code, but it could be a value once the optimizer gets through
+
+1607011033
+dominikh
+but your degenerate case is just the same as the status quo, so what's the benefit of dynamic dispatch?
+
+1607011034
+ikskuh
+marler8997: how can i do this then? fn(foo: anytype) @TypeOf(foo){ return foo; }
+
+1607011038
+companion_cube
+No I mean the always as arg, on stack, etc. behaviof
+
+1607011042
+companion_cube
+That's a ref :)
+
+1607011044
+ikskuh
+marler8997: the optimizer isn't in place here
+
+1607011052
+ikskuh
+please think broader
+
+1607011058
+marler8997
+dominikh, the benefit is the language no longer needs to support generics with anytype
+
+1607011059
+ikskuh
+and accept that we can store
+
+1607011074
+ikskuh
+it will still need it. two examples are above
+
+1607011081
+ikskuh
+"the optimizer" is a implementation detail
+
+1607011091
+ikskuh
+my examples don't require code generation to fail
+
+1607011091
+companion_cube
+marler8997: so simplifying a bit the language but making it dependent on an optimiser? Meh
+
+1607011096
+marler8997
+ikskuh, you're acting as if I'm a proponent of this feature and you're trying to attack it saying you don't want it
+
+1607011101
+marler8997
+I'm not saying I want this feature
+
+1607011108
+marler8997
+I'm just wanting to discuss the implications of it
+
+1607011111
+ikskuh
+it's not that i don't want it
+
+1607011112
+marler8997
+what would the language look like
+
+1607011116
+ikskuh
+i'm just discussion the implications ;)
+
+1607011124
+ikskuh
+like "everything explodes when people use it a tad wrong"
+
+1607011139
+marler8997
+"the optimizer isn't in place"...I'm not sure why you said that then
+
+1607011149
+marler8997
+the discussion assumes the optimizer could do this
+
+1607011153
+ikskuh
+because it breaks at semantic levels already
+
+1607011160
+ikskuh
+before the optimizer has even run
+
+1607011165
+ikskuh
+or any code was generated
+
+1607011174
+marler8997
+ikskuh you're example wasn't the proposed semantics
+
+1607011182
+marler8997
+fn (foo: AnyType) void {} foo(100)
+
+1607011191
+companion_cube
+If you take AnyType to be GObject I think you get what marler8997 is talking about
+
+1607011195
+marler8997
+from the callers perspective, there are no pointers
+
+1607011207
+ikskuh
+i got to go now
+
+1607011218
+ikskuh
+i hope i can discuss it in roughly an hour
+
+1607011225
+dominikh
+step 1: pretend the optimizer doesn't exist. the optimizer is there to
+
+1607011228
+ikskuh
+i want to understand why my examples will not break the language then
+
+1607011248
+dominikh
+any mention of the compiler is irrelevant for discussing the
+
+1607011248
+marler8997
+ikskuh yeah me too, if you find an issue would be good to know
+
+1607011252
+dominikh
+*of the optimizer
+
+1607011270
+marler8997
+dominikh yes
+
+1607011276
+companion_cube
++1 for semantics not relying on an unspecified optimiser
+
+1607011279
+marler8997
+but the first thing people say is "runtime overhead"
+
+1607011294
+dominikh
+ignore runtime overhead
+
+1607011304
+marler8997
+ok, good idea
+
+1607011322
+marler8997
+discuss the merits of removing generics from the language for dynamic dispatch?
+
+1607011334
+companion_cube
+First talk about how it works, then about how to make it fast
+
+1607011335
+dominikh
+I still don't see the benefit on a semantic level. "Zig wouldn't need to support anytype", no, but now it needs to support AnyType, which is virtually the same thing in terms of desired semantics. people will want access to the type information, for example
+
+1607011342
+dominikh
+and access the fields of specific, concrete types
+
+1607011364
+companion_cube
+dominikh: people would access type info at runtime, not comptine, correct ?
+
+1607011369
+companion_cube
+That's a big difference
+
+1607011385
+dominikh
+is it a big difference in terms of complexity?
+
+1607011394
+companion_cube
+marler8997: there would still be basic generics with comptime, anyway.
+
+1607011406
+companion_cube
+No, but in terms of perf it can be
+
+1607011414
+marler8997
+companion_cube, semantically yes (but remember, could be optimized)
+
+1607011431
+marler8997
+dominikh, it means removing a big feature of the language
+
+1607011433
+companion_cube
+Except, not
+
+1607011441
+dominikh
+also, it really can't work without runtime allocations, unless you forbid passing AnyTypes around. and forbidding that would be a big deficit
+
+1607011446
+companion_cube
+How could it be optimized if it's runtime?
+
+1607011461
+companion_cube
+You get into JIT land there
+
+1607011467
+companion_cube
+It's a whole different world
+
+1607011470
+marler8997
+companion_cube, it could be optimized into exactly what generics do today
+
+1607011495
+marler8997
+dominiky, runtime allocations optimized into no allocations
+
+1607011496
+dominikh
+can I do `var myGlobal: AnyType = undefined; fn foo(x: AnyType) void { myGlobal = x; }`? if yes, you need allocations. if no, AnyType is a bad idea.
+
+1607011496
+companion_cube
+So you'd still monomorphize for each different type?
+
+1607011501
+companion_cube
+What even is the point?
+
+1607011552
+marler8997
+dominkh, yes there will be examples where runtime allocations may be necessary
+
+1607011568
+dominikh
+if runtime allocations are necessary, there needs to be a way for the user to do said allocation.
+
+1607011569
+marler8997
+companion_cube, the point is to remove a big feature of the language to make it simpler
+
+1607011586
+dominikh
+and since the optimizer is
+
+1607011592
+dominikh
+not just when the optimizer can't figure things out
+
+1607011606
+dominikh
+a code change in one function can change what the optimizer can do a thousand lines away
+
+1607011614
+marler8997
+dominikh the user needs to do allocation all the time because the optimizer is fallible?
+
+1607011615
+marler8997
+huh?
+
+1607011636
+marler8997
+dominiky, yes, changing code in one place can change the entire program!
+
+1607011644
+dominikh
+without the optimizer, `foo(100)` needs to allocate storage for the pointer in AnyType
+
+1607011663
+dominikh
+and since allocations are explicit in Zig, the user has to make that allocation
+
+1607011670
+marler8997
+that could definitely be one of the weaknesses, the programmer has "less" control over how the final output is manifested
+
+1607011686
+marler8997
+dominikh yes, then no
+
+1607011721
+dominikh
+the optimizer changes between versions of Zig. will my code stop compiling if a new version can no longer optimize the pointer away?
+
+1607011721
+marler8997
+Zig allocates an lvalue on the stack and passes a pointer to it...Zig already supports this behavior
+
+1607011739
+dominikh
+you can't use a stack pointer if the pointer outlives the stack; as it does in my example
+
+1607011744
+marler8997
+dominikh, optimizer has nothing to do with whether something compiles
+
+1607011745
+dominikh
+where the AnyType gets stored in a global
+
+1607011760
+dominikh
+marler8997: it does when you depend on the optimizer to remove the need for allocations…
+
+1607011793
+marler8997
+dominkh, we aren't depending on the optimizer to change the semantics of the source code
+
+1607011802
+dominikh
+I will repeat my example: `var myGlobal: AnyType = undefined; fn foo(x: AnyType) void { myGlobal = x; }` – how will the user call foo, with the argument 100, making sure the value is allocated on the heap (because it has to be on the heap.)
+
+1607011818
+marler8997
+you example is incomplete
+
+1607011822
+marler8997
+how is myGlobal being used?
+
+1607011829
+marler8997
+if it's not being used, then nothing gets generated
+
+1607011845
+dominikh
+fine, export it then
+
+1607011855
+dominikh
+now it's always used
+
+1607011863
+marler8997
+what do you mean by "export" specifically?
+
+1607011968
+dominikh
+export as in the 'export' keyword.
+
+1607011978
+marler8997
+so you want to make AnyType available to C code?
+
+1607012013
+dominikh
+... just assume that the variable gets used in an arbitrary number of places. it doesn't matter how exactly. it'll get used, its usage will be dynamic
+
+1607012023
+marler8997
+not necessarily
+
+1607012023
+dominikh
+the value passed to the function will outlive the stack frame
+
+1607012026
+dominikh
+that's the point
+
+1607012046
+marler8997
+if foo gets called once with a comptime_int of 100
+
+1607012048
+dominikh
+_assume for the sake of argument_. I don't care to write a 100 line program to demonstrate to you that a value passed to a function can get stored in a global variable...
+
+1607012052
+marler8997
+then myGlobal will be of type comptime_int
+
+1607012067
+dominikh
+don't tell me all the special cases that can work. explain how the general case works
+
+1607012071
+marler8997
+it won't even have memory at runtime
+
+1607012075
+companion_cube
+I know zig is not rust
+
+1607012085
+companion_cube
+But what rust does for this is interesting
+
+1607012111
+companion_cube
+You need to specify in types when you want dynamic dispatch
+
+1607012116
+marler8997
+dominikh, I followed your constrant and myGlobal being of type comptime_int adheres to it
+
+1607012139
+marler8997
+the value passed to the function is stored in a global
+
+1607012161
+marler8997
+the next contains could be, assume foo is called with a runtime value yes?
+
+1607012167
+marler8997
+*the next constraint
+
+1607012177
+dominikh
+sorry, but I've lost interest in this conversation
+
+1607012194
+marler8997
+sorry, I'm a math guy so I've very explicit, and it can slow things down
+
+1607012216
+marler8997
+I like where you're going with this, I'm just trying to be very precise
+
+1607012218
+dominikh
+you're not being explicit at all. your description of AnyType is woefully underspecified
+
+1607012226
+marler8997
+you're correct
+
+1607012232
+marler8997
+you didn't ask what it was :)
+
+1607012247
+marler8997
+but everyone here seems to have strong opinions on it
+
+1607012253
+g-w1
+maybe a github proposal just to formalize it would be better than an argument on irc
+
+1607012261
+marler8997
+it's not a proposal though
+
+1607012270
+marler8997
+I just want a discussion on how it would affect the language
+
+1607012277
+dominikh
+the point of the matter is that there exists a program where the concrete type is not known at compile time and the value outlives its stack frame, needing to live on the heap.
+
+1607012282
+marler8997
+what dominkh is doing is what I'm looking for
+
+1607012330
+marler8997
+dominikh I agree but we need to nail down a specifc example to address it....foo(argv[0]) for example
+
+1607012363
+marler8997
+foo(argv[0]) and foo(parseInt(argv[1]))
+
+1607012377
+marler8997
+so foo is called with a runtime slice and a runtime u32 lets' say
+
+1607012393
+marler8997
+this would force myGlobal to handle both slices and u32
+
+1607012417
+marler8997
+the ideal optimizer would turn myGlobal into a tagged union union { Slice: []const u8, Int: u32 }
+
+1607012429
+dominikh
+please stop mentioning the optimizer :)
+
+1607012430
+marler8997
+and the function foo, could support this tagged union, or could be generated multiple times
+
+1607012453
+dominikh
+but give me a second and I'll give you a straightforward example that doesn't even need multiple types
+
+1607012453
+marler8997
+dominky, you're wanting to discuss the runtime implications of this
+
+1607012463
+companion_cube
+Oh that's straight up whole program optimization, too
+
+1607012468
+marler8997
+you can't do tha without talking about the optimizer
+
+1607012477
+marler8997
+companion_cube, yes
+
+1607012493
+companion_cube
+Compile times go brrrr
+
+1607012495
+dominikh
+if you can't avoid the optimizer, then the idea is not worth discussing IMO.
+
+1607012515
+marler8997
+dominkh, well the whole idea depends on the optimizer to maintain Zero Cost Abstraction
+
+1607012533
+marler8997
+if we can't maintain Zero Cost Abstraction and remove generics, then the whole idea is DOA
+
+1607012535
+dominikh
+we already established that performance is irrelevant when discussing the semantics
+
+1607012543
+dominikh
+we care about inputs and outputs, not how fast it goes
+
+1607012550
+dominikh
+well then it's DOA
+
+1607012573
+marler8997
+dominkh, you're saying we can't support Zero Cost Abstraction with this?
+
+1607012578
+companion_cube
+Imho there's perf without an optimizer
+
+1607012583
+companion_cube
+And perf with it
+
+1607012587
+companion_cube
+And both are important
+
+1607012594
+dominikh
+the optimizer can't optimize
+
+1607012600
+companion_cube
+This idea fails in the no optimizer case
+
+1607012639
+marler8997
+the point isn't making the compiler simpler, it's making the language simpler by removing this feature.  I dont' know if it makes the compiler simpler or not
+
+1607012653
+marler8997
+companion_cube, what fails?
+
+1607012675
+marler8997
+I'm sure there are issues but I'm looking for an example to demonstrate them
+
+1607012682
+companion_cube
+It would be terrible without a very smart optimizer
+
+1607012691
+companion_cube
+Also, not explicit
+
+1607012692
+marler8997
+dominkh I want to address your issues but I need an example
+
+1607012698
+companion_cube
+Zig is explicit
+
+1607012707
+marler8997
+what isn't explicit?
+
+1607012745
+companion_cube
+The behavior of your idea
+
+1607012748
+companion_cube
+If it allocates
+
+1607012755
+marler8997
+Zig already does this
+
+1607012757
+companion_cube
+Is it's static dispatch
+
+1607012760
+dominikh
+not on the heap it does not.
+
+1607012765
+companion_cube
+Does it? Where?
+
+1607012771
+marler8997
+neither does this allocate on the heap
+
+1607012773
+marler8997
+the stack
+
+1607012808
+companion_cube
+Well you said it might be a pointer, and maybe bit
+
+1607012817
+companion_cube
+Not *
+
+1607012842
+marler8997
+to be able to support AnyType, it must expose it as a pointer
+
+1607012907
+marler8997
+probably look something like this: const AnyType = struct { fn typeInfo() TypeInfo; fn ptr() *opaque{} }
+
+1607014261
+g-w1
+should I report a bug for this
+
+1607014497
+TheLemonMan
+g-w1, EFAULT means the buffer is bogus
+
+1607014551
+TheLemonMan
+use gdb and print the slice fields
+
+1607014589
+ikskuh
+okay, i'm back
+
+1607014595
+ikskuh
+marler8997, is the AnyType still a topic?
+
+1607014760
+g-w1
+ah, thanks
+
+1607015256
+ikskuh
+marler8997:
+
+1607015279
+ikskuh
+the "pointer + type info" will only work well in case 1), every other case will be more or less borked, assuming AnyType is a regular type and not a keyword
+
+1607017683
+marler8997
+ikskuh yeah definitely
+
+1607017690
+marler8997
+I'm playing around with code
+
+1607017706
+ikskuh
+i don't think it's a good idea. it won't make the language simpler and will require a lot more boiler plate
+
+1607017716
+ikskuh
+and functions like std.math.max will be harder to use
+
+1607017725
+marler8997
+ikskuh maybe, not necessarily just wondering if it's a good idea though
+
+1607017731
+marler8997
+I'm wondering what all the implications are
+
+1607017738
+ikskuh
+yeah
+
+1607017746
+ikskuh
+i hope i made some of them clear in my snippet :)
+
+1607017770
+marler8997
+reading...
+
+1607017807
+marler8997
+I think case 2 would have to return AnyType
+
+1607017891
+marler8997
+I don't see the issue with case 2 though
+
+1607017983
+marler8997
+for case 3, T is AnyType
+
+1607017990
+marler8997
+I don't see what the issue is though
+
+1607018038
+ikskuh
+var foo = makeFoo(@as(u32, 10));
+
+1607018044
+ikskuh
+foo now contains a dangling pointer to a temporary
+
+1607018056
+ikskuh
+with current anytype semantics it doesn't
+
+1607018100
+marler8997
+thinking...
+
+1607018130
+marler8997
+yeah, that simple example does pose an issue
+
+1607018201
+marler8997
+we require using pointers/references because without generics we need a runtime representation of all types, but now how do we copy values...
+
+1607018226
+marler8997
+because all AnyType values are references....
+
+1607018284
+ikskuh
+yep
+
+1607018288
+ikskuh
+that's what i meant with footgun
+
+1607018295
+marler8997
+right that's a no go
+
+1607018298
+ikskuh
+it's a hidden/implicit pointer
+
+1607018302
+marler8997
+how do you solve that?
+
+1607018325
+ikskuh
+in that case? i think you don't
+
+1607018338
+ikskuh
+you need to init the AnyType from a pointer
+
+1607018342
+ikskuh
+otherwise it will break
+
+1607018364
+marler8997
+ikskuh, well that's just my idea, the question is, how do you solve this problem in a language without generics
+
+1607018379
+marler8997
+throw any of my suggestions out the window if needed
+
+1607018401
+marler8997
+obviously the optimizer could turn an AnyType into values
+
+1607018402
+ikskuh
+Go/Python solve it via garbage collection
+
+1607018423
+marler8997
+but maybe there needs to be some way for AnyTypes to become values types semantically
+
+1607018424
+ikskuh
+this is only true for anything that is in a function
+
+1607018438
+ikskuh
+you are not even allowed to turn it into values for arguments ;)
+
+1607018444
+ikskuh
+because that would violate ABI
+
+1607018446
+marler8997
+that's the other solution, maybe you assume GC and let the optimizer remove it...
+
+1607018449
+ikskuh
+(even an implicit ABI)
+
+1607018469
+marler8997
+sorry we're saying too many things and I'm not matching up our responses
+
+1607018470
+dominikh
+No GC in Zig, please and thank you
+
+1607018474
+ikskuh
+the optimizer can't do shit here. if you put an AnyType into a struct, it will always be a pointer
+
+1607018483
+ikskuh
+there's no way to "optimize" that away
+
+1607018490
+ikskuh
+it would be a heavy change of semantics
+
+1607018494
+ikskuh
+breaking all assumptions
+
+1607018497
+marler8997
+dominkh, again, not talking about proposing features, just discussing how features affect the language
+
+1607018510
+dominikh
+well, GC affects the language negatively :P
+
+1607018529
+ikskuh
+it's not possible to have an "any" type like in dynamic languages without allocations
+
+1607018537
+ikskuh
+either you also pass an allocator to AnyType
+
+1607018545
+marler8997
+ikskuh, you could be right but I'm not sure, for example, Andres suggested to me that the Allocator interface could get completely optimized away
+
+1607018556
+ikskuh
+only for inlining
+
+1607018568
+ikskuh
+when the compiler recognized that the function is better off being inlined
+
+1607018569
+marler8997
+dominkh, yes I agree, again, just discussing implications
+
+1607018573
+ikskuh
+if you store the function in a function pointer
+
+1607018575
+ikskuh
+all of that is gone
+
+1607018588
+ikskuh
+the optimizer is not all-mighty
+
+1607018596
+ikskuh
+going to give you a neat demo :)
+
+1607018601
+ikskuh
+and small
+
+1607018603
+dominikh
+can the optimizer solve the halting problem for me?
+
+1607018645
+marler8997
+ikskuh yes that's what I thought yesterday, but thinking about it, I think you could actually optimize dynamic dispatch away
+
+1607018650
+marler8997
+with whole program optimization
+
+1607018671
+ikskuh
+no, even then, you can't
+
+1607018673
+companion_cube
+whole program optimization is the surest recipe to insane compilation times
+
+1607018673
+dominikh
+even whole program optimization cannot determine all runtime behavior.
+
+1607018677
+ikskuh
+that would be solving the halting problem
+
+1607018680
+companion_cube
+look at MLton for an idea.
+
+1607018685
+marler8997
+dominikh, I don't think your comments are being productive here, I'm here to discuss and learn
+
+1607018707
+dominikh
+Saying that something is objectively impossible is not productive?
+
+1607018709
+companion_cube
+dominikh: you can certainly do some cool things in whole program optimizations, like turning a dynamic type into a sum type
+
+1607018719
+companion_cube
+also, remove higher order functions (closures) in the same way
+
+1607018724
+companion_cube
+it's just very costly
+
+1607018726
+marler8997
+goodness, people, I'm not saying these things are good ideas, I'm trying to talk about how these features affect the language, good or bad
+
+1607018732
+dominikh
+companion_cube: at least if you don't allow runtime type creation, yes
+
+1607018754
+dominikh
+You keep saying that you're not proposing an idea, but any time someone points out the bad implications, you feel personally attacked...
+
+1607018764
+ikskuh
+error: unrecognized optimization mode: 'ReleaseFat'
+
+1607018765
+dominikh
+The idea has flaws, we're pointing them out, and you wave your hands
+
+1607018766
+ikskuh
+whoops :D
+
+1607018791
+justin_smith
+marler8997: I think they are plainly describing how the change you describe would break the language semantics
+
+1607018795
+marler8997
+I'm talking about how these features would affect the language and then people are coming back with, "yeah but I don't like that idea because X"
+
+1607018812
+fengb
+The opposite of ReleaseSmall eh?
+
+1607018821
+marler8997
+the purpose isn't to know whether they are good ideas, it's how would these features affect the language...
+
+1607018829
+dominikh
+you're the only person using the word "like". everybody else is objectively pointing out how it breaks the language and its design goals
+
+1607018836
+companion_cube
+dominikh: ah, yes. runtime type creation makes 0 sense to me so I ignore it…
+
+1607018851
+companion_cube
+ikskuh: ReleaseSlim
+
+1607018854
+dominikh
+companion_cube: yeah, I've never really had a need for it, either.
+
+1607018865
+marler8997
+dominkh, yes, I'm not saying these ideas don't break the language,
+
+1607018868
+companion_cube
+to me it doesn't really make sense at al
+
+1607018870
+companion_cube
+all*
+
+1607018882
+companion_cube
+(unless you have the whole compiler at runtime?!)
+
+1607018902
+ikskuh
+marler8997:
+
+1607018911
+justin_smith
+marler8997: right, they effect the language by breaking it (or creating some very weird special cases, arguably equivalent)
+
+1607018926
+ikskuh
+oh wait :D
+
+1607018928
+marler8997
+justin_smith, again that's not the point whether these ideas break the language
+
+1607018936
+marler8997
+I'm not proposing features
+
+1607018941
+marler8997
+I'm trying to have a discussion
+
+1607018951
+ikskuh
+
+
+1607018954
+dominikh
+what is the point in discussing a change that is not viable to begin with?
+
+1607018954
+ikskuh
+this is the correct one
+
+1607018963
+marler8997
+dominkh to learn
+
+1607018970
+ikskuh
+dominikh: learning language semantics and how features affect other things
+
+1607018973
+marler8997
+to understand what makes features good or bad
+
+1607018982
+ikskuh
+i think marler8997 didn't see the "dangling pointer" problem
+
+1607018986
+marler8997
+to gain mutual understanding
+
+1607019037
+dominikh
+I'll let you two have fun, then.
+
+1607019037
+justin_smith
+marler8997: it's not the idea that breaks the language, it's the feature as you describe it, and other people are explaining why it would break the language, I don't see the problem
+
+1607019050
+marler8997
+justim_smith, I think you're right
+
+1607019058
+marler8997
+but I want to understand specifically how it breaks the language
+
+1607019062
+marler8997
+that's what the discussion is for
+
+1607019095
+justin_smith
+marler8997: so you want an explanation in abstract terms, instead of specific examples of things that would not work?
+
+1607019096
+companion_cube
+it breaks some properties such as: fast compilation, explicit allocations, semantics not relying on an optimizer
+
+1607019110
+marler8997
+justin_smith both are good
+
+1607019116
+ikskuh
+Rust has the "semantics rely on the optimizer" a lot
+
+1607019123
+dominikh
+it does?
+
+1607019126
+ikskuh
+yeah
+
+1607019130
+marler8997
+but some of the things people bring up don't necessarily apply
+
+1607019132
+dominikh
+got an example?
+
+1607019143
+dominikh
+(out of curiosity; I'm not well versed in Rust)
+
+1607019146
+ikskuh
+a lot of Rusts zero-cost abstraction cost a shitton of instructions when not having optimized builds
+
+1607019152
+companion_cube
+ikskuh: why does it?
+
+1607019158
+dominikh
+okay, but that's not really a semantic issue, is it?
+
+1607019163
+companion_cube
+I mean, it needs inlining, but what language doesn't now?
+
+1607019171
+marler8997
+iksuh what is your example trying to show?
+
+1607019183
+justin_smith
+companion_cube: maybe something like TCO counts here? just speculating
+
+1607019184
+companion_cube
+inlining is definitely not in the same category as "trying to see through an AnyType"
+
+1607019197
+ikskuh
+marler8997: optimizer cannot optimize indirection with side effects
+
+1607019198
+companion_cube
+TCO is not guaranteed in rust or zig…
+
+1607019206
+dominikh
+to be fair, there's probably at least some devirtualization, too
+
+1607019214
+marler8997
+iksuh, yes I agree, I don't need to see an example to agree with that
+
+1607019215
+companion_cube
+in languages that rely on it it's not an optimizer thing
+
+1607019215
+ikskuh
+companion_cube: TCO?
+
+1607019220
+companion_cube
+tail call optimization
+
+1607019224
+companion_cube
+a very bad name
+
+1607019228
+ikskuh
+ah
+
+1607019239
+companion_cube
+it's not an optimization if it's guaranteed by the language (ML, scheme, etc.)
+
+1607019241
+marler8997
+sorry I'm a bit lost on our thread, what was the point you were making?
+
+1607019244
+ikskuh
+yeah, luckily zig has it as an opt-in feature :)
+
+1607019269
+justin_smith
+ikskuh: rewriting the return location on the last call, and reusing the same stack frame
+
+1607019271
+ikskuh
+marler8997: was just talking about that the optimizer cannot optimize certain things
+
+1607019284
+marler8997
+ikskuh, yeah I agree
+
+1607019295
+marler8997
+was that fact up for debate somehow?
+
+1607019309
+justin_smith
+sorry, bringing up TCO was a red herring, just a random example of an optimization that would break things if you relied on it and it was turned off
+
+1607019321
+marler8997
+the question I thought we were on was is there a way to allow AnyType to decompose to values without using generics?
+
+1607019331
+ikskuh
+marler8997: you assumed that the compiler might optimize away all AnyType
+
+1607019334
+ikskuh
+which isn't possible
+
+1607019336
+ikskuh
+that was my point
+
+1607019349
+marler8997
+I assumed the compiler might optimize away all AnyType?
+
+1607019356
+marler8997
+in some cases yes, in some cases no
+
+1607019362
+ikskuh
+ah
+
+1607019365
+ikskuh
+that wasn't clear to me
+
+1607019373
+marler8997
+gotcha
+
+1607019399
+novaskell
+seems like a lot more work for the compiler
+
+1607019415
+marler8997
+I bring the optimizer up because I think ZeroCost abstraction is very important and necessary
+
+1607019429
+companion_cube
+justin_smith: TCO is a bit my pet peeve, exactly because when you rely on it it's not an optimization :s
+
+1607019431
+ikskuh
+zero cost abstractions are not an optimizer thing though
+
+1607019435
+ikskuh
+they are orthogonal
+
+1607019437
+marler8997
+Removing generics means we won't have Zero Cost abstraction unless..there is a path for the optimizer
+
+1607019457
+marler8997
+ikskuh...uh what?
+
+1607019478
+marler8997
+zero cost abstractions is orthogonal to the optimizer...?
+
+1607019480
+ikskuh
+the abstraction is not zero-cost if it is required to be optimized away
+
+1607019483
+ikskuh
+yeah
+
+1607019490
+ikskuh
+one good example is C++ classes
+
+1607019496
+marler8997
+so...what does C++ mean by zero cost abstractions?
+
+1607019499
+ikskuh
+inheritance is a zero-cost abstraction
+
+1607019505
+companion_cube
+templates, too
+
+1607019509
+ikskuh
+yeah
+
+1607019522
+ikskuh
+it takes exactly the same amount of instructions to use the zero-cost-abstraction than coding it by hand
+
+1607019523
+marler8997
+C++ prides itself on zero cost abstractions
+
+1607019537
+ikskuh
+if you require the optimizer, it's not zero-cost
+
+1607019542
+marler8997
+ikskuh
+
+1607019543
+marler8997
+what?
+
+1607019554
+marler8997
+so you're saying c++ doesn't have zero cost abstractions?
+
+1607019578
+ikskuh
+it has
+
+1607019587
+ikskuh
+coding a class by hand
+
+1607019590
+ikskuh
+is the same code
+
+1607019594
+marler8997
+but it requires the optimizer for them to be zero cost
+
+1607019596
+ikskuh
+as using jjust "class Foo {} "
+
+1607019599
+ikskuh
+no
+
+1607019605
+ikskuh
+it does not
+
+1607019607
+ikskuh
+same for templates
+
+1607019608
+marler8997
+huh?
+
+1607019614
+ikskuh
+i can write one function per instantiation
+
+1607019616
+dominikh
+marler is probably referring to things like iterators, which are proclaimed to be zero cost
+
+1607019616
+ikskuh
+or i can use a template
+
+1607019618
+ikskuh
+same cost in the end
+
+1607019637
+marler8997
+you don't need to get that complicated
+
+1607019647
+marler8997
+very simple example is a function call
+
+1607019666
+ikskuh
+that's always non-zero cost
+
+1607019667
+marler8997
+you can abstract logic by putting it into a function, but that has a runtime cost
+
+1607019676
+ikskuh
+the optimizer auto-inlining that call is an improvement, not an abstraction
+
+1607019678
+marler8997
+it only has zero cost when the optimizer can optimzie it away
+
+1607019688
+ikskuh
+yes, but that's not an abstraction
+
+1607019700
+ikskuh
+you can also just use macros if you wnat to skip the overhead for a function call
+
+1607019721
+marler8997
+a function is an abstraction of embedding code directly
+
+1607019733
+marler8997
+it's an abstraction in that it abstractions the context of the caller away from what the function is doing
+
+1607019742
+dominikh
+it's not zero cost, however.
+
+1607019743
+companion_cube
+I agree that rust's iterators are not really 0-cost since they need inlining to be fast
+
+1607019748
+ikskuh
+<dominikh> it's not zero cost, however.
+
+1607019762
+ikskuh
+templates and classes are zero-cost abstractions
+
+1607019777
+marler8997
+it is a "zero cost abstraction" which means that if it doesn't semantically need to be a function at runtime, the compiler can choose to inline it
+
+1607019787
+ikskuh
+that's an optimization
+
+1607019789
+marler8997
+yes
+
+1607019789
+ikskuh
+not an abstraction
+
+1607019799
+marler8997
+but you said that zero cost abstractions and the optimizer are orthogonal
+
+1607019803
+ikskuh
+as said: abstractions are orthogonal to optimizations
+
+1607019804
+dominikh
+the compiler can optimize away addition of two numbers, too. doesn't mean it's zero cost
+
+1607019805
+marler8997
+and I'm giving you counter examples to that
+
+1607019814
+ikskuh
+inlining a function is not an abstraction for the programmer
+
+1607019822
+marler8997
+zero cost is referring to runtime
+
+1607019823
+dominikh
+they are not counter examples. they are examples of abstractions that are not zero cost, that the optimizer can sometimes optimize away
+
+1607019830
+dominikh
+a zero cost abstraction does not need an optimizer to be zero cost
+
+1607019837
+marler8997
+dominkh, you just proved my point
+
+1607019843
+ikskuh
+<dominikh> a zero cost abstraction does not need an optimizer to be zero cost
+
+1607019843
+dominikh
+no, I did not.
+
+1607019846
+ikskuh
+this is the point
+
+1607019851
+marler8997
+my point is that zero cost abstractions and the optimizer are not orthogonal
+
+1607019854
+ikskuh
+inlining requires an optimizer
+
+1607019857
+marler8997
+and you said, it's only zero cost if the optimizer inlines it
+
+1607019862
+marler8997
+thus, you proved my point
+
+1607019868
+dominikh
+yes they are orthogonal. a zero cost abstraction is always zero cost, whether there is an optimizer or not
+
+1607019874
+ikskuh
+but then it's not an abstraction, but a optimization
+
+1607019881
+dominikh
+something being zero cost does not imply it's a zero cost abstraction...
+
+1607019903
+ikskuh
+^=
+
+1607019905
+marler8997
+c++ relies on the optimizer to claim it supports zero cost abtraction
+
+1607019918
+dominikh
+and we would disagree with C++
+
+1607019919
+marler8997
+but you're saying it doesn't?
+
+1607019933
+marler8997
+"we would disagree with C++"?  what?
+
+1607020015
+companion_cube
+some C++ features are 0-cost even without optimizer
+
+1607020020
+companion_cube
+templates are expanded no matter what
+
+1607020023
+marler8997
+companion_cube sure
+
+1607020031
+marler8997
+but ikskuh claims they are orthogonal
+
+1607020036
+marler8997
+not "orthogonal sometimes"
+
+1607020044
+companion_cube
+templates are expanded always
+
+1607020046
+companion_cube
+not sometimes
+
+1607020052
+companion_cube
+I think that's ikskuh's point
+
+1607020059
+marler8997
+yes templates are an example of a zero cost abstraction that doesn't use the optimizer
+
+1607020078
+marler8997
+but he is claiming that all zero cost abstractions are orthogonal to the optimizer
+
+1607020084
+ikskuh
+marler8997:
+
+1607020087
+dominikh
+ikskuh posits that an abstraction is not a zero cost abstraction if it requires the use of the optimizer. it's a costly abstraction that sometimes gets optimized away.
+
+1607020103
+marler8997
+dominkh, you just proved my point again
+
+1607020104
+companion_cube
+I kind of agree…
+
+1607020114
+marler8997
+if it got optimized away, then it became a zero cost abstraction
+
+1607020123
+justin_smith
+even in the c++ community not everyone agrees about what "zero cost abstraction" means
+
+1607020125
+dominikh
+no, it became a zero cost implementation
+
+1607020134
+dominikh
+there's nothing abstract about it anymore
+
+1607020134
+marler8997
+zero cost means you abstracted details away, but didn't pay a runtime penalty
+
+1607020150
+dominikh
+and if you keep claiming that I proved your point when I haven't, at least spell my name correctly :/
+
+1607020153
+companion_cube
+but if it's only on the whims of an optimizer, you can't really rely on it
+
+1607020160
+marler8997
+companion_cube yes of course
+
+1607020165
+companion_cube
+marler8997: domi<tab> will help
+
+1607020165
+marler8997
+but that's not what we're discussing
+
+1607020170
+companion_cube
+is it not?
+
+1607020186
+marler8997
+ikskuh made a very bold claim that zero cost abstrcations have NOTHING to do with optimization
+
+1607020201
+marler8997
+that they are orthogonal
+
+1607020212
+ikskuh
+which i still hold
+
+1607020220
+marler8997
+and I gave a very simple couter example
+
+1607020221
+marler8997
+the function
+
+1607020227
+ikskuh
+if it requires an optimizer to make an abstraction zero-cost, it's not a zero-cost abstraction
+
+1607020233
+marler8997
+funtion inlining is a counter example to that claim
+
+1607020249
+marler8997
+ikskuh what do you mean by that?
+
+1607020256
+marler8997
+what is your definitino of "zero cost abstraction"?
+
+1607020257
+ikskuh
+the point is: you can't toggle the zero-constness of an abstraction
+
+1607020261
+novaskell
+a function is not zero cost though marler8997 unless you implement all "functions" as plain macro expansions
+
+1607020289
+marler8997
+novaskell, with the optimizer a function call can generate runtime code equivalent to a macro
+
+1607020297
+marler8997
+that's the whole point
+
+1607020297
+companion_cube
+a feature that requires inlining to be 0-cost, isn't 0-cost
+
+1607020301
+ikskuh
+"zero-cost abstraction is an abstraction that i can use which helps me with things which i could otherwise do by hand and not giving any additional runtime cost, even in the absence of an optimizer"
+
+1607020301
+companion_cube
+that's the idea
+
+1607020311
+marler8997
+again
+
+1607020313
+novaskell
+yes, it 'can' but that's not a guarantee
+
+1607020319
+ikskuh
+marler8997: you asume an optimizer
+
+1607020324
+marler8997
+zero cost doesn't mean 0 cost on everything
+
+1607020331
+marler8997
+it means "no runtime penalty"
+
+1607020334
+ikskuh
+yes
+
+1607020337
+companion_cube
+I think it'd be ok if there was a "inline" keyword that refuses to compile if it's not inlined
+
+1607020340
+companion_cube
+not just a heuristic
+
+1607020342
+ikskuh
+no runtime penalty in the case of NO optimizer
+
+1607020344
+marler8997
+I assume an optimizer?
+
+1607020345
+marler8997
+what?
+
+1607020354
+novaskell
+it means it's equivalent to writing the specialization by hand
+
+1607020363
+dominikh
+companion_cube: coincidentally a Zig proposal ;)
+
+1607020369
+ikskuh
+if you assume an optimizer is there, most stuff in most languages get zero-cost
+
+1607020375
+novaskell
+and is a 1:1 mapping of that
+
+1607020388
+ikskuh
+but that doesn't make them a "zero cost abstraction" as the abstraction itself has still a cost, it just gets optimized away later
+
+1607020390
+marler8997
+ikskuh, I'm not sure what that has to do with discussing your claim
+
+1607020401
+dominikh
+calculating 10 digits of pi is "zero cost" if LLVM gets crazy enough
+
+1607020404
+companion_cube
+ikskuh: not sure about "most" :p
+
+1607020405
+marler8997
+your claim was, Zero Cost Abstraction has nothing to do with optimization
+
+1607020413
+ikskuh
+yes
+
+1607020417
+novaskell
+optimization depends on a larger context thus isn't a 1:1 mapping of what you could have written
+
+1607020420
+ikskuh
+and you say: "with an optimizer …"
+
+1607020428
+ikskuh
+remove the optimizer
+
+1607020429
+marler8997
+so maybe our definitions are just different
+
+1607020436
+marler8997
+what do you mean by "Zero Cost Abstraction"?
+
+1607020452
+ikskuh
+abstractions that have no additional cost when having NO optimizer
+
+1607020459
+ikskuh
+like constructors
+
+1607020459
+marler8997
+lol
+
+1607020462
+ikskuh
+Object o;
+
+1607020470
+ikskuh
+Object o = Object_new();
+
+1607020473
+ikskuh
+same difference in the end
+
+1607020478
+marler8997
+you definitions infers your claim :)
+
+1607020487
+marler8997
+so now I see where we were differing
+
+1607020490
+marler8997
+however
+
+1607020492
+ikskuh
+otherwise the abstraction is not zero-cost
+
+1607020497
+marler8997
+that's not what C++ means by Zero Cost Abtraction
+
+1607020501
+ikskuh
+or are you telling me that addition is a zero-cost abstraction?
+
+1607020505
+marler8997
+you're using a custom definition I'm not familiar with
+
+1607020528
+ikskuh
+c++ has another definition nobody has talked about yet :D
+
+1607020536
+ikskuh
+"you don't pay for it when you don't use it"
+
+1607020537
+marler8997
+The definition C++ uses, is it is an Abstraction that has no runtime cost
+
+1607020561
+ikskuh
+yes, that's the same definition for me
+
+1607020563
+marler8997
+the runtime cost could be taken care of by the optimizer, or templates, whatever
+
+1607020570
+ikskuh
+because C++ standard doesn't define optimization
+
+1607020577
+ikskuh
+optimizers are an implementation detail
+
+1607020581
+marler8997
+the definition doesn't specify what component removes the runtime cost
+
+1607020586
+marler8997
+but your definition did
+
+1607020590
+ikskuh
+or is there a part of the c++ spec where optimizations are mandatory?
+
+1607020595
+marler8997
+your definitly specifically excluded the optimizer for some reason...
+
+1607020600
+ikskuh
+ye
+
+1607020606
+ikskuh
+because i'm talking about language level
+
+1607020615
+marler8997
+I don't know where you got your definition from though
+
+1607020619
+ifreund
+he's saying that in debug mode c++ compilers aren't compliant technically
+
+1607020622
+ikskuh
+and i'm not considering implementation details like optimizers
+
+1607020626
+ifreund
+if I understand correctly
+
+1607020627
+marler8997
+but if that's your definition, then your claim follows
+
+1607020653
+ikskuh
+if an abstraction has cost in unoptimized mode, it's obviously not zero-cost
+
+1607020670
+marler8997
+ikskuh, well that followd by your definition of zero cost
+
+1607020676
+marler8997
+but again, that's not the definition C++ uses
+
+1607020680
+ikskuh
+yeah, which is "no runtime cost"
+
+1607020692
+ikskuh
+c++ spec doesn't require an optimizer
+
+1607020698
+marler8997
+I didn't say it requires
+
+1607020702
+ikskuh
+yes
+
+1607020710
+marler8997
+I said, it's definition of Zero Cost Abstraction doesn't exclude the optimizer
+
+1607020720
+ikskuh
+→ if the abstraction is zero-cost in the spec, it is zero-cost without optimizer
+
+1607020724
+companion_cube
+C++ doesn't have an official definition of "zero cost abstraction"
+
+1607020728
+companion_cube
+it's more of a marketing term
+
+1607020729
+marler8997
+ikskuh oh?
+
+1607020730
+companion_cube
+or a design goal
+
+1607020791
+marler8997
+Maybe we need to look this up and see what C++ is claiming
+
+1607020797
+ikskuh
+probably nothing :D
+
+1607020874
+justin_smith
+ikskuh: I like your definition of "zero cost" - it actually makes sense in terms of the meanings of those words and what I'd want from a good compiler
+
+1607020890
+companion_cube
+from a good language*
+
+1607020896
+companion_cube
+it shouldn't depend on the compiler :p
+
+1607020898
+marler8997
+yeah that would be a cool feature
+
+1607020906
+justin_smith
+but as far as I can tell, "zero cost abstraction" was invented as a marketing term to sell c++, and the way they use the term relies on optimization
+
+1607020930
+marler8997
+but ikskuh says that's not what C++ is saying?
+
+1607020950
+companion_cube
+justin_smith: for some features, not others
+
+1607020963
+marler8997
+companion_cube of course
+
+1607020980
+marler8997
+but ikskuh is claiming Zero Cost Abstraction is orthogonal to optimization
+
+1607020992
+companion_cube
+in his definition yes
+
+1607020997
+marler8997
+no, in C++'s definition
+
+1607021008
+ikskuh
+c++ doesn't define optimizations :D
+
+1607021016
+ikskuh
+so it must be orthogonal ^^
+
+1607021032
+companion_cube
+well the definition "no additional runtime cost" is kind of inconsistent with what C++ claism to be 0-cost…
+
+1607021042
+companion_cube
+if it depends on a Sufficiently Smart Compiler™
+
+1607021045
+marler8997
+When a C++ programmer says "Zero Cost Abstraction"
+
+1607021095
+marler8997
+you're saying that an optimizer optimizing away function calls, classes, indirction, vtables, none of that is included in Zero Cost Abstraction
+
+1607021137
+marler8997
+is that right?
+
+1607021168
+ikskuh
+classes are actually zero-cost abstractions
+
+1607021180
+ikskuh
+they don't impose additional runtime cost
+
+1607021180
+ikskuh
+compared to coding it yourself
+
+1607021196
+marler8997
+If you still hold that, I'm pretty sure I can find some videos from Stroustrup where he talks about Zero Cost Abstraction in terms of function inlining and vtables
+
+1607021213
+ikskuh
+vtables are zero-cost abstraction, you can do that by-hand as well :)
+
+1607021215
+companion_cube
+vtables are 0 cost
+
+1607021218
+marler8997
+ikskuh, you didn't answer the question
+
+1607021227
+marler8997
+I specially asked about the "optimizer"
+
+1607021227
+ikskuh
+and i hold to that
+
+1607021229
+companion_cube
+vtables don't need an optimizer, nor do templates, once again
+
+1607021237
+marler8997
+oh my goodness
+
+1607021250
+marler8997
+I'm not making a claim that all zero cost abstractions require the optimizer
+
+1607021273
+marler8997
+I'm countering the claim that C++'s Zero Cost Abstractions exclude the optimizer entirely, that they are orthogonal
+
+1607021290
+ikskuh
+> What you don’t use, you don’t pay for. And further: What you do use, you couldn’t hand code any better.
+
+1607021294
+ikskuh
+that's stroustrups definition
+
+1607021300
+marler8997
+yes!
+
+1607021312
+marler8997
+how can that not include the optimizer!
+
+1607021321
+ikskuh
+because it is still true for "no optimizer"
+
+1607021326
+dominikh
+I can hand-code things better than an optimizer that failed to optimize something away.
+
+1607021330
+companion_cube
+it must be true of any compilers
+
+1607021334
+companion_cube
+compiler*
+
+1607021336
+ikskuh
+^=
+
+1607021367
+marler8997
+because it is still true for "no optimizer"?????
+
+1607021373
+ikskuh
+yes
+
+1607021378
+ikskuh
+when i use the same language and code it by hand
+
+1607021381
+ikskuh
+i can get the same result
+
+1607021383
+marler8997
+I don't even know what to say to that
+
+1607021392
+marler8997
+I can't
+
+1607021424
+ikskuh
+if i use c++ and implement vtables by hand
+
+1607021435
+ikskuh
+i get the same result as using classes and inheritance
+
+1607021468
+ikskuh
+sure
+
+1607021473
+ikskuh
+if you switch language of implementation
+
+1607021483
+ikskuh
+(meaning: you switch over to assembly)
+
+1607021489
+ikskuh
+we can get better perf in some cases
+
+1607021490
+companion_cube
+marler8997: it means the optimizer can't fuck it up
+
+1607021503
+marler8997
+you guys are arguing against a claim I am not making
+
+1607021504
+companion_cube
+it seems pretty desirable? you can
+
+1607021514
+marler8997
+I am not saying that Zero Cost Abstractions require the optimizer
+
+1607021523
+ikskuh
+you say that some of them might
+
+1607021526
+marler8997
+I'm not saying it should or should not rely on the optimizer
+
+1607021542
+marler8997
+ALL I AM SAYING, is that Zero Cost Abstractions does not exclude the optimizer
+
+1607021546
+dominikh
+we are saying it should not rely on the optimizer.
+
+1607021553
+marler8997
+dominkh, THAT IS FINE
+
+1607021559
+companion_cube
+that was the whole point
+
+1607021562
+marler8997
+I never said it shouldn't rely on the optimizer
+
+1607021567
+vesim
+Hi, is there way to build slice from pointer([*c]T) and size? I need to somehow rebuild that type to free the memory.
+
+1607021583
+dominikh
+saying "does not exclude the optimizer" directly opposes "must not use the optimizer"
+
+1607021588
+dominikh
+we're well aware of what's being argued; are you?
+
+1607021591
+marler8997
+whether or not zero cost abstractions should rely on the optimizer is actually a very interesting topic
+
+1607021591
+ikskuh
+vesim: ptr[0..x]
+
+1607021614
+marler8997
+However, ikskuh claimed that Zero Cost Abstrcations and the optimizer are orthogonal, in C++
+
+1607021621
+ikskuh
+and i say: they are not zero-cost if an abstraction assumes a implementation detail
+
+1607021639
+marler8997
+ikskuh yes I can agree with that
+
+1607021642
+ikskuh
+for an abstraction to be zero-cost, it must hold true for
+
+1607021643
+marler8997
+"zero-cost"
+
+1607021646
+ikskuh
+can we agree on that?
+
+1607021651
+marler8997
+but that's not what Zero Cost Abstraction means
+
+1607021667
+vesim
+ikskuh: ouch, thats was easy, thanks
+
+1607021675
+ikskuh
+if i cannot rely on an abstraction to be zero-cost, it is not zero-cost
+
+1607021692
+ikskuh
+which means it must be true for all compilers that using this abstraction does not impose additional runtime cost
+
+1607021695
+ikskuh
+can you agree on that?
+
+1607021721
+marler8997
+it depends on what you mean by zero-cost...all you're doing is trying to define what you mean by "zero-cost"
+
+1607021734
+ikskuh
+"zero cost" → "not imposing any additional runtime cost"
+
+1607021742
+marler8997
+you're saying that you're definition of 0-cost means it must be guaranteed
+
+1607021748
+companion_cube
+yes
+
+1607021752
+marler8997
+which I think is GREAT!!!!
+
+1607021753
+companion_cube
+that's quite reasonable, isn't it?
+
+1607021770
+ikskuh
+it isn't zero cost if it is only zero-cost by accident
+
+1607021775
+marler8997
+and that's actually one of the biggest weaknesses I see with removing generics
+
+1607021823
+marler8997
+ikskuh, again, you're just definining what "zero-cost" means to you, but be careful because that's not what it means to everyone
+
+1607021860
+companion_cube
+it's hard to tell what people mean by that
+
+1607021881
+marler8997
+if that's the defintion you use, then C++ is definitely NOT zero cost
+
+1607021908
+ikskuh
+a lot of c++ features are zero-cost actually :)
+
+1607021920
+marler8997
+yes I agree
+
+1607021949
+marler8997
+but C++ claims alot of abstractions are zero cost that could only be so with optimization
+
+1607021969
+companion_cube
+where is this claimed?
+
+1607021982
+marler8997
+I recall this video:
+
+1607021986
+companion_cube
+I mean, what feature of C++ is claiemd to be 0-cost but would only be with optims?
+
+1607021996
+companion_cube
+(I think rust definitely fails on this one because of iterators)
+
+1607022012
+marler8997
+I think c++ iterators are one feature that requires optimization
+
+1607022017
+marler8997
+function inlining is another
+
+1607022033
+companion_cube
+function inlining is not a "0 cost abstraction"
+
+1607022038
+companion_cube
+it's clearly just an optimizer hint
+
+1607022042
+dominikh
+you guys are going in circles now
+
+1607022044
+companion_cube
+functions cannot be 0-cost
+
+1607022045
+marler8997
+not the inline keyword
+
+1607022054
+dominikh
+the inline keyword is a hint
+
+1607022059
+companion_cube
+sure, it's not an abstraction though
+
+1607022076
+marler8997
+the act of the optimizer inlining a function can make abstracting code into a function a Zero Cost Abstraction
+
+1607022092
+marler8997
+a function is an abstraction
+
+1607022115
+marler8997
+
+
+1607022133
+companion_cube
+but it's clear that all functions cannot be 0 cost
+
+1607022141
+marler8997
+companion_cube of course
+
+1607022148
+companion_cube
+contrast that with classes, whihc are 0-cost
+
+1607022154
+marler8997
+No one ever said they were
+
+1607022157
+companion_cube
+(compared to doing them by hand like in C)
+
+1607022168
+companion_cube
+so functions are not a 0-cost abstraction, end of story
+
+1607022177
+marler8997
+companion_cube, I don't know what you mean by all classes are 0 cost abstractions
+
+1607022191
+companion_cube
+well, they're no more costly than struct + functions
+
+1607022195
+companion_cube
+hence 0 cost
+
+1607022205
+marler8997
+classes are structs
+
+1607022207
+marler8997
+they are the same thing
+
+1607022212
+marler8997
+classes are not an abstraction of structs
+
+1607022213
+companion_cube
+hence - cost
+
+1607022216
+companion_cube
+0 cost
+
+1607022225
+dominikh
+in what world are functions an abstraction but classes aren't
+
+1607022232
+marler8997
+goodness
+
+1607022241
+marler8997
+functions are an abstractions of hand-written inline code
+
+1607022248
+marler8997
+classes are not an abstraction of structs, classes are structs
+
+1607022256
+dominikh
+classes aren't structs
+
+1607022258
+dominikh
+what struct has methods
+
+1607022263
+dominikh
+or inheritance
+
+1607022266
+marler8997
+they are literally the same thing in C++
+
+1607022268
+companion_cube
+"C with classes" definitely implies that it's higher level than plain C
+
+1607022276
+marler8997
+the only difference, is the default visibiily
+
+1607022285
+companion_cube
+ie the class/struct with methods is more abstract than C's plain structs
+
+1607022289
+marler8997
+structs have a default visibility of public and classes default visibility is private
+
+1607022290
+companion_cube
+keywords notwithstanding
+
+1607022293
+fengb
+Zig structs has methods 🙃
+
+1607022294
+companion_cube
+yeah we know.
+
+1607022303
+companion_cube
+(@ marler8997)
+
+1607022334
+companion_cube
+what classes are an abstraction of, is a struct with function pointers inside (for virtual methods)
+
+1607022344
+ikskuh
+<dominikh> classes aren't structs
+
+1607022350
+ikskuh
+in C++ they are :D :D
+
+1607022353
+marler8997
+that's not what "classes" are, that's a virtual method
+
+1607022365
+marler8997
+structs can also have virtual methods in C++
+
+1607022367
+companion_cube
+sure, let's ignore the whole object-oriented terminology
+
+1607022371
+companion_cube
+jeez
+
+1607022372
+marler8997
+because structs and classes are the same in C++
+
+1607022382
+companion_cube
+yeah it's a
+
+1607022385
+dominikh
+okay, cool. structs are a zero cost abstraction, then
+
+1607022386
+earnestly
+With only visibility reversed
+
+1607022410
+marler8997
+ok, abstraction is a relative term
+
+1607022414
+companion_cube
+oppose C++ classes to C struct, ok?
+
+1607022420
+companion_cube
+that's where the difference is
+
+1607022426
+marler8997
+when you use it, you need a specific implementation in mind from which the abstraction is derived
+
+1607022440
+marler8997
+companion_cube
+
+1607022449
+marler8997
+classes are not an abstraction so POD structs
+
+1607022457
+marler8997
+that's not what abstraction means
+
+1607022473
+companion_cube
+they are an abstraction of OO classes, compared to doing it with C struct + functiom pointers
+
+1607022474
+marler8997
+abstraction doesn't mean, thing X does more things than thing Y, so X is an abstraction of Y
+
+1607022477
+companion_cube
+which is the only way to do OO in C
+
+1607022497
+companion_cube
+if you want "object oriented" classes in C you need struct + function pointers, which is quite manual
+
+1607022506
+companion_cube
+C++ gives you a 0 additional cost way: classes with vtables
+
+1607022509
+companion_cube
+that's where the 0 cost is
+
+1607022518
+companion_cube
+it's as cheap as doing it by hand in C
+
+1607022519
+marler8997
+again
+
+1607022524
+marler8997
+abstraction is a relative term
+
+1607022533
+marler8997
+when you say something is a "0 cost abstrcation"
+
+1607022547
+companion_cube
+it's an abstraction over struct+ fun pointer; with 0 additional cost
+
+1607022550
+marler8997
+you are saying that coding X will yield no runtime cost than coding Y
+
+1607022553
+companion_cube
+yes
+
+1607022560
+marler8997
+so what specifically are you saying?
+
+1607022564
+companion_cube
+exactly that
+
+1607022572
+marler8997
+C structs and C++ Classes are two different things
+
+1607022577
+companion_cube
+C++ classes are a 0 cost abstraction over C struct + function pointers
+
+1607022582
+marler8997
+C++ classes aren't an abstraction of C structs
+
+1607022586
+companion_cube
+yes they are
+
+1607022593
+companion_cube
+the name is there for backward compat
+
+1607022600
+marler8997
+you need to be more specific
+
+1607022611
+marler8997
+what specific code are you saying is being abstracted
+
+1607022612
+earnestly
+How is 'struct + function pointers' not specific?
+
+1607022612
+marler8997
+for example
+
+1607022618
+companion_cube
+marler8997: the whole vtable is abstracted!!!!
+
+1607022621
+marler8997
+I can give you an inline function example
+
+1607022623
+companion_cube
+you don't have to write a vtable
+
+1607022625
+companion_cube
+C++ does it for you
+
+1607022628
+companion_cube
+that's the abstraction
+
+1607022634
+marler8997
+the code a+b
+
+1607022647
+marler8997
+could be abstracted with int foo(int a, int b) { return a + b; }
+
+1607022656
+marler8997
+foo(a, b)
+
+1607022677
+marler8997
+so using foo(a, b) is an abstraction of a+b....but if the optimizer inlines it, then now it is a zero cost abstraction
+
+1607022708
+marler8997
+ok, so just provide me with the specific code and the abstracted code of what you're trying to say
+
+1607022710
+companion_cube
+it's optimized away, it's not 0 cost
+
+1607022721
+dominikh
+round and round we go…
+
+1607022722
+companion_cube
+
+
+1607022726
+marler8997
+again, that's what C++ means by Zero Cost Abstraction
+
+1607022737
+marler8997
+it doesn't conform to ikskuh's definition of Zero Cost
+
+1607022741
+companion_cube
+no that's what it means by optimizing
+
+1607022743
+marler8997
+but it's not the same as the C++ definition
+
+1607022754
+companion_cube
+inlining a function is an optimization
+
+1607022757
+companion_cube
+it may or may not happen
+
+1607022760
+marler8997
+yes
+
+1607022764
+companion_cube
+yeah dominikh you're right
+
+1607022765
+companion_cube
+I give up
+
+1607022773
+marler8997
+irrelevant to whether it's a zero cost abstraction
+
+1607022783
+marler8997
+according to the C++ definition
+
+1607022803
+justin_smith
+marler8997: one function call's cost can be optimized away, but "the abstraction" here is "function call", which cannot in the general case be zero cost, even in c++ definition, you can't call an abstraction itself 0 cost if only certain highly constrained usages can be optimized
+
+1607022803
+marler8997
+can you provide me with the example?
+
+1607022826
+marler8997
+justin_smith, it's only a zero cost abstraction if the optimizer can inline it
+
+1607022830
+novaskell
+it's zero cost iff it's a guarantee that in all cases foo(a, b) is equivalent to a+b by the language specification
+
+1607022833
+marler8997
+so yes, you're right
+
+1607022850
+marler8997
+novaskell, I agree, but that's not what is meant by "Zero Cost Abstraction"
+
+1607022861
+marler8997
+zero cost != Zero Cost Abstraction
+
+1607022868
+justin_smith
+marler8997: you are you attempting to describe an abstraction, or a specific usage of that abstraction, when you apply the adjective "zero cost"
+
+1607022899
+earnestly
+Nothing is zero cost
+
+1607022918
+marler8997
+at the moment I'm trying to get companion_cube to clarify what he means by saying that classes are zero cost abstractions
+
+1607022923
+marler8997
+zero cost abstractions of what?
+
+1607022930
+marler8997
+he says C struct, but I don't know what he means by that
+
+1607022931
+earnestly
+marler8997: He said, vtables
+
+1607022954
+fengb
+Should we distinguish between zero cost and Zero Cost™? 🤔
+
+1607022954
+ikskuh
+marler8997: classes in C++ are a zero-cost abstraction over coding the object orientation by hand
+
+1607022968
+ikskuh
+we also need the cost for Zero-Plushies!
+
+1607022971
+ikskuh
+Nypsie[m]? :D
+
+1607023002
+marler8997
+of vtables...I suppose you could say it that way
+
+1607023007
+ikskuh
+not only that
+
+1607023008
+marler8997
+sure I'll agree with that
+
+1607023017
+ikskuh
+vtables, constructor, destructor, assignment operators, …
+
+1607023020
+earnestly
+marler8997: Here you go:
+
+1607023024
+ikskuh
+operator overloading is also a zero-cost abstraction
+
+1607023058
+marler8997
+ikskuh, which zero cost are you using?
+
+1607023060
+marler8997
+your defintion?
+
+1607023076
+marler8997
+cause if so, then operator overloading is only zero cost if the optimizer inlines it correct?
+
+1607023088
+ikskuh
+no, that would be the function call thing again
+
+1607023092
+companion_cube
+
+
+1607023096
+earnestly
+Nothing is zero cost
+
+1607023101
+companion_cube
+compare the C-style stuff with the lower stuff
+
+1607023103
+ikskuh
+"a + b" is a simplification/abstraction of "add(a, b)"
+
+1607023105
+companion_cube
+(pardon my atrocious C++)
+
+1607023120
+marler8997
+earnestly, depends what you mean by zero cost
+
+1607023147
+earnestly
+marler8997: CPU cycles
+
+1607023158
+earnestly
+That's the definition you keep bouncing around with
+
+1607023167
+earnestly
+You think zero cost is about optimisation
+
+1607023181
+marler8997
+does that include compiler CPU cycles, or just the generated program?
+
+1607023185
+earnestly
+lol
+
+1607023192
+earnestly
+marler8997: Give yourself a few minutes
+
+1607023204
+companion_cube
+
+
+1607023224
+companion_cube
+god C++ is terrible
+
+1607023227
+marler8997
+earnestly I'm confused
+
+1607023235
+companion_cube
+0 cost means runtime
+
+1607023235
+earnestly
+'nothing' is zero cost, nothing is zero cost.  Abstractions that are 'zero cost' are defined to be abstractions that consolidate to the same code you would have otherwise written without the abstraction
+
+1607023240
+companion_cube
+not the time needed to compile
+
+1607023271
+earnestly
+Where the abstraction is there to abstract concerns about the machinary away from you
+
+1607023285
+earnestly
+(There's also the mathematical definition which is far deeper)
+
+1607023303
+marler8997
+earnestly, yeah that sounds right
+
+1607023313
+earnestly
+We don't write with literal 1s and 0s like Von Neumann would have wanted
+
+1607023338
+dominikh
+1s and 0s are just an abstraction for pushing electrons around
+
+1607023351
+earnestly
+It's turtles all the way down
+
+1607023367
+marler8997
+earnestly, I agree with what you're saying, but am not sure what point you were trying to make?
+
+1607023392
+companion_cube
+(ahahah I don't know how to use `new` this way 😢)
+
+1607023413
+earnestly
+marler8997: You keep confusing abstractions with runtime performance and optimisation
+
+1607023438
+marler8997
+I don't see how what you said excludes optimizations from being used to implement zero cost abstractions
+
+1607023457
+earnestly
+It doesn't exclude them, but they're not related
+
+1607023475
+marler8997
+ok...can you explain that one more?
+
+1607023484
+marler8997
+maybe I'm missing something?
+
+1607023524
+marler8997
+so optimizations
+
+1607023536
+marler8997
+that one confuzzles me
+
+1607023581
+companion_cube
+optimizations can help your program be fast
+
+1607023585
+companion_cube
+but you can't rely on them
+
+1607023597
+justin_smith
+marler8997: in order to say
+
+1607023599
+marler8997
+companion_cube, reliability is irrelevant here
+
+1607023604
+companion_cube
+no it's not
+
+1607023616
+marler8997
+what's under question is if Zero Cost Abstraction is related to optimization
+
+1607023626
+justin_smith
+so we can't say "function call is zero cost", we have well known use cases for functions that can't ever be inlined
+
+1607023630
+marler8997
+earnestly claims they are unrelated
+
+1607023631
+dominikh
+which is why reliability is not irrelevant...
+
+1607023638
+dominikh
+companion_cube: why'd you come back
+
+1607023644
+companion_cube
+sorry :p
+
+1607023672
+companion_cube
+I wrote some terrible C++ on godbolt, felt the world needed to cry a bit more
+
+1607023684
+dominikh
+I cry plenty as is tyvm :P
+
+1607023691
+marler8997
+again, please be careful with 'zero cost'....in this case zero cost means that the generated code is the same as it would have been without the abstraction
+
+1607023702
+earnestly
+marler8997: I never said unrelated.  A venn diagram would include both.  The point isn't about optimisation, although it's often one of the goals
+
+1607023725
+marler8997
+earnestly, you said " It doesn't exclude them, but they're not related"
+
+1607023731
+marler8997
+you said that like 15 lines up
+
+1607023756
+earnestly
+marler8997: Sorry, I thought you'd understand how they can cross over
+
+1607023789
+marler8997
+how what can cross over? huh?
+
+1607023830
+earnestly
+marler8997: Do you know what a venn diagram is?
+
+1607023833
+marler8997
+yes
+
+1607023836
+earnestly
+Okay
+
+1607023849
+marler8997
+I have a bachelor's in general mathematics
+
+1607024031
+marler8997
+Here are my definitions.  You have code A and code B.  They do the same thing but A is an "abstraction" of B.  For example, B could be "a+b" and A could be "sum(a,b)".  With these defintions, A is said to be a "Zero Cost Abstrcation" if it generates the same binary code as B.
+
+1607024058
+earnestly
+That'll do
+
+1607024068
+marler8997
+Note that this depends on the optimizer, the compiler, alot of things
+
+1607024073
+companion_cube
+marler8997: just add "for all compilers" and we agree
+
+1607024128
+marler8997
+companion_cube, I agree that's a good goal, but I'm just saying that's not what C++ people mean.  C++ people are ok to call an abstraction 0 cost if it only is so with the help of the optimizer
+
+1607024164
+TheLemonMan
+so... you've been bickering for the last three hours or so over the definition of zero-cost?
+
+1607024169
+companion_cube
+yep
+
+1607024183
+marler8997
+Andrew himself has said that's also not what he means by zero cost
+
+1607024200
+marler8997
+He claims the allocator interface can be zero cost with the help of the optimizer
+
+1607024316
+fengb
+zero™ cost™ abstraction™
+
+1607024318
+fengb
+One hour per term
+
+1607024345
+earnestly
+marler8997: Sounds like confusing representation and optimisation again :P
+
+1607024353
+TheLemonMan
+is it zero™ cost™ abstraction™ or 0™-cost™ abstraction™
+
+1607024372
+marler8997
+earnestly, representation?
+
+1607024398
+earnestly
+marler8997: You literally provided one in your definition, a+b and sum(a,b) in terms of the code it generates
+
+1607024418
+TheLemonMan
+do you feel represented or not? should the compiler be more inclusive?
+
+1607024427
+TheLemonMan
+I, for one, would like more marler8997 in the compiler
+
+1607024434
+dominikh
+I think it's been plenty inclusive and understanding
+
+1607024436
+marler8997
+omg
+
+1607024441
+marler8997
+you're too much TheLemonMan
+
+1607024470
+marler8997
+earnestly I don't see what you're saying... :(
+
+1607024473
+earnestly
+Too much inclusion and it melts away to nothing.  The ultimate zero cost
+
+1607024508
+marler8997
+For anyone wanting to know what C++ means by Zero Cost Abstraction, watch "There are no Zero-cost Abstractions" here:
+
+1607024551
+earnestly
+This is more about "all abstractions are leaky"
+
+1607024552
+companion_cube
+like, one talk in 2019?
+
+1607024562
+companion_cube
+surely the term was used before :p
+
+1607024573
+dominikh
+2019 was the year of the zero cost abstraction
+
+1607024594
+dominikh
+not the year of linux on the desktop, unfortunately
+
+1607024621
+TheLemonMan
+2021 is the year on Hurd on...something, that's what I heard
+
+1607024631
+dominikh
+Hurd on life support?
+
+1607024647
+fengb
+Hurd has life?
+
+1607024699
+TheLemonMan
+there are ~20 days of 2020 still, there's time to gain momentum
+
+1607024732
+TheLemonMan
+and then
+
+1607024744
+dominikh
+can't wait
+
+1607024750
+dominikh
+would be the perfect end to 2020
+
+1607024812
+fengb
+What if I use Busybox/Hurd?
+
+1607024834
+novaskell
+Guix seems to be pushing work into it lately
+
+1607024854
+earnestly
+Maybe hurd will switch to l4 architecture
+
+1607024899
+TheLemonMan
+I bet its development could pick up some speed if only they introduced some kind of blockchain into it
+
+1607024956
+TheLemonMan
+mine bitcoin while your system is booting, that's the future I want for my kids
+
+1607024990
+dominikh
+you hate children, too?
+
+1607025045
+TheLemonMan
+you gotta suffer to know the real happiness, no?
+
+1607025048
+novaskell
+why not mine bitcoin before you boot? Have it at the minix layer
+
+1607025098
+g-w1
+If I have a comptime u31 and it is at 30 and I do +%= 3 it should be at 2, right?
+
+1607025119
+andrewrk
+marler8997, fwiw I was purposefully avoiding trying to define "zero cost abstractions" in our discussion and the only claim I made was that specifically for the Allocator interface, I thought there could exist an additional LLVM pass that would make it be able to devirtualize the function pointers
+
+1607025158
+g-w1
+never mind, my logic is off again :)
+
+1607025163
+TheLemonMan
+the apple M1 includes a separate core for all your bitcoin mining needs
+
+1607025191
+TheLemonMan
+now sketchy websites can do their thing without interfering with your browsing
+
+1607025209
+marler8997
+andrewrk, right, but that contradicts ikskuh's claim that zero cost abstraction has nothing to do with optimization
+
+1607025232
+TheLemonMan
+g-w1, you don't really like base-2 heh
+
+1607025268
+ikskuh
+marler8997: zig vtables have actual cost
+
+1607025290
+marler8997
+currently yes
+
+1607025304
+marler8997
+andrewrk is saying they may not in some cases in the future
+
+1607025307
+andrewrk
+requiring an optimization pass to improve the performance of something is a cost
+
+1607025327
+earnestly
+marler8997: (The code that your compiler generates from either sum(a,b) or a+b does not need to be optimal, reliable, constant-time, etc.  They only have to be the same)
+
+1607025329
+marler8997
+right, I was talking about runtime cost
+
+1607025329
+andrewrk
+that also wouldn't run in debug builds
+
+1607025382
+marler8997
+I'm always talking about runtime cost when saying "zero cost abstraction", because well, the abstraction itself will by definition have a different comptime cost
+
+1607025386
+earnestly
+Next, negative cost abstractions
+
+1607025409
+dominikh
+how about quantum abstractions?
+
+1607025415
+ikskuh
+comptime is a negative runtime cost abstraction :D
+
+1607025422
+earnestly
+yes lol
+
+1607025429
+ikskuh
+we write code that will not be executed at runtime :D
+
+1607025429
+dominikh
+ikskuh: larger executables have a runtime cost :P
+
+1607025440
+dominikh
+y'all comptime so much code into my binaries
+
+1607025441
+marler8997
+ikskuh, are you still holding to your claim that zero cost abstraction is orthogonal to optimization?
+
+1607025446
+ikskuh
+marler8997: yes
+
+1607025447
+earnestly
+(Obviously no, but I like absurd examples to show it's not about opimisation)
+
+1607025450
+companion_cube
+earnestly: you laugh, but sometimes a `for x in arr { … }` might be faster than the C-like loop in some languages (like rust)
+
+1607025456
+companion_cube
+because it elides bound checks better
+
+1607025461
+earnestly
+companion_cube: Oh yeah
+
+1607025467
+companion_cube
+I know it's tongue in cheek :)
+
+1607025471
+companion_cube
+but it still kind of makes sense
+
+1607025484
+earnestly
+companion_cube: It was an absurd example to demonstrate how it's logically not about optimisation
+
+1607025494
+ikskuh
+andrewrk: do you want to include function deduplication in the language spec eventually?
+
+1607025500
+ikskuh
+would be nice to be able to rely on that
+
+1607025507
+earnestly
+I also mentioned reliability and constant-time execution to hopefully shift them away from optimisations too
+
+1607025549
+marler8997
+andrewrk, do you agree with ikskuh on that claim?
+
+1607025562
+earnestly
+E.g. Progress Sensitive Security for SPARK:
+
+1607025599
+andrewrk
+I don't think you two even disagree with each other about reality, you just are using different definitions of words
+
+1607025620
+earnestly
+Yes
+
+1607025623
+marler8997
+yeah that's true I suppose
+
+1607025627
+fengb
+I disagree with reality
+
+1607025642
+marler8997
+but he was saying C++ "Zero Cost Abstraction" is excludes optimization
+
+1607025651
+marler8997
+TM
+
+1607025661
+marler8997
+I can't make the TradeMark symbol like fengb :(
+
+1607025665
+andrewrk
+I'm pretty sure when C++ people say "Zero Cost Abstraction" they are talking about runtime behavior after -O2
+
+1607025672
+marler8997
+THANK YOU!!
+
+1607025697
+marler8997
+ikskuh, do you agree so we can move on from this topic?
+
+1607025702
+ikskuh
+haha
+
+1607025705
+dominikh
+you could've dropped the topic hours ago
+
+1607025706
+jmiven
+:-D
+
+1607025710
+ikskuh
+we can also move on without agreeing :D
+
+1607025729
+fengb
+T™ M™
+
+1607025742
+fengb
+You could copy/paste my text >_>
+
+1607025747
+ikskuh
+fengb © T™M™
+
+1607025747
+marler8997
+some of it was productive
+
+1607025752
+marler8997
+definitely not all of it
+
+1607025760
+ikskuh
+we can agree on that for sure :D
+
+1607025764
+marler8997
+Zero Cost Abstraction™
+
+1607025767
+earnestly
+This is fundamentally why the prescriptivist position makes no sense as its products are always vague and meaningless, lol
+
+1607025770
+ikskuh
+also: get yourself a compose key!
+
+1607025773
+ikskuh
+andrewrk: DONT!
+
+1607025782
+andrewrk
+my goodness how long have you two been going at it? xD
+
+1607025783
+ikskuh
+there's only chaos and madness
+
+1607025784
+marler8997
+ikskuh, well what's you'r stance on C++ here then?
+
+1607025791
+marler8997
+like 3 hours apparently!!!
+
+1607025802
+earnestly
+andrewrk: Something something about pigs and mudd
+
+1607025810
+andrewrk
+hey be nice
+
+1607025810
+ikskuh
+i still stand my word and disagree with the widespread definition of -O2
+
+1607025817
+earnestly
+andrewrk: You don't know the expression?
+
+1607025826
+ikskuh
+<andrewrk> hey be nice
+
+1607025829
+ikskuh
+he has a point, though :D
+
+1607025839
+ikskuh
+i love discussion such stuff, even if it is totally unnecessary
+
+1607025843
+ikskuh
+🙈
+
+1607025855
+earnestly
+That's exactly what the phrase is about
+
+1607025879
+jaredmm
+Let's debate for three hours about the intended meaning of the phrase.
+
+1607025892
+earnestly
+Bike sheds aren't going to paint themselves
+
+1607025894
+ikskuh
+kek
+
+1607025903
+ikskuh
+hey, i have to do something 3.5h in the train, okaaaay?
+
+1607025931
+ikskuh
+heya kristoff_it
+
+1607025934
+ikskuh
+you missed the fun part!
+
+1607026155
+marler8997
+ikskuh, I'm picturing you barging into CppCon and when the speaker says their function is a zero cost abstraction you saying "That's not what you mean by Zero Cost Abstraction"....
+
+1607026174
+ikskuh
+:D
+
+1607026176
+ikskuh
+\o/
+
+1607026176
+ikskuh
+chaos!
+
+1607026214
+marler8997
+someon is wrong on the internet and I can't abide!!!
+
+1607026229
+TheLemonMan
+'d just like to interject for a moment. What you’re referring to as Zero Cost Abstraction, is in fact, bullshit
+
+1607026257
+ikskuh
+no. please don't start that again!
+
+1607026295
+TheLemonMan
+let's save this for the next train ride
+
+1607026304
+marler8997
+another opponent steps into the ring
+
+1607026325
+marler8997
+ok TheLemonMan, I wanna hear your take on it
+
+1607026328
+ikskuh
+TheLemonMan: monday morning, 10:30 :D
+
+1607026333
+andrewrk
+take it to /r/programmingcirclejerk/
+
+1607026384
+TheLemonMan
+marler8997, I was mocking Stallman's famous phrase :(
+
+1607026391
+TheLemonMan
+you're old enough to get the reference!
+
+1607026399
+marler8997
+jesus Stallman
+
+1607026417
+marler8997
+don't being that madman into this
+
+1607026454
+ikskuh
+andrewrk, some real zig talk for a moment: how do you think about allowing .decls for @Type(.Struct|.Union|…) ?
+
+1607026459
+marler8997
+but seriously no I don't know the reference :(  Are you sure 32 is old enough to know what?  How old are you?
+
+1607026505
+TheLemonMan
+14/F/Cali
+
+1607026511
+TheLemonMan
+wanna sext?
+
+1607026517
+marler8997
+omg lol!!!!
+
+1607026531
+marler8997
+TheLemonMan = TheTrollMan
+
+1607026546
+andrewrk
+ikskuh, not sure what you're proposing
+
+1607026563
+andrewrk
+the decls are exposed with @typeInfo
+
+1607026575
+TheLemonMan
+marler8997, I take my shitposting seriously
+
+1607026593
+marler8997
+ikskuh, your'e saying not passing TypeInfo but the sub union types of TypeInfo?
+
+1607026623
+ikskuh
+andrewrk: when reifying a TypeInfo into a type, alloc .decls to be populated as well
+
+1607026630
+ikskuh
+right now it's forced to be empty
+
+1607026636
+andrewrk
+ahh right, the opposite of @typeInfo
+
+1607026653
+andrewrk
+isn't there an open issue for that?
+
+1607026658
+ikskuh
+yes, there is
+
+1607026675
+ikskuh
+i was just being curious as i think we haven#t had an official statement on that
+
+1607026714
+earnestly
+ikskuh: (Thank you for using 'reifying' instead of 'concretising' *cringe*)
+
+1607026734
+ikskuh
+earnestly: that was the original propsal for @Type
+
+1607026758
+ikskuh
+
+
+1607026762
+ikskuh
+issue is this one
+
+1607026844
+ikskuh
+i think the "go style struct embedding" would also be possible to be implemented by allowing .decls to be populated
+
+1607026852
+marler8997
+ikskuh, have you asked yourself this question?  "Can the language do without this feature"?
+
+1607026865
+ikskuh
+yes, i did
+
+1607026880
+ikskuh
+and i found out that we can close a lot of other feature requests with it :D
+
+1607026896
+dominikh
+but do we need
+
+1607026897
+marler8997
+oh?  will read
+
+1607026910
+ikskuh
+primary goal for me would be closing the interface topic
+
+1607026926
+ikskuh
+as it would possible to conveniently implement any interface abstraction with it
+
+1607026936
+ikskuh
+or inheritance or whatever
+
+1607026980
+ikskuh
+for me, it's the "i can live without it, but it would enable a lot of requested features to be created as a library instead of a language feature" thingy
+
+1607027041
+ikskuh
+but i got to go now, train is arriving in a minute
+
+1607027053
+ikskuh
+have to search the logs tomorrow for an answer
+
+1607027141
+ikskuh
+oh, train is 10 minutes late :D
+
+1607027166
+ikskuh
+another thing that would be possible is to create RPC/API bindings based on some comptime definition
+
+1607027170
+marler8997
+so this features allows you to implement this Interface function that takes a struct and returns another struct?
+
+1607027176
+ikskuh
+yep
+
+1607027183
+ikskuh
+and the other struct is a reference to the first one
+
+1607027189
+ikskuh
+exposing a interface
+
+1607027195
+ikskuh
+like Reader for example
+
+1607027200
+ikskuh
+or Allocator
+
+1607027243
+ikskuh
+interface.zig by alex nask is already doing a similar thing, but uses a wrapper call based on a function name
+
+1607027257
+ikskuh
+X.call("foo", .{}) instead of of X.foo()
+
+1607027286
+novaskell
+derive scripts!
+
+1607027345
+dominikh
+I do like the Allocator example
+
+1607027380
+marler8997
+with status quo, could you implement this by creating a function that implements Allocator.get?
+
+1607027413
+ikskuh
+yes, but not with with interface functions
+
+1607027418
+marler8997
+oh wait, self
+
+1607027423
+marler8997
+fieldParentPtr
+
+1607027441
+ikskuh
+so you could do
+
+1607027443
+ikskuh
+x = Allocator.get()
+
+1607027444
+ikskuh
+but not
+
+1607027450
+ikskuh
+x.alloc(u8, 10)
+
+1607027487
+marler8997
+I'm not seeing what makes this difficult to implement today (although with some slight modifications)  I can try
+
+1607027497
+ikskuh
+go on :D
+
+1607027516
+ikskuh
+you will end with either x.call("alloc", .{u8,10}) or something completly different
+
+1607027521
+ikskuh
+but you cannot create that exact API
+
+1607027529
+marler8997
+well my idea is different
+
+1607027536
+ikskuh
+it's not possible (to my knowledge)
+
+1607027538
+marler8997
+so, Allocator remains the same
+
+1607027560
+marler8997
+you just need a way to create these wrappers that also handle fieldParentPtr
+
+1607027572
+ikskuh
+that's not the problem
+
+1607027578
+ikskuh
+the problem is exporting the functions
+
+1607027586
+ikskuh
+as callable symbols
+
+1607027609
+ikskuh
+but i got to go now, train is arriving finally \o/
+
+1607027650
+ikskuh
+but please send me your results as a PM here on in discord
+
+1607027783
+marler8997
+ok
+
+1607028453
+fengb
+Send him more zero cost abstractions
+
+1607028874
+earnestly
+zero context abstractions
+
+1607028989
+vesim
+Hi, is there a way to iterate over struct fields at runtime?
+
+1607029048
+vesim
+
+
+1607029088
+vesim
+failing*
+
+1607029105
+marler8997
+ikskuh, here's what I was saying:
+
+1607029111
+vesim
+becaus eit is trying to execut e htat std.debug.print at compile-time
+
+1607029148
+novaskell
+`inline for`?
+
+1607029228
+vesim
+novaskell: doesn't help :(
+
+1607029486
+novaskell
+ah, you're returning type from create which requires comptime
+
+1607029545
+novaskell
+in the return signature, change from type to Self then inline for(std.meta.fields(T)) |field| std.log.debug("{}", .{field.name}); will work
+
+1607029615
+novaskell
+
+
+1607029870
+vesim
+novaskell: thanks
+
+1607030037
+vesim
+so, another question, is there any way to generate functions at compile-time? I want to generate getters and setters for fields in the underalying struct.
+
+1607030188
+marler8997
+vesim, code generation
+
+1607030287
+novaskell
+you can use comptime tags to select implementations
+
+1607030347
+novaskell
+vesim: see register, find, remove in
+
+1607031416
+vesim
+novaskell: damn
+
+1607035769
+dch
+what happens to the zig master tarballs over time? like the nice
+
+1607035787
+dch
+do they stay around? because its an S3 bucket, I can't browse the older versions
+
+1607035844
+dch
+the index.json version of the site leads me to suspect the older ones aren't kept
+
+1607035861
+andrewrk
+dch, I manually delete them after they get about 2 months old
+
+1607035876
+andrewrk
+to save s3 costs
+
+1607035887
+dch
+aah cool, so I will stash mine, and update regularly :-)
+
+1607037802
+marler8997
+dch checkout zigup if you want a tool to manage them
+

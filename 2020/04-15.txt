@@ -1,0 +1,3496 @@
+1586909360
+foobles
+is there a reason that `ir_analyze_unwrap_optional_payload()` only works on pointers to optionals?
+
+1586909372
+foobles
+like not optionals directly
+
+1586910311
+mikdusan
+I haven't messed much with codegen, but I suppose it's because llvm wants a ptr to everything
+
+1586910466
+foobles
+huh that might be it :s
+
+1586910742
+fengb
+
+
+1586913665
+oats
+has anybody here done anything with running zig programs on the tomu arm board?
+
+1586913831
+foobles
+what is the best way to, at comptime, unwrap an IrInstGen representing an optional?
+
+1586913886
+foobles
+I have looked at `ir_analyze_unwrap_optional_payload()`, but that only works for pointers to optionals
+
+1586914364
+mikdusan
+if you're doing it from an analysis fn, why not ir_build_optional_unwrap_ptr_gen ?
+
+1586914388
+mikdusan
+it wants a ptr so give it one
+
+1586914490
+mikdusan
+A. ir_get_ref, B. get_pointer_to_type_extra, C. use A,B as arg2 and arg5, respectively
+
+1586914930
+foobles
+ir_get_ref!
+
+1586914940
+foobles
+i was trying to find a function like that!
+
+1586914941
+foobles
+thank you!
+
+1586915024
+mikdusan
+ir_get_ref, is the type "*?T" ? if it is,maybe you can use that value instead of B . I'm not exactly sure without checking in debugger
+
+1586915236
+mikdusan
+also try our .cpp macro `BREAKPOINT;` . just put it in your code and it should break there. note: you might need to make sure there is at least 1 stmt after it otherwise it breaks out of block/scope for me. caveat: I don't know if it works on windows.
+
+1586915271
+foobles
+oh slick
+
+1586915272
+foobles
+cool
+
+1586915273
+foobles
+thanks
+
+1586915383
+foobles
+so: ir_get_ref -> pass to the ir_build_optional_unwrap_ptr_gen  -> ir_get_deref
+
+1586915404
+mikdusan
+yes arg2
+
+1586915468
+foobles
+:v feels like a bit much, but it will work
+
+1586915472
+mikdusan
+but you need arg6 . can't just give it child_type because that's not pointered
+
+1586915482
+mikdusan
+why are you deref?
+
+1586915506
+foobles
+because the optional deref returns a pointer to the unwrapped value iird
+
+1586915511
+foobles
+s/iird/iirc
+
+1586915519
+foobles
+so i need to deref it :(
+
+1586915550
+mikdusan
+hmm ok i don't know which analysis fn you're working with. assumed it was ir_analyze_bin_op_cmp
+
+1586915554
+foobles
+also i think the actually, ir_build_optional_unwrap_ptr_gen won't work at comptime. i need to use the analyze function (which for some reason takes an IrInstGen, not an IrInstSrc)
+
+1586915555
+foobles
+it is
+
+1586915560
+foobles
+thats the one
+
+1586915601
+mikdusan
+right, you won't need that for comptime. get one or the other working first is my suggestion
+
+1586915614
+foobles
+this is all supposed to be comptime
+
+1586915623
+foobles
+thats the one im doing rn
+
+1586915691
+mikdusan
+comptime has the ZigValue's so you can follow value to get payload -- value->data.x_optional
+
+1586915742
+foobles
+thats what i tried to do but andrew said that isn't quite correct
+
+1586915748
+mikdusan
+and handy function optional_value_is_null() is available to check
+
+1586915748
+foobles
+thats what i have right now '=D
+
+1586915766
+foobles
+i am also sure that they arent pointer types
+
+1586915774
+foobles
+so i thought that would be ok
+
+1586915840
+foobles
+maybe ill just submit what i have as a draft pr
+
+1586915844
+foobles
+since it works for my cases
+
+1586915878
+mikdusan
+yeah I started looking into this, I actually have the runtime side working
+
+1586916060
+foobles
+maybe we can join forces then :D
+
+1586916070
+foobles
+id love to see what you have
+
+1586916086
+mikdusan
+ok I'll post a branch soon. just writing a few tests...
+
+1586916941
+mikdusan
+foobles:
+
+1586916959
+mikdusan
+comptime is panic'ing. but that runtime test passes
+
+1586917273
+foobles
+mikdusan interesting, so it just keeps reassigning to op1 and op2 until both are fully unwrapped, and then it continues down the function
+
+1586917282
+mikdusan
+foobles: but I broke something in behavior tests
+
+1586917288
+mikdusan
+yeah that was the idea I wanted to try
+
+1586917305
+foobles
+but what if both of them are null-type, for instance?
+
+1586917308
+mikdusan
+the runtime section is actually really tiny
+
+1586917327
+foobles
+do you have the whole thing on github?
+
+1586917336
+mikdusan
+that's my entire diff
+
+1586917362
+foobles
+oh cool
+
+1586917375
+foobles
+but what if both are nulltype? the case that checks for that will never be hit
+
+1586917380
+foobles
+since this is placed below it, right?
+
+1586917388
+mikdusan
+ignore the CMake stuff. I have to tell it to allow unused vars and stuff when iterating
+
+1586917393
+foobles
+oh nevermind. i see its above
+
+1586917433
+foobles
+i see another issue though: i dont think this interacts well with the comparisons between Nulltype and optionals
+
+1586917442
+foobles
+since this will unwrap the optional all the way before it continues
+
+1586917451
+mikdusan
+runtime or comptime?
+
+1586917455
+foobles
+either
+
+1586917472
+foobles
+there is a case where if one side is nulltype, and the other is optional, it has a special case
+
+1586917481
+foobles
+but that will never be hit anymore with your change
+
+1586917507
+mikdusan
+what's the special case?
+
+1586917529
+foobles
+it just returns based on whether or not the option is null
+
+1586917575
+foobles
+but if you unwrap the optional all the way, it will fall below that case and hit the one where it errors, i believe
+
+1586917623
+mikdusan
+ah yes I think I was musing about needing to do a cond_br
+
+1586917697
+foobles
+im about to push my changes to my fork if you want to take a look
+
+1586917763
+mikdusan
+what really helped me get the ir_build_optional_unwrap_ptr_gen() call correct (at least I hope it is)... was looking at this in --verbose-ir for reduction.zig that just unwraped a runtime optional:
+
+1586917773
+mikdusan
+GenOptionalUnwrapPtr  | *u32        | 1 | &#16.*.? // no safety
+
+1586917809
+mikdusan
+and op1_unwrap_ptr->dump() is just a huge help there
+
+1586917824
+mikdusan
+then tweak params until it gets it right :)
+
+1586917838
+foobles
+nice ;)
+
+1586917865
+foobles
+
+
+1586917874
+foobles
+here is my implementation of the comptime comparison
+
+1586917889
+foobles
+i feel pretty weird about just modifying the IrInstGen
+
+1586917943
+foobles
+
+
+1586917948
+foobles
+here is a gist with the real changes
+
+1586917969
+mikdusan
+foobles: grain of salt. I could be doing it totally wrong, and even if it gets passing all tests, keep in mind it may be rejected for "wrong way" or whatever. but still, learn alot about IR trying.
+
+1586917993
+foobles
+yeah thats what im thinking
+
+1586918037
+foobles
+maybe submit a draft pr?
+
+1586918139
+mikdusan
+feel free
+
+1586919278
+foobles
+mikdusan I found a function that does the get_ref, unwrap, and get_deref!
+
+1586919283
+foobles
+it's called `ir_analyze_optional_value_payload_value`
+
+1586919914
+mikdusan
+that might be useful. it sure does a lot of heavy lifting
+
+1586920101
+foobles
+yep!
+
+1586920105
+foobles
+it also works at comptime
+
+1586920112
+foobles
+:)  i am using that now
+
+1586930850
+kenaryn
+Hello computer people. Please when I type `build-exe`, is the executable created from the source and/or from the object file? How can I know when there are both? (i.e. .zig and .o files)
+
+1586932518
+omglasers2
+morning! (well, it's 9:30 here) I have this snippet
+
+1586935180
+waleee-cl
+omglasers2:  try moving the enum out of main() ?
+
+1586935785
+kenaryn
+we are one the same timeline, which country are you from omglasers2?
+
+1586935950
+omglasers2
+waleee-cl, seems to work; so it's not ok if it's declared in a function ?
+
+1586935969
+omglasers2
+kenaryn, Romania, you ?
+
+1586936038
+waleee-cl
+omglasers2:  if it's a comptime function it would work (see how generics work)
+
+1586936125
+torque
+it also works if you capture the type using @This()
+
+1586936130
+torque
+see e.g.
+
+1586936555
+kenaryn
+I'm from France, I though there were only border countries who adopted the GMT+2 (summer time) timeline
+
+1586936843
+omglasers2
+torque, tried it before but it didn't work, now I see that I was using it wrong, using the enum name inside functions instead of Self
+
+1586936902
+torque
+
+
+1586937003
+omglasers2
+kenaryn, isn't it 9:49 now in France? got a VM open in Paris and it shows 9:49
+
+1586937037
+omglasers2
+torque, yea, seems ok like this, was doing return self == Suit.Clubs, after I tried self == Self.Clubs, but yours is ok too of course
+
+1586937501
+kenaryn
+omglasers2: sorry for the delay, yes it is approximately 10:04
+
+1586943244
+pingiun
+my matrix server doesn't play well with the official freenode irc bridge it seems
+
+1586943317
+pingiun
+but I found where the error message I got before comes from, it's from want_first_arg_sret in src/analyse.cpp
+
+1586943558
+TheLemonMan
+what are you doing?
+
+1586944219
+marijnfs
+/home/marijnfs/software/zig-bootstrap/zig/src/util_base.hpp:72:25: error: expected primary-expression before ‘__attribute__’
+
+1586944225
+marijnfs
+:(
+
+1586944409
+pingiun
+TheLemonMan: I
+
+1586944415
+pingiun
+I'm trying to add powerpc support
+
+1586944417
+pingiun
+to the stdlib
+
+1586944426
+TheLemonMan
+ppc32 or ppc64 ?
+
+1586944439
+pingiun
+relevant context:
+
+1586944441
+pingiun
+ppc64le
+
+1586944478
+pingiun
+context starts at 11:58 really
+
+1586944523
+pingiun
+but I saw today that someone else was also looking at this, and commented on my issue:
+
+1586944523
+TheLemonMan
+oh cool, yes you need sret for the first argument there
+
+1586944559
+pingiun
+TheLemonMan: so a check for ppc64le and then return true?
+
+1586944580
+TheLemonMan
+wilsonk, just use qemu's usermode emulation, that's hella fast
+
+1586944604
+TheLemonMan
+yeah, that part of codegen is a mess
+
+1586944615
+pingiun
+hey wilsonk, you're the commenter on my issue
+
+1586944630
+pingiun
+I'm trying your patch right now
+
+1586944732
+wilsonk
+pingiun: yeah, I had access to a ppc64le machine and put that diff together a while ago. Then I lost access and only downloaded the diff in time...forgot the two std/os/linux files
+
+1586944754
+pingiun
+I see, I already have the syscall numbers but I need to fill in the rest still
+
+1586944830
+wilsonk
+pingiun: the bits/linux/ppc64le.zig file can mostly be translated from the equivalent musl lib file.  The syscalls also shouldn't be too bad once you get the first couple done
+
+1586944899
+TheLemonMan
+please insert the whole syscall list, don't pick only the ones you need
+
+1586945228
+wilsonk
+pingiun: when I say the syscalls I mean the inline asm for making a syscall, btw
+
+1586945257
+pingiun
+yeah, I found the file: arch/powerpc64/syscall_arch.h
+
+1586945449
+wilsonk
+pingiun: oh, nice I didn't even use that file for some reason when I worked on this...that is nice and clean though. Looks easier than me reading the darn POWER docs! :)
+
+1586945503
+pingiun
+wilsonk: haha I thought thas was what you meant when you said "equivalent musl lib file"
+
+1586945517
+pingiun
+but I see that you were talking about the constants
+
+1586945594
+wilsonk
+pingiun: yep, I did most of the port before finding the constants, but it was nice not to have to write out that list from the docs :)
+
+1586945944
+wilsonk
+pingiun: I will be off to bed soon, but if you get past building zig0 and things fail when building zig proper, then that is where I got to.  I can't remember what the error was off hand, but if you run into a bus error then let me know what your debugging finds and it might jog my memory  (I believe I was getting a bus error).
+
+1586945988
+pingiun
+wilsonk: sleep well, thanks!
+
+1586949679
+Xavi92
+Hello, how can I add command line parameters to 'zig build'? Is 'zig build my_flag' possible?
+
+1586949697
+ikskuh
+yes
+
+1586949703
+ikskuh
+you can either use b.option()
+
+1586949711
+ikskuh
+or use -- to pass args to build.zig
+
+1586949718
+ikskuh
+or you can add custom steps with b.step("name")
+
+1586949723
+ikskuh
+which you can depend on
+
+1586949802
+Xavi92
+Thanks! So 'zig build --a' would make 'b.option(bool, "a", "flag a");' return true? Or does b.option() only add parameters to build.zig?
+
+1586949832
+ikskuh
+it adds parameters
+
+1586949833
+ikskuh
+so you can do
+
+1586949837
+ikskuh
+-Da=true
+
+1586949852
+ikskuh
+and then b.option() will return true
+
+1586950313
+Xavi92
+Thanks, ikskuh!
+
+1586950335
+Xavi92
+Can build.zig be debugged, BTW?
+
+1586950417
+ikskuh
+probably, yes
+
+1586950426
+ikskuh
+it just compiles an exe in the end that can be debugged
+
+1586950484
+Xavi92
+Oh, is there any reason why calls to stdout.print() appear in reverse order?
+
+1586950498
+ikskuh
+they should not
+
+1586950508
+ikskuh
+can you show the code?
+
+1586950511
+ikskuh
+hey eleanor-nb!
+
+1586950517
+eleanor-nb
+Hello!
+
+1586950572
+Xavi92
+Hi eleanor-nb :)
+
+1586950677
+Xavi92
+ikskuh:
+
+1586950707
+Xavi92
+Please take into account it's my first time writing build scripts in Zig (and my second thing in Zig overall)
+
+1586950785
+ikskuh
+looks okay to me
+
+1586950797
+ikskuh
+but i would use -Dtarget for setting the target
+
+1586950802
+Xavi92
+$ zig build
+
+1586950802
+Xavi92
+Please specify a target by using -Dtarget_name
+
+1586950802
+Xavi92
+Supported targets: []const u8@203d70
+
+1586950802
+Xavi92
+Hello, world!
+
+1586950806
+ikskuh
+look at b.standardTargetOptions(.{})
+
+1586950816
+ikskuh
+ah yes
+
+1586950822
+ikskuh
+you cannot print arrarys with the debug
+
+1586950828
+ikskuh
+you have to print all values by yourself
+
+1586950865
+Xavi92
+Thanks
+
+1586950879
+ikskuh
+so just loop over it with for()
+
+1586950894
+ikskuh
+how do you want to build for ESP32? is there xtensa support now in LLVM?
+
+1586951010
+Xavi92
+Does 'zig build' allows executing xtensa-esp32-elf-gcc?
+
+1586951050
+Xavi92
+AFAIK xtensa support in LLVM is still experimental, so we stick to gcc. Same with stm32f4xx, where arm-none-eabi-gcc would be used instead
+
+1586951076
+ikskuh
+yeah sure
+
+1586951088
+ikskuh
+you can add it as a custom build step with addSystemCommand
+
+1586951093
+Xavi92
+I still don't know if 'zig build' is either closely tied to LLVM or executes applications without know what's under the hood, like GNU make
+
+1586951115
+ikskuh
+it's a bit of both
+
+1586951125
+ikskuh
+zig build is just an invoker for the zig toolchain
+
+1586951134
+Xavi92
+Do you know why 'try stdout.print("Please specify a target by using -Dtarget_name.\n",.{});' needs the empty struct as parameter?
+
+1586951135
+ikskuh
+but you can also use it to do your custom build steps
+
+1586951152
+ikskuh
+because print always needs it's variadic arguments passed in
+
+1586951160
+ikskuh
+but you can just use writeAll, that doesn't need that parameter
+
+1586951191
+Xavi92
+Do you know why 'try stdout.print("Please specify a target by using -Dtarget_name.\n",.{});' needs the empty struct as parameter?
+
+1586951194
+Xavi92
+Oh, sorry
+
+1586951215
+Xavi92
+The 'up+enter' combination was for bash, not here :)
+
+1586951349
+ikskuh
+heh
+
+1586951378
+ikskuh
+let's write my first interactive shell app in zig
+
+1586951388
+ikskuh
+first step: use a C file to setup some stuff that isn't yet in std :D
+
+1586951783
+Xavi92
+Why the need to separate writeAll and print? Is it because args must be always present?
+
+1586951791
+Xavi92
+As opposed to C's printf()?
+
+1586951904
+ikskuh
+Zig does not have variadic arguments
+
+1586951910
+ikskuh
+we use a tuple that contains the arguments
+
+1586951922
+ikskuh
+so print() will always accept "stream, format, argtuple"
+
+1586951941
+ikskuh
+writeAll just dumb-writes the buffer without parsing
+
+1586951946
+ikskuh
+print will always parse the first string
+
+1586951949
+ikskuh
+so
+
+1586951962
+ikskuh
+writeAll("{}"); // writes {}
+
+1586951973
+ikskuh
+print("{}", …); // parses {} and expects an argument
+
+1586952009
+Xavi92
+Understood. Thanks again!
+
+1586955257
+Xavi92
+ikskuh: does 'zig build' allow using environment variables?
+
+1586955269
+ikskuh
+i don't know
+
+1586955271
+Xavi92
+I'd like it to find some source files on path given by $IDF_PATH
+
+1586955272
+ikskuh
+probably not by-default
+
+1586955289
+ikskuh
+zig tries to not depend on any specific environment by-default
+
+1586955297
+ikskuh
+so you have to import the IDF_PATH by hand
+
+1586955367
+Xavi92
+Alright
+
+1586955398
+Xavi92
+It's curious to see Zig does not check variable (and specially) pointer lifetimes, as opposed to Rust
+
+1586955427
+ikskuh
+it's by-design
+
+1586955430
+ikskuh
+:)
+
+1586955449
+pixelherodev
+The priorities of the two languages are different, so of course they behave differently
+
+1586956824
+Xavi92
+It's a pity though, since dangling pointers are a very important issue, and a common pitfall in C
+
+1586956872
+ikskuh
+yeah, but zig issues some intelligence to the programmer
+
+1586956885
+ikskuh
+because: "what is a dangling" pointer is just a thing that is defined by humans, not machines
+
+1586957015
+Xavi92
+It can be checked by the compiler through lifetimes, though
+
+1586957075
+ikskuh
+not in zig
+
+1586957085
+ikskuh
+define "lifetime"?
+
+1586957103
+ikskuh
+when i have an FBA, the memory is still valid and totally legit to be accessed after a call to destroy()
+
+1586957125
+Xavi92
+Well, I might not be appropiate person to answer that :) But Rust provides a complete definition of lifetime
+
+1586957134
+ikskuh
+yes
+
+1586957141
+ikskuh
+but rust restricts the memory model for that
+
+1586957148
+ifreund
+lifetimes lead to greatly increased complexity, which is one of the major differences between zig and rust
+
+1586957180
+Xavi92
+Sure, both approaches have pros and cons
+
+1586957189
+ifreund
+of course
+
+1586957216
+pixelherodev
+Zig favors simplicity, Rust is willing to be vastly more complex in exchange for a bit more safety
+
+1586957265
+pixelherodev
+There's arguments to be made in favor of both, but I personally prefer Zig's model
+
+1586957381
+fengb
+I think Rust (and maybe Ada?) are the only languages with reliable lifetime checks
+
+1586957415
+fengb
+And those have complexity problems that pixelherodev mentioned
+
+1586957461
+ikskuh
+The question "Does $Language has $Feature?" is probably always true for Ada
+
+1586957505
+fengb
+We're currently thinking that a good debug allocator can potentially find the majority of these problems
+
+1586957556
+ikskuh
+
+
+1586957569
+fengb
+But obviously not all. If you want guarantees, Rust is your language
+
+1586957594
+companion_cube
+ikskuh: "does $language have a concise syntax" :p
+
+1586957726
+kk-
+why is Ada getting so much attention lately  ? any new patch ?
+
+1586957765
+fengb
+I only mention Ada because it's sort of the proto Rust
+
+1586957791
+companion_cube
+I thought the proto rust was cyclone or whatever
+
+1586957903
+Xavi92
+Then Ada was proto Cyclone :P
+
+1586957941
+fengb
+I meant it fulfilled niches of Rust did before it was even on people's minds. Not a direct ancestor or anything
+
+1586957959
+fengb
+(Of course I might be talking out of my ass because I don't know anything about Ada)
+
+1586958043
+companion_cube
+ah well, yes, it valued safety for sure
+
+1586958754
+Xavi92
+fengb: IIRC Ada is used on critical systems such as aircraft
+
+1586959065
+companion_cube
+it was designed for the DoD, yerah
+
+1586959066
+companion_cube
+yeah
+
+1586959606
+nmeum
+I am seeing super strange behaviour when doing a LinearFifo write, it somehow affects other members of the struct
+
+1586959635
+nmeum
+am I somehow using LinearFifo entirely wrong? is there an alternative explanation for the behaviour I am seeing there? I am very confused about this
+
+1586959647
+nmeum
+it's on a freestand target so it might be possible that I am doing something wrong entirely
+
+1586959849
+pixelherodev
+I asked yesterday, but is there a way to either override the default calling convention used by Zig or somewhere I can find said CC specifi - oh wait, now I get it
+
+1586959856
+pixelherodev
+There
+
+1586959867
+pixelherodev
+Or if there is, it doesn't matter because it's getting overridden
+
+1586959886
+pixelherodev
+A more correct question would be, how does LLVM's fastcc operate on AMD64? and that's not a questino for here
+
+1586959891
+pixelherodev
+s/ino/ion
+
+1586959896
+ikskuh
+default calling convention is zigcc :D
+
+1586959904
+ikskuh
+but as it has no ABI, you cannot export it
+
+1586959914
+ikskuh
+→ specify calling convention for every exported fun
+
+1586959936
+pixelherodev
+It's not about exporting
+
+1586959941
+pixelherodev
+It's about accessing stdlib
+
+1586959946
+pixelherodev
+ikskuh, e.g. std.debug.warn
+
+1586959965
+pixelherodev
+My JIT currently has to link libc so it can use `write`
+
+1586959974
+pixelherodev
+because in --release-fast mode std.debug.warn cannot be used
+
+1586959977
+pixelherodev
+It thrashes registers
+
+1586959993
+ikskuh
+std.debug.warn has no explicit calling convention
+
+1586959998
+pixelherodev
+and I don't know what the ABI
+
+1586960002
+pixelherodev
+That's my point
+
+1586960010
+ikskuh
+none
+
+1586960013
+pixelherodev
+I know
+
+1586960021
+ikskuh
+it needs to be instantiated for a certain architecture
+
+1586960024
+ikskuh
+and hten you can use
+
+1586960026
+pixelherodev
+I need some way of calling to it using some sort of predefined ABI
+
+1586960036
+pixelherodev
+But I'm using `std.debug.warn` as a function pointer
+
+1586960038
+pixelherodev
+In debug modes it works fine
+
+1586960047
+pixelherodev
+It seems to stick to the SystemV ABI on Linux
+
+1586960072
+ikskuh
+well
+
+1586960075
+pixelherodev
+Correction
+
+1586960079
+pixelherodev
+I'm not using it as a function pointer
+
+1586960085
+pixelherodev
+I'm calling a function marked callconv(.C)
+
+1586960086
+ikskuh
+std.debug.warn cannot be called from native, only a certain instantiation of it
+
+1586960094
+pixelherodev
+Then calling std.debug.warn from within a callconv(.C) function
+
+1586960429
+pixelherodev
+ikskuh, so if there's no calling convention, is there any pure Zig solution you'd recommend?
+
+1586960458
+pixelherodev
+I'm not actually using formatting either
+
+1586960478
+pixelherodev
+I basically need a way to call BufferedOutStream.write from within callconv(.C) code
+
+1586960496
+ikskuh
+pass a pointer and use a callconv(.C) function
+
+1586960512
+pixelherodev
+I am using a callconv(.C) function...
+
+1586960525
+pixelherodev
+but BufferedOutStream.write isn't callconv(.C), it's zigcc isn't it?
+
+1586960527
+ikskuh
+then you can call any zig code in there
+
+1586960535
+pixelherodev
+That's my point; I can't.
+
+1586960551
+pixelherodev
+If I call zigcc code from within a callconv(.C) function, it causes a crash
+
+1586960555
+pixelherodev
+the Zig code works fine
+
+1586960561
+pixelherodev
+but after the return it crashes
+
+1586960598
+ikskuh
+huh
+
+1586960601
+pixelherodev
+Yeah.
+
+1586960617
+pixelherodev
+Here's the thing; it works in debug mode
+
+1586960619
+pixelherodev
+but not in release mod
+
+1586960623
+pixelherodev
+s/mod/mode
+
+1586960638
+pixelherodev
+my guess is it's messing with a register I didn't realize I was using or something
+
+1586960656
+pixelherodev
+but I looked at the emitter, and literally all registers are discarded before that call
+
+1586960688
+pixelherodev
+It shouldn't care about
+
+1586960713
+pixelherodev
+So I'm willing to wager an optimization is resulting in SP being off or something
+
+1586960795
+ikskuh
+is your SP aligned?
+
+1586960845
+TheLemonMan
+check who's in charge of cleaning the stack frame
+
+1586961129
+AndroidKitKat
+how's zig's compatibilty with the WSL?
+
+1586961246
+TheLemonMan
+good?
+
+1586961341
+pixelherodev
+TheLemonMan, I can't check that
+
+1586961348
+pixelherodev
+because the ABI is undefined
+
+1586961354
+pixelherodev
+It's impossible to know
+
+1586961358
+pixelherodev
+Actually
+
+1586961359
+pixelherodev
+It's irrelevant
+
+1586961362
+TheLemonMan
+the fuck? just check the code
+
+1586961369
+pixelherodev
+Either way, it's being called by Zig-generated code
+
+1586961371
+pixelherodev
+Not JITed
+
+1586961373
+pixelherodev
+compiled
+
+1586961400
+pixelherodev
+That is, it's the compiler's job
+
+1586961403
+pixelherodev
+not my JIT's
+
+1586961420
+pixelherodev
+TheLemonMan, check
+
+1586961488
+TheLemonMan
+the code you're calling
+
+1586961551
+pixelherodev
+That's std.debug.warn
+
+1586961559
+pixelherodev
+You mean the asm?
+
+1586961573
+TheLemonMan
+yes
+
+1586961588
+pixelherodev
+It doesn't matter
+
+1586961597
+pixelherodev
+It's being called by a normal Zig function
+
+1586961604
+pixelherodev
+The compiler is responsible for cleaning it up
+
+1586961608
+pixelherodev
+not me
+
+1586961621
+pixelherodev
+... though checking the asm is definitely a good call
+
+1586963099
+pixelherodev
+No it looks fine :(
+
+1586963120
+pixelherodev
+As expected, dynarec.ebus.runSerial cleans up after the call to std.debug.warn[.161]
+
+1586963130
+pixelherodev
+SP should be completely correct...
+
+1586963170
+pixelherodev
+s/161/116
+
+1586963173
+pixelherodev
+not that it matters
+
+1586963535
+pixelherodev
+Good news: the LLVM failure is a release blocker for 10.0.1 :D
+
+1586964014
+foobles
+of llvm?
+
+1586964220
+pixelherodev
+yeah
+
+1586964240
+pixelherodev
+It broke between 8 and 9, it'll be fixed in 10.0.1
+
+1586964258
+pixelherodev
+Which means I can just keep Zig as is for now, upgrade LLVM to 10.0.1 immediately upon release, ???, profit!
+
+1586969756
+pixelherodev
+I is dumb, there's an easy solution
+
+1586969757
+pixelherodev
+std.os.write
+
+1586969890
+pingiun
+error: couldn't allocate output register for constraint '{3}'
+
+1586969909
+pingiun
+I'm trying to do powerpc64 assembly
+
+1586970066
+pixelherodev
+Yep, working; goodbye libc!
+
+1586970273
+pixelherodev
+Oh wait; forgot to test release-fast :P
+
+1586970276
+pingiun
+Code sample:
+
+1586970556
+pixelherodev
+Wait but
+
+1586970563
+pixelherodev
+Isn't a constraint in `{}` a literal register?
+
+1586970573
+pixelherodev
+e.g. I could use `{eax}`?
+
+1586970576
+pixelherodev
+(on x86)
+
+1586970689
+pixelherodev
+AFAIK that code sample looks correct
+
+1586970700
+ikskuh
+yes you can do that
+
+1586970838
+pixelherodev
+Right, so it shouldn't be trying to allocate output registers IIUC
+
+1586970844
+pixelherodev
+ah wait
+
+1586970858
+pixelherodev
+Unless it's saying it doesn't know the literal register "3"?
+
+1586971534
+TheLemonMan
+pingiun, try rN
+
+1586971867
+moo^
+I'm trying out 'zig cc' and trying to compile openssl. What could be the cause for this error? lld: error: zig-cache/o/.../cryptlib.o:24: unknown directive: typedef
+
+1586972146
+pingiun
+TheLemonMan: error: couldn't allocate output register for constraint '{r3}'
+
+1586972353
+TheLemonMan
+worksforme
+
+1586972512
+pingiun
+so you're positive it should be rN?
+
+1586972532
+pingiun
+I'm an absolute noob on ppc64 assembly
+
+1586972549
+pingiun
+and also on zig assembly syntax
+
+1586972600
+pixelherodev
+the bits of assembly I found implied the r shouldn't be there, but I've never used ppc64
+
+1586972615
+r4pr0n
+Could someone explain me why you would want to use `usize`s instead of `u32` or `u64` in your code?
+
+1586972627
+pixelherodev
+If you want something to match pointer size
+
+1586972637
+pixelherodev
+e.g. index into a slice
+
+1586972650
+pixelherodev
+On a 32-bit system, the index can't be 64-bit; that'd make no sense
+
+1586972704
+r4pr0n
+so you can't allocate more than 4.3 GigaBytes of ram on 32 bit systems?
+
+1586972735
+r4pr0n
+(2^32 bytes ~ 4.29 GB)
+
+1586972754
+pixelherodev
+Not even, on most
+
+1586972835
+r4pr0n
+oh, that's - interesting, i guess, thank you, this is good to know
+
+1586972917
+TheLemonMan
+even if you could allocate more than that how are you supposed to address such a huge block of memory?
+
+1586972925
+TheLemonMan
+bring back segments?
+
+1586972967
+r4pr0n
+well i guess you would be able to use a u64 for something like that, just how you are also able to use that for something else on 32-bit systems
+
+1586972976
+TheLemonMan
+pingiun, did you add the 'r' to all the registers?
+
+1586973063
+fengb
+The kernel can possibly map more than 4GB but that’s the cap available to any single process in 32bit mode
+
+1586973064
+pingiun
+yes
+
+1586973069
+TheLemonMan
+you can pull some interesting stuff with PAE, but you're limited to 48bit
+
+1586973087
+fengb
+IIRC Windows did it when first breaking the barrier
+
+1586973127
+TheLemonMan
+but then you're just using the MMU to go over the limit
+
+1586973147
+TheLemonMan
+back in the days we had bank-switched ram
+
+1586973151
+pixelherodev
+Banking!
+
+1586973158
+pixelherodev
+My custom z80 system uses that :)
+
+1586973176
+mikdusan
+funny 48bit just happens to be the initial AMD64
+
+1586973195
+fengb
+Ah yeah banking is fun too
+
+1586973225
+pixelherodev
+Pretty sure 48-bit for AMD64 isn't a coincidence
+
+1586973243
+pixelherodev
+It's because of the the design of the paging tables
+
+1586973243
+pixelherodev
+That is, it's for the same reason PAE was 48-bit
+
+1586973284
+andrewrk
+this release cycle is going to be brutal for people proposing syntax changes
+
+1586973311
+fengb
+Are you saying no to everything?
+
+1586973377
+andrewrk
+
+
+1586973447
+shakesoda
+the one thing i want is 1717 lol
+
+1586973463
+andrewrk
+that one is still accepted
+
+1586973519
+r4pr0n
+well does that mean you will accept
+
+1586973648
+andrewrk
+it means I no longer have the option of "post-pone to 0.8.0, I'll deal with this later" so my incentive to accept/reject is strong
+
+1586973694
+andrewrk
+and I will do things such as close the issue with an argument, and to re-open the issue would require a sufficient counter-argument
+
+1586973778
+foobles
+so does that mean function expressions are a major goal for 0.7.0?
+
+1586973787
+foobles
+seems like a huge change
+
+1586973802
+fengb
+They were for 0.6 too 😛
+
+1586973816
+ikskuh
+it should be possible to fix the fn thing with zig fmt, right?
+
+1586973828
+ikskuh
+or better, translate instead of "fix"
+
+1586973842
+andrewrk
+I'm not planning to postpone #1717
+
+1586973884
+ikskuh
+first issue tackled?
+
+1586973978
+TheLemonMan
+pingiun, the asm compiles fine here but LLVM chokes somewhere
+
+1586974042
+companion_cube
+what are the other syntax changes anyway?
+
+1586974047
+companion_cube
+proposed syntax changes*
+
+1586974054
+r4pr0n
+
+
+1586974057
+r4pr0n
+this was closed already
+
+1586974063
+companion_cube
+:(
+
+1586974078
+pingiun
+TheLemonMan: I'm trying to update the stdlib for ppc64, and this register constraint error is the only useful thing I get, no line numbers or anything
+
+1586974107
+pingiun
+this is my fork:
+
+1586974114
+r4pr0n
+andrewrk: could you clarify what you mean with "to make the syntax work" in your close-comment of 4294?
+
+1586974124
+pingiun
+fork as in the github sense
+
+1586974178
+TheLemonMan
+eh no shit it didn't work
+
+1586974195
+TheLemonMan
+don't forget to add `-mcpu=pwr9`
+
+1586974204
+andrewrk
+r4pr0n, I'm pretty sure there is an older issue where I already tried to remove () from if/while/etc with discussion there. I don't have a link handy
+
+1586974209
+ifreund
+can't wait for #1717 and anon functions
+
+1586974224
+r4pr0n
+you mean
+
+1586974227
+pingiun
+TheLemonMan: I'm using the build script, with ./build -j4 native baseline
+
+1586974236
+pingiun
+that should do it right?
+
+1586974248
+TheLemonMan
+no
+
+1586974255
+andrewrk
+r4pr0n, yes that looks like it
+
+1586974262
+TheLemonMan
+why are you working on the boostrap repo?
+
+1586974295
+pingiun
+because I want to bootstrap zig on ppc64
+
+1586974320
+pingiun
+I'm working on a ppc64 machine btw
+
+1586974328
+pingiun
+so native==ppc64le
+
+1586974330
+andrewrk
+any source changes to bootstrap repo should be made against the respective upstream project
+
+1586974342
+r4pr0n
+andrewrk: i'm sorry if I misunderstand something here, but wouldn't the issue with `x = if (c) a else b;` be solved by 4294 as it requires you to use `{}`?
+
+1586974343
+TheLemonMan
+focus on getting zig to target ppc64le first
+
+1586974356
+TheLemonMan
+once that's working you can focus on the boostrap thing
+
+1586974366
+TheLemonMan
+one can of worms at time
+
+1586974404
+andrewrk
+r4pr0n, x = if (c) label: { break :label a; } else label: { break :label b; }
+
+1586974408
+TheLemonMan
+you don't even need a ppc64 machine, qemu user-mode emulation is enough to port it
+
+1586974433
+companion_cube
+`if c { a } else { b }` 🤷
+
+1586974440
+pingiun
+TheLemonMan: the fun thing is that I had the ppc64 machine first, so I just wanted to test things out
+
+1586974445
+companion_cube
+but well, not explicit enough
+
+1586974456
+andrewrk
+companion_cube, that used to be zig syntax but it was removed
+
+1586974459
+companion_cube
+I know :)
+
+1586974464
+andrewrk
+all these syntax proposals were proposed by myself 5 years ago
+
+1586974475
+fengb
+if a { <-b } else { <-c }
+
+1586974476
+companion_cube
+I think your mind is set on this one, and that's ok
+
+1586974510
+r4pr0n
+andrewrk: so the problem is the readability when returning/breaking values from blocks?
+
+1586974531
+companion_cube
+I think it's that the diff between `{a; b;}` and `{a; b}` is one char only
+
+1586974539
+companion_cube
+and the second one returns a value, not the first one
+
+1586974565
+companion_cube
+(imho think type-checking makes this a non issue, but readability is a matter of taste)
+
+1586974579
+fengb
+Just always return the last statement. That hasn’t hurt anyone right? 🙃
+
+1586974606
+companion_cube
+… no ? :)
+
+1586974653
+fengb
+Mostly joking — it’s a pervasive problem in Ruby and Coffeescript
+
+1586974683
+fengb
+Less of a problem in statement-less languages but Zig isn’t one of them
+
+1586974685
+r4pr0n
+I've heard of noone having a problem with that syntax in rust
+
+1586974714
+TheLemonMan
+pingiun, your `restore` and `restore_rt` have an output constraint in the input section (and you don't need setnoat for ppc asm)
+
+1586974731
+companion_cube
+fengb: it's not a problem in typed languages
+
+1586974805
+fengb
+Or Lisp
+
+1586974807
+hazeycode
+hey guys, any pointers for debugging this?
+
+1586974820
+hazeycode
+getting after adding this nasty to my build.zig:
+
+1586974821
+hazeycode
+exe.addFrameworkDir("/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.15.sdk/System/Library/Frameworks");
+
+1586974835
+companion_cube
+unrelated, but I wonder if async/await is too specific a name for the feature :)
+
+1586974850
+companion_cube
+it seems more like first-class continuations than something specialized for concurrency
+
+1586974866
+companion_cube
+so clearly `suspend` should become `call/cc`!
+
+1586974884
+fengb
+If it is, it’s the first continuation that I can understand
+
+1586974911
+fengb
+Like how I can use promises all day and still have no clue what monads are >_>
+
+1586974927
+companion_cube
+:D
+
+1586974970
+TheLemonMan
+hazeycode, get a debug build of the zig compiler and re-run that command
+
+1586974989
+companion_cube
+interesting how many issues are trying to address `foo: { … break :foo x }`
+
+1586975030
+hazeycode
+TheLemonMan thanks, will do
+
+1586975042
+fengb
+Mostly addressing breaking a single block
+
+1586975057
+companion_cube
+which is 99% of uses cases
+
+1586975114
+fengb
+I think what we have right now is fine for arbitrary named breaks. But it’s pretty verbose to add blk: for a semi-common problem
+
+1586975149
+companion_cube
+very common*
+
+1586975160
+companion_cube
+it's an expression language, not a statement language :)
+
+1586975172
+companion_cube
+(gosh I'm rambling so much about that9
+
+1586975174
+companion_cube
+)
+
+1586975206
+r4pr0n
+i also think there should be a better solution, but #4412 worse imo
+
+1586975215
+r4pr0n
+s/worse/is worse/
+
+1586975443
+fengb
+Split break into breakloop and breakblock? 🤔
+
+1586975484
+r4pr0n
+well maybe breaking to the innermost block/loop by default would also be an idea
+
+1586975518
+companion_cube
+that's tricky though, if you add a `if` inside your `while`, then suddenly you risk breaking from the if instead of breaking from the loop
+
+1586975528
+fengb
+That's sort of the problem. We default to loop right now and it's hard to switch to block without "breaking" from the rest of languages
+
+1586975548
+companion_cube
+… unless `{a; b}` just returns `b` 🤷
+
+1586975570
+foobles
+how do you generate short-circuiting boolean and/or instructions?
+
+1586975598
+ifreund
+honestly splitting break into breakloop and breakblock is the cleanest suggestion i've seen yet
+
+1586975629
+ifreund
+because those two really are two different things, and the zen is to be explicit
+
+1586975644
+r4pr0n
+fengb: i'm not aware that breaking from the rest of languages syntax-wise was ever a concern of zig
+
+1586975648
+foobles
+i am basically generating `((x == null) == (y == null)) && (x == null || x.? == y.?)`, but when I run it, it seems to eagerly evaluate the unwrapping
+
+1586975656
+companion_cube
+r4pr0n: you mean except for using `{}` everywhere? :p
+
+1586975666
+companion_cube
+it's definitely C-style
+
+1586975679
+ifreund
+fengb: do you want to write a proposal for that or should I?
+
+1586975736
+r4pr0n
+companion_cube: yeah, but i don't think the only reason for it to be that way is to be like c
+
+1586975775
+r4pr0n
+ifreund: i agree actually, though maybe one could use break for loops and think of a different keyword for blocks
+
+1586975789
+mikdusan
+foobles: make a reduction and look at ir for examples
+
+1586975814
+TheLemonMan
+foobles, I'm afraid comptime doesn't short-circuit anything
+
+1586975855
+ifreund
+r4pr0n: yeah I could see that, though I'm having trouble thinking of a good non-break keyword for blocks, maybe `break` and `breakblock`
+
+1586975865
+foobles
+TheLemonMan I am trying to generate runtime instructions
+
+1586975871
+foobles
+I already handle the comptime case
+
+1586975882
+fengb
+I thought breakblk was proposed at one point
+
+1586975905
+ifreund
+perhaps, i'll do some searching
+
+1586975926
+fengb
+r4pr0n: we don't want to reuse concepts that will confuse existing users though
+
+1586975935
+TheLemonMan
+foobles, ok then check the generated IR
+
+1586975947
+fengb
+It'll add a bunch of confusing headache and scare away new users
+
+1586975963
+r4pr0n
+well, fengb, break would then be the same as in other languages basically
+
+1586975971
+r4pr0n
+so i don't think that will really cause confusion
+
+1586975979
+companion_cube
+fengb: there's at least one issue where `break :lbl x` scared a new user!
+
+1586976001
+ifreund
+companion_cube: he's talking about break vs breakloop
+
+1586976001
+fengb
+Break in any C based language (including Java and the ilk) means break a loop
+
+1586976007
+fengb
+Yes but it's explicitly different
+
+1586976029
+pixelherodev
+Maybe propagate?
+
+1586976032
+fengb
+I'm talking a bare break only doing blocks will probably confuse most people, including me
+
+1586976034
+pixelherodev
+As a breakloop keyword
+
+1586976047
+pixelherodev
+Yeah, I quite like status quo honestly
+
+1586976062
+r4pr0n
+oh, i thought you were talking about this suggestion of mine: "i agree actually, though maybe one could use break for loops and think of a different keyword for blocks"
+
+1586976076
+fengb
+Oh we're just talking past each other lol >_>
+
+1586976084
+fengb
+I'm also in a meeting so I'm half paying attention
+
+1586976107
+r4pr0n
+yeah, i agree with you on what you meant on having break use the innermost block/loop
+
+1586976128
+pixelherodev
+Yay meetings
+
+1586976148
+r4pr0n
+i think the breakloop/breakblock is better, even though I think breakloop could be continued to be called break
+
+1586976191
+ifreund
+what about `yield` for blocks?
+
+1586976213
+mikdusan
+could have implicit labels; `break` means break block no matter which block. `break :outer` and for I dunno.. `break ::outer` for 2 levels up
+
+1586976237
+ifreund
+that sounds far more complicated than a new keyword
+
+1586976269
+fengb
+break [reversed keyword]
+
+1586976271
+companion_cube
+anyone knows where I can find the original discussion about blocks not returning values by default?
+
+1586976276
+fengb
+break fi;
+
+1586976285
+fengb
+break rof;
+
+1586976294
+ifreund
+break esac;
+
+1586976316
+r4pr0n
+oh i have the best idea: use `kaerb` for blocks
+
+1586976318
+pixelherodev
+ifreund, yield is a bad idea IMO
+
+1586976328
+pixelherodev
+Given that people will confuse it with threading
+
+1586976337
+ifreund
+pixelherodev: i agree, i prefer breakloop/breakblock
+
+1586976362
+pixelherodev
+How about bikeshed?
+
+1586976364
+pixelherodev
+:P
+
+1586976435
+r4pr0n
+i kinda think this discussion is important, given that it is very unlinkly to change after 0.7.0 and blocks as expressions are a often-used concept
+
+1586976476
+ifreund
+^
+
+1586976479
+hazeycode
+TheLemonMan I'm getting the same output with a debug build. Is there something I need to do in addition to setting cmake build type to Debug?
+
+1586976504
+hazeycode
+exe.linkSystemLibrary("CoreAudio"); works without.adding the search path
+
+1586976532
+TheLemonMan
+duh, uyou should get a stack trace at least
+
+1586976545
+hazeycode
+afraid not
+
+1586976562
+r4pr0n
+what about `crush` as a keyword for breaking blocks? sounds like a joke, but it's kinda funny and thus easy to remember 🤔
+
+1586976572
+hazeycode
+note: 'CoreAudio/CoreAudio.h' file not found is what I'm actually trying to resolve
+
+1586976608
+ifreund
+`bust`
+
+1586976619
+fengb
+What does tetris call it when we clear a line?
+
+1586976647
+nmeum
+quick question regarding memory allocation: if a struct is allocated on the stack, I assign a pointer to that stack to a global variable and then the function returns this global variable will potentially point to uninitialized memory, right?
+
+1586976661
+r4pr0n
+i think it's the best if someone would propose this and we would talk about the exact keyword names in the issue thread
+
+1586976689
+ifreund
+i'll write it up, just gimme a few minutes
+
+1586976697
+nycex
+okay, great
+
+1586976700
+TheLemonMan
+hazeycode, run it under gdb then, with a backtrace at hand you can easily find what went wrong
+
+1586976706
+nycex
+i think this is a good idea
+
+1586976720
+r4pr0n
+👍
+
+1586976747
+TheLemonMan
+the FileNotFound is nasty, I guess that's because the debug infos generate relative paths
+
+1586976868
+TheLemonMan
+hazeycode, are you using zig 0.6.0 ?
+
+1586976902
+hazeycode
+built 0.6.0 release commit from source yeh
+
+1586976943
+hazeycode
+just ran with lldb, no stack trace, exits cleanly
+
+1586976992
+hazeycode
+counter to what the output suggests
+
+1586977058
+TheLemonMan
+oh the FileNotFound is my fault, but I blame inferred error sets for that
+
+1586977070
+fengb
+
+
+1586977120
+TheLemonMan
+hazeycode, remember to run the command under the `The following command failed` line
+
+1586977143
+TheLemonMan
+if you debug `zig build` you won't get much as the build.zig is compiled
+
+1586977157
+hazeycode
+Ah, makes sense, my bad
+
+1586977283
+hazeycode
+yup
+
+1586977290
+hazeycode
+
+
+1586977555
+companion_cube
+
+
+1586977596
+hazeycode
+wrong one :D
+
+1586977703
+ifreund
+ah i found the previous proposal, using the `result` keyword
+
+1586977719
+companion_cube
+the one I linked is when blocks stopped returned values
+
+1586977763
+hazeycode
+TheLemonMan not much of a stack trace
+
+1586977775
+companion_cube
+there isn't much of a justification in it, too
+
+1586978136
+andrewrk
+you can comment on a closed issue to ask for justification
+
+1586978137
+r4pr0n
+well i guess being able to do 4294 would be another argument for 732 if 4294 would be accepted when 732 is
+
+1586978165
+andrewrk
+I think one of thejoshwolfe's goals is to have justifications for all the rejected proposals
+
+1586978182
+andrewrk
+not mine though
+
+1586978197
+mikdusan
+hazeycode: that error is likely from codegen.cpp
+
+1586978198
+companion_cube
+heh, sure thing
+
+1586978239
+hazeycode
+thanks mikdusan
+
+1586978280
+companion_cube
+andrewrk: thanks, I'll bother him. I know I'm a pain in the butt wrt syntax.
+
+1586978493
+fengb
+Is he still around? >_>
+
+1586978826
+andrewrk
+he said he would help write the lang spec during this release cycle
+
+1586978900
+shakesoda
+i feel like justifications everywhere is nice but it's a lot more important for accepted than rejected
+
+1586978902
+foobles
+like a formal spec?
+
+1586978908
+foobles
+that would be cool
+
+1586978914
+foobles
+still waiting on one for rust :v
+
+1586979046
+fengb
+The impl is the spec 🙃
+
+1586979049
+companion_cube
+shakesoda: "why not use this simpler syntax" kind of deserves an explanation imho :)
+
+1586979060
+companion_cube
+c'mon, there are literally reference books for rust
+
+1586979226
+fengb
+That's not the same thing though
+
+1586979255
+r4pr0n
+companion_cube: do you mean for 629 or for 732?
+
+1586979361
+shakesoda
+companion_cube: it's not like i think a justification in those cases is bad, just that it's more useful to explain why something
+
+1586979442
+mikdusan
+andrewrk: maybe we add a label "release notes" so we can tag PRs we
+
+1586979449
+companion_cube
+r4pr0n: for the thing 629 removed
+
+1586979473
+r4pr0n
+i think the reasoning is in the proposal
+
+1586979546
+companion_cube
+the "two ways to return a value from a function"? …
+
+1586979553
+companion_cube
+the other one I just don't understand
+
+1586979595
+companion_cube
+(the code snippet is perfectly clear)
+
+1586979717
+r4pr0n
+it actually is yeah, the if statement should return the return values of the inner branches, if they are different types, compile error, right?
+
+1586979776
+andrewrk
+mikdusan, I like it
+
+1586979782
+companion_cube
+r4pr0n: sure
+
+1586979808
+companion_cube
+expressions return values, transitively. end of stor
+
+1586979810
+companion_cube
+y
+
+1586979847
+r4pr0n
+well you could argue that it is not clear if it is actually meant to be an statement or an expression here
+
+1586979857
+r4pr0n
+because normally if statements without an semicolon are a statement
+
+1586979947
+r4pr0n
+but i don't think that is a real problem because it is obvious that the if statement does return something here, due to the var x = and due to the bar() and baz() in the branches
+
+1586980050
+Xavi92
+Are there any reasons to prefer 'fn function(self: *Self)...' over 'fn function(self: Self)...'?
+
+1586980084
+companion_cube
+r4pr0n: my point is, statements are just expressions returning void
+
+1586980085
+r4pr0n
+you can't modify self in the latter, can you?
+
+1586980087
+companion_cube
+or they should
+
+1586980099
+r4pr0n
+good point
+
+1586980261
+r4pr0n
+i actually think that the best approach is to revert 629 and keep 732
+
+1586980401
+companion_cube
+I don't think that's going to happen…
+
+1586980486
+r4pr0n
+why not? i don't think two solutions to one problem is a good enough reason for a change that prevents #4294
+
+1586980558
+r4pr0n
+and I also don't think that the "another problem" of 629 is a problem; it should be allowed imo
+
+1586980768
+ifreund
+ok, i've thought about it for a while now and i think the status quo is the right way to go andrewrk knows what he's doing
+
+1586980816
+fengb
+Nah, let's assume he doesn't know what he's doing
+
+1586980866
+r4pr0n
+ifreund: i don't think that's a strong argument, maybe he didn't think about something like 4294 when accepting 629
+
+1586980974
+ifreund
+i think the current syntax is more readable, plain and simple
+
+1586981001
+ifreund
+an explict return or break keyword beats implict return by dropping a `;` by a mile
+
+1586981043
+ifreund
+regading breakloop/breakblock i wrote most of a proposal, but in the end came to the same conclusion andrewrk did here
+
+1586981098
+companion_cube
+r4pr0n: that's why I'm asking a justification, tbh
+
+1586981112
+companion_cube
+I think getting closer to rust (I know…) would simplify the syntax
+
+1586981136
+companion_cube
+(blocks return last expression's value, if/while/for have mandatory {}, no corner cases needed)
+
+1586981144
+r4pr0n
+exactly
+
+1586981255
+r4pr0n
+ifreund: i also don't think that dropping ";" or breakloop/breakblock is worth it on itself, but i think #4294 is worth it, because those proposals would (probably) enable that
+
+1586981470
+ifreund
+i'm  saying that implict return by droppint the `;` is a negative for readability
+
+1586981516
+ifreund
+i'm not convinced that required curlies for if/while are worth the tradeoff, especially since indentation will be enforced in the future
+
+1586981551
+companion_cube
+it's not implicit, just uniform
+
+1586981565
+companion_cube
+and more readable than `x: { …; break :x 42; }`
+
+1586981573
+companion_cube
+(but again readability is relative I guess)
+
+1586981585
+r4pr0n
+you would have the following advantages: - you can remove the () of the if/while/for statements; - { a } is equal to a (which would simplify the language a lot imo)
+
+1586981623
+r4pr0n
+and i think the unreadability of omitting ";" is overestimated since it is only allowed at the end of a block
+
+1586981629
+ifreund
+i'd say it is implicit if the `return` keyword is still in the language
+
+1586981645
+ifreund
+and `break`
+
+1586981662
+companion_cube
+r4pr0n: and it's typesafe
+
+1586981670
+companion_cube
+ifreund: return/break would be there for early return
+
+1586981703
+companion_cube
+(rust does it, and it's quite neat)
+
+1586981721
+ifreund
+yes, so then they function just as well when used on the last line of a block. Therefore dropping the `;` is an implict as opposed to explicit return
+
+1586981736
+r4pr0n
+ifreund: and i can speak of my experience with rust, where i had absolutely no problem with confusing { a; b; } with { a; b }
+
+1586981737
+ifreund
+i've written my fair share of rust,
+
+1586981782
+companion_cube
+ifreund: well that's nice for one line function, yes
+
+1586981789
+companion_cube
+`fn foo(x: int) int { x+1 }
+
+1586981791
+companion_cube
+`
+
+1586981840
+companion_cube
+it's in line with #1717 too, since everything goes towards being an expression
+
+1586981879
+afontain_
+ruby also does that IIRC
+
+1586981951
+companion_cube
+languages lacking that tend to do `function() { … return x; }()` :p
+
+1586982806
+Xavi92
+Sorry, was afk
+
+1586982826
+Xavi92
+r4pr0n: so that means (self: Self) and (self: *const Self) are equivalent?
+
+1586982851
+foobles
+Xavi92 I dont believe so
+
+1586982854
+r4pr0n
+i'm not actually sure what Self does exactly
+
+1586982865
+ifreund
+Self isn't special, just a type
+
+1586982884
+foobles
+usually defined as `const Self = @This()`
+
+1586982885
+r4pr0n
+yeah, i mean what that in a function call does
+
+1586982901
+foobles
+its just the type of the type its being implemented for
+
+1586982908
+r4pr0n
+i'm not sure if it is pass-by-value, pass-by-copy or something like that
+
+1586982918
+ifreund
+Xavi92: those aren't equvivalent. the first is semantically a copy but allows the compiler to transparently optimize to a const* if it is faster
+
+1586982932
+Xavi92
+Isn't the zig compiler free to determine which pass-by method to use?
+
+1586982934
+ifreund
+the second is explictly a const* so you can do, for example, pointer comparisons
+
+1586982963
+ifreund
+is that clear?
+
+1586982963
+Xavi92
+So they
+
+1586982978
+r4pr0n
+companion_cube: could you elaborate on "r4pr0n: and it's typesafe", i'm trying to write a comment with the pros and cons  to 629
+
+1586983069
+ifreund
+as far as i understand it yes
+
+1586983101
+Xavi92
+Alright
+
+1586983113
+companion_cube
+r4pr0n: well, adding a spurious `;` is safe because it will be a type error
+
+1586983117
+companion_cube
+(expected int, got void)
+
+1586983167
+companion_cube
+same way that `const x = if (a) 1 else {}` fails because the else is not an int
+
+1586983186
+companion_cube
+(imagine `else { foo; 2; }`, that doesn't typecheck)
+
+1586983254
+Xavi92
+ifreund: then if two possible ways exist, is (self: Self) preferred over (self: *const Self)? Except from the pointer comparison use case, of course
+
+1586983281
+r4pr0n
+companion_cube: i got
+
+1586983363
+ifreund
+Xavi92: yes (self: Self) is preferred everywhere that you can use it
+
+1586983373
+Xavi92
+r4pr0n: totally agree with the first point. Not so much with the second point (probably since I'm more used to C than Rust, but I'm fine with both approaches)
+
+1586983417
+Xavi92
+r4pr0n: what's the meaning of the third point? Allowing e.g.: 'if (a) b' instead of 'if (a) {b}'?
+
+1586983425
+Xavi92
+ifreund: thank you very much
+
+1586983474
+ifreund
+no problem
+
+1586983490
+r4pr0n
+no that wouldn't be allowed by #4294 if it would be implemented
+
+1586983505
+companion_cube
+r4pr0n: easier to switch between an expression and a block when adding, say, a debug message
+
+1586983507
+r4pr0n
+i meant more of a: "the language would be easier to understand since those are semantically identical"
+
+1586983602
+Xavi92
+r4pr0n: then it's a pro IMHO. Avoiding the curly brackets has introduced bugs in C and C++ over the years
+
+1586983617
+r4pr0n
+yeah
+
+1586983643
+r4pr0n
+that's the fourth pro, but i'm gonna rephrase that to make it more clear
+
+1586983662
+Xavi92
+In the end, AFAIK encourages K&R curly brace style, so vertical space isn't that much wasted
+
+1586983822
+Xavi92
+I have a proposal too, although it'd break existing code. Don't know if that's a serious issue given current status of the language
+
+1586983858
+r4pr0n
+syntax change?
+
+1586983897
+Xavi92
+Yeah
+
+1586983922
+Xavi92
+Variables/instances/objects/younameit are always created by using either 'const' or 'var'. However, arrays passed to functions may be either '[] type' or '[]const type'
+
+1586983925
+r4pr0n
+now would be the time to do that, after 0.7.0 the syntax is very unlikely to change again
+
+1586983932
+r4pr0n
+s/do/propose
+
+1586983947
+Xavi92
+Why not use '[]var type' to make mutability explicit?
+
+1586983983
+Xavi92
+AFAIK this is the one of the cases in zig where mutability is assumed by default (as in C and C++), instead of making the user choose one
+
+1586984007
+Xavi92
+This leads to const-correctness issues and potential bugs if the user forgets the 'const' qualifier
+
+1586984042
+Xavi92
+Which, from my own experience with many third-party C libraries, is much more common than it should
+
+1586984083
+Xavi92
+Rust forces default immutability and must be explicitly changed by the user by adding the 'mut' qualifier
+
+1586984106
+Xavi92
+I don't think we should do like Rust either, but make the user choose between 'var' or 'const', as with variable definition
+
+1586984124
+ifreund
+Xavi92: pointers are the same: `*Server` vs `*const Server`, tbh it's a valid question and I wonder if there's an open proposal
+
+1586984155
+Xavi92
+ifreund: sure, didn't want to mention pointers as I was not 100% sure, but same applies here
+
+1586984162
+r4pr0n
+added a comment
+
+1586984199
+Xavi92
+IMHO I'd prefer reading '*var Server' over '*Server'. That makes clear what the author intended
+
+1586984240
+r4pr0n
+i'd be fine with omitting the const and making it immutable implicitly actually
+
+1586984293
+Xavi92
+r4pr0n: I'd go for that if variables were defined with 'let'/'let mut'
+
+1586984317
+Xavi92
+r4pr0n: but 'var'/'const' seems to make it more consistent with that part of the language
+
+1586984341
+r4pr0n
+there's
+
+1586984342
+Xavi92
+After all, zig uses 'const' for pretty much "everything"
+
+1586984382
+r4pr0n
+"Also, mutable pointers by default. &const u8 or & u8 to declare a pointer type to u8."
+
+1586984393
+r4pr0n
+seems that this was intended after all, but I don't know why
+
+1586984411
+Xavi92
+r4pr0n: that looks like an arbitrary decision though. I don't know if andrewrk considered using '&var u8'
+
+1586984469
+andrewrk
+I did
+
+1586984481
+Xavi92
+andrewrk: why wasn't it considered?
+
+1586984502
+andrewrk
+it was considered
+
+1586984531
+Xavi92
+I mean, why was '&u8? chosen over '&var u8'?
+
+1586984720
+Xavi92
+andrewrk: IMHO default mutability has surely caused many issues on C and C++ over the years. I'm not saying zig should go for default mutability for pointers and arrays, but making mutability explicit surely would help avoiding them in zig
+
+1586984752
+Xavi92
+...go for default immutability*
+
+1586984836
+TheLemonMan
+hazeycode, that's not a backtrace, you need the `bt` command in lldb to get one
+
+1586984867
+gonz_
+The release notes for 0.6.0 reads super well. I'm impressed with the breadth of the changes as well as the write-up itself.
+
+1586984873
+gonz_
+Well done, everyone. :)
+
+1586984891
+foobles
+i have to agree with Xavi92, but i doubt that will make it into the language
+
+1586984902
+foobles
+you could write a proposal, assuming it hasn't been done already
+
+1586984905
+Xavi92
+andrewrk: surely forcing the user to add 'var' on pointers and array parameters would break existing code, so for the next versions a warning could be emitted instead of an error
+
+1586985002
+Xavi92
+Until a given version of the compiler stops supporting then-legacy '[]type' and '*type', emitting an error
+
+1586985023
+Xavi92
+foobles: thanks. Now that it sounds like a reasonable proposal for other people as well, I'll post it on github
+
+1586985128
+shakesoda
+i kinda feel like the comfort of it as is is preferable
+
+1586985165
+shakesoda
+i don't really take any ideological issue against it though
+
+1586985172
+shakesoda
+s/take/have/
+
+1586985202
+foobles
+coming from rust, I realized that in C i want const 90% of the time
+
+1586985209
+Xavi92
+shakesoda: sure, []type and *type are more comfortable to write. And that's usually a problem
+
+1586985220
+foobles
+^^^^ exactly
+
+1586985242
+shakesoda
+i dunno if i'd say it's usually a problem
+
+1586985246
+shakesoda
+it is occasionally one
+
+1586985277
+Xavi92
+shakesoda: I mean it's a problem because we programmers are lazy, and we prefer omitting a keyword than adding zero-cost safety
+
+1586985316
+foobles
+I would much rather forget to make something mutable, and then change the interface to be more inclusive, than to erroneously accept mutability and have to restrict the interface
+
+1586985337
+shakesoda
+and absolute refusal to allow some laziness is why i can't tolerate rust :)
+
+1586985361
+shakesoda
+i'm just not especially sold on it being worthwhile
+
+1586985369
+Xavi92
+foobles: that's the ideal approach if I were to write a new language. But given how zig operates, a balanced approach can be taken
+
+1586985406
+Xavi92
+shakesoda: then don't take default immutability, but make the user choose between 'var' and 'const'
+
+1586985408
+r4pr0n
+shakesoda: the problem is that the lazy way (omitting the mutability specifier) is the less restrictive way
+
+1586985490
+Xavi92
+shakesoda: that's pretty much the same effort as writing 'var' or 'const' when defining a variable
+
+1586985542
+Xavi92
+shakesoda: and honestly I hope people in zig don't type 'var' over 'const' just because it's two characters shorter
+
+1586985643
+foobles
+what would you think of getting rid of const-specifiers on pointers altogether?
+
+1586985652
+shakesoda
+i don't specifically have a desire for adding yet more specifiers all over the place
+
+1586985668
+foobles
+replace const with var in pointers
+
+1586985672
+foobles
+so its const-by-default
+
+1586985688
+foobles
+i would not mind that at all
+
+1586985689
+Xavi92
+shakesoda: ^^^^ it's just making the user choose between one or other
+
+1586985690
+shakesoda
+that would help a lot to offset visual noise of it
+
+1586985718
+shakesoda
+things are already const by default in a lot of situations though
+
+1586985738
+foobles
+when?
+
+1586985743
+shakesoda
+parameters
+
+1586985753
+foobles
+ah thats true
+
+1586985757
+Xavi92
+Sure, and I love that approach
+
+1586985760
+foobles
+me too
+
+1586985768
+shakesoda
+most of the mutability concerns are related to parameters to begin with
+
+1586985787
+Xavi92
+Not really, or probably not a concern in C-like languages
+
+1586985792
+Xavi92
+Pretty much the opposite
+
+1586985805
+Xavi92
+Mutability is a concern with pointers, essentially
+
+1586985821
+ifreund
+i think const by default for pointers would be inconsistent with having const/var instead of e.g. let/let mut
+
+1586985844
+Xavi92
+ifreund: that's why I prefer '[]var type'/'[]const type' for zig
+
+1586985852
+ifreund
+my vote would be fore `*var` and `*const`
+
+1586985855
+Xavi92
+Makes it much more consistent
+
+1586985860
+Xavi92
+ifreund: exactly
+
+1586985883
+foobles
+i would be fine with that
+
+1586985884
+Xavi92
+So, winning 3vs2 so far :)
+
+1586985891
+r4pr0n
+im torn, on one hand immutability by default would be much easier to use
+
+1586985895
+foobles
+although i would prefer `*T` and `*var T`
+
+1586985901
+r4pr0n
+but consistency is also important
+
+1586985902
+foobles
+where `*T` now is const
+
+1586985902
+Xavi92
+Unless andrewrk's opinion weights x100 :P
+
+1586985911
+foobles
+he is the bdfl right now, right?
+
+1586985914
+shakesoda
+given what i would describe as "a crapton" of * things all over the place i don't really want to force writing the specifier everywhere
+
+1586985930
+foobles
+yeah
+
+1586985931
+r4pr0n
+Xavi92: did you make a proposal
+
+1586985932
+ifreund
+default immutability is easier but less explicit, it goes against zig zen imo
+
+1586985939
+r4pr0n
+/s/proposal/proposal?/
+
+1586985952
+Xavi92
+r4pr0n: no, I'm on it. I'm glad to know some of you agree
+
+1586985953
+shakesoda
+Xavi92: andrewrk has veto power over anything lol
+
+1586985982
+Xavi92
+That makes 3vs10000000000000000000001 then :)
+
+1586986020
+companion_cube
+ifreund: how is it less explicit, again? :D
+
+1586986025
+companion_cube
+it's mutability that should be explicit
+
+1586986048
+hazeycode
+I vote for pointers immutable by default :D  make mutable explicitly
+
+1586986058
+ifreund
+companion_cube: for someone that is not familiar with zig, `*const` and `*var` are instantly understandable
+
+1586986059
+hazeycode
+(not sure I have a vote) :D
+
+1586986078
+r4pr0n
+^
+
+1586986094
+foobles
+i would vibe with that 8)
+
+1586986095
+shakesoda
+generally speaking one should probably make language decisions for the users of that language
+
+1586986121
+ifreund
+more importantly, it's consistent with const/var for variable declarations
+
+1586986121
+shakesoda
+not with utter disregard for everyone else, but a fairly strong bias
+
+1586986128
+foobles
+thats true too ifreund
+
+1586986135
+foobles
+i like that perspective
+
+1586986227
+Xavi92
+shakesoda: my proposal is specifically meant for zig
+
+1586986240
+shakesoda
+that was directed at the "for someone that is not familiar" comment
+
+1586986252
+shakesoda
+which probably shouldn't be a driving force here
+
+1586986277
+Xavi92
+shakesoda: I don't want it to have (at least one) of the issues C already suffers from. I'm tired of reading third-party C libraries from well-know manufacturers that know nothing about const-correctness
+
+1586986304
+shakesoda
+in the scope of real software bugs, const correctness is so low it barely even registers
+
+1586986328
+shakesoda
+not that i think it doesn't matter
+
+1586986350
+Xavi92
+shakesoda: that's like saying malloc() should never be checked against NULL since it's a very rare condition
+
+1586986356
+companion_cube
+ifreund: well why would they know `var`?
+
+1586986361
+Xavi92
+And then you have undefined behaviour unexpectedly
+
+1586986374
+shakesoda
+it is most certainly not like that
+
+1586986392
+companion_cube
+the principle of least surprise matters a lot more to beginners, than keywords vaguely resembling other languages
+
+1586986440
+ifreund
+companion_cube: imo it's pretty clear that var is short for variable/variablity and the opposite of const short for constant
+
+1586986511
+companion_cube
+if you see `*const T` first
+
+1586986516
+companion_cube
+otherwise it's just weird
+
+1586986586
+Xavi92
+companion_cube: does that mean *var T would sound weird to beginners?
+
+1586986623
+companion_cube
+well, beginners will find things weird anyway
+
+1586986635
+shakesoda
+fwiw i don't think var is good to put in a type specifier anyways, it's too overloaded there
+
+1586986644
+hazeycode
+with immutable by default, a new user not thinking about pointer immutability with just use *T types happily, until they try to a) mutate a pointer they shouldn't have and get told off by the compiler and correct their mistake or b) try to write some pointer mutating code and get told by the compiler to use *var T. That's a nice onboarding
+
+1586986645
+hazeycode
+experience, and I don't have to write const everywhere :)
+
+1586986647
+companion_cube
+(*mut T? :D)
+
+1586986664
+hazeycode
+:D  :D  I refrained from that
+
+1586986693
+afontain_
+^ this
+
+1586986743
+Xavi92
+Not that I'm against 'mut', but I don't see the need when we already have 'var'
+
+1586986753
+shakesoda
+var already does other things.
+
+1586986764
+shakesoda
+including things when used in types
+
+1586986803
+afontain_
+`f(*var int)` ?
+
+1586986814
+shakesoda
+e.g. parameter type var is totally legal and commonly used, and that then leaves you with things possibly like *var var
+
+1586986861
+hazeycode
+ok *mut T is sounding reasonable
+
+1586986911
+Xavi92
+I'm about to submit the proposal. Would you all prefer '*mut type' and '[]mut type'?
+
+1586986913
+shakesoda
+if we're talking about changing the semantics of things like this then rust's mut sounds fine and we can just kill const
+
+1586986957
+shakesoda
+my support is still kind of low, but it's a lot better than further overloading `var`
+
+1586986964
+ifreund
+imo that's not the right way to go, this proposal needs to be in the context of and consistent with the current language
+
+1586986983
+ifreund
+that means `*const foo` and `*var foo` imo
+
+1586986989
+shakesoda
+well yeah, and using var here doesn't fit the current language
+
+1586987003
+shakesoda
+because var does very much different things in some of the same places
+
+1586987027
+ifreund
+`*var` isn't valid now, why would `*var var` be valid?
+
+1586987055
+Xavi92
+Alright, I'll submit the proposal with 'var' (which is what I came up with initially) and add a foot line where 'mut' could be also considered
+
+1586987071
+ifreund
+sounds good to me
+
+1586987116
+ifreund
+shakesoda: and please do add a comment mentioning the confusing with var as a type so that sees formal discussion
+
+1586987126
+ifreund
+*confusion
+
+1586987151
+Xavi92
+ifreund: oh, you're right
+
+1586987163
+ifreund
+Xavi92: about what?
+
+1586987166
+Xavi92
+Hadn't thought of 'var' as a type
+
+1586987189
+Xavi92
+Which I still don't fully understand what 'var' is when used as a type
+
+1586987198
+shakesoda
+it's a placeholder
+
+1586987199
+nycex
+ifreund: it is going to be renamed
+
+1586987201
+nycex
+
+
+1586987214
+ifreund
+nycex: ah perfect
+
+1586987228
+ifreund
+Xavi92: just link that then and it should be all good :D
+
+1586987230
+shakesoda
+well, that resolves that complaint
+
+1586987234
+hazeycode
+cool! anytype makes more sense :D
+
+1586987238
+Xavi92
+Sure, thank you all for the tips!
+
+1586987246
+ifreund
+that makes me feel all warm and fuzzy now
+
+1586987256
+nycex
+yeah, someone thought the var stands for varargs when he read the format code, so that was kinda confusing
+
+1586987353
+ifreund
+anytype is for sure a big improvement
+
+1586987391
+Xavi92
+nycex: so did I. Actually, couldn't really explain what 'var' meant as a type if I had to
+
+1586987404
+nycex
+me too actually :D
+
+1586987425
+Xavi92
+
+
+1586987426
+nycex
+to the second one, i guess "variable type"
+
+1586987444
+Xavi92
+Please feel free to comment and provide suggestions / improvements
+
+1586987624
+shakesoda
+threw mine in, minus the resolved var ambiguity
+
+1586987663
+shakesoda
+i don't know how it sounds but my actual attitude is mostly indifferent, i just really don't want this to cause more visual noise than zig already has
+
+1586988516
+kenaryn
+Hello, please how can I activate `-fmem-report`? I do not know where and how to put 'ON' on `-DZIG_ENABLE_MEM_PROFILE`.
+
+1586988777
+kenaryn
+It may be found in
+
+1586989095
+Xavi92
+shakesoda, nycex: Thanks for your comments!
+
+1586989175
+Xavi92
+Bed time. See ya!
+
+1586989482
+r4pr0n
+good night
+
+1586989549
+nycex
+kenaryn: looks like an argument for cmake
+
+1586989623
+kenaryn
+I thought it was related to zig compiler.
+
+1586989730
+nycex
+yeah, you compile zig via cmake and (make on linux/msbuild on windows)
+
+1586989751
+nycex
+see the readme
+
+1586989912
+kenaryn
+Thank you nycex :)
+
+1586989928
+nycex
+happy to help :D
+
+1586990264
+foobles
+can I get some help implementing my compiler feature? I am trying to implement runtime comparison of optionals (non-pointer), by expanding `x == y` into `((x==null) == (y==null)) and ((x==null) or (x.? == y.?))`
+
+1586990274
+foobles
+`((x==null) == (y==null)) and ((x==null) or (x.? == y.?))`
+
+1586990333
+foobles
+and `x != y` will become `((x==null) != (y==null)) or ((y!=null) and (x.? != y.?))`
+
+1586990343
+foobles
+
+
+1586990360
+foobles
+here is my attempt at an implementation, but i believe it is eagerly trying to evauate the unwraps
+
+1586990369
+foobles
+and is not short circuiting
+
+1586990403
+foobles
+also for some reason, I have to convert bools to u8s before comparing them for equality, or else code gen fails (which doesnt make sense)
+
+1586990408
+foobles
+can anyone help with this?
+
+1586990969
+mikdusan
+foobles: a short-circuiting `and` ... a branch is required?
+
+1586990986
+foobles
+yeah probably :(
+
+1586990998
+foobles
+will i be needing to mess with phi and stuff for that?
+
+1586991018
+foobles
+wait ill look at what you posted
+
+1586991024
+foobles
+since you had something sort of like that right?
+
+1586991127
+foobles
+hmm i dont see any branching
+
+1586991132
+mikdusan
+no, I just had runtime code doing simplest thing: unwrap until nothing to unwrap and then continue ir_build_bin_op_gen proper
+
+1586993173
+copy
+Do I correctly understand
+
+1586993562
+fengb
+I believe just libc
+
+1586993604
+fengb
+Oh wait maybe. Mac’s libc is also the syscall layer
+
+1586993899
+r4pr0n
+i don't know if the compiled binary works, but zig build-exe -target x86_64-macosx hello_world.zig works without erroring and produces a binary
+
+1586994059
+copy
+Indeed my observation so far is that it compiles but fails to run
+
+1586994078
+r4pr0n
+may be, i have no machine to test on
+
+1586994740
+grant_
+I am trying to build stage 1 on fedora 31, I get this error right away `CMake Error: CMake was unable to find a build program corresponding to "Unix Makefiles".`
+
+1586994786
+grant_
+I'm not familiar with cmake, is this not set in this release, should I change the cmake files myslef
+
+1586994800
+waleee-cl
+grant_:  do you have make installed?
+
+1586994848
+grant_
+ah no, my bad
+
+1586994857
+grant_
+I'm rather suprised it was not installed...
+
+1586994860
+grant_
+sorry about that
+
+1586994893
+waleee-cl
+redhat-based distros are often surprisingly sparse with buildtools as the default
+

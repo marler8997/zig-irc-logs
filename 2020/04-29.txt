@@ -1,0 +1,1796 @@
+1588118528
+pmwhite
+oh, i see...my mind skipped over the threadspawn.
+
+1588118536
+pmwhite
+that's kind of annyoing...i was hoping to stay single-threaded.
+
+1588118566
+mikdusan
+the catch is... if you feed/read you either need 1 thread beyond current thread, or async IO
+
+1588118589
+pixelherodev
+Why can't you just check how much data is available within one thread?
+
+1588118599
+pixelherodev
+I've run subprocesses and monitored output single threaded before...
+
+1588118617
+mikdusan
+well I'm assuming spin-checking is to be avoided
+
+1588118692
+pmwhite
+no, that's fine. I'm planning to check before rendering each frame. I mean, I don't need to have anything until I want to show it to the user.
+
+1588118698
+pmwhite
+I'm making a terminal emulator by the way.
+
+1588118792
+pmwhite
+pixelherodev: yeah, that's what I'd like to do. I don't know how to do check how much data is available, though...
+
+1588118989
+pmwhite
+hmmm, I think `poll` or `select` can be called to return immediately if no data is available.
+
+1588119026
+mikdusan
+what if the child is slow?
+
+1588119043
+fengb
+You beat them?
+
+1588119048
+mikdusan
+there is that
+
+1588119189
+pmwhite
+that's the case I'm worrying about. if the child is slow, then I don't want to block waiting for it to send data, since I have other things to do.
+
+1588119259
+pmwhite
+if the child is fast, then I could still end waiting, but it wouldn't be as bad i guess.
+
+1588119814
+pmwhite
+wait, so how do I get the file descriptor from the stdin File? There is a handle field, but I don't know if that is the same. I need the file descriptor to pass to `poll`.
+
+1588120099
+mikdusan
+in the parent, `child.stdout.?.handle`
+
+1588120150
+pmwhite
+Okay, so the handle is that same as the fd?
+
+1588120159
+mikdusan
+yup
+
+1588120241
+mikdusan
+also an old +1 thread workaround if you don't have async IO, is to write feed bytes to a tmp file, open the file for read, pass it as "stdin" to child
+
+1588120290
+mikdusan
+and by "old" I mean fengb-old
+
+1588120300
+fengb
+🦖
+
+1588120310
+daurnimator
+if you have <4096 bytes of data you can shove them in a fifo
+
+1588120407
+mikdusan
+the pipe is a fifo. if that indeed is the minimum he can just write to it after spawning child
+
+1588120423
+mikdusan
+or maximum safe. whatever
+
+1588120451
+pixelherodev
+poll/select should be fine though, right?
+
+1588120825
+mikdusan
+I think that answer depends on how the polling is done. if you're checking for EWOULDBLOCK then a blocking-fd might be an issue. I could be hazy on the actual details. so rtfm
+
+1588120854
+mikdusan
+s/could be hazy/am hazy/
+
+1588120873
+daurnimator
+EWOULDBLOCK/EAGAIN is the only way really
+
+1588120905
+pmwhite
+Nothing beats just trying things.
+
+1588121383
+demizer
+Hi everyone. I am trying to learn zig by updating libraries on github to zig 0.6. I am having trouble with understanding an error message I am getting when trying to pass a FixedBufferAllocator.allocator to an ArrayList.init(). The error is: ./src/time.zig:875:45: error: expected error union type, found 'std.array_list.AlignedArrayList(u8,null)'
+
+1588121384
+demizer
+var buf = try std.ArrayList(u8).init(alloc);
+
+1588121456
+demizer
+I looked at ArrayList.init() code and don't see an error union return type
+
+1588121493
+tdeo
+you are using `try` on a function that can't fail
+
+1588121634
+pixelherodev
+demizer, std.ArrayList.init can no longer return an error
+
+1588121638
+pixelherodev
+The try isn't needed anymore
+
+1588121670
+demizer
+Ah, thanks a bunch! I've been stuck on this for a day or two.
+
+1588121677
+pixelherodev
+:)
+
+1588121708
+daurnimator
+demizer: the error is saying "`try` expects an error union type but got something else"
+
+1588121732
+demizer
+I was completely looking in the wrong place. :]
+
+1588122002
+foobles
+what is the best way to generate IR to unwrap a guaranteed non-pointer optional?
+
+1588122010
+foobles
+with no safety?
+
+1588122031
+foobles
+i looked at the implementation of ir_render_optional_unwrap_ptr
+
+1588122043
+foobles
+but that seems to handle  a bunch of edge cases im not sure are necessary
+
+1588122145
+foobles
+and is especially complex because it requires a pointer to the optional for some reason
+
+1588122561
+mikdusan
+ir_render_optional_unwrap_ptr is not suitable for your needs. roll your own. I can't speak for the pointer question, but start off understanding you'll need a CondBr but the fail_block (meaning null) will instead of gen_safety_crash will just return false in your the codegen compare function I presume you're working in
+
+1588122799
+foobles
+yep, thats the plan
+
+1588122812
+foobles
+huh ok, i guess I could just look at what it's doing
+
+1588122984
+mikdusan
+first "if" is safety check. you'll be doing similar except for the if-null then return a bool;
+
+1588122998
+mikdusan
+second "if" is dealing with types in zig that have 0-bits
+
+1588123019
+mikdusan
+and a 0-bit type always has "0" as the value iirc
+
+1588123181
+mikdusan
+"else" for second "if" handles types with actual info bits; the first sub-if looks to me (I'm not certain) if it's a struct or not (scalar). if a simple scalar the base_ptr already suffices. I believe this would be the case for "?*T" because a pointer itself is the scalar, and the optional is it's zero value;
+
+1588123221
+mikdusan
+otherwise it's a struct. we represent non-pointer optionals as a 2 field struct. the non-null-bit and the value (sorry cannot recall actual field names, just winging it).
+
+1588123363
+mikdusan
+so "maybe_null_index" is the field-index into that struct. llvm instruction LLVMBuildStructGEP is going to get a pointer to that field
+
+1588123375
+foobles
+oh awesome
+
+1588123375
+foobles
+ok
+
+1588123387
+mikdusan
+the first use is "maybe_null_index" which is 1
+
+1588123390
+foobles
+well the zero-bit check can be done inside the rendering function
+
+1588123401
+foobles
+instead of a runtime check definitely
+
+1588123409
+foobles
+but the null-check has to be runtime
+
+1588123409
+mikdusan
+the second use is "maybe_child_index" which is 0. so those correspond to fields [0] and [1] where 0 is the ACTUAL PAYLOAD
+
+1588123424
+foobles
+aaah ok cool
+
+1588123447
+foobles
+thats why unwrapping the optional, if its a non-pointer, just returns the pointer back
+
+1588123452
+foobles
+since the data is first
+
+1588123488
+mikdusan
+so a sanity check ultimately is when you see .ll from your PR, the basic_block for getting the value is LLVMBuildStructGEP with index 0
+
+1588123521
+foobles
+what is `.ll`
+
+1588123530
+mikdusan
+llvm-ir human readable
+
+1588123537
+foobles
+oh ok cool
+
+1588123542
+foobles
+thank you so much :)
+
+1588123621
+mikdusan
+so just as we do --verbose-ir to see zig's IR, use --verbose-llvm-ir to see .ll or, even easier imo, -femit-llvm-ir and it produces .ll file
+
+1588123663
+foobles
+when running zig build?
+
+1588123689
+mikdusan
+well to whatever is running `zig build-obj` command.
+
+1588124344
+andrewrk
+I think SSAT is going to solve all our result location bugs. this coming out squeaky clean.
+
+1588124356
+andrewrk
+
+
+1588124367
+andrewrk
+tab back and forth between those
+
+1588124392
+andrewrk
+this is almost certainly worth backporting to stage1
+
+1588125033
+mikdusan
+anything that simplifies result-location in ir will be huge
+
+1588125106
+mikdusan
+I see in that zir condbr() and {}! I guess that means cfg intermixed with SSA. I can dig it. I hope that works out.
+
+1588125238
+mikdusan
+have you fleshed out anything towards uber-passes; allowing arbitrary instruction insertion/deletion including flow control?
+
+1588125713
+andrewrk
+mikdusan, yeah that's the T part of it (Tree)
+
+1588125732
+andrewrk
+have not done anything with passes yet
+
+1588125806
+andrewrk
+my goal is to iterate towards a non-trivial long computation, and do some performance testing and resource usage testing of a long running comptime loop
+
+1588125862
+andrewrk
+something that activates the comptime garbage collector
+
+1588125873
+andrewrk
+see if we can get better than CPython perf for equivalent code
+
+1588127148
+foobles
+how do you create a runtime boolean when generating LLVM IR?
+
+1588127153
+foobles
+i can't find the function to do it
+
+1588127186
+foobles
+nevermind, is it render_const_value? :p
+
+1588127221
+andrewrk
+foobles, that uses the LLVM API to make an llvm const value
+
+1588127234
+foobles
+oh, hmm
+
+1588127236
+andrewrk
+based on an already existing ZigValue
+
+1588127244
+foobles
+aah ok
+
+1588127247
+andrewrk
+if you want to directly create an llvm bool value, it's actually just an i1
+
+1588127259
+foobles
+and how would you do that?
+
+1588127310
+andrewrk
+an i1 is the result of LLVMBuildICmp, or you can truncate a larger int down to an i1, or you can directly create it with LLVMConstInt
+
+1588127345
+foobles
+LLVMConstInt, ok awesome
+
+1588127365
+foobles
+thanks; im trying to just insert a boolean known at comptime into a basic block
+
+1588127369
+andrewrk
+np
+
+1588127377
+andrewrk
+using the ir builder is fun :)
+
+1588127591
+mikdusan
+zir.builder ftw
+
+1588127710
+andrewrk
+foobles & mikdusan: this is a good time to pay attention to what's happening with ZIR (right now in the stage2-tests branch). I'm working on getting this to a contributor friendly point as soon as possible, and happy to answer any questions you have about the direction things are headed
+
+1588127734
+andrewrk
+as well as concerns or other ideas
+
+1588127822
+foobles
+: )
+
+1588127851
+foobles
+heh, well i believe you; i see 2 new commits to ZIR from 3 minutes ago :b
+
+1588127943
+andrewrk
+I predict (and am working to make it a self-fulfilling prophecy) that this will be a fun and meaningful area to contribute to
+
+1588128342
+andrewrk
+pixelherodev same to you ^ and anyone else who wants to be involved in self-hosted
+
+1588128659
+daurnimator
+
+
+1588128681
+daurnimator
+some interesting things in there; e.g. `block` as a keyword: `block { .... }`
+
+1588130019
+mikdusan
+one thing I like about inverted blocks is this pattern: `block { if (!comptime) break; if (foo % 2 == 0) break; work(); }` -- it helps avoid ugly formatted multi-line conditionals... and it's short-circuit oriented which reads easier imo
+
+1588130120
+mikdusan
+for goto fans stuck using structured programming :P
+
+1588131632
+tdeo
+anyone have ideas on how to make the ErrorSet TypeInfo struct compatible with @Type?
+
+1588131665
+tdeo
+simplest (and only one i can think of) way is just to make value `?comptime_int`, and guarantee that to always be non-null when returned from @typeInfo
+
+1588131692
+tdeo
+then if you pass an explicit one to @Type it only works if the error already exists and has that exact value?
+
+1588131701
+tdeo
+or it could always fail if you pass a non-null value to @Type
+
+1588131860
+mikdusan
+can you just ignore the in-value of builtin.Error.value ?
+
+1588131973
+tdeo
+yeah
+
+1588131987
+tdeo
+i feel like that's still unintuitive but works well, no unwrapping when you use @typeInfo
+
+1588132046
+mikdusan
+a super-clean interface would be... @Type takes a "builder" variant of builtin.Error ... but is this the only type thus far with such a field? if it is, meh, document it as "no meaning / ignored"
+
+1588132188
+tdeo
+there's also the problem that EnumField also doesn't let you omit the value... but i don't think it's bad for every user of @Type to manually implement a simple counter
+
+1588132201
+tdeo
+does zig always start from zero and go up by one if you don't supply an enum value?
+
+1588132355
+fengb
+daurnimator: shoulda used zig instead :P
+
+1588132591
+mikdusan
+yeah we're double-purposing a struct for both @typeInfo(), and for @Type()... one could change @Type to take builtin.TypeInfoBuilder, and map every union tag identically, except for ErrorSet and Enum, and have them use new suitable TypeInfo.ErrorSetBuilder and TypeInfo.EnumBuilder types
+
+1588132816
+mikdusan
+actually, why does it have to take builtin.TypeInfo? why not `(comptime tagname: []const u8, builder: var)` - I presume stage1 is already switching on tagname; this way you expect 2 custom types, don't get it, emit an error
+
+1588133036
+mikdusan
+today isn't it something like: `var e = builtin.Enum{...}; var T = @Type{.{ .Enum = e });` ... compare to:
+
+1588133067
+mikdusan
+`var T = @Type( "Enum", e );` (sorry I had bad outer braces in previous @Type())
+
+1588133095
+mikdusan
+and to be convenient if we're switching.... @Type( .Enum, e )
+
+1588133113
+tdeo
+i think the simplicity of having a single type is fine unless there's really one that
+
+1588133139
+tdeo
+but if there are more problems, yeah, there could be @Type(id: builtin.TypeId, builder: builtin.TypeBuilder) or something
+
+1588133241
+mikdusan
+small adj. if it's 2 args then sending in a union is redundant
+
+1588133255
+tdeo
+ah yeah
+
+1588133279
+mikdusan
+2 args was just a tweak to avoid making a mapping union; the switch
+
+1588133305
+mikdusan
+(grain of salt. flying blind here, never looked at @Type impl)
+
+1588133328
+tdeo
+the union seems fine though, type safety is good
+
+1588152860
+ifreund
+aaaah why doesn't my project build on musl
+
+1588153060
+tdeo
+ifreund: do you define _POSIX_C_SOURCE/_GNU_SOURCE?
+
+1588153063
+tdeo
+might be that
+
+1588153090
+ifreund
+tdeo: don't think i do, will give it a try
+
+1588153099
+ifreund
+though i'm sure wlroots does
+
+1588153980
+ifreund
+hmm, it doesn't seem to help sadly, tried both @cDefine("_GNU_SOURCE", {}); and @cDefine("_POSIX_C_SOURCE", "200808L");
+
+1588154025
+ifreund
+and yeah wlroots setting it wouldn't make any sense. sway uses posix 200809L though
+
+1588154891
+ifreund
+hmm, seems that with musl there's a bitfield in timespec, so it can't be translated
+
+1588155407
+ifreund
+glibc is totally using a bitfield too though
+
+1588156371
+ifreund
+so yeah it seems like musl support is blocked by
+
+1588161849
+Snektron
+yea it turns out bitfield layout isn't defined by the C standard
+
+1588161936
+tdeo
+well normal struct layout isn't defined either :)
+
+1588161961
+ikskuh
+tdeo: in C it is
+
+1588161971
+tdeo
+in the c standard or the abi standard?
+
+1588161974
+ikskuh
+at least "it's sequential"
+
+1588161984
+ikskuh
+yes
+
+1588162006
+ikskuh
+you are allowed to assume that structs that have the same prefix will share these prefixes with the same layout
+
+1588162007
+ikskuh
+so
+
+1588162015
+tdeo
+ah, i knew that the pointer to first field is interchangable with the main pointer but not that it's sequential
+
+1588162018
+ikskuh
+struct Base { int type; int size; };
+
+1588162027
+ikskuh
+struct Derived { int type; int size; int value; }
+
+1588162033
+ikskuh
+are compatible for the first two fields
+
+1588162217
+ifreund
+anyone know why zig is able to translate the glibc version? i don't get it, but my C knowlege also breaks down around this level
+
+1588162251
+ikskuh
+ifreund: glibc version is actually an ELF feature and has nothing to do with C
+
+1588162255
+tdeo
+does it still work if you paste the definition you found into a file and translate that? it might be using a different definition for some reason
+
+1588162262
+ifreund
+ikskuh: wonderful :D
+
+1588162393
+ikskuh
+ifreund: it allows you to embed several functions with the same symbol name, but different versions in an ELF file
+
+1588162517
+ifreund
+makes sense
+
+1588162563
+ifreund
+i guess my only option for a workaround is writing the code that need to use timespec in C and linking that
+
+1588162595
+tdeo
+
+
+1588162654
+ifreund
+i'm already doing this actually to use some other headers that can't be translated
+
+1588162683
+ifreund
+this one would likely be a good bit more invasive though
+
+1588162753
+ifreund
+hopefully some awesome person will figure out how to fix #1499 before zig 0.7.0
+
+1588162786
+tdeo
+well, you could have a header file that, if it detects you're not using glibc (because you can't detect musl), defines the timespec struct and defines __DEFINED_struct_timespec
+
+1588162791
+tdeo
+then include it before the others
+
+1588162911
+ifreund
+sounds fun, I'll give that a go later today
+
+1588162919
+ifreund
+thanks
+
+1588165870
+pixelherodev
+How to enhance productivity: `sudo ip netns add no_internet && sudo ip netns exec no_internet su - $USER` :P
+
+1588169112
+pmwhite
+so, when I try to use `std.os.execvpe`, the compiler complains that I'm discarding the error if I do `_ = ...`, but it complains that it is expecting an error union type if do `... catch unreachable`.
+
+1588169149
+pmwhite
+Not sure what it wants from me.
+
+1588169220
+TheLemonMan
+money
+
+1588169252
+TheLemonMan
+keep inserting unmarked bills in the cd drive until it stops complaining
+
+1588169307
+pmwhite
+how often has that worked for you?
+
+1588169359
+TheLemonMan
+more than I'd like to admit
+
+1588169364
+fengb
+It works once eventually
+
+1588169376
+TheLemonMan
+execvpe returns a single error value, not an error union
+
+1588169394
+TheLemonMan
+why? who knows!
+
+1588169444
+TheLemonMan
+oh, I think it's because noreturn!E doesn't work
+
+1588169445
+pmwhite
+hmmm, now I'm getting a different error: "expected USD, but found monopoly money"
+
+1588169447
+pmwhite
+yeah, i saw that. what am i supposed to do with a single error value return type?
+
+1588169509
+pmwhite
+Is that a planned feature?
+
+1588169514
+TheLemonMan
+well if execvpe returns you have an error, if it doesn't return the child is executing
+
+1588169522
+tdeo
+assign it to a variable and do nothing with it?
+
+1588169526
+tdeo
+not sure if that works
+
+1588169537
+tdeo
+then unreachable;
+
+1588169537
+TheLemonMan
+you can simply switch on it
+
+1588169579
+pmwhite
+i think tdeo's suggestion works
+
+1588169598
+tdeo
+but yeah you should usually handle that failure :)
+
+1588169602
+TheLemonMan
+yes, it's simple scalar value
+
+1588169683
+pmwhite
+the code i'm writing is pretty jank right now, so my priority is just to get something working. i'm gonna work on getting a cleaner and more correct version later.
+
+1588169703
+pmwhite
+i agree
+
+1588169752
+tdeo
+oh, #3257 is accepted
+
+1588169785
+tdeo
+i hope enum {} and union {} work when that's implemented
+
+1588171062
+pmwhite
+hmmm, neither openpty nor posix_openpt seem to be found the zig compiler. Maybe those aren't included in the shipped libc or something.
+
+1588171669
+pmwhite
+Oh, looks like I need _XOPEN_SOURCE >= 600
+
+1588172600
+pmwhite
+I'm hitting
+
+1588172611
+pmwhite
+`ioctl(slave, TIOCSCTTY, 0)` to be exact - "TODO: support C ABI for more targets...note: pointers, integers, floats...work on all targets"
+
+1588172752
+tdeo
+consider using the syscall directly like
+
+1588172765
+tdeo
+varargs is probably the problem
+
+1588173330
+TheLemonMan
+what's the ioctl definition? are you using the C stdlib one?
+
+1588173408
+pmwhite
+yeah, I'm using the C stdlib one, not one from the zig os layer.
+
+1588173427
+pixelherodev
+How do you specify floating point precision to std.fmt?
+
+1588173478
+pixelherodev
+Ah wait, found it
+
+1588173482
+pixelherodev
+Was looking in the wrong place
+
+1588173516
+TheLemonMan
+weird, varargs should work, at least I remember printf does work
+
+1588173543
+TheLemonMan
+grab the definition from the translate-c file
+
+1588173604
+pixelherodev
+Ahh I see what my issue is; I don't
+
+1588173615
+pixelherodev
+Probably going to need to just split into two decimal components and print those
+
+1588173704
+pmwhite
+TheLemonMan: it seems to be working if I pass a pointer in instead of 0
+
+1588173729
+TheLemonMan
+hmm, try @as(u32, 0) instead of a bare 0
+
+1588173779
+pmwhite
+I'm calling this multiple times, the first one i solved by just not passing the 0. (I was porting this from something that uses NULL as the last argument, so I don't think I needed that last one.
+
+1588173914
+alexnask
+pixelherodev, I think {d:.2} the notation for decimal + 2 decimal points
+
+1588173962
+alexnask
+places*
+
+1588173962
+pixelherodev
+Wait you can do that??
+
+1588173972
+pixelherodev
+argh
+
+1588174119
+ikskuh
+yeah
+
+1588174123
+ikskuh
+formatting is super-versatile
+
+1588174140
+ikskuh
+{X:0>8} → hex, large characters, 8 width, fill with 0
+
+1588174201
+fengb
+It's deceptively flexible. Many of the formatters don't understand options >_>
+
+1588174238
+pixelherodev
+ikskuh, alexnask, thanks!
+
+1588174259
+pixelherodev
+saved me ~seven lines of int->float->int,int conversions :)
+
+1588174263
+alexnask
+:D
+
+1588176589
+TheLemonMan
+is any of you on Windows and have git bash installed?
+
+1588176609
+alexnask
+yeah
+
+1588176705
+TheLemonMan
+can you reproduce #5214 ?
+
+1588176870
+alexnask
+yeah :P
+
+1588176888
+TheLemonMan
+and with this patch?
+
+1588176898
+alexnask
+I have no issues with any other terminals fwiw (cmd.exe and WSL stuff)
+
+1588177409
+alexnask
+TheLemonMan, That fixes it yes
+
+1588177497
+TheLemonMan
+cool, do you mind submitting it? (the value should really be cached as it's an expensive call)
+
+1588177555
+alexnask
+Sure
+
+1588178209
+FireFox317
+andrewrk, regarding the zig self hosted stuff you are working on, is the part where you convert the ir into analyzed ir considered pass1 (src) in the current compiler and the part where you convert the analyzed ir into actual code the pass2 (gen) pass of the current compiler?
+
+1588179385
+andrewrk
+FireFox317, that corresponds to pass2 in stage1
+
+1588179396
+andrewrk
+pass1 would be the part where AST turns into ZIR
+
+1588179522
+TheLemonMan
+so AST -> Semantic analisys -> ZIR ?
+
+1588179668
+TheLemonMan
+andrewrk, this slide deck may be helpful if you need some inspiration
+
+1588179897
+FireFox317
+ah okay yeah that makes sense. Thanks for the clarification :)
+
+1588179984
+andrewrk
+TheLemonMan, I think SSAT is going to solve all our result location woes. the code is squeaky clean doing it this way
+
+1588180283
+FireFox317
+TheLemonMan, i think it is more like: AST -> ZIR (unanalyzed) -> Semantic analysis -> ZIR (analyzed)
+
+1588180349
+andrewrk
+yes ^
+
+1588180379
+andrewrk
+the analyzed version has the types and values in memory while the text format has to render types and values to ZIR instructions
+
+1588180644
+andrewrk
+but this time, bothering to maintain parsing to and from the text format allows a new kind of test coverage
+
+1588180701
+TheLemonMan
+oh so you plan on doing the type-checking on the IR itself?
+
+1588180876
+andrewrk
+yeah that part I dont see why to make it different than stage1
+
+1588180892
+andrewrk
+did you have something in mind?
+
+1588181005
+TheLemonMan
+well you lose some info about the original AST, if you consider a possible implementation of #952 you really want to work on a `For` node rather than a set of blocks & conditional branches
+
+1588181086
+andrewrk
+SSAT uses a tree structure rather than basic blocks & phi nodes
+
+1588181165
+andrewrk
+let me look into how #952 will work
+
+1588181175
+andrewrk
+we can always reference back to the AST - the information is not lost
+
+1588181183
+andrewrk
+each instruction corresponds to source ast nodes
+
+1588181241
+TheLemonMan
+do you have a sketch of what the ZIR for that loop would be?
+
+1588181261
+andrewrk
+one sec
+
+1588181319
+TheLemonMan
+oh another request, what do you think of adding a method to check if a type A can be coerced into type B ?
+
+1588181357
+TheLemonMan
+right now we have to use a ZigType and a ZigValue because we may need to deduce the literal type
+
+1588181379
+andrewrk
+are we talking about stage1 now?
+
+1588181414
+TheLemonMan
+but such a function can return an enum such as { Yes, No, DependsOnValue, YesSameMemoryLayout }
+
+1588181425
+TheLemonMan
+a cooler version of const_cast_only
+
+1588181437
+andrewrk
+where does that need to get used?
+
+1588181441
+TheLemonMan
+stage2 of course, changing that in stage1 is useless
+
+1588181459
+TheLemonMan
+well think of the peer-type resolution
+
+1588181478
+andrewrk
+ah I see how it could clean that up
+
+1588181505
+andrewrk
+makes sense to me. I think we should implement all the hard stuff and buggy cases early in stage2
+
+1588181520
+andrewrk
+so the design can be guided by these cases
+
+1588181533
+andrewrk
+let me get that example for you
+
+1588181611
+TheLemonMan
+oh one more thing to keep into account for the ZIR stage, let's move the panic/stack-trace/error codegen in the IR
+
+1588181619
+andrewrk
+yes!
+
+1588181637
+andrewrk
+fwiw there is an issue for that:
+
+1588181659
+andrewrk
+this will make it attractive to add an additional pass which can try to elide safety checks
+
+1588181698
+TheLemonMan
+hell yeah
+
+1588181927
+andrewrk
+still working on that example
+
+1588183302
+andrewrk
+TheLemonMan,
+
+1588183330
+andrewrk
+I removed the `%foo = ` part from the instructions which return void/noreturn
+
+1588183344
+pixelherodev
+repeat() means go back to the beginning of the loop?
+
+1588183352
+andrewrk
+yes
+
+1588183370
+pixelherodev
+Neato!
+
+1588183386
+pixelherodev
+Does the final ZIR have comptime stuff resolved?
+
+1588183390
+pixelherodev
+Or does that come later in the pipeline?
+
+1588183405
+Sphax
+Hi. in a project I'm using the C library lz4, which works fine with the native target x86_64, but not with i386-linux-gnu. I'm on fedora and have installed lz4-devel.i686 but seems like that's not enough, what am I missing ?
+
+1588183433
+Sphax
+to be clear, I get lz4.h file not found
+
+1588183451
+andrewrk
+pixelherodev, when you process this text format, it gets parsed into untyped, unanalyzed ZIR. then there is a semantic analysis pass, which yes does comptime stuff, and then you can either render to machine code or back to ZIR
+
+1588183457
+pixelherodev
+Sphax, how are you including the library?
+
+1588183467
+pixelherodev
+andrewrk, right, but I mean if I'm going to try writing something on top of ZIR
+
+1588183471
+pixelherodev
+That is, an
+
+1588183474
+pixelherodev
+Or an optimization pass
+
+1588183475
+pixelherodev
+Or so on
+
+1588183480
+pixelherodev
+Will comptime have already been resolved?
+
+1588183483
+FireFox317
+pixelherodev, yes, see this gists by andrew:
+
+1588183489
+pixelherodev
+Perfect :D
+
+1588183520
+FireFox317
+keep in mind there is a subtle difference in the two, it took me some time to figure out what
+
+1588183532
+andrewrk
+Sphax, when cross compiling you will have to specify the paths to the header files and lib files
+
+1588183551
+pixelherodev
+FireFox317, int(69) vs int(70)?
+
+1588183560
+andrewrk
+perhaps the native system path detection could be improved to detect common conventions for cross compilation libraries installed
+
+1588183579
+FireFox317
+pixelherodev, yes, and do you see the different outputs it generated
+
+1588183580
+FireFox317
+?
+
+1588183587
+andrewrk
+FireFox317, it helps if you tab back and forth quickly :)
+
+1588183597
+pixelherodev
+Yeah
+
+1588183600
+pixelherodev
+That's what I'm doing :)
+
+1588183603
+pixelherodev
+unreachable vs return
+
+1588183619
+pixelherodev
+Yeah this looks awesome
+
+1588183635
+pixelherodev
+Really really tempted to start working on a Zig REPL using it
+
+1588183647
+FireFox317
+:O
+
+1588183649
+pixelherodev
+Forcing myself to wait for it to mature a bit is painful
+
+1588183672
+Sphax
+pixelherodev: I'm using linkSystemLibrary:
+
+1588183678
+pixelherodev
+I'll just have to keep improving the pieces I plan on integrating with it later
+
+1588183681
+pixelherodev
+Sphax, yeah, that won't help
+
+1588183692
+pixelherodev
+For cross-compilation, it's not a system library as I understand it
+
+1588183735
+pixelherodev
+See `when cross compiling you will have to specify the paths to the header files and lib files` from slightly up
+
+1588183799
+FireFox317
+andrewrk, damn that is some complicated ZIR :D especially when you are not used to looking at stuff like LLVM IR etc xd
+
+1588183838
+Sphax
+alright thanks, I'll try that. I also just realized that by installing the i686 package from fedora it broke the x86_64 build because zig thinks /lib/liblz4.so is the x86_64 lib but it isn't on fedora
+
+1588183843
+TheLemonMan
+andrewrk, cool, so that issue is solved by running the reachabbility analysis pass after the other simplifications are done
+
+1588183850
+TheLemonMan
+andrewrk, what about #707 ?
+
+1588183854
+Sphax
+is that a bug with fedora or with zig ?
+
+1588183902
+TheLemonMan
+that's slightly more involved as it's related to type-checking
+
+1588183913
+Sphax
+the error I'm getting fyi:
+
+1588183915
+andrewrk
+TheLemonMan, for #952, the way I see this working is the while loop cmp instruction will be comptime resolved as `true`. so the condbr flattens out, only the "true block" gets kept. then there are no "merge(break)" calls anymore, so zig knows the code after the "break" label is unreachable
+
+1588183931
+andrewrk
+looking at 707
+
+1588183937
+pixelherodev
+What are the semantics of merge?
+
+1588183954
+TheLemonMan
+merge is some kind of goto?
+
+1588183958
+alexnask
+Yeah I was going to ask to
+
+1588183960
+andrewrk
+pixelherodev, it's this:   const x = foo: { ...  ;  break :foo y};
+
+1588183965
+alexnask
+Is it like 'break' in this context?
+
+1588183970
+pixelherodev
+Ahh, interesting
+
+1588183981
+pixelherodev
+So yeah, both of those are correct IIUC
+
+1588183982
+andrewrk
+maybe should be called break to match zig. I got the jargon from paniq
+
+1588183986
+pixelherodev
+It's a goto / break :)
+
+1588183991
+pixelherodev
+I like `merge` honestly
+
+1588184048
+andrewrk
+implementing condbr was a piece of cake with this SSAT form
+
+1588184075
+andrewrk
+it's clear to me that stage1 has this tree form awkwardly stapled onto it
+
+1588184107
+andrewrk
+which is the cause of the most messy ir.cpp code
+
+1588184136
+pixelherodev
+Attaching two disparate forms of IR is messy? Perish the thought
+
+1588184138
+pixelherodev
+!
+
+1588184143
+pixelherodev
+:)
+
+1588184271
+ikskuh
+andrewrk, where do you know paniq from? :D
+
+1588184296
+andrewrk
+idk, the internet
+
+1588184307
+andrewrk
+oh, I've been listening to his music since forever
+
+1588184319
+andrewrk
+didn't find out he was a programmer until recently
+
+1588184321
+ikskuh
+a lot of my friends know him in person ^^
+
+1588184327
+andrewrk
+sweet!
+
+1588184328
+ikskuh
+i didn't meet him yet though :D
+
+1588184384
+ikskuh
+if everything works well today, my zig-based assembler will be ready later the night :)
+
+1588184385
+TheLemonMan
+one more idea, keep track of what alloca belong to which scope so that the codegen can reuse some stack-slots as needed
+
+1588184432
+TheLemonMan
+LLVM provides llvm.lifetime.{start,end} for that
+
+1588184449
+andrewrk
+TheLemonMan,
+
+1588184458
+andrewrk
+the merge is "noreturn" so the repeat gets deleted
+
+1588184472
+andrewrk
+so then zig sees a loop with no "repeat"
+
+1588184489
+TheLemonMan
+yeah but how do you get there starting from the AST?
+
+1588184523
+TheLemonMan
+if you do the type-checking on the IR you probably want to ZIR-ize the whole thing first
+
+1588184565
+andrewrk
+from AST it would look like
+
+1588184614
+TheLemonMan
+where's the `true == true` check?
+
+1588184627
+andrewrk
+you can see it in the other example
+
+1588184631
+andrewrk
+just a sec
+
+1588184635
+TheLemonMan
+you can't elide that until you've type-checked it
+
+1588184650
+andrewrk
+that's expected
+
+1588184664
+andrewrk
+since it should work for an arbitrary condition, not just while(true)
+
+1588184785
+TheLemonMan
+so where do uou put the check for missing `else` (in case the condition isn't always true) ?
+
+1588184801
+andrewrk
+TheLemonMan,
+
+1588184828
+andrewrk
+you can see there is a conflict here between %x being void or an int, but when the condbr gets flattened, only 1 merge remains so the conflict is gone
+
+1588184856
+andrewrk
+if the else was needed, the condbr wouldn't get flattened, and there would be a peer type resolution on all the values that merged into the same label
+
+1588184963
+andrewrk
+to be clear: when I say "condbr being flattened" I mean that the condition is comptime known, so it only analyzes one branch
+
+1588185023
+TheLemonMan
+makes sense to me!
+
+1588185033
+andrewrk
+the impl of this is squeaky clean:
+
+1588185039
+alexnask
+Yeah this looks very nice
+
+1588185100
+pixelherodev
+Wow
+
+1588185105
+pixelherodev
+Thirded
+
+1588185332
+FireFox317
+Yeah thats really cool
+
+1588188749
+hazeycode
+Hey guys, is anyone working on the kevent port of evented IO?
+
+1588188804
+hazeycode
+I mean kqueue
+
+1588188979
+andrewrk
+hazeycode, not that I'm aware of
+
+1588188995
+andrewrk
+note that there is already an implementation there, but it needs to be audited and some glue code added into the std lib
+
+1588189027
+hazeycode
+Ok, I can take a look at gluing it up. What auditing is required?
+
+1588189048
+andrewrk
+I mean that it should be fuzz tested and it probably is not bug free
+
+1588189061
+andrewrk
+this implementation is from before the async/await rewrite in the language
+
+1588189091
+andrewrk
+the implementation is just a prototype - if you wanted to start over on it you would be welcome to do that
+
+1588189106
+andrewrk
+but at least you can see how it  currently works for inspiration
+
+1588189119
+hazeycode
+Great, thanks!
+
+1588189142
+andrewrk
+note that EVFILT_USER is available on macos but not all bsds
+
+1588189235
+hazeycode
+Thanks for the heads up. I'm on macOS, hence wanting to work on this. I should be able to at least get something working here
+
+1588189917
+hazeycode
+andrewrk: I see that a lot of source files are duplicated i.e. "thing.zig" and "thing 2.zig" - what's that about?
+
+1588189978
+andrewrk
+can you give an example?
+
+1588190170
+hazeycode
+Nvm - it's totally local -I have somehow managed to duplicate every file in the repo :D
+
+1588190179
+hazeycode
+WHAT HAVE I DONE
+
+1588190231
+fengb
+lol
+
+1588190355
+FireFox317
+* lauging inside
+
+1588190427
+andrewrk
+send a PR, maybe that will make zig twice as good
+
+1588190456
+hazeycode
+zig++
+
+1588193008
+Snektron
+zir replaces the existing IR right?
+
+1588193028
+mikdusan
+yes
+
+1588193035
+mikdusan
+for self-hosted
+
+1588193086
+Snektron
+alright, cool
+
+1588197377
+marijnfs
+man i'm trying to work with zeromq (c library) and I keep getting a segfault
+
+1588197381
+marijnfs
+
+
+1588197394
+marijnfs
+thats a minimal example, does something seem obviously wrong there?
+
+1588197408
+marijnfs
+i'm using ?*c_void for pointers (void pointers in c)
+
+1588197940
+hazeycode
+andrewrk so I got an evented io program to compile on macos. Before I continue to make it actually work and not crash hard I just wanted to raise something I have to hack around. For some platforms, (i.e. darwin.zig) fd_t, pid_t and mode_t are translated as c int types, in contrast to linux where they are normal int types, causes problems when
+
+1588197940
+hazeycode
+later coercing. Is there a recommended way to deal with this? My hack is to for example @intCast(usize, fd) but that just isn't gonna fly
+
+1588198087
+andrewrk
+hazeycode, @intCast(usize, fd) is good - that's asserting the fd is not -1
+
+1588198109
+andrewrk
+I think that's appropriate since you are presumably using the "userdata" field of kevent right?
+
+1588198122
+andrewrk
+I don't see that as a problem
+
+1588198167
+hazeycode
+that's right, I guess it's not a problem there...
+
+1588198238
+hazeycode
+what about `.mode = @intCast(c_uint, mode),` in openZ.... which is a shared code path?
+
+1588198259
+hazeycode
+* Loop.openZ
+
+1588198290
+andrewrk
+openZ should be using mode_t there instead of c_uint
+
+1588198308
+andrewrk
+I don't see that
+
+1588198330
+hazeycode
+before my change is ws .mode = mode
+
+1588198332
+andrewrk
+it is using mode_t
+
+1588198375
+hazeycode
+ohhhh, I just need to use mode_t, got it
+
+1588198514
+hazeycode
+Thanks for the assistance, I gotta go sleep now, but hopefully I can find time to fix the crash tomorrow. Night
+
+1588198621
+andrewrk
+good luck and night!
+
+1588200293
+marijnfs
+ok i found the source of my crazy crash, but i'm still confused
+
+1588200338
+marijnfs
+I had a exe.linkSystemLibrary("stdc++") in my build script, which in some way screwed up the code the zeromq library was using
+
+1588200403
+ikskuh
+andrewrk: i found another problem with "deinit(*T)"
+
+1588200418
+ikskuh
+i cannot deinit a parameter which was passed to me as it is immutable
+
+1588200455
+andrewrk
+well that makes sense. if it is immutable you should not be able to deinitialize it
+
+1588200468
+ikskuh
+but how do i pass ownership then?
+
+1588200478
+andrewrk
+a mutable pointer
+
+1588200484
+ikskuh
+but this does not transfer storage
+
+1588200492
+ikskuh
+imagine a function that gets an arraylist to do whatever it does with that arraylist
+
+1588200503
+ikskuh
+for example, move the array list between two threads via a queue
+
+1588200540
+ikskuh
+queue.append(my_list);
+
+1588200579
+ikskuh
+if i would have a mutable pointer, i would need to have the list mut again everywhere and the idea of "make const where possible" will quickly lead to "nothing is const anymore except primitive values"
+
+1588200780
+andrewrk
+if you do `queue.append(my_list)` then it's your `queue` that you will want to be mutable
+
+1588200801
+ikskuh
+example:
+
+1588200816
+ikskuh
+andrewrk: yes, right
+
+1588200827
+ikskuh
+but my_list should not be passed as a pointer, i don't want to pass the reference, but the value
+
+1588200902
+andrewrk
+ikskuh, if function consume takes a non-pointer parameter, it will not be able to retain the resource longer than the duration of the function call without a copy, in which case you can copy it to mutable memory
+
+1588200922
+ikskuh
+yeah, i know that
+
+1588200927
+ikskuh
+but this will (right now) yield this:
+
+1588200944
+ikskuh
+fn(value: Abstract) void { var mvalue = value; mvalue.deinit(); }
+
+1588200966
+andrewrk
+why not instead case 2 ? it makes sense for consume to take a mutable pointer
+
+1588200987
+ikskuh
+why? i could set that pointer to undefined?
+
+1588201022
+ikskuh
+(well, the value it points to)
+
+1588201026
+andrewrk
+"consume" means "it's mine now and I get to be in charge of what's happening to it" which implies that it wants to be able to mutate the memory
+
+1588201073
+ikskuh
+hm
+
+1588201074
+andrewrk
+it makes sense for the caller to need mutable access
+
+1588201089
+ikskuh
+maybe i think too much in c++-value-semantics
+
+1588201106
+ikskuh
+but it kinda contradicts my idea of "make const wherever possible"
+
+1588201123
+andrewrk
+I think wherever possible excludes this case
+
+1588201139
+ikskuh
+hm
+
+1588201153
+andrewrk
+use const when it makes sense that a function should not be able to mutate the data under any circumstances
+
+1588201195
+ikskuh
+i'm not sure which i like more
+
+1588201208
+ikskuh
+the ability to possibly detect use-after-deinit() (by setting it to undefined)
+
+1588201222
+ikskuh
+or the non-ability to mutate non-mutable data by accident
+
+1588201233
+ikskuh
+both are valid optimization goals for the code
+
+1588201261
+ikskuh
+as the function will not change the bits in Abstract, but will only release some memory in pointers
+
+1588201550
+ikskuh
+but i have get some sleep
+
+1588201550
+ikskuh
+gn8
+
+1588201560
+ikskuh
+a problem that can be solved tomorr
+

@@ -1,0 +1,2176 @@
+1581292963
+pixelherodev
+Got install step working by overriding file name after `step.install()`
+
+1581293425
+pixelherodev
+The nice thing about that performance optimization work is that the hello world lexes in ~0.02 seconds in release-fast mode :D
+
+1581293446
+pixelherodev
+Can probably do a bit more optimization and get that down to the single digit milliseconds range
+
+1581293547
+pixelherodev
+... heh. The only reason it's that slow is the 800k token capacity default :P
+
+1581293645
+pixelherodev
+file.getEndPos() gives file size?
+
+1581293673
+pixelherodev
+Yep, I can just read through the source :)
+
+1581293716
+fengb
+One day we’ll have reliable docs too
+
+1581293785
+betawaffle
+pixelherodev: what are you up to?
+
+1581293811
+pixelherodev
+Writing the first codegen backend for my libLLVM replacement :)
+
+1581293883
+pixelherodev
+Using `file size / 6` as the size of the token list boosts perf by ~35% on the hello world, and leaves the self-lexing alone in terms of speed
+
+1581293941
+pixelherodev
+Well, 35% in debug mode, 80% in release fast mode
+
+1581293951
+pixelherodev
+It can lex the hello world in 4ms
+
+1581294151
+pixelherodev
+Here's an idea: a readUntilDelimiterOrEOF written
+
+1581294164
+pixelherodev
+That allows for higher performance...
+
+1581294169
+pixelherodev
+Going to add that to my todo list
+
+1581295762
+daurnimator
+andrewrk: no I was talking of calling printf.... last time I tried I hit a TODO...
+
+1581295815
+daurnimator
+I think the TODO pointed at
+
+1581295864
+daurnimator
+ah excellent; I
+
+1581296072
+pixelherodev
+#4418 opened
+
+1581296091
+pixelherodev
+Reuses the existing `disable-bin-generation` instead of making a new bool `emit-bin`, though it could just be refactored and inverted
+
+1581296455
+pixelherodev
+The lexer is so fast on the hello world that 10% of time is on platform initialization code beneath main :P
+
+1581296704
+tdeo
+how well does the non-libc dynamic loader work? can it load something as complex as a graphics driver or does it just work on small stuff?
+
+1581297025
+daurnimator
+tdeo: not an answer to your question... but your graphics driver probably depends on libc itself.....
+
+1581298053
+pixelherodev
+... wow. Okay, so I knew compilation time had gotten worse... but this is *bad*. 60s to compile the lexer after switching some work over to comptime
+
+1581298490
+pixelherodev
+After quickly changing the functions back to runtime, compilation time goes back down to ~3-5s
+
+1581299205
+tdeo
+daurnimator: yeah, but i feel loading libc at runtime is more "portable" than linking it directly
+
+1581299221
+tdeo
+feels more like "pure zig" even though it gets loaded
+
+1581299229
+tdeo
+might not really matter in practice
+
+1581300300
+daurnimator
+tdeo: libc will really want to be linked as early as possible. there are certain things that can only be done once-per-process on linux. and libc wants to do them
+
+1581300312
+daurnimator
+s/linked/loaded/
+
+1581302729
+andrewrk
+tdeo, non-libc dynamic loading is still experimental. it'll work fine eventually
+
+1581302759
+shachaf
+You're writing your own dynamic loader for this?
+
+1581302790
+andrewrk
+one of my goals is to ship a video game as a static executable that works on every linux
+
+1581302802
+andrewrk
+(but still uses the graphics driver and windowing system)
+
+1581302819
+daurnimator
+shachaf: yeah we had to write the first half of it to use the VDSO; and the second half to inspect our own debug info (used for stack traces).
+
+1581302838
+shachaf
+How are you going to pull that off?
+
+1581302848
+daurnimator
+shachaf: what do you mean?
+
+1581302862
+shachaf
+Calling libGL from a static binary.
+
+1581302882
+shachaf
+Do you ship your own static libc to link it against?
+
+1581302913
+daurnimator
+that's the plan.
+
+1581302923
+andrewrk
+not necessary; the vulkan shared object will link against dynamic libc. so all that is needed is to properly dynamically load everything
+
+1581302955
+andrewrk
+if there is a libc-specific complication to work around, so be it. the loader can detect which version of libc is being pulled in and emulate that style of dynamic loading
+
+1581302956
+shachaf
+So you do want to load the system libc, just to do it yourself rather than with ld-linux.so or whatever?
+
+1581302980
+andrewrk
+I don't care how it's done, I just want to ship a static binary that works everywhere
+
+1581303009
+andrewrk
+hard coding a path to a system dynamic linker is a non-starter, since some distros have different paths
+
+1581303029
+shachaf
+I mean, I also want to do that, I'm just skeptical that it's really possible in practice.
+
+1581303054
+shachaf
+But maybe you can make it work in practice for just about all systems that exist.
+
+1581303072
+andrewrk
+that would be good enough for me
+
+1581303087
+andrewrk
+I think it's possible
+
+1581303113
+andrewrk
+I'll be exploring it with
+
+1581303149
+daurnimator
+andrewrk: don't
+
+1581303160
+andrewrk
+well, not mine, for one
+
+1581303160
+daurnimator
+it's one of the very few things with compelte agreement
+
+1581303165
+daurnimator
+andrewrk: oh?
+
+1581303186
+andrewrk
+
+
+1581303220
+daurnimator
+huh
+
+1581303232
+daurnimator
+I know in gobo linux they just hit it from getdents
+
+1581303254
+andrewrk
+zig has special code to detect the "native dynamic linker path" by inspecting its own dynamic library dependencies, looking for the dynamic loader
+
+1581303262
+daurnimator
+oh right; the whole nix "patchelf" thing is how they do it
+
+1581303296
+andrewrk
+but if you use zig to cross compile on nixos, targeting the same cpu that you're running on, it won't work without qemu or patchelf
+
+1581303310
+andrewrk
+because zig will put the standard dynamic library path in there, as expected for cross compiling
+
+1581303343
+daurnimator
+andrewrk: I guess we need a --elf-interpreter option to build-exe ?
+
+1581303364
+andrewrk
+--dynamic-linker [path]      set the path to ld.so
+
+1581303386
+daurnimator
+ah k.....  what does that do for non-elf targets?
+
+1581303394
+andrewrk
+ignored
+
+1581303421
+daurnimator
+do we have rpath management as well?
+
+1581303433
+daurnimator
+We'd need to add support for $ORIGIN magic
+
+1581303460
+shachaf
+At one point I'd like to see linkers turned into a library rather than a program that you run, where you can just do the thing that you want instead of writing bizarro "linker scripts".
+
+1581303487
+daurnimator
+shachaf: you mean compile-time linkers?
+
+1581303493
+shachaf
+Yes.
+
+1581303494
+daurnimator
+or dynamic linkers?
+
+1581303499
+companion_cube
+"how hard can it be anyway"
+
+1581303509
+daurnimator
+but also we have a plan to deprecate linker scripts  :)
+
+1581303516
+daurnimator
+but also..... we already use lld as a library
+
+1581303524
+daurnimator
+so you're sort of conflating 3 things there
+
+1581303532
+shachaf
+Does lld have a non-linker-script API?
+
+1581303573
+daurnimator
+
+
+1581303638
+andrewrk
+shachaf, no
+
+1581303651
+daurnimator
+shachaf: IIRC the LLD API essentially takes command line arguments and runs in-process
+
+1581303668
+andrewrk
+yes and I've had to send them a few patches because they don't test this way
+
+1581303670
+shachaf
+Right, that's what I'd expect.
+
+1581303782
+shachaf
+Is incremental linking really that important?
+
+1581303820
+shachaf
+Even if you're going through LLVM, your linker is probably not going to do the expensive part of LLVM's linker (which I assume is LTO).
+
+1581303858
+andrewrk
+really, nothing short of owning the entire process from start to finish is going to give us the performance within the desired range
+
+1581303880
+andrewrk
+but as a concrete example, linking is the slowest part of the edit-compile-test cycle of zig stage1 compiler
+
+1581303890
+andrewrk
+by far
+
+1581303896
+daurnimator
+shachaf: we intend to support multiple backends for this sort of thing: you might e.g. use the zig one for debug builds and use llvms for release builds/
+
+1581303928
+daurnimator
+or if your platform of choice isn't supported by lld (e.g. xtensa) then use e.g. gcc
+
+1581303962
+shakesoda
+is zig build multithreaded
+
+1581304097
+fengb
+There’s like 5 people in this channel that start with “sh” and I can never get them straight >_>
+
+1581304118
+andrewrk
+shakesoda, not yet
+
+1581304127
+shakesoda
+ok, just curious
+
+1581306160
+andrewrk
+it's about time:
+
+1581306170
+andrewrk
+Closes #3422 Closes #3646 Closes #3224 Closes #3327 Closes #3269
+
+1581306461
+seoushi
+very nice. I've been having those types of issues reguarly when I do refactors
+
+1581306589
+andrewrk
+apparently the go folks discovered the looping hack back in 2015:
+
+1581306633
+andrewrk
+using a for loop over a 0-bit struct
+
+1581307196
+pixelherodev
+... to what end?
+
+1581307271
+fengb
+Because i := 0; i < total; i += 1 is too many letters
+
+1581307279
+andrewrk
+we've had this exact same discussion several times in #zig. someone asks how to loop over a range. a clever person suggests `for ([1]void{{}} ** 10) |_, i| {}`. I ask people to plz don't do that
+
+1581307314
+pixelherodev
+I second that request
+
+1581307317
+pixelherodev
+Please nobody ever do that
+
+1581307361
+shakesoda
+that is certainly nasty
+
+1581307374
+fengb
+Sure, u0{0} is shorter 🙃
+
+1581307456
+shakesoda
+is there a preferred way to do a range iteration that doesn't also leave your counter in the parent scope as happens with the while
+
+1581307539
+shakesoda
+the entire `var i = 0; while (i < n) : (i += 1)` construct is kind of bizarre and long feeling for what it is
+
+1581307619
+shakesoda
+and those ways with `for` are just plain freaky
+
+1581307680
+andrewrk
+surround it with { }
+
+1581307701
+andrewrk
+it teaches to not be afraid of using blocks to limit variable scope
+
+1581307708
+shakesoda
+suppose that solves for the scope, it's just... even longer
+
+1581307720
+shakesoda
+and weirder
+
+1581307756
+fengb
+It’s only weird because we’re all used to 3 statements shoved into 1 in C for loops :P
+
+1581307791
+andrewrk
+I'm tempted to delete for loops from the language\
+
+1581307815
+companion_cube
+bikeshedding will not stop before 1.0!
+
+1581307845
+andrewrk
+while (mem.iter(array)) |item| { warn("{} = {}\n", .{item.i, item.value}); }
+
+1581307849
+shakesoda
+fengb: i'm actually more used to lua and haxe's loop iterators which don't use c's iterator form at all
+
+1581307902
+companion_cube
+just do ruby/crystal style blocks ;)
+
+1581307904
+andrewrk
+forgot to make a separate "it" variable. oh well
+
+1581307957
+shakesoda
+fengb: both of which are very short in the typical case of a range iteration: `for i=1,n do`, `for (i in 0...n)`
+
+1581307957
+andrewrk
+when I merge #4404 it's going to close 9 bugs
+
+1581307987
+shakesoda
+9 at once! excellent
+
+1581308041
+fengb
+Async is leveling up!
+
+1581308106
+andrewrk
+yeah big time. next step is making behavior tests with --test-evented-io pass on windows & bsds without spotty test failures
+
+1581308146
+andrewrk
+then async gets CI test coverage
+
+1581308273
+shakesoda
+andrewrk: if for goes away, while might as well just be called loop
+
+1581308284
+shakesoda
+or repeat or something
+
+1581308299
+andrewrk
+there is value in overlapping keywords with other languages, especially C
+
+1581308311
+andrewrk
+less @"loop" required
+
+1581308340
+shakesoda
+i can agree to that
+
+1581308405
+shachaf
+One day I'll make my compiler for the language that has "for the rest of this block" flow control and see how well it works in practice.
+
+1581308457
+companion_cube
+monads would like to have a word with you :)
+
+1581308466
+companion_cube
+(well… maybe)
+
+1581308477
+shachaf
+I think delimited continuations are the thing that would like to have a word with me.
+
+1581308498
+shakesoda
+shachaf: sounds kinda like (pseudocode)... `:here defer goto here`
+
+1581308499
+shachaf
+But I have some words for them too.
+
+1581308504
+pixelherodev
+huh. Removing the comptime part speeds up compilation by around 70% but slows down runtime so little it might as well be a statistical error (assuming I didn't mess up my testing)
+
+1581308523
+shachaf
+I mean that instead of writing "if (b) { ... }" you can write something like "{ if(b)`; ... }"
+
+1581308523
+pixelherodev
+I guess that means it was the restructure that improved performance more than the comptime offloading
+
+1581308536
+fengb
+Why not just implement full COMEFROM
+
+1581308555
+companion_cube
+shachaf: ah, effects maybe
+
+1581308566
+shachaf
+"{ x := for(xs)`; y := for(ys)`; if(x + y == 0)`; ... }"
+
+1581308585
+companion_cube
+(still looks awfully like a do-block to me)
+
+1581308587
+shachaf
+Not very ontopic in here, I suppose. I'd like to figure it out eventually.
+
+1581308603
+shachaf
+companion_cube: It does, except it's not associative.
+
+1581308630
+companion_cube
+`;` is always right-associative, is it not?
+
+1581308647
+shachaf
+Just like if you have C++-style destructors, { { A a; foo(); } bar(); } isn't the same as { A a; { foo(); bar(); } }
+
+1581308673
+companion_cube
+well each { } is its own do-block
+
+1581308692
+shachaf
+Sure, but do { a; do { b; c } } == do { do { a; b }; c } is a monad law.
+
+1581308697
+companion_cube
+but you're right, these might be associative by construction.
+
+1581308705
+companion_cube
+yeah ok. fair point.
+
+1581308718
+shachaf
+It's like delimited continuations, where {} means reset and ` means shift, or something.
+
+1581308725
+pixelherodev
+I mean, if you're comparing destructors to Zig, that `A a;` is equivalent to `const a = A.init();defer a.destroy();`
+
+1581308738
+companion_cube
+if you make implicit stuff like destructors explicit, the do block becomes non associative too
+
+1581308741
+shachaf
+Sure, defer has the same property. Should've used Zig notation.
+
+1581308762
+shachaf
+Anyway this isn't the monad channel.
+
+1581308780
+companion_cube
+:D the one starting with #h and ending in askell?
+
+1581308834
+shakesoda
+on another note entirely, what does anyone think about the idea of using anonymous literals to also define structs, a friend of mine mentioned this yesterday
+
+1581308866
+shakesoda
+since .{ foo: type } is unambiguous from .{ .foo = value }
+
+1581308897
+shakesoda
+i didn't have a way to shoot that down when asked
+
+1581309056
+shakesoda
+i suppose this brings in the problem of "what about unions and enums?"
+
+1581309066
+pixelherodev
+Why?
+
+1581309069
+pixelherodev
+Why is it needde?
+
+1581309073
+pixelherodev
+s/dde/ded?
+
+1581309083
+pixelherodev
+So we can use `.` instead of `struct`?
+
+1581309120
+shakesoda
+essentially, yes, but i'm really just curious here
+
+1581309147
+pixelherodev
+I think typing an extra five characters and being less ambiguous is better
+
+1581309167
+pixelherodev
+As is, if you see `.{` you can immediately know what you're looking at
+
+1581309175
+pixelherodev
+You don't need to see anything else
+
+1581309184
+shakesoda
+if you see .{ you see one of a couple things
+
+1581309212
+shakesoda
+until you see what's immediately following you don't yet know if it's going to be a list or a struct init
+
+1581309468
+pixelherodev
+ah right
+
+1581309476
+pixelherodev
+Forgot you could do structures like that
+
+1581310396
+pixelherodev
+Here's a thought for release-fast mode: is it possible to detect when a call can be made at comptime but isn't?
+
+1581310417
+andrewrk
+that's the halting problem
+
+1581310427
+pixelherodev
+Let's say I do a runtime `math.pow(2, 9)`; can the compiler detect that all args are comptime known and convert the call to a comptime call?
+
+1581310432
+pixelherodev
+How so?
+
+1581310437
+pixelherodev
+Ah right
+
+1581310441
+andrewrk
+zig actually used to have that. you had to explicitly annotate a function as opting out of being called at comptime when all the parameters are comptime known
+
+1581310447
+pixelherodev
+Now that I'm looking for it, I can see what you mean
+
+1581310459
+andrewrk
+related:
+
+1581310466
+pixelherodev
+How about a keyword to guarantee that it halts?
+
+1581310472
+pixelherodev
+Ah
+
+1581310478
+pixelherodev
+Literally what you linked :)
+
+1581310489
+andrewrk
+calling a function at comptime is a special case of inlining
+
+1581310497
+andrewrk
+which the optimizer already does
+
+1581310529
+andrewrk
+but I do want to somehow get to a place where asserts with a comptime parameter run at comptime
+
+1581310551
+andrewrk
+there are some tricky design problems to solve there, however
+
+1581310576
+pixelherodev
+Well, if the main issue is the halting problem, maybe just `halts`?
+
+1581310624
+pixelherodev
+Sort of like Rust's unsafe code; you're saying that you've checked yourself and it's definitely fine
+
+1581310658
+andrewrk
+it would integrate with @setEvalBranchQuota
+
+1581310684
+andrewrk
+what you would need is the ability to tell zig to not try to run it at comptime
+
+1581310706
+pixelherodev
+That's opt-out; I'm talking opt-in
+
+1581310743
+pixelherodev
+The `halts` keyword proposal: if a function is marked halts, then in release-fast mode (and
+
+1581310769
+andrewrk
+nah that's just `inline`
+
+1581310773
+pixelherodev
+The `halts` keyword is a hint to Zig that it can try to run it at comptime, which it defaults to not doing
+
+1581310781
+pixelherodev
+Wait, inline calls are translated like that already?
+
+1581310785
+andrewrk
+or rather the auto inliner
+
+1581310872
+pixelherodev
+Huh... that's interesting, and possibly problematic
+
+1581310891
+pixelherodev
+The use case I was thinking of: I want debug compilation times to be as fast as possible, so I removed some comptime calls to speed it up
+
+1581310905
+pixelherodev
+However, in release-fast mode, I want maximum runtime performance regardless of the comptime cost
+
+1581310929
+andrewrk
+the auto inliner is quite agressive in release-fast mode
+
+1581310948
+andrewrk
+llvm is perfectly capable of running functions at compile-time too, did you know that?
+
+1581310961
+pixelherodev
+Huh, no I didn't
+
+1581310975
+pixelherodev
+The autoinliner might explain why removing the explicit comptime calls didn't affect release-fast performance
+
+1581310981
+andrewrk
+yeah. comptime function calls are a special case of inlining
+
+1581310991
+pixelherodev
+Is that a different compiler path from explicit comptime calls?
+
+1581311016
+pixelherodev
+Explicitly calling it at comptime butchers compile times
+
+1581311047
+andrewrk
+in theory zig's comptime features can run about as fast as CPython. in practice, it is something like 100x slower
+
+1581311079
+pixelherodev
+I've had 70s compilation times; removing the explicit `comptime` from a single function call (well, something million; it's an EXTREMELY hot path) reduces compile times to ~3 seconds
+
+1581311095
+andrewrk
+mostly due to my own fault, since the stage1 code has evolved rather than been designed to work the way it does from the start
+
+1581311143
+pixelherodev
+I was considering profiling stage1 and making an unmaintainable snapshot of 0.6 that's hand-optimized for performance to the point that the code is completely unreadable
+
+1581311152
+pixelherodev
+Then I remembered I don't know the compiler internals well enough to do that :P
+
+1581311204
+andrewrk
+my plan is to just know wtf I'm doing this time since zig already exists now, when I make the self-hosted compiler
+
+1581311224
+andrewrk
+instead of making it up as I go along
+
+1581311239
+pixelherodev
+Basically, you make the language up as you go with stage 1, then use the language to write a spec
+
+1581311264
+pixelherodev
+Then, you rewrite the compiler from the spec, resulting in a good-by-design compiler
+
+1581311266
+pixelherodev
+That about right?
+
+1581311289
+andrewrk
+yes
+
+1581311320
+pixelherodev
+Anyway, I'm going to get back to my LLVM backend now - working on the AST generation now
+
+1581311339
+pixelherodev
+Annoyingly, it takes much longer to get this thing working now that I've actually bothered
+
+1581311367
+pixelherodev
+On the bright side, the hello world-esque tests worked first try without having to hack anything together to "trick" the code into compiling
+
+1581311495
+pixelherodev
+On a different but related note, just wanted to express my gratitude to you and everyone else who has dedicated real time and effort to make this project a reality
+
+1581311508
+andrewrk
+:)
+
+1581311618
+pixelherodev
+Which reminds me, I should put some more of
+
+1581311912
+pixelherodev
+But first: to whoever was asking about my LLVM backend, the lexer is now up at
+
+1581311916
+pixelherodev
+Assuming I typed that URL correctly
+
+1581312222
+pixelherodev
+I'm happy with #4418 now; going to try getting the null-shrink-fn branch working again
+
+1581312435
+andrewrk
+thanks
+
+1581312562
+pixelherodev
+Gah, okay; 4418 just needs to have the `--test-evented-io` lines merged in, which is a minor rebasing issue
+
+1581312604
+pixelherodev
+Fortunately, GitHub lets me do that easily :)
+
+1581312612
+pixelherodev
+
+
+1581312752
+pixelherodev
+I think the selection of output name needs to be reworked to check explicitly for bin/asm/llvm, but there's nothing
+
+1581312780
+pixelherodev
+That is, output name should be reworked into separate functions for outputName{Bin,Asm,LLVM}
+
+1581313410
+pixelherodev
+Given that I plan on, eventually, using this project with upstream Zig as a potential compiler backend: is it reasonable for a compiler backend to error out with a poor message if given garbage input in exchange for higher performance on valid inputs?
+
+1581313450
+pixelherodev
+If it's explicitly only meant to handle compiler-generated inputs, the only situation in which the error messages appear is if the compiler is busted...
+
+1581313465
+pixelherodev
+I mean, maybe a `comptime if` so it does additional error checking only in debug mode?
+
+1581313660
+pixelherodev
+Does that async PR mean that tests are run in parallel now?
+
+1581313769
+andrewrk
+not yet
+
+1581313890
+pixelherodev
+But it creates the architecture that can be used to enable that?
+
+1581313899
+pixelherodev
+Would that theoretically speed up CI?
+
+1581313953
+andrewrk
+yes once async std is more stable, it'll be easy to improve zig build system to make appropriate things run in parallel
+
+1581314054
+pixelherodev
+That'll be awesome :)
+
+1581314488
+pixelherodev
+If I need to do a bunch of small allocations, would a good way be to do one large heap allocation and then make a FBA out of that?
+
+1581314594
+pixelherodev
+This'll be fun: an arena allocator wrapping a fixed buffer allocator wrapping a std.heap.page_allocator allocation :P
+
+1581314690
+pixelherodev
+.... oh wait, arena isn't needed
+
+1581314697
+pixelherodev
+Just need to free the original allocation
+
+1581315198
+pixelherodev
+... well this is great. I get a segfault in file reading if I stop linking in libc...
+
+1581338509
+daurnimator
+andrewrk: I assume that multibuilds and dependant issues will not be done in 0.6.0. Do we want to shift them all the way to 0.8.0?
+
+1581344024
+fengb
+Gosh, this async IO change fixed everything
+
+1581344259
+shakesoda
+define everything, i have not used async stuff yet
+
+1581344658
+fengb
+All the bugs
+
+1581344669
+fengb
+There’s like 2 dozen that are fixed
+
+1581344854
+companion_cube
+think of all the street cred you now have fengb
+
+1581344868
+companion_cube
+in 10y you'll be "oh I was using zig before async really worked"
+
+1581344898
+mq32
+"in the old days, we were packing our structs by hand!"
+
+1581345083
+fengb
+“I implemented janky async before BDFL showed me how it’s done”
+
+1581345104
+shakesoda
+back in my day we still had to put a c before some string literals because reasons
+
+1581345275
+mq32
+before my days, we had "return%"!
+
+1581345294
+companion_cube
+back in my day the syntax was not rust-like :-°
+
+1581345464
+mq32
+rust-like?
+
+1581345612
+fengb
+Back in my day I had to use C
+
+1581345633
+companion_cube
+mq32: I still hope for some changes in the syntax 0:-)
+
+1581345671
+BaroqueLarouche
+companion_cube:  like what ?
+
+1581345796
+companion_cube
+mandatory {} in if/while/for (and no ()), for a start, and being a bit more expression oriented by not forcing blocks to have a label for them to return a value
+
+1581345902
+mq32
+companion_cube, that's stuff i like about zig grammar as it's more verbose that way
+
+1581345926
+mq32
+i liked the Go argumentation on "you don't need () on if, but {}. Don't nag, it's the same amount of characters!"
+
+1581345931
+FireFox317
+damn, so many issues closed today, nice to see that!
+
+1581345961
+mq32
+wait, those were 20 issues or something?
+
+1581345984
+BaroqueLarouche
+Even though the syntax is not elegant, I'm looking forward for
+
+1581346014
+mq32
+BaroqueLarouche, yeah that's actually a great thing
+
+1581346024
+mq32
+and i think it's quite elegant, just uncommon
+
+1581346028
+mq32
+so most people aren't used to that
+
+1581346049
+mq32
+Also: Vexu is on fire right now.
+
+1581346058
+mq32
+Someone: Issue. 30 Minutes later: PR with a fix by vexu
+
+1581346098
+FireFox317
+Jup indeed mq32, he also found a lot of issues that we solved by andrew's fix yesterday
+
+1581346101
+BaroqueLarouche
+LemonBoy too
+
+1581346194
+companion_cube
+mq32: it's a question of footguns, not verbosity, is all
+
+1581346235
+mq32
+ah, i understood you the other way round
+
+1581346249
+mq32
+so you want to have something like "x = if(a) { 10 } else { 20 }"?
+
+1581346265
+companion_cube
+no, `x = if a { 10 } else { 20 }`
+
+1581346277
+companion_cube
+but {} being mandatory
+
+1581346293
+companion_cube
+and `{a;b;c}` returning the value of `c`, as it should
+
+1581346343
+mq32
+i
+
+1581346345
+fengb
+That was in earlier Zig and got removed
+
+1581346349
+mq32
+and they don't fit zig at all
+
+1581346371
+mq32
+it's really the definition of "hidden control flow"
+
+1581346390
+fengb
+We should reintroduce the comma operator 🙃
+
+1581346420
+mq32
+i really like the approach for named blocks by
+
+1581346579
+fengb
+Disagree. It’s basically the same as status quo except with a new keyword
+
+1581346613
+mq32
+it removes the need for two syntactical elements ":blk" and "blk:"
+
+1581346641
+mq32
+which i find both confusing and harder to read
+
+1581346668
+fengb
+There’s a little bit of talk making them one
+
+1581346699
+mq32
+yeah, i've read that issue as well
+
+1581346752
+fengb
+I really just want a syntax to break the nearest block
+
+1581346785
+mq32
+i was happy that i can break other blocks as well
+
+1581346803
+mq32
+removes the need for some state-variables in more complex search operations
+
+1581346958
+fengb
+Yeah I like named break. But most commonly I want to return immediately, like a switch
+
+1581347009
+fengb
+Feels bad to choose between a crappy one liner or a verbose block >_>
+
+1581347018
+fengb
+Maybe I should grow up heh
+
+1581347037
+shakesoda
+i can accept seqblk if it is named nearly absolutely anything elsde
+
+1581347039
+shakesoda
+else*
+
+1581347088
+mq32
+shakesoda, yeah true
+
+1581347099
+mq32
+let's go maximum verbose
+
+1581347109
+mq32
+blockexpr myBlock { break myBlock, 10; }
+
+1581347495
+fengb
+How about a colon? :P
+
+1581347607
+mq32
+left-double-arrow is a friend of words instead of symbols
+
+1581347677
+fengb
+Funny thing is... I think Andrew has fixed enough bugs to enable my generator branch
+
+1581348829
+companion_cube
+mq32: it's no more "implicit control flow" than being able to write `f(x+y)`
+
+1581348855
+mq32
+that does not return some value
+
+1581348861
+mq32
+to another portion of the code
+
+1581348865
+companion_cube
+x+y is an expression that implicitly returns some value
+
+1581348872
+companion_cube
+to another portion of the code, namely f(·)
+
+1581348891
+companion_cube
+{a;b;c} is not an implicit return, just an expression 🤷
+
+1581348908
+mq32
+yes, but it's more local. named blocks are required when an expression is too complex to be expressed in a oneliner
+
+1581348921
+mq32
+thus, the scope will enlargen and you might miss something
+
+1581348931
+companion_cube
+I mean, if I see `const x = { … }` I know I'll just look at the end of the block
+
+1581348938
+companion_cube
+there's like 0 complexity
+
+1581348954
+andrewrk
+R.I.P. #4059
+
+1581349014
+fengb
+My estimate was accurate. 90% complete for 4 weeks 🙃
+
+1581349034
+fengb
+Never the same 90%
+
+1581349037
+mq32
+what's the correct way of initializing a cross target right now? Also, it looks like i have more work for TheLemonBoy
+
+1581349075
+BaroqueLarouche
+mq32:
+
+1581349095
+mq32
+ah okay
+
+1581349107
+mq32
+so my arch is required two times
+
+1581349113
+mq32
+feels a bit redundant
+
+1581349113
+andrewrk
+yes. I have a plan to address this
+
+1581349146
+andrewrk
+rather than the "triple" having an "arch" field, it's going to have a "cpu" field. and you can be vague and only give an architecture for the cpu. or you can be very specific and name a cpu
+
+1581349147
+mq32
+i thought so!
+
+1581349149
+companion_cube
+(anyway, I was just talking about syntax I wish zig had, not syntax it will have)
+
+1581349153
+mq32
+you always have a plan, andrewrk
+
+1581349194
+andrewrk
+companion_cube, fun fact, zig used to have that exact syntax
+
+1581349194
+mq32
+companion_cube, yeah but it's good to discuss about such things. There's always stuff to learn
+
+1581349224
+companion_cube
+well, it's my personal experience, also.
+
+1581349229
+andrewrk
+it was awkward to have 2 different ways to return things
+
+1581349246
+companion_cube
+well imho `return` is the odd one :D
+
+1581349255
+companion_cube
+(only to be used for early returns, imho)
+
+1581349271
+fengb
+Ruby has particularly bad accidental returns, but I don't think a typed language would have the same issue
+
+1581349279
+companion_cube
+in OCaml I've never been bitten by composite expressions returning values, but by dangling else (i.e not having the mandatory {}) many times
+
+1581349325
+andrewrk
+I have to do that thing now where I go through issues and face the fact that they will not get done in time for 0.6.0 and change the milestone
+
+1581349357
+mq32
+do we have an issue for cortex-m3 build is broken due to compiler_rt?
+
+1581349400
+andrewrk
+not that I'm aware of
+
+1581349404
+andrewrk
+is that a regression?
+
+1581349442
+mq32
+seems so?
+
+1581349452
+mq32
+i've tried compiling for cortex-m3 once and it worked
+
+1581349696
+mq32
+created #4425 for that issue
+
+1581349748
+andrewrk
+thanks mq32. this seems like a regression caused by the cpu target features branch
+
+1581349779
+mq32
+yeah, probably
+
+1581349780
+andrewrk
+or maybe it is revealing a latent flaw
+
+1581349789
+mq32
+but that change is
+
+1581349807
+andrewrk
+yes it's certainly on the path to global maximum
+
+1581349809
+mq32
+it just feels good to say: "I want cortex_m3!" and it just works (at least in theory)
+
+1581349825
+andrewrk
+yes and this can certainly be fixed because compiler_rt itself can ask what the CPU is too
+
+1581349853
+mq32
+which is even more cool
+
+1581349874
+mq32
+this makes writing high performance code reliable and easy for different target platforms
+
+1581350011
+fengb
+Oh and at a future point, we can generate feature targeted functions and swap them at load time
+
+1581350028
+andrewrk
+yes that is
+
+1581350864
+fengb
+Does the pinephone work decently with an external keyboard?
+
+1581351061
+andrewrk
+there is no software that works decently on it, it's very alpha
+
+1581351182
+adamkowalski
+is there a breaking change from yesterdays master to todays? My code no longer compiles haha, is there a commit I should look at so I can get a head start to know what to change
+
+1581351221
+andrewrk
+yes there were some breaking changes recently
+
+1581351241
+adamkowalski
+okay looking at the compile error it seems like the signature for std.fmt.format changed?
+
+1581351250
+andrewrk
+the output function is now required to be comptime
+
+1581351268
+andrewrk
+adamkowalski, more context:
+
+1581351271
+adamkowalski
+ah, thanks, i'll change that and see if it is fixed!
+
+1581351415
+adamkowalski
+Yup that's all I needed! Should we consider packing up the arguments for std.fmt.format into a struct so the signature isn't as long? zig fmt doesn't like when I try to format it like in the standard library where each argument is on a new line, so it ends up giving me one really long line with the full signature and it wraps around on my editor
+
+1581351504
+andrewrk
+put a comma after the last argument and run zig fmt again
+
+1581351510
+FireFox317
+adamkowalski, did you add a comma after the last argument in the function?
+
+1581351518
+FireFox317
+what andrewrk said xd
+
+1581351577
+mq32
+btw, andrewrk: thanks for allowing trailing commas in the function calls
+
+1581351584
+andrewrk
+of course
+
+1581351613
+andrewrk
+alright, I'm giving up on the "safety" sub-project of 0.6.0 milestone. that'll have to be a 0.7.0 project
+
+1581351658
+mq32
+maybe 0.6.0 is the "a lot of breaking changes"-milestone?
+
+1581351660
+adamkowalski
+that works perfect thanks
+
+1581351677
+fengb
+What's the goal for the rest of 0.6?
+
+1581351815
+andrewrk
+stabilization/robustness of async std lib on all tier 1 operating systems, and using that to self-host the compiler
+
+1581351935
+fengb
+
+
+1581351985
+fengb
+Oh wow, full speed on self-hosted compiler?
+
+1581352140
+companion_cube
+🚀
+
+1581352142
+andrewrk
+yeah. package manager is also important, but the thing is, that's going to reveal even more of stage1's flaws - namely memory consumption and lack of incremental compilation
+
+1581352173
+andrewrk
+we're getting away with stage1 for now because people aren't really taking advantage of each others' code yet
+
+1581352221
+andrewrk
+but also robustness of async std lib is halfway to package manager anyway. most of the work is downloading a tarball
+
+1581352314
+andrewrk
+congrats mq32 :)
+
+1581352324
+mq32
+it's nice to hack such stuff for work
+
+1581352352
+mq32
+we're developing software for cortex-m3 processors and i want to build a simple test framework based on qemu-arm and a freestanding target
+
+1581352559
+fengb
+Oh I’ve been meaning to add an issue for zstd. Let’s skip xz >_>
+
+1581352644
+andrewrk
+we need a few available-by-default formats, and then there can be "additional ways to download things" packages which act as plugins for the package manager
+
+1581352679
+companion_cube
+what's wrong with zlib, fengb? :)
+
+1581352685
+mq32
+yeah. i think the mvp is ".tar+checksum", no compression or fancy stuff
+
+1581352688
+companion_cube
+for just shipping sources around, it should do the job
+
+1581352702
+companion_cube
+and there's mini-z that's really tiny enough to ship with MVP imho
+
+1581352708
+andrewrk
+e.g. you depend on "ipfs-package-downloader.tar.gz" package in a special "download plugin packages" field, and then you can now depend on ipfs URL packages
+
+1581352760
+mq32
+with dependencies between the plugin loaders?
+
+1581352798
+andrewrk
+yes and it all works fine as long as there is not a dependency loop, of course.
+
+1581352836
+andrewrk
+we still don't have deflate/inflate in the std lib:
+
+1581352842
+mq32
+this will be awesome :)
+
+1581352843
+andrewrk
+that's a juicy issue
+
+1581352870
+companion_cube
+json without zlib is a bit sad, sometimes :)
+
+1581354276
+andrewrk
+another juicy one:
+
+1581354297
+andrewrk
+anyone want to remove the only remaining 'A' windows library call?
+
+1581355289
+pixelherodev
+I should not be working on this without sleep. I wrote a lexer cleanup function which, among other things, consolidates TYPE LPAREN [COMMA-SEPARATED ARGLIST] RPAREN ASTERISK into a single TYPE token representing a function pointer
+
+1581355309
+pixelherodev
+Then I wrote part of the AST gen which takes a token and returns a LLVMType node. Want to guess how I implemented that for function pointers?
+
+1581355382
+pixelherodev
+I'll give you a hint: the lexer takes a stream, and I used a SliceInStream. :P
+
+1581356538
+FireFox317
+andrewrk: regarding #2584 and #3893 should the `.decls` slice be lazy or each entry of that slice?
+
+1581356564
+FireFox317
+I'm trying to solve that issue
+
+1581356566
+andrewrk
+yes
+
+1581356581
+andrewrk
+it's a bit tricky, you have to read the other LazyValue code and see how it works
+
+1581356611
+FireFox317
+The whole slice?
+
+1581356731
+andrewrk
+you want to prevent resolve_decl from being called unless it is accessed
+
+1581356751
+FireFox317
+I guess that makes sense, because for the length of that slice to be known you have to resolve the decls
+
+1581356769
+FireFox317
+Yes indeed, okay thanks i'm gonna try a bit
+
+1581356812
+andrewrk
+you don't have to resolve the decls to determine the length
+
+1581356874
+pfg_
+is there any way to use something like pkg-config with the zig build system?
+
+1581356892
+andrewrk
+pfg_, yes in fact zig build automatically integrates with pkg-config
+
+1581356904
+andrewrk
+when you call linkSystemLibrary
+
+1581356939
+FireFox317
+well currently it is checking whether or not a function is a test and that is only known when it is resolved i guess?
+
+1581357082
+andrewrk
+whether a decl is a test or not is known after parsing, no semantic analysis needed
+
+1581357145
+FireFox317
+yeah indeed of course, i'm gonna try to play with it a bit :)
+
+1581358510
+Barabas
+Hello, I was taking a look at the documentation on master and I see it's been expanded on quite a lot since the last time I took a look. Very nice! However, I came across the allocator interface and I was a bit disappointed with the functions that are part of the interface. I don't understand why it pretty much just has a realloc function which
+
+1581358510
+Barabas
+will copy the memory for you if it has to allocate a new (larger) block of memory. There are many cases where this is far from optimal. Better would be to let the user copy his data, because he will know how to copy it best (if at all even). The most obvious example would be inserting an element into an array. And similar but way worse is when you
+
+1581358511
+Barabas
+have a large matrix which needs to append a row/column (whichever is the one that is least efficient). You definitely don't want to copy everything twice in those cases, but that's what you'll end up with. (Btw, is this the right place to discuss it or should I make an issue on github?)
+
+1581358576
+metaleap
+andrewrk does `zig` executable have some known command-or-args combination that will as a side effect print out (somewhere in its output) the stdlib path it would use for compile/build unless overridden
+
+1581358625
+metaleap
+since we have no GOPATH-like thing in zig (even go is doing away with it hehe) i want to: "given that there is some `zig` reachable from PATH, what is the stdlib path it will default to"
+
+1581358648
+andrewrk
+Barabas, sounds like some good ideas there. best place will be an issue
+
+1581358660
+metaleap
+(keep in mind the `zig` in PATH may be a symlink to /my/obscure/path/zig/versionxyz)
+
+1581358685
+andrewrk
+we don't have a GOPATH-like thing in zig
+
+1581358708
+metaleap
+exactly hence the question
+
+1581358719
+metaleap
+`zig stdlibpath` command also doesnt exist
+
+1581358723
+andrewrk
+ah, I misread, apologies
+
+1581358789
+andrewrk
+metaleap, yes I think it would make sense to have a sub-command for introspection
+
+1581358805
+andrewrk
+it can print cache paths, std lib path, etc
+
+1581358925
+metaleap
+👍will make an issue for that, what say you?
+
+1581360081
+fengb
+Is there a way to generate a switch block at comptime?
+
+1581360131
+fengb
+Something equivalent to `inline for / if` but possibly more efficient
+
+1581360132
+mq32
+fengb, i think that is either possible when we will be allowed to modify AST at comptime
+
+1581360152
+mq32
+but other than that you could probably use recursive if-else-stuff
+
+1581360175
+fengb
+Yeah that's what I'm doing, but I get the feeling that it's slower
+
+1581360187
+fengb
+Just a feeling though. I should benchmark it :P
+
+1581360463
+fengb
+Oh herro, LLVM figured it out
+
+1581360470
+fengb
+
+
+1581360475
+fengb
+I need to trust LLVM more
+
+1581360523
+mq32
+wow nice
+
+1581360532
+mq32
+that is some high level optimization
+
+1581360548
+BaroqueLarouche
+isn't this some zero-cost abstraction or what ?
+
+1581360571
+mq32
+no, that is compiler optimization
+
+1581360582
+BaroqueLarouche
+I know
+
+1581360587
+mq32
+sadly, Rust sells some stuff that is achieved by the optimizer as zero-cost abstraction
+
+1581360600
+mq32
+zero-cost means that even in a debug build you don't get cost
+
+1581360630
+companion_cube
+you can still use -O1 in debug mode I think
+
+1581360643
+mq32
+you can always use optimized builds
+
+1581360682
+mq32
+zero-cost abstraction is for example std::vector<T>
+
+1581360756
+mq32
+you can code all that by-hand, but the C++ template abstraction makes stuff simpler and doesn't cost more than coding the C equivalent by hand
+
+1581361209
+fengb
+Rust: let's make LLVM figure it out. Also Rust: why is the compiler so slow??? 🙃
+
+1581361235
+companion_cube
+you're harsh, they're working on it, that's partly why MIR was introduced
+
+1581361378
+fengb
+Yeah I know I'm being a dick -_-
+
+1581361401
+companion_cube
+it's ok, if you recognize it :p
+
+1581361754
+metaleap
+hmmmmmm. `std.fs.Dir.path(self: std.fs.Dir)` doesnt seem to be thing?
+
+1581361805
+metaleap
+but ok, dont suppose cwd() ever changes throughout the run time of a program, right?
+
+1581361895
+mq32
+cwd() changes quite often
+
+1581361900
+mq32
+and you should not rely on that
+
+1581361908
+mq32
+on windows, every file dialog navigation changes cwd
+
+1581361933
+metaleap
+in that case i need to take the cwd
+
+1581361946
+metaleap
+hm i could use the env var but it might not exist on windows :D
+
+1581361977
+metaleap
+seriously i scanned all `pub fn`s in struct `Dir` and found zilch, will repeat might be blind, gettin late
+
+1581361991
+mq32
+what do you want to know about the dir api?
+
+1581362007
+mq32
+you can always store a Dir to the cwd() at program startup
+
+1581362132
+metaleap
+i'm making a tmp dir from cwd at startup. at prog end i want to delete it. so i really need to figure out the abs path at startup. so if what i'm given is not `path.isAbsolute` i need to `path.join(cwd_full_path, given_tmp_dir_path)``
+
+1581362169
+mq32
+just keep a handle on the directory
+
+1581362224
+metaleap
+oh! so when cwd changes over the time, as long as I keep the orig handle from main() it'll keep pointing to the cwd-at-startup?! if true, good enough thx mq32
+
+1581362256
+mq32
+that's what i thought
+
+1581362309
+Barabas
+andrewrk, alright cool. I'll make one today or tomorrow. :)
+
+1581362387
+mq32
+you could use cwd().openDirTraverse(".") to obtain a handle on the cwd() that allows you to keep it
+
+1581362399
+mq32
+keep in mind though that you have to close the handle returned by openDir
+
+1581362624
+metaleap
+understood
+
+1581362985
+mikdusan
+so c++20 std::span - what does this sound like? "span describes an object that can refer to a contiguous sequence of objects with the first element of the sequence at position zero. A span can either have a static extent, in which case the number of elements in the sequence is known and encoded in the type, or a dynamic extent." and "A typical implementation holds only two members: a pointer to T and a size."
+
+1581363037
+companion_cube
+like rust's slices! am I right? 🙃
+
+1581363042
+mikdusan
++1
+
+1581363052
+BaroqueLarouche
+yeah it's a mutable slice
+
+1581363067
+mikdusan
+🍪🍪
+
+1581363077
+BaroqueLarouche
+yum!
+
+1581363274
+metaleap
+.net also introduced at long last slices and called them..
+
+1581363276
+metaleap
+drum-roll..
+
+1581363297
+metaleap
+system.span<T>
+
+1581363319
+mikdusan
+<span>too much like html</span>
+
+1581363403
+companion_cube
+so java will get Span<T> in 10 years
+
+1581363535
+mikdusan
+I bet eventually c++ will find some way to overload a fn that takes a span, and permit 2 args "ptr,len" to be accepted
+
+1581363966
+mq32
+mikdusan: foo({ ptr, len}) already valid today :D
+
+1581363984
+mikdusan
+the braces make it ok
+
+1581364022
+mq32
+<span ptr="0xF26342b" len="10" />
+
+1581364026
+mq32
+xml has spans too
+
+1581364298
+fengb
+Github needs a better voting system
+
+1581364322
+fengb
+We should designate different emojis per choices\
+
+1581364476
+mikdusan
+github needs a syntax for xterm-256-dark-bg so we can copy-paste terminal output with colors. and terminals should make it easy for us to copy with ansi-color escape sequences
+
+1581364533
+mq32
+you can probably xclip your escape codes into the terminal
+
+1581364637
+mikdusan
+let's say I have a gdb session, want to add it to an issue post. I'd like to be able to highlight copy and paste into github comment. with color. and no png.
+
+1581364688
+mq32
+yeah true
+
+1581364778
+mikdusan
+images work and github have relaxed their over-compression so I can actually from macos screen shot a window, and just paste right into comment as a decent image... but that image is not textual and people can't copy commands from it easily
+
+1581365246
+fengb
+They should auto OCR images and apply an overlay so you can select the text out 🙃
+
+1581365258
+fengb
+The solution to technical problems is always more layers!
+
+1581366235
+metaleap
+return type of `os.execvpe` is designated thusly: ` (ExecveError || error{OutOfMemory}) `
+
+1581366240
+metaleap
+no !void
+
+1581366264
+metaleap
+trying `catch |err| doSth(err)` gives:
+
+1581366271
+metaleap
+expected error union type, found 'std.os.error:985:16'
+
+1581366377
+metaleap
+same with `try`. how to handle?!
+
+1581366443
+mikdusan
+what happens if you don't do try?
+
+1581366670
+metaleap
+mikdusan: check this out:
+
+1581366697
+metaleap
+seems if i execvpe `zig init-lib` once its done it takes down the calling process (mine)
+
+1581366711
+metaleap
+not even HERE_1 is being output anymore
+
+1581366741
+mikdusan
+because it succeeded
+
+1581366744
+metaleap
+not even my "all tests done" msg at the end shows up anymore, seem to be getting killed
+
+1581366763
+metaleap
+so execvpe on success kills the current process?
+
+1581366767
+mikdusan
+oh yes
+
+1581366779
+mikdusan
+the success path is... your call site is gone. replaced.
+
+1581366803
+mikdusan
+if you want to keep parent/child then you want spawn
+
+1581366831
+metaleap
+well that has to go into the doc-comments :D ahh thanks, i only looked for exec and didnt catch spawn
+
+1581366844
+metaleap
+TIL thx mikdusan
+
+1581366860
+mq32
+metaleap: exec is usually "replace the current process with the selected executable"
+
+1581366876
+mq32
+spawn/create child process is usually done by fork/clone with exec
+
+1581366917
+mikdusan
+3 general unix thingees. exec = replace and run. spawn = run in a child-process another executable. fork = run in a child-process a function in your code.
+
+1581367105
+metaleap
+yeah i lived in go mostly last few years where the os/exec pkg doesnt reuse said meaning for "exec process". their way to act cross-platform is often to hide uniquely-unixy subtleties from the apis
+
+1581367287
+metaleap
+now i get why zig & node have separate `child_process` modules outside of `os` or `process` (php too i reckon? =)
+
+1581367413
+mikdusan
+apparently in go you have to use syscall.Exec for replacement behavior
+
+1581367800
+metaleap
+yeah but it's really not a remotely common scenario in that ecosystem afaik
+
+1581368358
+metaleap
+ChildProcess.init() has an `errdefer` right before a proper `return`. what's this pattern about?
+
+1581368415
+metaleap
+as in:
+
+1581368536
+FireFox317
+
+
+1581368559
+metaleap
+i know the keyword but above from my understanding its a noop
+
+1581368572
+fengb
+In this case, it might be a noop. Maybe it used to have a body before the return?
+
+1581368672
+FireFox317
+probably the childprocess struct was changed and removed the need of try's when initializing the struct. thus now it cannot fail to init anymore
+
+1581368677
+FireFox317
+except for the OOM ofcourse
+
+1581368735
+metaleap
+ah ok just wondered if there's some unknown-to-me subtlety i was missing, yeah likely some refactoring-incurred thing
+
+1581368769
+metaleap
+any linter-writers out there take note :P
+
+1581372463
+metaleap
+any windows user here? can you look into any of your zig-cache/h/*.txt files and let me know if the paths in there use / or \
+
+1581372486
+metaleap
+tia =)
+
+1581373140
+Sahnvour
+metaleap: \
+
+1581373170
+metaleap
+Sahnvour: thanks!
+
+1581377178
+daurnimator
+companion_cube: I've been bit my accidental returns that caused production outages. It's why we mandated the move away from coffeescript at an old employer of mine
+
+1581377351
+companion_cube
+I wouldn't compare coffeescript with a properly typed language
+
+1581377595
+fengb
+Coffeescript has a lot of issues :P
+
+1581377675
+mikdusan
+neat; I setup a 4 GiB ramdisk for builds; make an APFS container on it. add 3 APFS volumes, and mount each into a git worktree build directory. they all share same total 4 GiB and I can rm -fr _build dir, and it stays put but is emptied.
+
+1581377730
+jaredmm
+pixelherodev: I don't know if stepping away from WASM would help. As much as I'd like to, we're not getting away from heavy webapps now. We have GIS libraries that we have to maintain parity across Java, JavaScript, and C. Being able to write them once in Zig, then use them via native, WASM, or JVM bytecode would be a huge gain for us.
+
+1581377764
+jaredmm
+I didn't catch the complete context of your WASM comment, but as stupid as the whole webapp thing is there are benefits to people forcing it away from JS.
+
+1581377777
+fengb
+WASM is the least bad cross-platform bytecode
+
+1581378153
+daurnimator
+at least we're back below 1000 issues now :)
+
+1581378256
+andrewrk
+does that send notification emails when I change the milestone?
+

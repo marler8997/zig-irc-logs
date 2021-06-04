@@ -1,0 +1,1068 @@
+1581380887
+fengb
+I’m really disliking the term “friction”. It keeps being applied to “things I don’t like”
+
+1581381298
+andrewrk
+alright, I finally caught up on issue triaging
+
+1581383482
+mikdusan
+andrewrk: re: assert comment for #4389, I'm a little unclear as to the worry. I (don't think) I replaced assert -- I replaced 1 assert that masked side-effects and caused release-builds to segfault. unmasking the effects via new macro expressAndAssertNoError is very limited, has only 12 use sites
+
+1581383631
+mikdusan
+my wording is bad. I replaced 1 non-standard macro to no longer hide side effects that a debug build experiences. now both release/debug builds get the same side effects, and it fixed some segfaults in release build.
+
+1581383705
+andrewrk
+mikdusan, oh is the #undef assert / redefining to zig_assert still there somewhere?
+
+1581383723
+andrewrk
+
+
+1581383771
+andrewrk
+I blame myself for this confusion. it's bad practice to replace standard defines with different semantics
+
+1581383862
+mikdusan
+wo. wait, I don't think I meant to do anything with assert() macro. jeeez
+
+1581383868
+mikdusan
+let me look into this
+
+1581383999
+mikdusan
+oh wow. what a clusterf. Ok so I inadvertantly dropped `#define assert` instead of just moving it to src/util_base.hpp, and that explains why side-effects became an issue.
+
+1581384008
+mikdusan
+ok this is good, I can add that back,
+
+1581384016
+andrewrk
+yeah I saw that expressAnd and figured you might not have seen it
+
+1581384028
+andrewrk
+that or it was intentional
+
+1581384044
+mikdusan
+and I can restore expressAnd to whatever it was originall
+
+1581384047
+mikdusan
+thanks for catching this
+
+1581384086
+andrewrk
+np
+
+1581384096
+andrewrk
+that should be good for this PR. I think the end game is: codebase updated to use zig_assert or the other kinds of asserts that print source location, and leave `assert` alone since it has an expected meaning
+
+1581384133
+mikdusan
+"luckily I keep my git worktrees numbered for just such emergencies" -- foghorn leghorn
+
+1581384141
+andrewrk
+lol
+
+1581384752
+fengb
+
+
+1581385202
+daurnimator
+andrewrk: no emails on milestone change.
+
+1581385282
+andrewrk
+probably a good thing, unless you wanted to receive 150 emails today
+
+1581385291
+adamkowalski
+what is the fastest way to put something in a hashmap if it doesn't exist, or update the existing entry by adding it to the new entry?
+
+1581385305
+daurnimator
+"adding it to"
+
+1581385310
+daurnimator
+your element type is an array?
+
+1581385319
+daurnimator
+adamkowalski: see the http.headers module; it does something like that.
+
+1581385338
+andrewrk
+there's a getOrPut function
+
+1581385347
+adamkowalski
+yeah it's an nd array. but that doens't matter. the thing that matters is that I want to take the new entry and the old entry and merge them. or put the new entry in if it's empty
+
+1581385376
+daurnimator
+also does your key type require allocation?
+
+1581385385
+daurnimator
+that required some... thinking to the order of operations
+
+1581385435
+adamkowalski
+my key is a union(enum) of different types, but they don't require allocations yet. They will soon
+
+1581385567
+adamkowalski
+andrewrk: getOrPut looks promising thanks!
+
+1581385651
+adamkowalski
+so I could look at the GetOrPutResult and check if found existing is there? Then if I modify the kv will that modify it in the hashmap?
+
+1581387866
+mikdusan
+adamkowalski: it's a pretty slick API. you get back a kv pointer no matter if there or not; and `found_existing` flags it for you, just remember to initialize if !found_existing
+
+1581388905
+daurnimator
+mikdusan: the problem is if you need to allocate the key; and that allocation fails; then you end up needing to delete the entry that was created...
+
+1581389192
+mikdusan
+if you have allocated-keys, don't you have to allocate one before calling getOrPut()
+
+1581389246
+daurnimator
+mikdusan: no. because if the get succeeds... then you'd have allocated for nothing
+
+1581389282
+mikdusan
+how's the get going to succeed without a key
+
+1581389316
+daurnimator
+mikdusan:
+
+1581389621
+mikdusan
+ah right the old string dupe
+
+1581389659
+mikdusan
+i realy hate the "have to copy it because we're not sure of its lifetime" business
+
+1581389753
+daurnimator
+mikdusan: often the source of `name` will be a network buffer: receive http header over the wire -> append it to the header structure
+
+1581389779
+daurnimator
+that network buffer would be discarded; and the header structure lives on as it moves through whatever web-framework we end up with
+
+1581389803
+daurnimator
+i.e. the copy is necessary for most of our use cases.
+
+1581389842
+daurnimator
+and when its not...
+
+1581390059
+mikdusan
+what you need is a union key... { short: [31]u8, long: *u8 } and hedge your bets
+
+1581390102
+daurnimator
+mikdusan: no what we need is an enum of common headers :)
+
+1581390117
+daurnimator
+which is kindly provided by http2
+
+1581390130
+daurnimator
+which I have an open contributor friendly issue for....
+
+1581394049
+mikdusan
+andrewrk: #4389 CI (Windows platform) is on extended vacation, other platforms passed; and my local Windows tests passed; may I merge to master?
+
+1581394068
+andrewrk
+yep go for it
+
+1581394084
+andrewrk
+in general, I trust your judgement
+
+1581394099
+andrewrk
+that's an exciting PR merge too :)
+
+1581394200
+andrewrk
+it might be worth opening a PR to enable more freebsd tests in the CI and see what works now
+
+1581394243
+andrewrk
+good night
+
+1581394261
+mikdusan
+'night
+
+1581394269
+fengb
+Good night
+
+1581394400
+fengb
+So... bare union has a secret enum in safe modes, but it's removed in release-fast?
+
+1581394408
+mikdusan
+yup
+
+1581394514
+companion_cube
+nice.
+
+1581394537
+fengb
+Great thanks
+
+1581421488
+daurnimator
+wtf... why does io.BufferOutStream even exist
+
+1581421511
+daurnimator
+pretty sure
+
+1581423142
+betawaffle
+is it not just an alias?
+
+1581423173
+betawaffle
+fwiw, i still don't know what's going on with streams because there is no documentation at all
+
+1581423240
+daurnimator
+betawaffle: similar to allocator pattern right now
+
+1581423278
+betawaffle
+i've run into situations where i want a "stream" but i've been a bit scared to figure them out
+
+1581423650
+daurnimator
+betawaffle: essentially: always take the address of a stream member
+
+1581423664
+betawaffle
+what's a stream member?
+
+1581423746
+daurnimator
+betawaffle: stream objects tend to have a .stream field
+
+1581428804
+mq32
+<betawaffle> is it not just an alias?
+
+1581428818
+betawaffle
+that's what i asked
+
+1581428836
+mq32
+I assume that BufferOutStream is a stream that allows writing into a buffer/slice object and BufferedOutStream is a stream that buffers writing into another stream into
+
+1581428873
+betawaffle
+oh, i didn't even notice the -ed
+
+1581428876
+betawaffle
+lol
+
+1581429046
+betawaffle
+unrelated: i find myself wanting the equivalent of newtype often. like being able to define a type that behaves like say a u32, but has methods and other declaration-y things
+
+1581429071
+fengb
+Wrap it in a struct or exhaustive enum :)
+
+1581429090
+betawaffle
+but then i have to give the field a name
+
+1581429097
+betawaffle
+it doesn't really behave the same
+
+1581429120
+mq32
+betawaffle: what usecase? "different unit" or "unique identifier"?
+
+1581429125
+fengb
+.@“” 🙃
+
+1581429174
+betawaffle
+mq32: units would be one thing, another could be something like annotating a type with how to marshal/unmarshal it in some format'
+
+1581429188
+mq32
+andrew really killed a lot of issues the last two days
+
+1581429202
+betawaffle
+i agree there can be other ways to address both of those use-cases in other ways
+
+1581429218
+fengb
+Tags are a semi hot topic for the latter
+
+1581429250
+betawaffle
+whatever it is, i want it to not feel tacked-on or too heavy
+
+1581429281
+fengb
+Struct wrapping isn’t heavy, but it does feel a bit tacked on >_>
+
+1581429301
+betawaffle
+no, struct wrapping is totally fine, except for the ergonomics of it sometimes
+
+1581429348
+fengb
+I’ve started liking it more since it feels better than the distinct type proposals
+
+1581429463
+betawaffle
+a non-exhaustive enum comes really close, but that only works for int types, and it still has the "explicit unwrapping" problem
+
+1581429539
+betawaffle
+i suppose if we just make a really fluent way to deal with "units" and tags can solve the encoding/decoding use-cases, that might be enough
+
+1581429560
+fengb
+Units just got closed :P
+
+1581429564
+betawaffle
+darn
+
+1581429673
+mq32
+i don't think units are a good idea to have on language level
+
+1581429684
+mq32
+the semantics of units is just way too complex to be expressed in a language like zig
+
+1581429725
+betawaffle
+i mean... a unit is just a different type, you want the compiler to complain if you try to mix units without doing the conversions
+
+1581429742
+fengb
+It’s not that simple
+
+1581429759
+mq32
+is kilo byte another unit than byte?
+
+1581429769
+mq32
+is gram the base unit or kilogram?
+
+1581429784
+mq32
+or even pound?
+
+1581429827
+fengb
+Or radians, which is unit less but not exactly
+
+1581429862
+betawaffle
+what i mean is, i want to say: "let me add these two things (same unit) fluently, but make me do something special if i try to add it with some other unit"
+
+1581429884
+mq32
+yeah that's what the distinct type proposal is proposing
+
+1581429890
+fengb
+Yeah but it only works on addition and subtraction. How does bit shifting meters work?
+
+1581429891
+mq32
+@Distinct(u32) will yield a new u32-type
+
+1581429909
+betawaffle
+fengb: it'd be the same...
+
+1581429926
+fengb
+Oh they’re not units. Just distinct
+
+1581429950
+mq32
+yes, but i think that will solve exactly betawaffles problem
+
+1581429956
+betawaffle
+right, the "units" themselves should be something the programmer needs to deal with
+
+1581429972
+betawaffle
+the separation should be enforced by the compiler, though
+
+1581429992
+fengb
+Yeah I like distinct types, but then there’s talk saying they are only scalars and no methods
+
+1581430009
+fengb
+So I got bored and decided a struct wrapper isn’t so bad
+
+1581430017
+betawaffle
+don't get me wrong... having the compiler automatically understand that two units are related by some scaling would be cool, but not that important
+
+1581430024
+mq32
+fengb: i think it's a good thing to either have methods or operators
+
+1581430034
+betawaffle
+i'd want methods
+
+1581430036
+mq32
+because methods are pretty much custom operators / overloads
+
+1581430058
+betawaffle
+something like newtype(u32) { ... struct/enum/union body ... }
+
+1581430096
+betawaffle
+and all the operators on T would work for newtype(T), but only with other values of newtype(T)
+
+1581430124
+betawaffle
+it would be up to the author to define helpful methods for converting to/from other types
+
+1581430178
+mq32
+yeah but this can also be made freestanding
+
+1581430181
+betawaffle
+so that you don't need to do MyType{ .value = a.value + b.value }
+
+1581430189
+betawaffle
+you can just do a + b
+
+1581430200
+mq32
+yeah, but that would also be possible without methods:
+
+1581430205
+fengb
+Sounds like operator overloading 🙃
+
+1581430216
+mq32
+const dist2 = dist1 + distanceFromMeters(345);
+
+1581430225
+betawaffle
+fengb: except we'd not let you change the behavior of the operators
+
+1581430229
+mq32
+const dist3 = dist2 + distanceFromNauticMiles(33);
+
+1581430271
+betawaffle
+mq: but then you can do distanceFromNauticalMiles(33) + distanceFromMeters(345) and get the wrong result
+
+1581430291
+mq32
+why?
+
+1581430310
+mq32
+distanceFromNauticMiles would return the same type as distanceFromMeters, but will convert on your base type
+
+1581430317
+mq32
+which could be "inch" or whatever
+
+1581430320
+betawaffle
+well, not if you use a consistent "distance" unit returned by each of those
+
+1581430328
+mq32
+that was the idea behind that ;)
+
+1581430339
+mq32
+otherwise i could've just written "33 + 345"
+
+1581430343
+betawaffle
+but at that point they are just plain numbers again and can be misused
+
+1581430358
+mq32
+why that? i have to explicitly cast into "Distance"
+
+1581430374
+betawaffle
+right, that's what i want from newtype
+
+1581430381
+mq32
+@as(Distance, 10) // would return a value with Distance=10, whatever Distance may be
+
+1581430405
+mq32
+and "fn distanceFromNauticMiles(miles: f32) Distance" would convert miles to the abstract distance unit
+
+1581430429
+mq32
+it doesn't need custom methods or your "newtype" syntax, but just the builtin "const Distance = @Distinct(f32)"
+
+1581430431
+betawaffle
+perfect, that's what i want. but we'd need newtype for that
+
+1581430457
+betawaffle
+though it would be nice to have methods, imo
+
+1581430466
+fengb
+const Distance = struct { meter: u32 }
+
+1581430495
+fengb
+Distance.fromNauticMiles(33)
+
+1581430509
+betawaffle
+fengb: but then how do you add them fluently?
+
+1581430516
+fengb
+I suppose wrapping the types after operations is a little annoying
+
+1581430518
+mq32
+this would crash as 33 nautic miles aren't good expressible as a u32
+
+1581430551
+fengb
+d.plus(d2) :P
+
+1581430745
+mq32
+d.@"+"(d2)
+
+1581431650
+betawaffle
+you have to agree that's pretty awkward
+
+1581432439
+fengb
+Hmm, wasm doesn't have computed goto
+
+1581432459
+fengb
+Or technically forward goto of any kind
+
+1581433027
+betawaffle
+how does llvm deal with that?
+
+1581433124
+fengb
+Standard wasm generates "blocks" that you can break out of similar to Zig
+
+1581433169
+fengb
+So it can represent all the same problems, but I'm curious what the performance ramifications are
+
+1581433209
+betawaffle
+that probably depends entirely on the execution environment
+
+1581433225
+fengb
+Oh this makes sense. Wasm execution memory does not exist to the binary, so it'd make no sense to have any sort of offset based goto
+
+1581433311
+fengb
+I'm just discovering this stuff as I work my way through implementing it :P
+
+1581435481
+companion_cube
+wait, are you implementing a wasm execution machine?
+
+1581435503
+fengb
+Yep
+
+1581435525
+companion_cube
+that's some serious shaving of yacks ;)
+
+1581435535
+companion_cube
+(or, seriously cool thing)
+
+1581435633
+fengb
+Just learning more about VMs in general
+
+1581435693
+fengb
+And Zig :)
+
+1581435740
+mq32
+ah, fengb :)
+
+1581435747
+mq32
+i'm implementing a VM as well
+
+1581435750
+mq32
+but not for WASM
+
+1581435867
+fengb
+I'm half-done with my Gameboy emulator. So in the honor of all my existing projects, I'm moving on 🙃
+
+1581435886
+betawaffle
+fengb: where do you find the time?
+
+1581435923
+fengb
+That's a good question
+
+1581435930
+fengb
+There's a reason I never finish anything :P
+
+1581435979
+betawaffle
+yeah, i mean i started trying to implement a wasm VM too, but didn't get very far. something distracted me
+
+1581436039
+fengb
+I'm done with most of the instructions. That was by far the hardest brute force in Gameboy, and it was really simple with wasm
+
+1581436063
+fengb
+Of course... I still need to figure out all the block / jump instructions
+
+1581436120
+mq32
+fengb, wasm has no dynamic types like "string", right?
+
+1581436230
+betawaffle
+not currently, no
+
+1581436302
+fengb
+No, there's only 4 types in wasm
+
+1581436329
+fengb
+i32, i64, f32, f64. It's surprisingly minimal yet function
+
+1581436360
+betawaffle
+don't they have signed/unsigned too?
+
+1581436370
+betawaffle
+and then there's the "function" types table...
+
+1581436380
+fengb
+* i32, i64, f32, f64. It's surprisingly minimal yet functional
+
+1581436429
+betawaffle
+oh right, signed-ness is a property of the instructions?
+
+1581436440
+mq32
+ah yeah
+
+1581436454
+mq32
+my VM will have dynamic types on the stack like array, enumertors and such
+
+1581436488
+fengb
+Yep
+
+1581436869
+mq32
+right now i'm just copying like a mad man, but first step is to get everything running with unit tests again
+
+1581436880
+mq32
+<= doesn't have unit tests for version 1 & 2
+
+1581439422
+shakesoda
+wasm hasn't got any u/i8's?
+
+1581439720
+fengb
+The "registers" are at minimum 32 bits wide, but you can extend load i8/u8 from memory
+
+1581439771
+shakesoda
+makes sense
+
+1581442479
+betawaffle
+thanks, now i want a milkshake
+
+1581443786
+metaleap
+scanning std.thread: one can `spawn` one and `wait` on one. "killing" one / aborting it isnt in there yet however
+
+1581443795
+dingenskirchen
+I've encountered what I thought a really weird issue. It turned out much simpler: running things via `zig build run` causes std.io.readLine to fail instantly. Why is that?
+
+1581443800
+metaleap
+would this be via some sig to handle/id? probably crossplatform ramifications?
+
+1581444098
+metaleap
+dingenskirchen: i had that issue at the start with a most-minimalist readliner
+
+1581444098
+metaleap
+the runstep runs
+
+1581444245
+metaleap
+as for my threads, I'll have them monitor a custom "abort: bool" atomic across all their loops + iterations instead of digging through the earth to find out how to cross-platform-brute-force-kill them, hehe
+
+1581444317
+dingenskirchen
+metaleap, thanks for the headsup! ^^
+
+1581444433
+dingenskirchen
+aw, doesn't look like it's possible - RunStep.make() directly sets that behavior before executing the child process
+
+1581444778
+mikdusan
+what would you expect tools like `make` or `ninja` to do with stdin? iirc, make doesn't drop stdin, and ninja does
+
+1581446875
+mikdusan
+andrewrk: in this packed struct, what would you see llvm's <{ ... }> defined as?
+
+1581446877
+mikdusan
+
+
+1581447544
+dimenus
+andrewrk: libsoundio works nicely with libmpg :)
+
+1581451807
+andrewrk
+I'm taking a 2 day vacation to spend some time with my girlfriend. Be well everybody, see you on Friday
+
+1581451815
+mikdusan
+audios amigos
+
+1581451902
+fengb
+Take care
+
+1581453632
+seoushi
+is there a way to "hide" a member variable in a struct? I want to be able to access the variable inside a struct method but not elsewhere.
+
+1581453652
+BaroqueLarouche
+I don't think so
+
+1581453703
+seoushi
+one thing I can think of is to make a non public struct and the member variable would be in that.. will see if that gets the desired results
+
+1581454235
+seoushi
+nope :(
+
+1581454239
+fengb
+No private fields
+
+1581454256
+seoushi
+I guess I'm resorting a a comment saying, don't access this. which is kinda crappy
+
+1581454638
+metaleap
+seoushi most stdlib structs seem to expose enough methods so users never have to deal directly with the fields. not a bad convention but you can also settle on your own convention here, maybe prefix "private" with __ or put them all in some "internal" sub-struct.. whatever will help you later deal with your own apis. assuming you're not writing a lib for a currently-non-existing audience of millions of ziggers right now :P
+
+1581454683
+seoushi
+yeah I planed on writting functions to expose the things I want. a naming convension for private does make a lot of sense tho
+
+1581454720
+metaleap
+it is a given that in zig data types represent memory regions you get full access to --- also at comptime. should "private" fields not be processed in comptime funcs that may make alloc decisions or such based on what they can reflect on
+
+1581454720
+shakesoda
+for other languages that don't do private and i don't particularly think the user should mess with a field i just single underscore prefix
+
+1581454804
+shakesoda
+not much a fan of hiding stuff though, and this comes up a lot less if you don't have an oop design to begin with (just say no!)
+
+1581454821
+companion_cube
+hiding stuff exists also in non-OO languages
+
+1581454830
+shakesoda
+certainly
+
+1581454833
+companion_cube
+it's the basis of having clear abstraction boundaries…
+
+1581454853
+shakesoda
+i said only that it comes up less, not that it's not a thing
+
+1581454929
+companion_cube
+idk, I feel like it comes up all the time for me :)
+
+1581455036
+seoushi
+There are two reasons for me to want private. 1, so I can change the interface without breaking people. if they can't access it to begin with I can't break them. 2) to hide unsafe access. I only want write access in certain conditions but I can't store a const because there are some cases writes are needed
+
+1581455100
+shakesoda
+you could hide the data at the module level instead of the struct
+
+1581455144
+metaleap
+shakesoda: how would this support multiple "instances" of the struct?
+
+1581455193
+shakesoda
+metaleap: passing in an index of the thing you want (or if it's more convenient, store said index in your struct)
+
+1581455243
+shakesoda
+metaleap: this solution can have some caveats, namely adding an indirection that may not already be present
+
+1581455274
+shakesoda
+most of the time i reach for this one there was already an indirection somewhere and i'm not doing it just to hide anything
+
+1581455432
+fengb
+Export an opaque handle and expose functions to fiddle with that >_>
+
+1581455615
+seoushi
+I wish I could generate anonymous functions. or perhaps some sorta function currying. That way I could pass a struct with function pointers to the methods I want to call.
+
+1581455634
+seoushi
+rather the functions I want users to be able to call.
+
+1581455708
+metaleap
+who are these users, i wanna learn about the "market" for zig code artifacts
+
+1581455730
+fengb
+Changing struct fields also breaks the ABI in general. What you want seems to be interfaces, which don't really exist yet
+
+1581455778
+seoushi
+Yeah interfaces could work
+
+1581455938
+metaleap
+i mean if i were sharing some lib I wrote in C i'd fully expect 99.9% of the target audience to be "fully in the know" about the implications of wanton field accesses vs the benefits of instead investing only in the "interfaces" (functions) exposed and more likely to remain backwards-compatible for longer, right. why would a zig audience need more handholding or protecting..
+
+1581455966
+companion_cube
+because safety is good? :)
+
+1581455991
+metaleap
+but there's already rust/go/.net/java/etc for the anxious types :D
+
+1581456003
+mikdusan
+this won't work today but maybe it should?
+
+1581456004
+fengb
+Private != safe
+
+1581456027
+companion_cube
+no, but it helps
+
+1581456070
+companion_cube
+especially in a team, not everyone might be aware of what's safe or not in another part of the codebase
+
+1581456092
+fengb
+mikdusan: struct memory layout is undefined so there's no guarantee that would work. And it'd definitely break if my randomization idea is a thing
+
+1581456132
+metaleap
+in a team especially all need to be on the same page with regards to "conventions" anyway. again, conventions are all thats needed.
+
+1581456184
+metaleap
+and if need be, some automatic linting tooling to guard against accidental violations. thats an ecosytem question tho, not a compiler burden then.
+
+1581456297
+metaleap
+you can walk up and down the memory in unsafe languages so "private" is just a silly toy. you can also usually easily without restrictions "reflect" in most stacks on "private"s so really whats the point. its an annotation, nothing more. so lets bring in (non-noisy-looking, calm) free-form annotations and thatll take care of it, with community written linters providing assurances that many seem to long for
+
+1581456437
+metaleap
+in fact pub/extern/packed i gather could be seen as existing "annotations" that the compiler knows about because it cares about them. as far as i care, it could allow and ignore any other monikers in that usually-prefix-location. all words before fn/const/var become "annotations". the wellknown ones the compiler uses, the rest maybe other tooling or comptime code picks up on :D funky evening ideas, too stuffed to do clean work tonight
+
+1581456474
+metaleap
+(as well as before enum/struct/union i guess, you get the idea, probably a bit too unbaked right now)
+
+1581456498
+fengb
+Get baked 🙃
+
+1581456544
+metaleap
+probably should
+
+1581457001
+metaleap
+which one (or combination) of the 8 std.hash-es would you guys prefer when it comes to keeping track of (usually over 100 and under 1000) files identified by their abspath that is to be reflected via a hash/id. so searches dont strcmp all the time.
+
+1581457010
+metaleap
+StringHashMap seems to default to Wyhash
+
+1581457103
+metaleap
+from my amateur background i kinda have wy+xx as the top perf performers in my head. by combining both collisions are even more unlikely. anything im missing?
+
+1581457190
+BaroqueLarouche
+Use the hash as the key and add functions that take strings but intenally hash it
+
+1581457198
+BaroqueLarouche
+*internally
+
+1581457301
+mikdusan
+fengb: another overlay variation:
+
+1581457335
+fengb
+Two-way bindings now? :P
+
+1581457666
+metaleap
+BaroqueLarouche: yeah the question is for "the best hash for the purpose, out of 8 exposed in std"
+
+1581460696
+FireFox317
+I submitted #4435, but it's not compelety working yet. It doesn't resolve the decls slice when doing `decls.len` whereas doing `decls[0]` resolves the type and it works fine. Maybe someone (mikdusan?) knows how to make sure the type is actually resolved when doing `decls.len`.
+
+1581461269
+mikdusan
+FireFox317: take a peek at ir_analyze_instruction_array_type, and how it resolves LazyValueArrayType.length . maybe that's a hint
+
+1581461472
+FireFox317
+mikdusan, Thanks. however in that case the lazy value is used for the array type, the length is resolved immediately. in my case the whole slice is lazy and thus the length is not known yet when generating the typeinfo.
+
+1581461948
+FireFox317
+if that makes sense
+
+1581465317
+mikdusan
+FireFox317: an array access creates IR { GenElemPtr, GenLoadPtr }, and .len access { GenStructFieldPtr, GenLoadPtr }
+
+1581465355
+mikdusan
+if my lldb session was correct, the GenElemPtr lead to a ir_resolve_const_val()
+
+1581465377
+mikdusan
+and the GenStructFieldPtr doesn't seem to do that
+
+1581465407
+mikdusan
+the corresponding functions are ir_analyze_instruction_elem_ptr() vs. ir_analyze_struct_field_ptr()
+
+1581465431
+FireFox317
+and ir_resolve_const_val() calls ir_resolve_lazy indeed
+
+1581465471
+FireFox317
+thanks mikdusan! I think I can solve it with this information
+

@@ -1,0 +1,676 @@
+1606626798
+andrewrk
+marler8997, with the latest commit to zig-window it is additionally working on musl based linux distros
+
+1606641029
+ikskuh
+andrewrk: can i somehow use Builder.addWriteFile to create a Package?
+
+1606641621
+koakuma
+Excuse me, I'm having some weird issues with floating point values on sparc64
+
+1606641680
+koakuma
+Found out that FP values would compile down to wrong constants in assembly when compiled natively on a sparc64 machine, but compiles down correctly when cross-compiled using an x64 machine
+
+1606641699
+koakuma
+For example:
+
+1606641759
+koakuma
+I'm still not very familiar with the compiler's internals, can anyone help me with directions so that I can start debugging this?
+
+1606641858
+koakuma
+Oh, the issue is observable in the generated LLVM IR too
+
+1606643017
+TheLemonMan
+koakuma, that's weird, only the upper part is corrupted
+
+1606644158
+koakuma
+Yeah
+
+1606644179
+koakuma
+All the corruptions seem to happen in the first 12 bits
+
+1606644185
+koakuma
+In f32 and f64
+
+1606644358
+TheLemonMan
+12... that's the sign+exponent for a f64
+
+1606644379
+TheLemonMan
+I bet for f32 it's the upper 9 bits
+
+1606644645
+koakuma
+Lemme check
+
+1606644725
+koakuma
+-10.05 compiles down to 0xf7a0cccd here
+
+1606644731
+koakuma
+So yeah, nine bits
+
+1606644930
+koakuma
+Some sort of parsing or codegen bug, maybe?
+
+1606644949
+TheLemonMan
+check out gen_const_val
+
+1606644997
+TheLemonMan
+break there with a debugger and check if the const_val->data.x_f32 (or x_f64) values are ok
+
+1606645022
+TheLemonMan
+if they are already fucked up the problem is with Zig
+
+1606648994
+koakuma
+TheLemonMan: const_val->data.x_f32 is also wrong
+
+1606649042
+koakuma
+-10.05 becomes 0xf7a0cccd there too
+
+1606649045
+TheLemonMan
+cool, it's Zig corrupting the values then
+
+1606649132
+TheLemonMan
+the next stop is ir_gen_float_lit, if the bigfloat value is corrupted there we have a lead
+
+1606649775
+koakuma
+Okay, lemme check there too
+
+1606650338
+koakuma
+It seems that it represents the literal using 128-bit softfloat?
+
+1606650365
+koakuma
+*node->data->float_literal.bigfloat is where the float value is stored, right?
+
+1606650388
+TheLemonMan
+yep
+
+1606650466
+TheLemonMan
+it then calls bigfloat_to_f64 to get the value you see in x_f64
+
+1606650475
+koakuma
+The content is {4643001868805052825, 11068046444225751414}
+
+1606650502
+koakuma
+Not sure how to interpret/convert it to floating value notation
+
+1606650619
+TheLemonMan
+ask gdb `p bigfloat_to_f64(your bigfloat ptr)`
+
+1606650701
+koakuma
+$10 = 6.5228229285343777e+33
+
+1606650713
+koakuma
+So still wrong here
+
+1606650774
+TheLemonMan
+ok, let's backtrack some more... now break on end_float_token
+
+1606650800
+TheLemonMan
+that calls bigfloat_init_buf that in turns calls parse_f128
+
+1606650808
+TheLemonMan
+and the latter is something you don't want to debug
+
+1606650868
+TheLemonMan
+oh, there are a few pieces that assume the target is LE
+
+1606650894
+koakuma
+Ah
+
+1606650903
+TheLemonMan
+scrap that, it does check __BYTE_ORDER (is that correct for your build?)
+
+1606650946
+TheLemonMan
+if that's where the numbers are corrupted you will need some patience and a good debugger
+
+1606651129
+ikskuh
+oh man. we definitly need to reduce the number of "notes" the compiler prints
+
+1606651295
+ikskuh
+1030 lines of messages for a single error is just way too much
+
+1606651351
+TheLemonMan
+1030? that's a noteworty record!
+
+1606651373
+ikskuh
+:D
+
+1606651386
+ikskuh
+"HGLRC was already declared. Referenced here:"
+
+1606651393
+ikskuh
+and then 300 lines of code where it was referenced
+
+1606651398
+ikskuh
+problem:
+
+1606651404
+ikskuh
+my terminal only has 1000 lines backlog
+
+1606651411
+ikskuh
+→ i couldn't read the error without grepping for it
+
+1606651426
+ikskuh
+there was an issue about reducing clutter, right?
+
+1606651458
+TheLemonMan
+iirc yes
+
+1606651473
+ikskuh
+6999
+
+1606651499
+ikskuh
+6673 as well
+
+1606651526
+koakuma
+After running bigfloat_init_buf, t->cur_tok->data.float_lit's content is again {4643001868805052825, 11068046444225751414}
+
+1606651603
+koakuma
+So it's really parse_f128 that's returning the wrong value
+
+1606651847
+TheLemonMan
+ok, the f128 number you see is
+
+1606652291
+koakuma
+
+
+1606652314
+koakuma
+If __BYTE_ORDER is __BIG_ENDIAN then it will trigger an error
+
+1606652343
+koakuma
+Is this intentional? If so, why did the stage1 build succeeds anyway?
+
+1606652377
+TheLemonMan
+what compiler are you using to build the stage1?
+
+1606652386
+koakuma
+clang
+
+1606652435
+TheLemonMan
+uhhh, what does `clang -x c /dev/null -dM -E |& grep ENDIAN` print?
+
+1606652445
+TheLemonMan
+I fear the answer
+
+1606652514
+koakuma
+#define
+
+1606652563
+koakuma
+#define
+
+1606652564
+koakuma
+#define
+
+1606652607
+TheLemonMan
+and `grep ORDER /usr/include/bits/endian.h`
+
+1606652661
+koakuma
+#ifndef __FLOAT_WORD_ORDER
+
+1606652663
+koakuma
+# define __FLOAT_WORD_ORDER __BYTE_ORDER
+
+1606652669
+koakuma
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+
+1606652675
+koakuma
+#elif __BYTE_ORDER == __BIG_ENDIAN
+
+1606652679
+koakuma
+Only those
+
+1606652790
+TheLemonMan
+are you sure that's /usr/include/bits/endian.h and not /usr/include/endian.h ?
+
+1606652813
+koakuma
+Yes
+
+1606652813
+TheLemonMan
+the former should define __BYTE_ORDER
+
+1606652867
+koakuma
+There's only two ORDER-related lines in my /usr/include/endian.h
+
+1606652877
+koakuma
+# define BYTE_ORDER__BYTE_ORDER
+
+1606652883
+koakuma
+# if __BYTE_ORDER == __LITTLE_ENDIAN
+
+1606652981
+TheLemonMan
+the question now is, where is __BYTE_ORDER defined?
+
+1606653077
+koakuma
+A recursive grep says that it's defined in /usr/include/bits/endianness.h
+
+1606653109
+TheLemonMan
+yeah, I had just found
+
+1606654898
+koakuma
+Ah I think I know why
+
+1606654965
+koakuma
+Zig uses strict -std=c99 to compile files, and it, for some reason, makes sys/types.h not include endian.h
+
+1606654975
+koakuma
+So we don't get the endianness macros
+
+1606655060
+koakuma
+It just probably happen to work on LE machines because, for reasons that I don't know why, the lack of macros results in the #if in parse_f128.c to take the LE branch
+
+1606655940
+TheLemonMan
+does it pick the correct macros if you explicitly include it?
+
+1606657042
+koakuma
+If I explicitly include endian.h, then yes, the macros seem to be picked correctly
+
+1606657235
+TheLemonMan
+oh dog, undefined macros default to zero
+
+1606657250
+TheLemonMan
+that's why `__BYTE_ORDER == __LITTLE_ENDIAN` is always taken
+
+1606658440
+koakuma
+It seems to parse correctly now
+
+1606658457
+koakuma
+I'll prepare a PR for this
+
+1606660310
+koakuma
+Wait, seems like BSD doesn't have an endian.h?
+
+1606660916
+TheLemonMan
+its sys/endian.h there iirc
+
+1606662128
+koakuma
+Ah, thanks
+
+1606663061
+rhencke
+the documentation for the zig build system mentions that it can help with "surfacing build configuration as comptime values by providing a file that can be imported by Zig code."  does anyone have any examples of what such a file would look like?
+
+1606663272
+ifreund
+rhencke: the file is created automatically when you call addBuildOption()
+
+1606663289
+rhencke
+ifreund: ah!  thank you!
+
+1606663302
+ifreund
+you can then import and access the options with  @import("build_options")
+
+1606663316
+rhencke
+i thought i was the one who had to provide the file, haha
+
+1606663349
+ifreund
+yeah, documentation is far from complete for the build system :/
+
+1606663456
+rhencke
+appreciate the help :)
+
+1606663612
+ifreund
+no problem!
+
+1606685701
+remby
+all current documentation is on the site at the Documentation link?
+
+1606685728
+ifreund
+there's also
+
+1606685735
+ifreund
+and doc comments in the std
+
+1606685775
+TheLemonMan
+you can easily grep the docs
+
+1606685786
+TheLemonMan
+grep "what you're searching for" /dev/null
+
+1606685809
+TheLemonMan
+replace /dev/null with /dev/urandom if you want the nightly docs
+
+1606685846
+remby
+heh :P
+
+1606685891
+remby
+I'm trying to find out some more about linking in zig
+
+1606685926
+remby
+does it use its own linker?
+
+1606685934
+TheLemonMan
+no, it uses LLD
+
+1606685946
+g-w1
+it uses lld but soon (TM) it will have its own linker
+
+1606685964
+remby
+ok, that's fine with me
+
+1606686577
+pixelherodev
+It has its own linker already
+
+1606686583
+pixelherodev
+It's just not used by default yet ;)
+
+1606686724
+g-w1
+could it be used with stage1, or is it too tightly integrated with stage2?
+
+1606686945
+pixelherodev
+... I mean, it probably could
+
+1606686959
+pixelherodev
+Not necessarily a great idea though
+
+1606687097
+andrewrk
+you can try the self-hosted linker with -fno-LLD
+
+1606687111
+andrewrk
+looks like I forgot to add it to the usage text. adding now
+
+1606687306
+g-w1
+I get a segfault (in the compiler) with `pub fn main() void {}`. i guess it doesn't work with stage1 yet
+
+1606687473
+andrewrk
+there's a lot of code to link with that - all of start.zig and the default panic handler too
+
+1606687495
+g-w1
+ah, makes sense
+
+1606687510
+andrewrk
+you must be using a release build too - a debug build has more helpful output:
+
+1606691643
+hlolli__
+I'm getting a bit tripped out with struct consts. I feel it's a happenstance that expression like ''const s: S = S{.a: ?u8 = null,}; s.a = 1;'' throws ''error: cannot assign to constant''. If a pointer to a struct is a const, does it mean that its fields are immuteable?
+
+1606691773
+ifreund
+no, but you don't have a pointer to a struct there you have a struct value
+
+1606691778
+andrewrk
+hlolli__, in this code example, the storage provided by `s` is immutable
+
+1606691866
+hlolli__
+andrewrk, good to hear, that's how I'm understanding const. So to be more concrete in the current error Im fighting, I have a setter function, wich I wall from a struct concretion which is a const pointer.
+
+1606691899
+ifreund
+hmm, I wonder if this is my fault or not, happens on musl but not glibc:
+
+1606691986
+hlolli__
+
+
+1606692065
+ifreund
+hlolli__: there you have a constant pointer
+
+1606692086
+ifreund
+const foo: *u8 is not the same as const foo: *const u8
+
+1606692129
+ifreund
+you would have to use `self: *Self` there
+
+1606692166
+hlolli__
+if I change ''self: *const Self'' to ''self: *Self'' the caller which is a const pointer fails, because it's a const. I mean I can change it all to var, but it would be a lot of refactoring.
+
+1606692284
+daurnimator
+hlolli__: refactoring that probably needs to happen if you're trying to modify things you declared as `const`?
+
+1606692374
+hlolli__
+the pointer, which is the address in memory where the struct is stored isn't changing by setting a field?
+
+1606692474
+ifreund
+no, the pointer isn't changing but the data being pointed to is
+
+1606692489
+ifreund
+which is what the const there is refering to
+
+1606692503
+ifreund
+the pointer itself is implicitly const as function parameters are always const
+
+1606692638
+hlolli__
+good to know, so I understand it correctly, that when I declare a const like this ''const s: S = S{.a=0}'', the field .a is from this concrecion immutable?
+
+1606692674
+ifreund
+the entire struct is immutable and stored as a value in s
+
+1606692694
+ifreund
+there is no pointer involved there
+
+1606692741
+hlolli__
+this differs from c then, in that there isn't a place in memory for the whole struct?
+
+1606692765
+ifreund
+structs are semantically values in C as well
+
+1606692788
+ifreund
+arrays are where zig and C differ in that regard
+
+1606692858
+hlolli__
+sizeof(Struct) is always allocated in c afaik. So then I modify let's say field foo.bar, the address of foo[0] is the same but the value of foo[0] + offsetTobar is changed.
+
+1606692927
+hlolli__
+anyway, I was never good in C, so I may be wrong here :). Just tripping me out. Especially doing a lot of javascript. Where 'const a = {}; a.b = 2' is totally fine.
+
+1606692966
+hlolli__
+but at the same time ''const a = {}; a = "no";'' fails.
+
+1606692979
+ifreund
+yeah that's not how C works unless I misunderstand what you're saying
+
+1606693021
+ifreund
+and I have no idea how javascript works so I'll take your word for it :P
+
+1606693030
+hlolli__
+is there a lot of optimization I'd lose in using vars instead of const?
+
+1606693131
+ifreund
+const isn't guarenteed to be any faster at all
+
+1606693163
+andrewrk
+zig works best if you treat local variables as mostly SSA, with a few mutable stuff thrown in
+
+1606693166
+ifreund
+and that's besides the point really, if you need to modify something it needs to be mutable
+
+1606693211
+hlolli__
+of the small amount of documentation/tutorial material I read, vars seem to be discouraged, but this nuance isn't pointed out. Perhaps it's just javscript developers that this trips out :)
+
+1606693249
+ifreund
+well, you should use const when you can, but often you'll need to mutate something
+
+1606693304
+hlolli__
+true, but the fact that const is all encompassing on the value, and not just the top level. Like var value within const, in most langugaes I use there's something like that.
+
+1606693337
+ifreund
+that's how it works with pointers
+
+1606693364
+ifreund
+i.e. ''const foo: *u8'' is a constant pointer to a mutable u8
+
+1606693394
+hlolli__
+''const foo: *const u8'' is just the same as ''const foo: *u8
+
+1606693395
+hlolli__
+?
+
+1606693425
+ifreund
+no, the first is a constant pointer to a constant u8
+
+1606693436
+ifreund
+the second is a constant pointer to a mutable u8
+
+1606693443
+hlolli__
+ahhhhhhh, THERE IT IS :D finally
+
+1606693465
+hlolli__
+ok that's where I'm doing things wrong. And I felt I was using const pointer all time on variable content.
+
+1606693481
+hlolli__
+ok ok, thanks!
+
+1606693492
+ifreund
+no problem!
+

@@ -1,0 +1,1448 @@
+1581897817
+Snektron
+Also not very cross platform friendly
+
+1581900723
+daurnimator
+andrewrk: how about libzigstage2?
+
+1581901130
+andrewrk
+what problem are you trying to solve?
+
+1581901451
+daurnimator
+andrewrk: just thinking in case it turns up in stack traces or error messages at some point: having zig in the name is probably a good thing
+
+1581901475
+daurnimator
+vs sending someone off on a wild goose chase looking for `libstage2` somewhere on the internet
+
+1581901504
+andrewrk
+that's a good point
+
+1581903263
+daurnimator
+even worse: there
+
+1581903380
+andrewrk
+that's such a good point that I'm going to do the chore
+
+1581904631
+daurnimator
+andrewrk: so what are the dummy libc paths for?
+
+1581904782
+andrewrk
+on macos, -lc is implied. so zig0 ends up calling detect_libc(), in case of @cImport, so that the include paths can be set correctly. since stage1 does not rely on @cImport, these dummy paths are ignored
+
+1581905334
+daurnimator
+should we not e.g. set them to `null` so that any access results in a segfault?
+
+1581905797
+andrewrk
+I have a bigger vision that I'm focusing on, which moves all of building libc and linking to become self-hosted
+
+1581905813
+andrewrk
+the code you're suggesting to improve will instead be deleted
+
+1581905878
+daurnimator
+k
+
+1581908201
+pixelherodev
+Does anything need to be done for #4418?
+
+1581908511
+andrewrk
+pixelherodev, I'll look soon. I want to finish up #4478
+
+1581908637
+daurnimator
+andrewrk: just saw your `copy_open_files` function: we should try and use the syscall `copy_file_range` which would take advantage of reflinks.
+
+1581908689
+pixelherodev
+What's the difference between std.event.{Group,Batch}?
+
+1581908783
+andrewrk
+daurnimator, step 1 is get it working at all. ugh, the zig std lib version already works perfectly but we need an impl in stage1
+
+1581908826
+andrewrk
+copy_file_range is another local maximum anyway - the zig std lib version does an atomic rename into place, which is more correct
+
+1581908849
+andrewrk
+pixelherodev, check the implementations and doc comments, I wrote a little bit about it there
+
+1581908855
+daurnimator
+oh I didn't look to see the surrounding code...
+
+1581908879
+daurnimator
+if we delete the source file then why would we not be doing a rename in stage1 too?
+
+1581908976
+andrewrk
+not deleting the source file. here's the zig std lib version:
+
+1581909092
+daurnimator
+okay that needs to be converted to use `copy_file_range` too.
+
+1581909106
+daurnimator
+it currently does readFull/write
+
+1581909192
+daurnimator
+and for the fallback path (for when `copy_file_range` is not available: which would be the current code): we should use LinearFifo: it should be faster.
+
+1581909225
+andrewrk
+I see, yes that will be an excellent improvement
+
+1581909232
+andrewrk
+the copy_file_range thing
+
+1581909335
+andrewrk
+why is LinearFifo trying to be 3 different abstractions at the same time?
+
+1581909377
+daurnimator
+andrewrk: you mean the static vs slice vs dynamic?
+
+1581909382
+andrewrk
+yeah
+
+1581909416
+andrewrk
+the slice one looks like it is conflicting with ArrayList
+
+1581909425
+andrewrk
+err the dynamic one
+
+1581909443
+daurnimator
+indeed. its quite similar except it's a circular buffer
+
+1581909462
+andrewrk
+hmmm ok
+
+1581909474
+daurnimator
+it should be used instead of an arraylist whenever you have a code path that removes items from the start.
+
+1581909557
+daurnimator
+the key situation of that is when you have a .read() .write() loop: exactly like that copy loop in `updateFileMode`
+
+1581909595
+fengb
+I think it’s good that a circular buffer has a very similar API to ArrayList
+
+1581909611
+andrewrk
+except it's hard coded to be u8
+
+1581909622
+daurnimator
+?
+
+1581909633
+andrewrk
+hmm I'm wrong. I'm not sure what made me think that
+
+1581909653
+daurnimator
+are you confused with std.Buffer?
+
+1581909669
+daurnimator
+that one is hardcoded to u8 and should probably be removed. or at least renamed to something odd so that people don't use it
+
+1581909672
+andrewrk
+sorry, I'm looking at this while trying to debug 4 things gone wrong
+
+1581909721
+pixelherodev
+Always makes for a fun time :)
+
+1581909731
+daurnimator
+andrewrk: when you pop your stack a bit we should talk more about this :)
+
+1581910370
+andrewrk
+ugh, the error on windows was forgetting to `return ErrorNone` at the end of a function, and msvc didn't give me a compile error
+
+1581910410
+fengb
+Returns are optional in C++?
+
+1581910764
+andrewrk
+daurnimator, looks like copy_file_range is
+
+1581910778
+andrewrk
+I do want to get 1907 done by the release
+
+1581911023
+andrewrk
+this has got to be a new record. 3/3 builds are working on my home computers. 0/3 are working on the ci
+
+1581911183
+mikdusan
+waat
+
+1581911845
+fengb
+
+
+1581912288
+daurnimator
+> The actions/checkout action auto-converts line endings to \r\n,
+
+1581912296
+daurnimator
+seems like lots of git programs on windows do that
+
+1581912415
+fengb
+I'm pretty sure git default config auto converts endings
+
+1581912471
+andrewrk
+I had a really frustrating bug on windows, because I was using .txt files for an ad hoc format, and git changed the \n to \r\n
+
+1581912498
+daurnimator
+> Build Dependencies...unwind [2] Compile C Objects [8/8] UnwindRegistersSave.S...Unrecognized glibc version: 2.31.0
+
+1581912501
+daurnimator
+that's a new one for me...
+
+1581913169
+andrewrk
+daurnimator,
+
+1581913198
+andrewrk
+kudos for having such a fresh glibc on your system, I'm still on 2.27 myself
+
+1581913241
+andrewrk
+you can pass `-target-glibc 2.30` to work around
+
+1581913752
+pixelherodev
+I'm guessing there's no code quality checker thingies (like e.g. LGTM) that support Zig yet?
+
+1581916368
+andrewrk
+figured it out. clang's selfExePath() or whatever they call it is not as robust as zig's, and it's using argv[0] to find its own path. but it's not resolving argv[0] according to PATH
+
+1581916386
+andrewrk
+so basically we treat clang like a little child and give it the full absolute path to itself in argv[0]
+
+1581916388
+andrewrk
+(pun intended)
+
+1581916880
+daurnimator
+andrewrk: -target-glibc doesn't work for `zig build test`?
+
+1581917151
+andrewrk
+daurnimator, you can also modify target_can_build_libc logic to take into account glibc versions
+
+1581917162
+hryx
+sup friends. Given any std.mem.Allocator, what's the proper way to make an allocation for some opaque type, assuming the size and alignment are runtime-known? Use some_allocator.reallocFn directly?
+
+1581917186
+daurnimator
+hryx: `alignAlloc` passing u8 and the alignment you want
+
+1581917233
+hryx
+daurnimator: the alignment param of alignedAlloc is comptime, though
+
+1581917259
+daurnimator
+ah right.... I've hit that before
+
+1581917261
+andrewrk
+daurnimator, you can use glibc_load_metadata to get a list of all versions zig can build, and the target parameter tells the one we want to check for
+
+1581917301
+daurnimator
+hryx: yeah I guess use .reallocFn directly. or alignAlloc an re-align yourself I guess?
+
+1581917333
+andrewrk
+hryx, it's planned (if possible) to make the alignment parameter of the Allocator interface always comptime known, so this wouldn't work with your use case. can you elaborate on it?
+
+1581917339
+andrewrk
+also hi :)
+
+1581917357
+hryx
+hey again :)
+
+1581917365
+hryx
+sure, I'll try to summarize my use case here
+
+1581917444
+daurnimator
+anyone know why I'd be getting " error: unable to evaluate constant expression" with std.fmt after moving to latest master?
+
+1581917474
+daurnimator
+oh, `output` is comptime now!
+
+1581917679
+andrewrk
+daurnimator, yes it's going to become very common for function pointers to be comptime, because that's a lot more async friendly
+
+1581917749
+fengb
+Are they even pointers if they're comptime? >_>
+
+1581917792
+hryx
+andrewrk:  use case: I'm porting an old (incomplete) C library of mine to Zig, but I want to maintain a C interface. the library has a plugin API where plugin authors can define custom types to register with a central system. I want the host app to define the allocator, so the existing design is that plugin just says its own size and alignment
+
+1581917807
+andrewrk
+it's past my bedtime but I would appreciate an issue for improving target_can_build_libc to take into account glibc versions. I'll do it in the morning if I remember
+
+1581918132
+daurnimator
+done:
+
+1581918426
+andrewrk
+thanks
+
+1581934502
+daurnimator
+:/ I think the zig bits need cleaning up for time64
+
+1581947528
+samtebbs
+Wow this channel really has grown since I was last active :)
+
+1581947568
+mq32
+hey samtebbs
+
+1581947639
+daurnimator
+samtebbs: welcome back (you haven't been that long have you?)
+
+1581947877
+Xatenev
+samtebbs, hello :)
+
+1581949948
+alexnask_
+Does anyone know if there is an issue (or even should be) about the function argument type erasure? (e.g. everything after a type argument becomes a var argument and ret type)
+
+1581949987
+alexnask_
+ret type becomes var too *
+
+1581950037
+daurnimator
+alexnask_: you mean in docs?
+
+1581950073
+alexnask_
+Anywhere really, is this 100% intended behavior is it up to change? Couldn't find anything relevant in github issues
+
+1581950212
+alexnask_
+Im taking a shot at writing an interface library again
+
+1581950219
+mq32
+alexnask_, ah i noticed that too
+
+1581950241
+mq32
+but i don't think there's an easy solution for that :(
+
+1581950251
+alexnask_
+I believe the compiler just finds the index of the first type argument and type erases everything subsequent
+
+1581952572
+samtebbs
+mq32: Hi :)
+
+1581952602
+samtebbs
+daurnimator: I haven't been active since coming back to uni last September :/
+
+1581952611
+samtebbs
+I've been so focussed on my final year project
+
+1581954336
+andrewrk
+I'm trying to remember what service I used last time I needed ssh access to an aarch64 server
+
+1581954486
+FireFox317
+wasnt it pixelherodev who had an aarch64 server?
+
+1581954493
+FireFox317
+or access to some
+
+1581954506
+andrewrk
+I found one - daurnimator hooked us up a few months ago
+
+1581954567
+daurnimator
+andrewrk: `ssh 147.75.49.246`
+
+1581954584
+andrewrk
+yeah I had it in my ssh config still. thanks!
+
+1581954596
+companion_cube
+ssh aliases are ♥
+
+1581954605
+daurnimator
+andrewrk: I just wasted an hour trying to figure out nix.... and failing :P
+
+1581954625
+andrewrk
+if I recall correctly I requested something boring like ubuntu or debian on this box :)
+
+1581954654
+daurnimator
+there was like 3 options and nixos was the one you picked
+
+1581954672
+andrewrk
+oh ok
+
+1581954707
+andrewrk
+damn. it's not reproducing the drone ci failure
+
+1581954762
+daurnimator
+looks like more OS options are available now
+
+1581954767
+daurnimator
+I could redeploy if you want
+
+1581954791
+daurnimator
+originally it was just meant to be a CI worker
+
+1581954841
+Snektron
+<mq32 "but i don't think there's an eas"> Should be doable, in the worst case the prototype can be copied in verbatim
+
+1581954917
+mq32
+<companion_cube> ssh aliases are ♥
+
+1581954937
+mq32
+oh yeah, i have pretty much all devices with SSH in my config with preconfigured forwardings and stuff
+
+1581954950
+mq32
+Snektron: Yeah, i think some of the docs would really benefit that already
+
+1581954976
+FireFox317
+is the drone CI testing on real hardware or emulated stuff? Maybe its actually emulated
+
+1581954978
+companion_cube
+yeah same, it's quite nice
+
+1581955020
+mq32
+also, ssh -D, -L and -R are just awesome
+
+1581955036
+mq32
+oh, you want a TCP hole from here to there? Lemme just put that up
+
+1581955086
+andrewrk
+FireFox317, it's an alpine docker image
+
+1581955094
+andrewrk
+but I think it's real hardware
+
+1581955143
+TheLemonMan
+if it's a machine from WorksOnARM I'd say it
+
+1581955225
+FireFox317
+yeah looking at their website, it looks like its real hardware indeed
+
+1581955354
+daurnimator
+could be a cpu model thing? I think drone ci cloud uses the cavium; but the box I gave you andrewrk is an ampere
+
+1581955390
+andrewrk
+I think it is a dynamic linker thing
+
+1581955403
+andrewrk
+which has more to do with the linux distro than anything
+
+1581955440
+andrewrk
+...but also the arch because of the path
+
+1581955498
+andrewrk
+night
+
+1581955583
+TheLemonMan
+the beauty of timezones
+
+1581955616
+andrewrk
+I'm bummed that even lld 10 can't do risc-v linker relaxation
+
+1581955639
+andrewrk
+I thought we were going to have a great RISC-V story in the 0.6.0 release
+
+1581955713
+TheLemonMan
+eh you can't really blame the lld devs, it's not a trivial feature
+
+1581955758
+mq32
+TheLemonMan: you german? i've seen you have a branch "sauerkraut"
+
+1581955799
+TheLemonMan
+I'd just pass in `-mno-relax` for the time being and call it a day, at least until LLVM11 comes out
+
+1581955851
+TheLemonMan
+mq32, don't read too much into my branch names, sometimes I just press some random keys heh
+
+1581955875
+TheLemonMan
+I do like saukerkraut tho
+
+1581955899
+mq32
+hey, asking doesn't hurt (usually)
+
+1581955904
+mq32
+also, sauerkraut is great
+
+1581955956
+alexnask_
+can confirm
+
+1581955984
+TheLemonMan
+cabbage is great!
+
+1581955994
+TheLemonMan
+either as sauerkraut or kimchi or whatever
+
+1581956438
+andrewrk
+TheLemonMan, we're passing -Xclang -target-feature -Xclang -relax
+
+1581956441
+andrewrk
+I'll paste the full line
+
+1581956483
+andrewrk
+here's _set_thread_area.o:
+
+1581956627
+TheLemonMan
+andrewrk, `-mno-relax` is an extra flag for the clang frontend
+
+1581956711
+andrewrk
+that's ridiculous, there is already the cpu feature
+
+1581956722
+andrewrk
+sorry, clang is ridiculous, not you
+
+1581956775
+FireFox317
+clang has flags for a lot of cpu features andrewrk
+
+1581956798
+andrewrk
+yes but there is a way to specify them with a uniform interface
+
+1581956805
+TheLemonMan
+by reading the code I see that all it does is adding -relax/+relax, maybe it's overriding the input feature set
+
+1581956867
+andrewrk
+ok good that's how I thought it would work
+
+1581957268
+andrewrk
+I think the next step is to just try to build musl with clang 10 and link with lld 10
+
+1581959715
+mq32
+btw, if anyone thought: "you cannot misuse the C preprocessor THAT much", look at this:
+
+1581960397
+samtebbs
+mq32: That reminds me of a blog post where someone used macros to make C look like a new language
+
+1581960435
+samtebbs
+
+
+1581960475
+fengb
+These comments got so spammy
+
+1581960608
+mq32
+samtebbs: Yeah, but the code i've pasted is the
+
+1581961008
+andrewrk
+clang ignores `-Xclang -target-feature` parameters when assembling
+
+1581962316
+jessermeyer
+Does  zig build-exe (no release mode set) cull unused variable assignments?
+
+1581962324
+jessermeyer
+const size_test = @sizeOf(DXGI_ADAPTER_DESC1);
+
+1581962332
+jessermeyer
+Is not making its way into the executable.
+
+1581962364
+jessermeyer
+const size_test = @sizeOf(DXGI_ADAPTER_DESC1);        const bobby = size_test + 1;
+
+1581962368
+jessermeyer
+Same issue.
+
+1581962370
+andrewrk
+it's comptime known
+
+1581962375
+jessermeyer
+Yes it is.
+
+1581962389
+andrewrk
+so it's only in the dwarf info not the executable
+
+1581962399
+jessermeyer
+Ah, so the debugger has to know that.
+
+1581962464
+jessermeyer
+Is there a way to force it to the stack on runtime?
+
+1581962547
+andrewrk
+use var instead of const
+
+1581962558
+jessermeyer
+Thx.
+
+1581962562
+jessermeyer
+Makes sense.
+
+1581962575
+fengb
+Declare it as a var?
+
+1581962875
+FireFox317
++c is the problem apparently andrewrk
+
+1581963324
+jessermeyer
+Does translate-c view post pre-processor output?
+
+1581963367
+jessermeyer
+I'm having a situation where, to fix the calling convention issue, I pass  -target i386-windows, but this causes all pointer sizes to be 32bits.
+
+1581963390
+jessermeyer
+Struct sizes are wrong for the platform I'm compiling for.
+
+1581963401
+jessermeyer
+So, damned if I do, damned if I don't.
+
+1581963428
+TheLemonMan
+fyi stdcall does nothing on x86_64
+
+1581963498
+jessermeyer
+That's right.
+
+1581963513
+jessermeyer
+It's more the principle of the matter.
+
+1581963540
+jessermeyer
+I think translate-c
+
+1581963572
+jessermeyer
+But SIZE_T is 4 bytes atm, since, presumably, it didn't know any other option as the pre-processor already ran?
+
+1581963616
+TheLemonMan
+the C code is parsed and ananlyzed, it's not just a syntactical translation
+
+1581963636
+jessermeyer
+Parsed first ... by the pre-processor?
+
+1581963641
+jessermeyer
+Which would set the size of SIZET in this case.
+
+1581963654
+jessermeyer
+Meaning, translate-c doesn't have any flexibility since it's perspective is fixed.
+
+1581963692
+TheLemonMan
+the pre-processor is dumb as a brick, it just copies and pastes text
+
+1581963894
+jessermeyer
+#if defined(_WIN64)    typedef unsigned __int64 ULONG_PTR, *PULONG_PTR;#else    typedef _W64 unsigned long ULONG_PTR, *PULONG_PTR;#endif
+
+1581963925
+jessermeyer
+It can radically transform the semantics of the code.  That's the point.
+
+1581964123
+jessermeyer
+My expectation is resulting Zig code from translate-c will generate a correct executable for the target platform.
+
+1581964172
+jessermeyer
+Which, I think, implies that translate-c should see the pre-processed C code.
+
+1581964253
+andrewrk
+jessermeyer, don't pass the wrong target to translate-c
+
+1581964306
+jessermeyer
+I think I'm arguing that the target should not matter for translate-c.  The 'correct' target may be a set of targets, with incompatible pointer sizes.
+
+1581964310
+TheLemonMan
+(atm) the output from translate-c is not meant to be a poor-man universal binding generator
+
+1581964333
+TheLemonMan
+the idea is to cImport a header file the same way you'd do in C
+
+1581964368
+metaleap
+my_slice got somewhere initialized to `[]Foo{}`, will `my_slice.ptr == []Foo{}` always be true?
+
+1581964370
+andrewrk
+jessermeyer, what you want is impossible due to the c preprocessor. it's a design limitation of the C programming language
+
+1581964421
+andrewrk
+metaleap, @as([]Foo, &[_]Foo{}) gives .ptr = undefined, .len = 0
+
+1581964425
+metaleap
+i mean &[_]Foo{} of course
+
+1581964444
+metaleap
+andrewrk thx
+
+1581964455
+andrewrk
+`undefined == undefined` gives `undefined`
+
+1581964477
+andrewrk
+`if (undefined) a else b` is illegal behavior, currently not detected but it is planned
+
+1581964588
+jessermeyer
+I agree it's impossible if translate-c only sees post-processed C files.  I think this is of no practical issue once Windows.h and friends can be correctly translated via cImport, since the target platform is correctly propogated.
+
+1581964902
+jessermeyer
+Fortunately the fix in general here is to just define SIZE_T as usize. Done.
+
+1581966354
+procnto
+I'm curious, how stable is Zig right now.. will I be in a world of pain if I go build a hobbyist OS in it? Aside from normal pains with developing an OS.
+
+1581966397
+procnto
+Been on the Rust kick for a bit... but it doesn't really maximize developer productivity/fun, which is critical for fun projects
+
+1581966642
+andrewrk
+very unstable
+
+1581966652
+andrewrk
+breaking changes every week
+
+1581966799
+procnto
+👍 doing the lord's work :) I'll have to wait for v1.0
+
+1581966851
+andrewrk
+maybe you can try 0.6.0 when it comes out in April, and decide if it's good enough to last you 6 months until 0.7.0
+
+1581966904
+andrewrk
+I do work with active projects before a release to make sure everybody's projects are building
+
+1581967003
+procnto
+Sounds like a plan, six months is a good amount of time to build something cool. I've been thinking about contributing later on but don't have the cycles at the moment.
+
+1581967023
+procnto
+Very few new languages hit that C sweet spot
+
+1581969704
+metaleap
+in case anyone wondered.. `const test_name = "lets try this"; test test_name { .... }` isnt supported  :D  (somehow i'm glad as one operating on zig asts =)
+
+1581969855
+mikdusan
+
+
+1581969923
+metaleap
+mikdusan well
+
+1581970083
+metaleap
+keyword `promise` i havent seen before
+
+1581970199
+mikdusan
+possibly just reserved?
+
+1581970260
+metaleap
+yeah it's a "future" thing i guess (nudge wink uh)
+
+1581970404
+andrewrk
+nah it's vestigal. should be removed now
+
+1581970420
+andrewrk
+it got renamed to anyframe
+
+1581971128
+metaleap
+andrewrk: std.zig.Token.start and .end are 0-based indices into a Tree.source right?
+
+1581971210
+andrewrk
+metaleap, yes
+
+1581971216
+metaleap
+thanks!
+
+1581972888
+jaredmm
+jessermeyer: did you fix multicharacter literals not being handled transMacroDefine like it is in transCharLiteral?
+
+1581972931
+jessermeyer
+I've been waiting on
+
+1581973007
+jessermeyer
+And thanks for writing up the pull request!
+
+1581973137
+jaredmm
+Ok. I was looking at how #defines are currently handled and they don't go through the same flow as a normal multicharacter literal usage. I have a semi-fix to translate-c that would fix the basic usages, but I'm unsure if it would break for more involved defines.
+
+1581973167
+jaredmm
+I know you were working on getting the Windows imports to work, so I figured you might've taken a look as well.
+
+1581973282
+jessermeyer
+That's a good point.  That might be related to the issue I posted yesterday :
+
+1581973339
+jessermeyer
+I haven't tried tackling the fundamental problems.  At this point I'm still more a Zig user rather than a Zig developer.
+
+1581973340
+TheLemonMan
+no that's just C being a dick
+
+1581973356
+jessermeyer
+lol
+
+1581973420
+jessermeyer
+I didn't know if the code paths diverge given the L postfix.
+
+1581973525
+TheLemonMan
+the literal is promoted to an unsigned long, I've briefly looked in the C spec and couldn't find anything about that
+
+1581973584
+jessermeyer
+Seems likely to be a Microsoftism.
+
+1581973599
+TheLemonMan
+not quite, clang does the same
+
+1581973683
+jessermeyer
+Huh.  I would've expected it from clang-cl, not clang itself.
+
+1581973789
+alexnask_
+I think 'L' is implementation defined to long int or unsigned long int
+
+1581973858
+TheLemonMan
+it seems to be more of a hint
+
+1581973899
+TheLemonMan
+"The type of the integer constant is the first type in which the value can fit, from the list of types which depends on which numeric base and which integer-suffix was used."
+
+1581974178
+jaredmm
+Speaking of
+
+1581974214
+alexnask_
+Fixed a couple of things in my PR too
+
+1581974232
+TheLemonMan
+jaredmm, oh I've fixed the problem with the c_ushort/u16 conversion, now it should work just fine
+
+1581974236
+alexnask_
+Ill probably try a new interface implementation for std on a branch next (+ std.interface)
+
+1581974275
+jaredmm
+Yeah, saw that. Switched all the c_ stuff to u16s.
+
+1581974303
+TheLemonMan
+andrewrk wanted it to return a `*[N:0]const u16` to make it symmetrical with the "normal" string literals
+
+1581974454
+andrewrk
+I tried to fix the aarch64 CI test failure of #4478 by additionally self-hosting dynamic linker detection, and, while that is now done and working, it didn't fix the ci test failure
+
+1581974460
+jaredmm
+Wasn't sure how to make that work. The existing wide functions gave errors trying to pass that in (or maybe I was doing it wrong).
+
+1581974542
+TheLemonMan
+the pointer-to-array should gracefully decay into a slice
+
+1581974568
+jaredmm
+Alright, I'll take another look at it.
+
+1581974653
+TheLemonMan
+andrewrk, any reason why function-sections is not enabled by default?
+
+1581974684
+TheLemonMan
+it helps to remove some comptime-only functions that end up in the final binary (eg. isWasm, isMIPS, ...)
+
+1581974750
+andrewrk
+I thought it was
+
+1581974790
+andrewrk
+huh, ok I see that it is exposed as a command line option, defaulting to off
+
+1581974801
+andrewrk
+oh right - we enable it for compiler_rt and libc
+
+1581974848
+andrewrk
+I think it's not strictly better. especially in optimized builds
+
+1581974869
+andrewrk
+there's an issue open for this, there are some considerations. for example, should functions and values that are comptime-only be available to debuggers?
+
+1581974897
+companion_cube
+what about comptime debugging? :D
+
+1581974940
+andrewrk
+all you get is printf debugging with @compileLog
+
+1581975954
+jaredmm
+Would `*[N:0]const u16` look like `*[:0]const u16`?
+
+1581976020
+jaredmm
+or is N actually a valid grammar thing?
+
+1581976119
+andrewrk
+N means it should be a comptime value
+
+1581976132
+andrewrk
+calculate N in your function
+
+1581976560
+jessermeyer
+Are there plans to support AST manipulation (build time metaprogramming) at build time?
+
+1581976578
+andrewrk
+no
+
+1581976607
+jessermeyer
+Are there plans to support some kind of metaprogramming at build time?
+
+1581976842
+mq32
+jessermeyer: you can just generate code in your build.zig with zig
+
+1581976848
+TheLemonMan
+you can already do that
+
+1581976850
+mq32
+add a custom "writeFile" build step or similar
+
+1581976961
+jessermeyer
+That's a good start.
+
+1581977146
+andrewrk
+and it's finished! all the planned metaprogramming features are done, no more will be added
+
+1581977168
+andrewrk
+some redundant builtins will be removed in favor of @typeInfo
+
+1581977171
+jaredmm
+How do I define N in my comptime function?
+
+1581977182
+mq32
+andrewrk: have you concluded that @Type will not support struct generation?
+
+1581977214
+andrewrk
+mq32, oh good point, that's still an open area. but yeah leaning towards "no"
+
+1581977224
+mq32
+i can imagine
+
+1581977242
+mq32
+it both has potential to do great stuff and follows the "only one thing" zen
+
+1581977251
+mq32
+but it also is a complex devil of undebuggability
+
+1581977297
+andrewrk
+I wish this aarch64 ci server was a crash dummy so I could wring its neck
+
+1581977317
+andrewrk
+or even better... ssh access
+
+1581977341
+andrewrk
+as much of a ram miser as drew can be, the ability to ssh into sr.ht build servers is killer
+
+1581977360
+andrewrk
+just 1 ldd command, would tell me so much information
+
+1581977390
+jaredmm
+Tried N=, const N=, var N=, and .N=. I don't see anything in the existing std that matched *[N when I searched, other than the test cases and errors.
+
+1581977405
+TheLemonMan
+don't you have a pinebook andrewrk ?
+
+1581977427
+andrewrk
+yeah but I can't get llvm to build on it successfully
+
+1581977441
+andrewrk
+I have ssh access to a different aarch64 server but it's not reproducing the error
+
+1581977450
+andrewrk
+maybe I'll take daurnimator's offer to change to a different OS
+
+1581977466
+mq32
+jaredmm: what N do you want to have?
+
+1581977471
+mq32
+for array size?
+
+1581977478
+TheLemonMan
+building LLVM on a pinebook doesn't sound fun heh
+
+1581977478
+andrewrk
+oh wait a minute.. docker is installed. this might just do the trick
+
+1581977484
+mq32
+use fn(comptime N: comptime_int, array: [N]i32) void
+
+1581977599
+hryx
+does malloc just assume the largest possible alignment for the platform? if so, what's the downside, fragmentation?
+
+1581977603
+jaredmm
+mq32:
+
+1581977707
+andrewrk
+hryx, I think it's hard coded to be 16
+
+1581977735
+mq32
+jaredmm, you have to add a comptime parameter for N
+
+1581977737
+hryx
+interesting
+
+1581977751
+FireFox317
+also jaredmm: you should use `const` instead of `var`: you are not mutating len for example.
+
+1581977851
+jaredmm
+Yeah, I've made len const locally.
+
+1581977898
+FireFox317
+also utf16le_len?
+
+1581977997
+jaredmm
+It would be, but it doesn't exist locally right now.
+
+1581978005
+FireFox317
+okay good
+
+1581978013
+jaredmm
+How could I can add N as a comptime parameter, when it is calculated in the body of that function? The value of N should be utf16le_len.
+
+1581978043
+fengb
+Make the args comptime
+
+1581978072
+jessermeyer
+Metaprogramming: What Zig's response to something like code standards checking, like MISRA C?  Is the idea to parse the source file using Zig's AST generator and do it there, at build time?
+
+1581978085
+fengb
+Or you can’t... runtime known arrays are basically impossible. That’s why slices are a thing
+
+1581978131
+jessermeyer
+If the answer is 'Yes' or something similar, then it would be nice to be able to send the build system an AST tree based on changes made.
+
+1581978210
+mq32
+later in self-hosted, you can probably just parse the ast with the parser from self hosted
+
+1581978222
+jessermeyer
+Yeah that would be sweet.
+
+1581978236
+mq32
+but i think something like misra-zig is hard to achieve with a formal verifier
+
+1581978284
+jessermeyer
+Yeah, I'm not thinking specifically as MISRA, but something like house rules.
+
+1581978330
+fengb
+Like linting rules and such?
+
+1581978361
+jessermeyer
+In games, there is often a point in the frame where you do not want new entities spawned, since it'll mess with indexes.
+
+1581978407
+jessermeyer
+So if you could do something like buildtime {house_rules.no_entities_after_this_point=true};, and the build system can see that, you can check the AST structure to confirm that constraint.
+
+1581978441
+jessermeyer
+JAI handles this with build time messages. Not suggesting that approach necessarily, but it does get the job done.
+
+1581979094
+TheLemonMan
+jaredmm, you can abuse comptime and pull shit like this
+
+1581979214
+andrewrk
+that's not even needed though, right? just put `*const [utf8.len:0]u16`
+
+1581979259
+TheLemonMan
+but where's the fun then!?
+
+1581979317
+andrewrk
+c++ already used up all the fun, there's no more left
+
+1581979317
+jaredmm
+I'm not a master of encodings, but as far as I know can't guarantee that the length of the utf8 is the same as the utf16 output, right?
+
+1581979394
+jaredmm
+Given that utf8 has 1-4 byte encodings while utf16 has 2 or 4.
+
+1581979444
+andrewrk
+*const [calcWtf16Len(utf8.len) :0]u16
+
+1581979458
+andrewrk
+*const [calcWtf16Len(utf8) :0]u16
+
+1581979474
+andrewrk
+then you can go implement that function
+
+1581979523
+andrewrk
+(I'm assuming you're doing WTF-16:
+
+1581979964
+andrewrk
+TheLemonMan, maybe -ffunction-sections would be a nice default for optimized build modes when building a static library
+
+1581980016
+andrewrk
+the only downside is I think it can potentially generate worse code when there would have been a machine code benefit to having functions generated next to each other. like maybe it messes with tail calls or something
+
+1581980113
+TheLemonMan
+we should check if stage1 increases in size with that option turned on
+
+1581980220
+andrewrk
+hallelujah I reproduced the failure on this aarch64 box in docker
+
+1581980292
+TheLemonMan
+the improvements to dl_iterate_phdr are nice
+
+1581980296
+andrewrk
+thanks
+
+1581980367
+andrewrk
+lots of self hosting going on here
+
+1581982018
+daurnimator
+andrewrk: while you're in an aarch64 state of mind, how should we go about merging
+
+1581982052
+andrewrk
+daurnimator, you can make the PR against llvm10
+
+1581982078
+andrewrk
+or, better yet, you can return error.SkipZigTest on the failing system, with a hyperlink to the github issue next to it
+
+1581982095
+andrewrk
+you can see this pattern elsewhere
+
+1581982133
+andrewrk
+it's ok to disable tests if there is an open bug report documenting it
+
+1581982343
+daurnimator
+okay. pushed commit with a skip test. hopefully it passes now
+
+1581982396
+andrewrk
+thx
+
+1581982405
+daurnimator
+Is there a way to get longer comptime traces?
+
+1581982412
+daurnimator
+
+
+1581982669
+andrewrk
+no but there should be a CLI option for that and an automatically provided zig build CLI option as well
+
+1581982690
+andrewrk
+it's currently a hardcoded integer constant
+
+1581982704
+daurnimator
+located where? :)
+
+1581982746
+andrewrk
+ir.cpp:10301 and ir.cpp:10310
+
+1581982812
+daurnimator
+that number seems to be 10....
+
+1581982819
+andrewrk
+yes it is 10
+
+1581982838
+daurnimator
+In my experience tracebacks seem to be consistently 3
+
+1581982842
+andrewrk
+the "referenced from here" errors are kinda messed up right now - they make sense when debugging dependency loops but they should be omitted otherwise
+
+1581982854
+andrewrk
+if it's only 3 then the 3rd one is the beginning of your "comptime stack"
+
+1581982888
+andrewrk
+zig doesn't currently keep track of why decls are being analyzed when it puts them in the queue, but it probably should
+
+1581982970
+daurnimator
+I wonder if its just a side effect of @typeInfo not being lazy
+
+1581982976
+daurnimator
+maybe I'll try on top of that PR
+
+1581983019
+daurnimator
+if I understand it right,
+
