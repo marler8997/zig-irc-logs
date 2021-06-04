@@ -1,0 +1,324 @@
+1511794745
+andrewrk
+dimenus, it was nice to have some time to work :)
+
+1511798325
+dimenus
+andrewrk, i have a PR ready to go to close #619 but my test is a little wonky
+
+1511798343
+dimenus
+the problem is that translate-c outputs all of the defines created by clang, not just the ones defined in our .h file
+
+1511798369
+dimenus
+so the output compare doesn't work as expected
+
+1511798486
+andrewrk
+dimenus, ahh, right. the test harness lets you specify multiple strings to match, and each one must be contained in the output
+
+1511798529
+dimenus
+yep, and all of our expected strings are there - but so are the llvm/clang ones
+
+1511798540
+andrewrk
+that seems fine, no?
+
+1511798543
+dimenus
+i was curious if it's just a different parameter we can pass when getting the ast from clang
+
+1511798552
+dimenus
+the test fails because they aren't though
+
+1511798556
+dimenus
+i spose I could add the llvm/clang ones...
+
+1511798572
+andrewrk
+is your code committed to your fork? I'll take a look
+
+1511798623
+andrewrk
+also I didn't realize we were working on the same file, I hope I didn't clobber your work
+
+1511798757
+dimenus
+andrewrk:
+
+1511798826
+andrewrk
+dimenus, if this test passes, it looks great to me. I wouldn't even call it wonky
+
+1511798852
+dimenus
+it doesn't, I can just add the llvm/clang defines w/ a todo
+
+1511799009
+andrewrk
+wait, why are the llvm/clang defines causing an issue?
+
+1511799027
+andrewrk
+can you not put each declaration as a separate arg to cases.add() ?
+
+1511799044
+andrewrk
+example:
+
+1511800299
+dimenus
+andrewrk, this is what zig translate-c test.h (the test I created) outputs
+
+1511800300
+dimenus
+
+
+1511800778
+andrewrk
+dimenus, looks like the test will pass if you make some of the declarations separate args to cases.add()
+
+1511800792
+andrewrk
+each arg is independently matched against the output
+
+1511800820
+andrewrk
+does it make sense? do you want me to make a diff to show you?
+
+1511800837
+dimenus
+ah, so because I won't get these in one big chunk
+
+1511800840
+dimenus
+it should be broken up
+
+1511800842
+andrewrk
+yes
+
+1511800851
+dimenus
+makes sense
+
+1511800904
+dimenus
+hmm, here is the issue though. in order to test 'glClearUnion' i also need to define the union
+
+1511800917
+dimenus
+and the macros comes after a bunch of other llvm/clang defines
+
+1511800930
+dimenus
+so that part of the test will always fail
+
+1511800940
+dimenus
+since the items in the test aren't independent entities
+
+1511800985
+andrewrk
+dimenus, keep the input exactly the same
+
+1511800998
+dimenus
+ah but break the output into lines
+
+1511801011
+andrewrk
+yeah break it up by definition
+
+1511801043
+andrewrk
+e.g. keep the 6 lines of union_OpenGLProcs  together
+
+1511801783
+dimenus
+still failed
+
+1511801786
+dimenus
+
+
+1511802136
+andrewrk
+dimenus, is it a newline/tab issue?
+
+1511802148
+andrewrk
+oh, the expected has 2 spaces, the output has 4
+
+1511802189
+dimenus
+yeah i'm using 4 in my editor
+
+1511802215
+andrewrk
+in the paste you linked me, you have the expected output with 2 spaces, and the actual output has 4
+
+1511802238
+dimenus
+how did i do that lol
+
+1511802243
+dimenus
+fail
+
+1511803518
+GitHub21
+[zig] dimenus opened pull request #627: Added support for exporting of C field expressions (master...c-field-expr)
+
+1511803800
+dimenus
+andrewrk, my merge from master may be wrong
+
+1511805843
+andrewrk
+merge looks good to me
+
+1511805903
+dimenus
+i fixed it since I last sent that message
+
+1511805990
+andrewrk
+dimenus, one more thing I might suggest doing
+
+1511806006
+andrewrk
+if you try to use, e.g. glClearUnion
+
+1511806020
+andrewrk
+it's a nullable function pointer, so you'd have to do (??glClearUnion)() to call it
+
+1511806041
+andrewrk
+but I think the fact that we define macro to do that, means that we can hide the unwrap
+
+1511806048
+dimenus
+that should get automatically generated, we talked about that before the weekend
+
+1511806056
+andrewrk
+yeah
+
+1511806059
+andrewrk
+see the test "generate inline func for #define global extern fn"
+
+1511806071
+dimenus
+it just ended up more complex and I wanted to talk to you about it first
+
+1511806075
+andrewrk
+yeah that sounds good
+
+1511806078
+andrewrk
+I can help with this
+
+1511806097
+dimenus
+i wanted to understand why keep macros in two separate lists, one for 'macro symbols' and regular macros
+
+1511806106
+dimenus
+right now the field expr macro gets put into the regular macro list
+
+1511806134
+andrewrk
+you're talking about macro_table vs macro_symbols?
+
+1511806143
+dimenus
+correct
+
+1511806158
+andrewrk
+I'll go read the code to remind myself
+
+1511806355
+andrewrk
+macro_symbols is for when macros alias something else
+
+1511806379
+andrewrk
+and macro_table is for completed AstNodes generate from a macro expression
+
+1511806439
+andrewrk
+if you have a more specific question I can try to answer it
+
+1511807121
+andrewrk
+dimenus, I'll have a look at this later tonight if it turns out to be tricky
+
+1511807469
+andrewrk
+nice work btw
+
+1511807827
+dimenus
+so in my mind, this is a macro symbol correct?
+
+1511807882
+andrewrk
+I see the problem
+
+1511807893
+andrewrk
+because right now macro symbols have to be a simple name lookup
+
+1511807899
+andrewrk
+but this would be a field access
+
+1511807911
+andrewrk
+it's a little tricky to get this all hooked up
+
+1511807921
+dimenus
+yep even if you add the name, you can't find it because the field isn't a top level symbol
+
+1511807928
+andrewrk
+we have to change things - instead of "macro symbol" we need something like "macro reference to another declaration"
+
+1511807940
+andrewrk
+and have a way to lookup symbols and field access
+
+1511808015
+andrewrk
+this is very tricky, because we have to be able to follow field access, but we only generated AstNodes and tossed away that information
+
+1511808111
+andrewrk
+it sounds like you understand the problem
+
+1511808120
+andrewrk
+but if it's too annoying or hairy, I'm happy to take the PR from here
+
+1511808849
+dimenus
+i like the challenge, but it may be more time efficient for you handle it since it's a significant change
+
+1511808857
+dimenus
+i'll pick on other lower hanging fruit
+
+1511809112
+andrewrk
+sounds good
+

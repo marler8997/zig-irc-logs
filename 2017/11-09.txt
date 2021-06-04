@@ -1,0 +1,1196 @@
+1510195477
+GitHub158
+[zig] andrewrk pushed 1 new commit to master:
+
+1510195477
+GitHub158
+zig/master 4f8c26d Andrew Kelley: fix enum sizes too large...
+
+1510196207
+dimenus
+andrewrk: do you have a minute to talk about #538?
+
+1510196225
+andrewrk
+yes
+
+1510196255
+dimenus
+i'm a little confused by what you mean with the msvc compiler driver
+
+1510196262
+dimenus
+msvc doesn't expose an interface to use c1.dll / etc
+
+1510196316
+andrewrk
+dimenus, right, so one of the features of zig is the build system. build.zig and such. and one of the use cases we want to support, is using zig instead of e.g. cmake to build cross platform projects
+
+1510196340
+andrewrk
+even if that project is written in C, and not zig
+
+1510196461
+dimenus
+ok, that sounds good. do you plan on utilizing msvc to compile this code then
+
+1510196463
+dimenus
+rather than llvm?
+
+1510196471
+dimenus
+in this particular test
+
+1510196478
+dimenus
+(still not getting a stack trace in llvm6)
+
+1510196484
+dimenus
+looks like its hitting the panic in debug.zig
+
+1510196510
+andrewrk
+yes, zig build's addCLibrary/addCExecutable is supposed to use msvc  on windows
+
+1510196594
+andrewrk
+as an example, on linux,
+
+1510196726
+andrewrk
+dimenus, hm I'm not sure why you're not getting stack traces with llvm6 branch. It worked when I tried it
+
+1510196734
+dimenus
+ok, so right now if I take that test and pass --verbose-link cl is what fails
+
+1510196742
+dimenus
+you're using elf, no?
+
+1510196810
+andrewrk
+I'm taking the hello world .zig file, putting @panic("ahhhh") in it, then running zig build-exe test.zig, then running it
+
+1510196823
+andrewrk
+it prompts me to debug with msvc, I click debug, then it shows me a stack trace with source code and everything
+
+1510196975
+dimenus
+i compiled both zig/llvm with CMAKE_BUILD_TYPE=Release
+
+1510196979
+dimenus
+and mine just shuts down
+
+1510196983
+dimenus
+hmm let me test something else
+
+1510197001
+andrewrk
+dimenus, are you talking about debugging the zig compiler itself?
+
+1510197029
+dimenus
+wait a minute
+
+1510197057
+dimenus
+in #538, a valid exe is not produced so in my mind your panic scenario is different
+
+1510197075
+andrewrk
+I thought we were talking about 2 different issues
+
+1510197085
+dimenus
+yeah i think we are
+
+1510197102
+dimenus
+the compiler crashes running the test in #538
+
+1510197116
+dimenus
+but I don't think it's actually a "crash"
+
+1510197123
+dimenus
+i think it's the panic in debug.zig triggering
+
+1510197135
+andrewrk
+I see
+
+1510197146
+dimenus
+i'm going to attempt to replicate the test you had first
+
+1510197150
+dimenus
+just to make sure we're working from the same setup
+
+1510197307
+andrewrk
+you're trying to replicate my @panic("ahhh") and get a stack trace in msvc?
+
+1510197350
+dimenus
+yes
+
+1510197537
+dimenus
+ok, that works which is good
+
+1510197546
+dimenus
+i don't get a prompt to debug, but that's not zig's fault
+
+1510197553
+dimenus
+it produces pdbs and i'm able to debug it
+
+1510197564
+dimenus
+back to 538...
+
+1510197927
+dimenus
+andrewrk: ok it looks like there are a couple things going on here in 538
+
+1510197960
+dimenus
+Windows.h is missing from the generated mathtest.h which makes cl produce a stupid error message
+
+1510228798
+ltr_
+there is someway to have some kind of autocomplete for zig in vim? just the basic
+
+1510233323
+ltr_
+also, how i can specify the libc-path-dir when doing zig build?
+
+1510233537
+ltr_
+zig cant find libc on ubuntu
+
+1510235891
+ltr_
+if i specify the libc dir zig cant find any other lib
+
+1510236268
+andrewrk
+ltr_: did you use the suggested configure line from the readme? It is tested on Ubuntu to find libc
+
+1510236586
+ltr_
+i think ill have to have a clean install of the libraries, i have some kind of mix of versions of different libs
+
+1510238262
+ltr_
+done i had a mess with symlinks
+
+1510238284
+ltr_
+messing with zig + libuv now
+
+1510239845
+andrewrk
+interesting
+
+1510240196
+andrewrk
+ltr_, is it a coincidence that this blog post came out today?
+
+1510241200
+ltr_
+just coincidence, havent saw that post
+
+1510241221
+ltr_
+im a fan of libuv, i like how it resolves concurrence
+
+1510241229
+ltr_
+main.zig:5:22: error: variable of type 'struct_uv_loop_s' not allowed
+
+1510241252
+ltr_
+ill check it
+
+1510241309
+ltr_
+why is not allowed? im defining the variable wrong?
+
+1510241321
+ltr_
+var loop: c.libuv.uv_loop_t = undefined;
+
+1510241339
+ltr_
+declaring*
+
+1510241747
+ltr_
+i have to declare it as a pointer, i dont know why, now it compiles
+
+1510241788
+ltr_
+i think is cos of the way libuv hides "private" members of the C struct with macros
+
+1510241884
+andrewrk
+ltr_, I can improve this error message
+
+1510241901
+andrewrk
+but yes it's because the .h file does not contain the definition of the type; it is opaque
+
+1510241909
+andrewrk
+so you can have a pointer to it but not instantiate it
+
+1510242145
+ltr_
+c.zig:1:19: error: compiler bug: @cImport generated invalid zig code
+
+1510242194
+ltr_
+and a lot of redefinition errors
+
+1510242214
+andrewrk
+ltr_, would you mind reporting that as an issue? I'll have a look after work
+
+1510242384
+ltr_
+ofc
+
+1510242416
+ltr_
+i think is the way libuv trys to do some kind of OOP with C macro magic
+
+1510242459
+ltr_
+where did you find that blog post?
+
+1510242461
+ltr_
+HNA?
+
+1510242464
+ltr_
+HN*
+
+1510242554
+andrewrk
+I subscribe to the author's blog
+
+1510242560
+andrewrk
+so I get an email when he makes a new one
+
+1510242973
+ltr_
+
+
+1510243142
+ltr_
+hey andrewrk i have noticed that you like sound, hehe is there a good read on the subject of generating sounds+formats+filters+synths+code, i dont know the jargon so i dont know what to look for
+
+1510243189
+andrewrk
+I don't know of a good introductory reading, but maybe a DSP course on coursera
+
+1510243213
+ltr_
+how for example impulse tracker , i love that piece of software, ill like to know how it works
+
+1510243260
+ltr_
+after lunch ill file the issue
+
+1510243313
+ltr_
+ill look into that course
+
+1510243438
+andrewrk
+it's really difficult. I have tried to take it multiple times and have not gotten past lesson 2-3ish
+
+1510243451
+andrewrk
+I think I need more discipline
+
+1510243497
+ltr_
+i just want to play with samples generate synths notes with code
+
+1510243555
+ltr_
+ok , lunch time c ya
+
+1510245082
+GitHub130
+[zig] andrewrk pushed 1 new commit to master:
+
+1510245082
+GitHub130
+zig/master 7ea669e Andrew Kelley: fix parameter of extern var args not type checked...
+
+1510245221
+GitHub13
+[zig] jfo opened pull request #602: fix typo on darwin lseek (master...pr)
+
+1510245348
+GitHub54
+[zig] andrewrk closed pull request #602: fix typo on darwin lseek (master...pr)
+
+1510245351
+GitHub62
+[zig] andrewrk pushed 1 new commit to master:
+
+1510245351
+GitHub62
+zig/master 52521d5 Jeff Fowler: fix typo on darwin lseek (#602)
+
+1510245649
+dimenus
+andrewrk: for 538, the existing compiler code doesn't produce a valid import lib with exports for MSVC to digest
+
+1510245672
+dimenus
+if you can see the difference if you objdump an import lib created with mingw-clang vs zig
+
+1510245717
+dimenus
+or if you're using msvc, dumpbin
+
+1510245946
+andrewrk
+dimenus, I think there is some misunderstanding because #538 has to do with using msvc's binaries - cl.exe and link.exe - and not using LLVM/clang/LLD
+
+1510245962
+andrewrk
+538 has nothing to do with zig creating import libs
+
+1510245990
+dimenus
+we invoke lld-link to create the dll first and then cl to compile the full executable
+
+1510245990
+dimenus
+no?
+
+1510246034
+andrewrk
+no, for 538, we only use zig to run build.zig, and we just act as the build system for msvc tools
+
+1510246053
+andrewrk
+llvm/clang/lld don't enter into the picture, except to run build.zig
+
+1510246170
+dimenus
+passing --verbose-link to that build emits an LLD call though
+
+1510246177
+dimenus
+and indeed does produce a dll/lib
+
+1510246212
+dimenus
+zig.exe --build-file build.zig --verbose-link
+
+1510246314
+andrewrk
+that's probably for building build.zig into the `build.exe` executable
+
+1510246381
+andrewrk
+and then build.exe orchestrates calls to msvc's cl.exe and link.exe
+
+1510246394
+andrewrk
+or at least that's what 538 is about
+
+1510246503
+dimenus
+we have to be using llvm at some point though, since we're creating a dll. You're not outputting C code as a backend
+
+1510246559
+andrewrk
+cl.exe and link.exe can create a dll
+
+1510246578
+dimenus
+i know that
+
+1510246590
+dimenus
+my point is that zig needs llvm to output obj files, yes?
+
+1510246608
+andrewrk
+yes
+
+1510246657
+andrewrk
+ok, you're looking at example/shared_library
+
+1510246661
+dimenus
+yes
+
+1510246666
+andrewrk
+it has     const exe = b.addCExecutable("test");
+
+1510246675
+andrewrk
+this needs to call cl.exe and link.exe
+
+1510246687
+andrewrk
+and it has     const lib = b.addSharedLibrary("mathtest", "mathtest.zig", b.version(1, 0, 0));
+
+1510246702
+andrewrk
+this one is via zig, so it uses llvm/lld
+
+1510246718
+dimenus
+did you think I was looking at the second case?
+
+1510246731
+dimenus
+my bad, for not being explicit about that
+
+1510246736
+andrewrk
+I don't understand your question
+
+1510246757
+dimenus
+anyway the IR emitted by zig is missing 'dllexport' which is required to produce a valid .lib file on windows
+
+1510246769
+andrewrk
+ah I see
+
+1510246780
+andrewrk
+we can add that
+
+1510246782
+dimenus
+what test case were you referring to?
+
+1510246788
+andrewrk
+the same one as you
+
+1510246797
+dimenus
+then how were you saying it doesn't use llvm o.0
+
+1510246811
+andrewrk
+ok I see the confusion
+
+1510246827
+andrewrk
+I forgot that it had both b.addCExecutable and  b.addSharedLibrary
+
+1510246833
+andrewrk
+I thought it was all C
+
+1510246849
+dimenus
+ah, that makes sense
+
+1510246872
+andrewrk
+ok what you said makes perfect sense
+
+1510246875
+andrewrk
+my mistake
+
+1510246925
+dimenus
+no worries, we're in an agreement now
+
+1510246934
+dimenus
+also, you are completely write that msbuild INSTALL does update from the source tree
+
+1510246941
+dimenus
+idk how I was getting old files...... maybe not calling install?
+
+1510246960
+dimenus
+**write=right
+
+1510246964
+dimenus
+more coffee is needed
+
+1510247576
+ltr_
+andrewrk: done , issue filled ->
+
+1510247935
+andrewrk
+thanks ltr_, I'll have a look later today
+
+1510248158
+ltr_
+im finding a way to get arround this, the only thing i can think of is to wrap everything in simple c functions
+
+1510248231
+ltr_
+is the grammar in the documentation up to date?
+
+1510249820
+andrewrk
+ltr_, I believe so
+
+1510249854
+andrewrk
+you can also use `zig parsec foo.h` where foo.h has #include <uv.h>
+
+1510249878
+andrewrk
+that will print a bunch of declarations, which can be useful for reference
+
+1510250996
+jfo
+andrewrk: maybe another darwin bug...
+
+1510251004
+jfo
+calling `warn("{}", file.getEndPos());`
+
+1510251017
+jfo
+std/os/darwin.zig:131:30: error: expected type 'type', found '&const extern fn(noalias &const u8, noalias &Stat) -> c_int'
+
+1510251017
+jfo
+getting
+
+1510251030
+jfo
+at
+
+1510251030
+jfo
+pub fn fstat(fd: i32, buf: &c.stat) -> usize {     errnoWrap(c.fstat(fd, buf)) }
+
+1510251031
+andrewrk
+hi jfo
+
+1510251137
+andrewrk
+ah. yeah. in C there's a `struct stat` and `stat` function; in Zig we rename the struct to Stat to disambiguate
+
+1510251149
+andrewrk
+jfo, try changing the s to S and see if it fixes it
+
+1510251157
+jfo
+1 sec
+
+1510251404
+jfo
+ok that leads me to
+
+1510251405
+jfo
+std/c/index.zig:16:42: error: expected type 'type', found '&const extern fn(noalias &const u8, noalias &Stat) -> c_int
+
+1510251414
+jfo
+and then changing case of that gives me
+
+1510251449
+jfo
+std/io.zig:250:25: error: no member named 'Stat' in '/Users/jfo/dogfood/zig/build/lib/zig/std/os/darwin.zig'
+
+1510251517
+andrewrk
+jfo, in std/os/darwin.zig, after `pub const timespec = c.timespec;`, add `pub const Stat = c.Stat;`
+
+1510251594
+andrewrk
+what's going on here is, std/os/* is the non-libc os interface. However, on Darwin, using libc is the os interface.
+
+1510251621
+andrewrk
+so std/os/darwin.zig depends on std/c/* and we expose some things selectively
+
+1510251682
+andrewrk
+but to API users of zig std lib, you go through std/os/* not std/c/*
+
+1510251777
+jfo
+ok almost there.
+
+1510251786
+jfo
+std/c/index.zig:16
+
+1510251787
+jfo
+pub extern "c" fn fstat(fd: c_int, buf: &stat) -> c_int;
+
+1510251808
+jfo
+index.zig:16:42: error: expected type 'type', found '&const extern fn(noalias &const u8, noalias &Stat) -> c_int'
+
+1510251844
+andrewrk
+that  stat should also be Stat
+
+1510251863
+ltr_
+
+
+1510251894
+ltr_
+thats the output of the parsec on #include <uv.h>
+
+1510251917
+andrewrk
+ltr_, yeah, and you can see how it incorrectly generates `pub const uv_connect_t = struct_uv_connect_s;` twice
+
+1510251918
+jfo
+andrewrk: that leads me to some more ish, let me see if I can unravel it I'll brb ty
+
+1510251941
+andrewrk
+ltr_, it's a bug in parsec.cpp
+
+1510251971
+ltr_
+i can look into it
+
+1510252010
+andrewrk
+great
+
+1510252016
+ltr_
+i really want to deploy a microservice in production here in zig lol
+
+1510252031
+jfo
+andrewrk: oh wait! got it.
+
+1510252033
+jfo
+pr coming
+
+1510252187
+andrewrk
+ltr_, sounds like we need concurrency and networking :)
+
+1510252207
+andrewrk
+ltr_, oh, or libuv like you're doing :)
+
+1510252219
+jfo
+++ concurrency and networking :)
+
+1510252233
+andrewrk
+jfo, I'm going to be working on those things very soon
+
+1510252267
+jfo
+i i know just throwing in my ++ !
+
+1510252268
+jfo
+:)
+
+1510252368
+ltr_
+exactly
+
+1510252482
+ltr_
+here in my job they are spending a lot of money in AWS cos of bloated crap like spring boot to do simple selects and transform em to json, 150mb just to start the vm.
+
+1510252515
+ltr_
+it is just too painful to watch
+
+1510253148
+andrewrk
+ltr_, if you get something working and your company likes it, see if they want to do a sponsorship with a banner on ziglang.org
+
+1510253187
+GitHub192
+[zig] jfo opened pull request #605: Fix Stat include in darwin land (master...pr)
+
+1510253227
+GitHub87
+[zig] andrewrk pushed 1 new commit to master:
+
+1510253227
+GitHub87
+zig/master 336d818 Jeff Fowler: Fix Stat include in darwin land (#605)
+
+1510253227
+GitHub66
+[zig] andrewrk closed pull request #605: Fix Stat include in darwin land (master...pr)
+
+1510253343
+jfo
+andrewrk:
+
+1510253527
+jfo
+looks like the only discrepency is `st_birthtimespec: struct_timespec`
+
+1510253531
+andrewrk
+jfo,     rdev: u64 is wrong
+
+1510253564
+andrewrk
+let me double check it on my mac
+
+1510253570
+jfo
+:+1:
+
+1510253786
+jfo
+bbiab dinner time.
+
+1510253791
+andrewrk
+jfo, I have the same output as you. so I translated the struct incorrectly. so we can use the values for the struct that you obtained just now
+
+1510254093
+ltr_
+(gdb) p record_decl->isStruct()
+
+1510254093
+ltr_
+Couldn't find method clang::RecordDecl::isStruct
+
+1510254106
+ltr_
+need tips for gdb
+
+1510254114
+ltr_
+to use clang functions
+
+1510254541
+andrewrk
+ltr_, it seems to matter whether you use -> or . correctly
+
+1510254695
+andrewrk
+ltr_, oh, did you compile clang in debug mode?
+
+1510254705
+ltr_
+i think not
+
+1510254722
+andrewrk
+you'll probably have to do that if you want to use gdb usefully
+
+1510254745
+ltr_
+Cannot resolve function decl_name to any overloaded instance
+
+1510255004
+ltr_
+ok it passes twice for some reason on typedefs
+
+1510255239
+dimenus
+andrewrk: so I've broken 538 (the dll creation part) into a minimally reproducible example
+
+1510255253
+dimenus
+and if i do build-lib on mathtest.zig it produces no exported symbols
+
+1510255284
+dimenus
+I found the LLVM function to specify the DLLStorageClass but when I add it, it's now exporting a lot of other symbols as well that I wouldn't expect to exist
+
+1510255307
+dimenus
+ex, w/ clang if i have a math.c file with just add(int x, int y) in it, it produces a dll with one function
+
+1510255319
+dimenus
+where as zig adds mempy, memset, floor, fmod and a lot of others
+
+1510255344
+andrewrk
+this is expected
+
+1510255345
+dimenus
+should i just file a new issue?
+
+1510255364
+andrewrk
+what's going on is that clang is expecting to link with libc, which provides all these functions
+
+1510255377
+andrewrk
+llvm generates calls to these functions
+
+1510255402
+dimenus
+shouldn't we assume if we're creating a dll that we shouldn't explicitly export other symbols that we're not using
+
+1510255416
+andrewrk
+dimenus, when we build a zig executable or library that does not depend on libc, first we build 2 things: compiler-rt.o and builtin.o. then we produce yourliborexe.o and link them all together
+
+1510255445
+andrewrk
+we always must have compiler-rt.o and builtin.o. unless we link with libc, which has all the symbols.
+
+1510255495
+andrewrk
+related:
+
+1510255500
+dimenus
+but now the calling application can't link with libc
+
+1510255513
+dimenus
+because we've duplicately defined symbols
+
+1510255523
+andrewrk
+it can, the symbols are private to the library
+
+1510255541
+dimenus
+hmm, then I need to find another flag
+
+1510255686
+andrewrk
+I know it is possible. worst case scenario,  we have to submit a patch to llvm to rename the symbol dependencies it generates, to add a namespace to them. But that should not be necessary
+
+1510255738
+dimenus
+is there a flag on a given function decl if it's 'export' in zig?
+
+1510255861
+andrewrk
+yes, it's the `export` keyword
+
+1510255897
+dimenus
+sorry, not the zig keyword
+
+1510255933
+dimenus
+context has an 'export_visib_mod' enum attached to it
+
+1510255952
+dimenus
+if i knew that a given function was export, I can fix this example
+
+1510255996
+andrewrk
+oh, FnTableEntry::linkage
+
+1510256029
+andrewrk
+anything other than GlobalLinkageIdInternal means that the symbol is exported in the .o file
+
+1510256053
+andrewrk
+see
+
+1510256074
+dimenus
+i used that originally, which was what caused the duplicately defined symbol issue
+
+1510256083
+dimenus
+running another test now
+
+1510256117
+andrewrk
+ideally we would end up with a .dll that did not expose stuff from builtin.o and compiler-rt.o
+
+1510256305
+dimenus
+yep, just exposing add in this case
+
+1510256665
+ltr_
+this is weird, the debugger stops at parsec.cpp:2580 if strcmp((*typename)->list.items, "uv_connect_t") == 0    but if i continue to line 2610, but never reach 2611
+
+1510256721
+andrewrk
+ltr_, in my experience, it's not helpful to use gdb unless everything is compiled in debug mode
+
+1510256868
+ltr_
+damn
+
+1510256883
+ltr_
+its weird cos the second time it reaches that line
+
+1510258369
+jfo
+andrewrk: this seems to do the trick
+
+1510258563
+jfo
+weirdly, if I add ` btim: timespec,` it... doesn't though?
+
+1510258594
+dimenus
+andrewrk: add in the mathtest.lib has the same linkage as memcpy for instance
+
+1510258617
+dimenus
+almost all of the functions defined are Internal/String
+
+1510258622
+dimenus
+**Internal/Strong
+
+1510258655
+andrewrk
+dimenus, maybe we can mark add as dllexport, but memcpy not
+
+1510258671
+dimenus
+that's what i'm trying to do
+
+1510258696
+dimenus
+but there's no identifier that I can see on the fn_table_entry that distinguishes the two
+
+1510258708
+andrewrk
+we don't have the concept of dllexport
+
+1510258713
+andrewrk
+we may need to add it to the language
+
+1510258742
+jfo
+a direct translation with `c_` types looks like
+
+1510258766
+dimenus
+andrewrk, there is another option
+
+1510258773
+andrewrk
+jfo, why did you make ino 16 bits? it looks like 64 to me based on your gist
+
+1510258788
+dimenus
+we generating far more IR than clang in this case since its just a dll
+
+1510258794
+dimenus
+clang just generates the IR for that one function
+
+1510258805
+andrewrk
+what IR?
+
+1510258831
+dimenus
+zig.exe build-obj mathtest.zig --emit llvm-ir
+
+1510258864
+dimenus
+clang only generates IR for the add function where as we output almost 2400 lines
+
+1510258889
+andrewrk
+which one do you think is not necessary?
+
+1510258934
+dimenus
+in this situation, everything except add
+
+1510258969
+andrewrk
+I can explain everything
+
+1510259023
+andrewrk
+the implementation of add, when llvm codegens, emits function calls to builtin.o and compiler-rt.o. so we must have these. Notice that they are separate compile units they can be cached.
+
+1510259047
+andrewrk
+further note that when we solve
+
+1510259093
+andrewrk
+we also generate code for panic. if we never call panic, all this code gets deleted when you do --release-fast or --release-safe
+
+1510259106
+andrewrk
+or if the user provides their own panic implementation
+
+1510259167
+andrewrk
+at the end of the day, when compiled with --release-fast, our DLL will be as slim as clang's
+
+1510259195
+andrewrk
+and clang's depends on libc, otherwise they would have the same problem as us
+
+1510259653
+jfo
+andrewrk: oh yeah of course. 1 sec
+
+1510260189
+andrewrk
+dimenus, if you use `zig build-obj` you can see it only generate code for the add fn
+
+1510260220
+andrewrk
+then the only thing is the panic implementation, and you can make it generate less code by adding one like this:   `pub fn panic(msg: []const u8) -> noreturn { while (true) {} }`
+
+1510260272
+dimenus
+sorry, I'm not getting that behavior
+
+1510260282
+dimenus
+if i call build-obj mathtest.zig --emit llvm-ir
+
+1510260288
+dimenus
+i get 144k worth of IR
+
+1510260308
+andrewrk
+I haven't tried --emit llvm-ir yet. tiehuis added that. try this
+
+1510260325
+andrewrk
+zig build-obj mathtest.zig --verbose-llvm-ir
+
+1510260352
+dimenus
+same thing
+
+1510260439
+andrewrk
+I don't think you added the panic implementation
+
+1510260460
+andrewrk
+also try adding --release-fast
+
+1510260505
+andrewrk
+after that I get a single function, and it's add
+
+1510260521
+andrewrk
+the ir is 47 lines
+
+1510260541
+dimenus
+yep, i do get that
+
+1510260561
+andrewrk
+in fact I don't even need to provide a panic implementation
+
+1510260563
+andrewrk
+--release-fast does it
+
+1510260570
+andrewrk
+the resulting IR is a single add function
+
+1510260577
+andrewrk
+but there is a bunch of debug info, which is good
+
+1510260632
+andrewrk
+I think --emit llvm-ir should do the same thing
+
+1510261265
+dimenus
+i think we'll want #462 straightened out first before we spend too much time on this
+
+1510261326
+andrewrk
+dimenus, yeah, 462 is high on my priority list
+
+1510261334
+dimenus
+right now a lot of those calls in std are export
+
+1510261342
+dimenus
+when we really just need them to be visible within our dll, not to C
+
+1510261384
+dimenus
+if I "fix" it by assigning ExternalDLLStorageClass, we get more symbol issues
+
+1510261416
+dimenus
+so i think I'll table #538 for now
+
+1510261573
+andrewrk
+I'll try to get 462 implemented soon
+
+1510261577
+andrewrk
+to unblock you
+
+1510261581
+andrewrk
+and I'll play with making a DLL
+
+1510264100
+ltr_
+andrewrk: i know where the problem can be, im going home now, tomorrow ill be on zig all day
+
+1510264180
+andrewrk
+ltr_, exciting
+
+1510264184
+andrewrk
+good night
+

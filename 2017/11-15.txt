@@ -1,0 +1,692 @@
+1510704551
+dimenus
+oooo an llvm crash when using opengl
+
+1510705046
+dimenus
+oh wow, it's codeview causing the crash
+
+1510705047
+dimenus
+interesting
+
+1510705543
+andrewrk
+dimenus, I believe the codeview llvm code is young and they are interested in bug reports
+
+1510705556
+andrewrk
+
+
+1510705566
+andrewrk
+> Bring on the Bugs!
+
+1510705669
+dimenus
+hmmm, an issue with libepoxy
+
+1510705685
+dimenus
+not exporting symbols correctly on windows
+
+1510705690
+dimenus
+guess this isn't just our problem!
+
+1510705691
+dimenus
+:)
+
+1510705700
+dimenus
+i'll just use gl3w/opengl32.lib
+
+1510709500
+dimenus
+andrewrk, for now we can @cDefine WIN32_LEAN_AND_MEAN to use windows.h without including COM etc
+
+1510709903
+andrewrk
+good idea
+
+1510711097
+dimenus
+it's probably best practice anyway as windows.h includes a bunch of very old apis
+
+1510711100
+dimenus
+that are rarely used
+
+1510711249
+andrewrk
+dimenus, we also have std.os.windows
+
+1510711256
+andrewrk
+so that one can avoid parsing windows.h
+
+1510711300
+dimenus
+i should probably just add LoadLibraryA to that
+
+1510711304
+dimenus
+rather than include the whole header
+
+1510711632
+andrewrk
+I think you want LoadLibraryW
+
+1510711651
+andrewrk
+
+
+1510711660
+andrewrk
+please correct me in this issue if I have the situation wrong
+
+1510712373
+dimenus
+no you're right, we shouldn't depend on that
+
+1510713943
+andrewrk
+dimenus, also I was thinking, about the whitespace issue, maybe we can add `zig fmt` which fixes whitespace issues in files
+
+1510713950
+andrewrk
+so you could run that before zig build
+
+1510713959
+andrewrk
+to work around not being able to configure one's editor
+
+1510715917
+dimenus
+hmmm, that may work
+
+1510715947
+dimenus
+i'm going to wrap LoadLibraryW in a os.windows function that takes a regular []const u8
+
+1510716196
+andrewrk
+that sounds good. sounds like you're working on std lib code for utf-16le encoding/decoding and utf-8 encoding/decoding
+
+1510716236
+andrewrk
+I'm also ok with using the A versions of windows functions until #534 is solved
+
+1510716543
+dimenus
+kernel32 has functions to encode UTF-8 in utf-16LE
+
+1510716563
+dimenus
+should we write our own functions? I thought UTF16-LE was generally discouraged
+
+1510716752
+andrewrk
+yes we should write our own, there's no reason to add a dependency on a syscall for something that isn't fundamentally a dependency
+
+1510716770
+andrewrk
+UTF-8 is encouraged in zig std lib
+
+1510716782
+andrewrk
+but we have to have UTF16-LE to communicate with windows. So we do it
+
+1510716797
+andrewrk
+it should be hidden by the OS abstraction layer
+
+1510717072
+dimenus
+
+
+1510717468
+dimenus
+i don't mean to steal from rust, but it looks like this is pretty robust:
+
+1510717484
+dimenus
+also, UTF16LE encoding is not high on my priority list at the moment
+
+1510717497
+dimenus
+i will probably just mark it as a TODO and call LoadLibraryA for now
+
+1510717556
+andrewrk
+it's ok to copy code from other projects if the license is compatible
+
+1510717565
+andrewrk
+that sounds fine about TOD
+
+1510717567
+andrewrk
+*TODO
+
+1510720210
+dimenus
+andrewrk, can you test &@opaqueType() for nulls at all?
+
+1510720225
+dimenus
+i'm just wondering of the utility here, since a lot of those win32 calls can return null in the case of a failure
+
+1510720238
+andrewrk
+dimenus, you can if you make it nullable:   ?&OpaqueType()
+
+1510720259
+andrewrk
+when we parse .h files, we assume every pointer is nullable
+
+1510720319
+dimenus
+nice, that works just as expected
+
+1510760291
+dimenus
+andrewrk, have a quick question when you have a minute
+
+1510760314
+andrewrk
+hello
+
+1510760333
+dimenus
+so, going to wrap LoadLibraryA in a function call in std.os.windows
+
+1510760339
+dimenus
+because i need to create a cstr, i need to allocate
+
+1510760349
+dimenus
+i don't really want to pass an allocator into the new function though
+
+1510760366
+dimenus
+is it against zig zen to just set an allocator within the file itself and use that>?
+
+1510760372
+andrewrk
+yes
+
+1510760381
+andrewrk
+the established pattern is to accept an allocator
+
+1510760386
+dimenus
+got it
+
+1510760391
+andrewrk
+however, you can make the allocator nullable
+
+1510760417
+andrewrk
+and if it's null, try to use stack memory, but if the name won't fit in the stack memory, return error.NameTooLong
+
+1510760448
+andrewrk
+here's an example:
+
+1510760480
+andrewrk
+or just make the allocator mandatory and call it a day
+
+1510760503
+dimenus
+do we have default arguments in zig?
+
+1510760509
+andrewrk
+we do not
+
+1510760548
+andrewrk
+the recommended way to do default arguments is to have similarly named functions, where one of them has all the args, and the other one dispatches to the first one with the default argument
+
+1510760822
+dimenus
+having a nullable type basically does what i want anyway I think
+
+1510760974
+andrewrk
+zig's idea about allocators is that, yes, it's more annoying to write code when you have to think about them. but ultimately the code will be reusable in more environments, and when reading code, the fact that a given piece of code depends on memory allocation is helpful to know
+
+1510761053
+andrewrk
+we want someone to call std.loadLibrary or whatever, and see the API, and think WTF why do I need an allocator? and then they learn, yes, we have to allocate memory just to put a stupid null byte at the end
+
+1510761076
+andrewrk
+also to decode-reencode unicode
+
+1510761082
+dimenus
+lol
+
+1510761103
+dimenus
+yeah not hiding the allocator does make the most sense and i ultimately agree with it
+
+1510767392
+dimenus
+andrewrk, i'm starting to like the feel of errors in zig
+
+1510767394
+dimenus
+const handle = os.windowsLoadDll(allocator, OpenGLDLL) %%  |err| {
+
+1510767394
+dimenus
+return;
+
+1510767394
+dimenus
+debug.warn("{}: {}", @errorName(err), OpenGLDLL);
+
+1510767394
+dimenus
+};
+
+1510767406
+dimenus
+concise
+
+1510767438
+andrewrk
+nice :)
+
+1510767465
+andrewrk
+concise, and robust
+
+1510767472
+andrewrk
+no errors left behind
+
+1510767512
+dimenus
+the standard lib function returns a %HMODULE which is a &OpaqueType()
+
+1510767533
+dimenus
+null pointer test is handled in thes standard lib rather than the user function
+
+1510767539
+dimenus
+which seems to be what you were giong for
+
+1510767584
+andrewrk
+that seems good
+
+1510768304
+dimenus
+is %defer only fired in the event of an error or always even in the event of an error?
+
+1510768380
+dimenus
+nevermind, docs answered my question
+
+1510769086
+andrewrk
+dimenus, I have basic union support working in the unions branch
+
+1510769096
+andrewrk
+I still need to add the parsec.cpp code though
+
+1510769105
+dimenus
+nice
+
+1510769114
+dimenus
+i think i might have run into an issue with opaque types
+
+1510769129
+dimenus
+calling FreeLibrary on the @OpaqueType seems to silently crash the program
+
+1510769190
+dimenus
+what is the storage for OpaqueType like under the hood?
+
+1510769746
+andrewrk
+dimenus, unknown storange. one is only allowed to have a pointer to an opaque type
+
+1510769760
+andrewrk
+*storage
+
+1510769777
+andrewrk
+can I see the code?
+
+1510770126
+dimenus
+andrewrk:
+
+1510770132
+dimenus
+i just copied the relevant parts
+
+1510770146
+dimenus
+oops, tops hould be HMODULE not HINSTANCE
+
+1510770157
+dimenus
+same type though
+
+1510770183
+andrewrk
+hm yeah this looks good
+
+1510770197
+andrewrk
+I think the problem is unrelated to @OpaqueType()
+
+1510770249
+andrewrk
+if you still suspect it, you can use a debugger and make sure we are doing a function call giving the same pointer address to FreeLibraryA that we got from windowsLoadDll
+
+1510770311
+dimenus
+i coudln't get it to work with c_void or just a straight int either (HMODULE is a struct typedef with just an int inside)
+
+1510770388
+andrewrk
+do we need CoInitializeEx or something like that?
+
+1510770417
+dimenus
+no, COM isn't needed in this case
+
+1510770426
+dimenus
+i'm going to run a debug build in a second and take a look
+
+1510770512
+andrewrk
+were you able to call a function from the DLL?
+
+1510770522
+dimenus
+didn't test that yet
+
+1510770664
+andrewrk
+I suspect that might not also be working
+
+1510772313
+dimenus
+hah, i'm just an idiot
+
+1510772322
+dimenus
+the symbol is FreeLibrary not FreeLibraryA
+
+1510772335
+dimenus
+debugging in VS caught it instantly
+
+1510772342
+dimenus
+wonder why it linked successfully though....
+
+1510772510
+dimenus
+oooh that might be a bug
+
+1510772536
+dimenus
+llvm generated a kernel32.lib with a symbol that says its FreeLibraryA even though that symbol doesn't exist in the real kernel32.lib
+
+1510772548
+dimenus
+i wonder if by being an idiot I found an llvm bug
+
+1510772687
+andrewrk
+hmm very interesting
+
+1510772699
+andrewrk
+ha, I found an llvm bug by being an idiot last night working on unions
+
+1510772763
+andrewrk
+hm we should be able to make it a better error message if someone mistypes a DLL function name
+
+1510772784
+dimenus
+the problem is lld links the lib successfully
+
+1510772792
+dimenus
+soooo we no idea it was a problem
+
+1510772881
+andrewrk
+that makes sense, because we want to be able to cross-compile a .exe without having access to the .dll
+
+1510773581
+andrewrk
+but we should detect if we're compiling natively
+
+1510773593
+andrewrk
+and then try to validate the lib calls
+
+1510775007
+dimenus
+We can call GetProcAddress at compile time to validate that the entries in the def file are all accurate
+
+1510775284
+andrewrk
+good idea
+
+1510775437
+andrewrk
+LoadLibrary gives the DLL we call ability to crash the program. So we would have to spawn a child process to do the LoadLibrary and GetProcAddress
+
+1510775451
+andrewrk
+and if we're going to spawn a child process, we can write that child process in zig :)
+
+1510775753
+dimenus
+that isn't a bug in llvm btw, it's just how import libs work
+
+1510775759
+dimenus
+I didn't realize there wasn't any magic to them
+
+1510776284
+andrewrk
+agreed
+
+1510776296
+andrewrk
+yeah they're surprisingly simple
+
+1510776306
+andrewrk
+makes you want to work on hot code swapping, eh?
+
+1510777150
+dimenus
+i did that without knowing what i was doing on my game originally
+
+1510777153
+dimenus
+a la casey muratori
+
+1510777162
+dimenus
+LARGE MEMORY LEAKS
+
+1510777379
+dimenus
+i wish we could add an attribute to c datatypes to make them coercible into zig datatypes
+
+1510777390
+dimenus
+so with a c function that returns a BOOL i can do
+
+1510777396
+dimenus
+if(returnedGood())
+
+1510777445
+andrewrk
+a BOOL is an integer, it's not actually true or false
+
+1510777451
+andrewrk
+so the best way to handle this would be a function like this
+
+1510777469
+dimenus
+i know but from a zig perspective, we define what BOOL is
+
+1510777486
+dimenus
+if we define it as a c_int but that it's capable of being a bool
+
+1510777486
+andrewrk
+fn toBool(windows_bool: BOOL) -> bool { return windows_bool != 0; }
+
+1510777486
+dimenus
+idk
+
+1510777497
+andrewrk
+the problem is that is magic
+
+1510777500
+andrewrk
+it feels good when writing the code
+
+1510777512
+dimenus
+the std function could just not return the windows bool
+
+1510777515
+dimenus
+hmmm
+
+1510777518
+andrewrk
+yeah
+
+1510777523
+dimenus
+solution in search of a problem
+
+1510777524
+dimenus
+lol
+
+1510777530
+andrewrk
+but it increases the surface area of the language people have to understand  when reading
+
+1510777569
+andrewrk
+we have that in the posix abstraction layer - translating errno into zig error codes
+
+1510777592
+andrewrk
+and in windows utility functions
+
+1510777603
+andrewrk
+
+
+1510777614
+andrewrk
+here we translate BOOL into %void
+
+1510777699
+dimenus
+yeah i spose it should really assert
+
+1510777708
+dimenus
+there's no valid case I can think of where we would want to ignore the 0
+
+1510777719
+dimenus
+if we got a 0, means we're trying to close a dll we didn't load somehow
+
+1510778581
+andrewrk
+for LoadLibrary?
+
+1510778829
+dimenus
+FreeLibrary
+
+1510779007
+andrewrk
+hmmm. I think it is a design flaw in the windows API that FreeLibrary can fail
+
+1510779034
+andrewrk
+I think we may need to assume that FreeLibrary cannot fail
+
+1510779052
+andrewrk
+free(), deinit(), close(), destroy(), etc, in zig these functions must not fail
+
+1510779084
+andrewrk
+I don't understand how FreeLibrary can possibly fail
+
+1510780783
+dimenus
+maybe if you have another thread that's calling it and you try to free it
+
+1510780789
+dimenus
+but that's your own design flaw
+
+1510780795
+dimenus
+so we should assert anyway
+
+1510780865
+dimenus
+short lived processes really shouldn't be unloading dlls anyway
+
+1510780879
+dimenus
+that's a waste of everyone's time
+
+1510781094
+andrewrk
+yeah. I think we assert that FreeLibrary never fails
+
+1510789928
+dimenus
+andrewrk, is compile time execution of functions on your radar at all for zig?
+
+1510789940
+dimenus
+**are
+

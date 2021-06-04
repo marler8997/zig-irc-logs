@@ -1,0 +1,208 @@
+1511932005
+GitHub185
+[zig] andrewrk pushed 1 new commit to master:
+
+1511932005
+GitHub185
+zig/master 7066283 Andrew Kelley: translate-c: support const ptr initializer
+
+1511948381
+skyfex
+Hmm, having a bool field in a packed struct seems to mess up @offsetOf (always returns 0)
+
+1511948595
+skyfex
+Same with @IntType(false, 1)
+
+1511967539
+andrewrk
+skyfex, can I see your packed struct definition?
+
+1511967734
+andrewrk
+thank you for the pledge btw :)
+
+1511967982
+skyfex
+const PinCnf = packed struct {     dir: bool,     input: bool,     pull: u4,     reserved1: u4,     drive: u3,     sense: u2 };
+
+1511968027
+skyfex
+And then @offsetOf(PinCnf, "drive") returns 0
+
+1511968048
+andrewrk
+what would you expect it to return?
+
+1511968097
+andrewrk
+maybe it should be renamed to @byteOffsetOf
+
+1511968122
+skyfex
+Hmm, I haven't tested it enough, seems I get the same if I set dir/input/pull to u2 as well
+
+1511968131
+andrewrk
+oh, there's an extra byte in here I didn't see
+
+1511968134
+andrewrk
+it should return 1 for drive
+
+1511968145
+andrewrk
+oh wait, I know what's going on
+
+1511968177
+andrewrk
+ok so if you walk over the fields 1 by 1 and notice when you hit a byte boundary
+
+1511968183
+andrewrk
+there's a byte boundary at offset 0
+
+1511968262
+andrewrk
+then we see 1 bit (bit offset 1), 1 bit (bit offset 2), 4 bits (bit offset 6), 4 bits (bit offset 10), 3 bits (bit offset 13), 2 bits (bit offset 15)
+
+1511968269
+andrewrk
+none of those are on a byte boundary
+
+1511968287
+andrewrk
+so the whole thing is represented as a u16 and masking/shifting is done to load/store
+
+1511968323
+andrewrk
+so the offset of all the fields is 0, which is the offset of the u16 where the bit fields are inside
+
+1511968350
+andrewrk
+if you explain what you need to use @offsetOf for, maybe I can suggest the best way to accomplish your goal
+
+1511968352
+skyfex
+Odd, but I guess that makes sense in a way
+
+1511968371
+jjido
+OffsetOf is little help with packed isn't it
+
+1511968383
+skyfex
+I wasn't really after byte offset anyway, I was just trying it out. What I'd really be interested in is bit offset
+
+1511968392
+andrewrk
+we could have that
+
+1511968403
+andrewrk
+maybe we rename @offsetOf to @byteOffsetOf and add @bitOffsetOf
+
+1511968447
+andrewrk
+jjido, yes, the problem is you need a special kind of pointer to point to a bit field - a pointer that has the bit offset from the address  in the type
+
+1511968462
+skyfex
+But hopefully, if packed structs are implemented well enough, you wouldn't need it. But if it's possible to specify all of a microcontrollers register with packed structs, it would be nice to be able to get their offsets from there, instead of having to define a whole bunch of constants in addition
+
+1511968478
+skyfex
+Just in case
+
+1511968504
+andrewrk
+I see
+
+1511968524
+andrewrk
+yeah, that would make sense, and it's a straightforward builtin function to add
+
+1511968541
+skyfex
+FYI, I got a piece of Zig code to run on the micro:bit / nRF51822 on monday.
+
+1511968552
+jjido
+You could have offsetOf and an additional bitShift (relative to offset) for packed struct
+
+1511968556
+andrewrk
+awesome! what cpu arch is that?
+
+1511968557
+skyfex
+Although I had to use GCC to link.. some issue with the linker script and LLVM
+
+1511968572
+skyfex
+ARM Cortex M0
+
+1511968602
+andrewrk
+I'd be curious to reproduce the linker issue - I could get a bug report filed for the LLD project. it's pretty active
+
+1511968615
+andrewrk
+I could also try it with llvm6 which has a lot of LLD improvements
+
+1511968642
+skyfex
+I can put up my example on github.. it's quite small, so should be useful for reproduction
+
+1511968728
+andrewrk
+I'd appreciate that
+
+1511968733
+skyfex
+And I hope I can make a decent example and writeup to illustrate how Zig could be useful on microcontrollers. Not sure if I should wait for 0.2 or not though.. depends on what issues I find
+
+1511968753
+andrewrk
+I'm interested to work with you on working out all the major issues you run into, such as this linker thing
+
+1511968763
+skyfex
+Ah yeah, like i wrote in the Github comment, specifying the type for enum tags would be great
+
+1511968771
+andrewrk
+the enum tag type should be reasonably easy to implement too
+
+1511968795
+skyfex
+Then I could generate a really nice struct definition of the registers from the XML spec
+
+1511968875
+andrewrk
+nice
+
+1511968903
+andrewrk
+there's one more issue relevant to you I believe:
+
+1511968977
+andrewrk
+there was some confusion on that issue, but now I know how to proceed
+
+1511969058
+skyfex
+cool. I was worried that the packing was incorrect, but since it's not I can continue to play around with mapping registers to struct, but without enums for now
+
+1511969170
+skyfex
+i would like to play around a bit with io and fmt over UART as well, before I publish anything. That might lead to some valuable feedback
+
+1511969309
+andrewrk
+agreed
+
+1511969312
+andrewrk
+here's how I do it:
+
