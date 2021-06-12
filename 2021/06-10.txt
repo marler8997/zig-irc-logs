@@ -1,0 +1,1528 @@
+1623284497
+johnLate!~johnlate@lexington.scnr.net
+So... std.atomic.Int(u64) has been replaced with std.atomic.Atomic(u64)... what is the replacement for .incr()? .fetchAdd(1, .SeqCst)?
+
+1623286542
+ifreund!~ifreund@user/ifreund
+So we don't have a way to make zig use an alternative sysroot yet do we? 
+
+1623286588
+ifreund!~ifreund@user/ifreund
+Use case is cross compiling with system libraries, usually this is done with an alternative system root containing all the libraries needed
+
+1623287509
+cr1901!~William@2601:8d:8600:911:d04c:7e05:e89e:86f2
+So it would be a union of "the sysroot where zig cross-compiled the libc for you" and "the sysroot where your autoconf'd/cmake cross-compiled libraries live"?
+
+1623287599
+ifreund!~ifreund@user/ifreund
+cr1901: no, if linking system libraries you would use a system provided libc even when cross compiling
+
+1623287613
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+is zig allowed to optimise out this? const bucket_list = try allocator.alloc(Bucket, present.len);
+
+1623287622
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+if bucket_list is never refed?
+
+1623287647
+ifreund!~ifreund@user/ifreund
+no it can't optimize that away, but it also shouldn't compile
+
+1623287666
+ifreund!~ifreund@user/ifreund
+_ = try allocator.alloc(Bucket, present.len); // bucket list
+
+1623287668
+cr1901!~William@2601:8d:8600:911:d04c:7e05:e89e:86f2
+ahhh, so what use case does "zig compiles the libc for you behind the scenes" solve?
+
+1623287676
+andrewrk!~andrewrk@mail.ziglang.org
+ifreund, have you tried with -L and -I args?
+
+1623287687
+ifreund!~ifreund@user/ifreund
+andrewrk: the problem is that zig finds the libs of the host system first
+
+1623287688
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+why shouldn't it compile?
+
+1623287712
+ifreund!~ifreund@user/ifreund
+g-w1: bucket_list never being referenced should be a compile error no?
+
+1623287751
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+well, with my changes yes, trying to decide if I should just delete it
+
+1623287760
+andrewrk!~andrewrk@mail.ziglang.org
+ifreund, if you pass, e.g. `-target native-linux` then finding libs of the host system would be a bug
+
+1623287767
+andrewrk!~andrewrk@mail.ziglang.org
+since is_native_os would be false
+
+1623287773
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+its at debug.zig:774
+
+1623287804
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+also should delete Bucket if I delete it then.
+
+1623287805
+ifreund!~ifreund@user/ifreund
+cr1901: zig providing the libc for you is awesome when you don't need to link system libraries, if you do then zig can't really do much more than existing c compilers
+
+1623287831
+cr1901!~William@2601:8d:8600:911:d04c:7e05:e89e:86f2
+ahhh
+
+1623287866
+cr1901!~William@2601:8d:8600:911:d04c:7e05:e89e:86f2
+Providing libc seems important for systems where "libc _is_ the syscall interface", but can't zig otherwise go without the libc?
+
+1623287867
+ifreund!~ifreund@user/ifreund
+having zig compile your C dependencies from source would be the ideal situation
+
+1623287889
+ifreund!~ifreund@user/ifreund
+as then there is no dependency on the host system
+
+1623287917
+cr1901!~William@2601:8d:8600:911:d04c:7e05:e89e:86f2
+would be nice :P
+
+1623287922
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+am i missing something, or does this loop have 0 purpose? if (cross_target.dynamic_linker.get()) |explicit_ld| {const explicit_ld_basename = fs.path.basename(explicit_ld); for (ld_info_list) |ld_info| {const standard_ld_basename = fs.path.basename(ld_info.ld.get().?);}} in system.zig
+
+1623287951
+ifreund!~ifreund@user/ifreund
+but some libraries can't be statically linked... hmm I guess I could theoretically have zig compile a dynamic mesa for the target and link against that
+
+1623288008
+ifreund!~ifreund@user/ifreund
+for context, I'm trying to package software I have written in zig for void linux which relies on cross compiliation to support as many architectures as it does
+
+1623288046
+cr1901!~William@2601:8d:8600:911:d04c:7e05:e89e:86f2
+>"libc _is_ the syscall interface"
+
+1623288046
+cr1901!~William@2601:8d:8600:911:d04c:7e05:e89e:86f2
+I think this is BSD and Windoze (ntdll), tbf
+
+1623288059
+ifreund!~ifreund@user/ifreund
+so regardless of what would be theoretically possible if I have zig build all my C dependencies for the target, zig should support this use-case of integrating with existing cross toolchains
+
+1623288107
+ifreund!~ifreund@user/ifreund
+cr1901: libc is the only stable syscall interface on everything except linux afaik
+
+1623288122
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+and plan9
+
+1623288143
+cr1901!~William@2601:8d:8600:911:d04c:7e05:e89e:86f2
+So Zig on Linux and plan9 in principle doesn't need libc in order to function properly?
+
+1623288160
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+exactly, and they don't use libc
+
+1623288184
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+ldd exe should return static (and it doesn't use static musl either)
+
+1623288422
+andrewrk!~andrewrk@mail.ziglang.org
+ifreund, on windows it's not libc, but it's ntdll.dll
+
+1623288437
+cr1901!~William@2601:8d:8600:911:d04c:7e05:e89e:86f2
+So there's less of a reason to need zig to compile a libc for you when targeting Linux systems (I remember someone said glibc compilation support was difficult)?
+
+1623288449
+andrewrk!~andrewrk@mail.ziglang.org
+ifreund, I'd be happy to look at this problem with you at some point if you wanna pair on it 
+
+1623288458
+andrewrk!~andrewrk@mail.ziglang.org
+it's definitely a use case that should be supported
+
+1623288468
+andrewrk!~andrewrk@mail.ziglang.org
+happy to look at it with you and figure out what needs to happen
+
+1623288549
+ifreund!~ifreund@user/ifreund
+andrewrk: cool, I think this might just be an issue with the zig build system tbh. I need to do a bit more experimentation
+
+1623288691
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+ok, ive narrowed the unused vars to crypto and math stuff
+
+1623288703
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+gonna push
+
+1623289351
+ifreund!~ifreund@user/ifreund
+andrewrk: ok, I was just doing something stupid, it seems to work \o/
+
+1623289665
+ifreund!~ifreund@user/ifreund
+one awkward thing about packaging zig software is that most packaging systems I've seen (well pacman and xbps at least) expect the build system to be able to build all the binaries with the proper prefix without yet installing them
+
+1623289769
+ifreund!~ifreund@user/ifreund
+what if we changed the default action of zig build from doing the same thing as `zig build install` to copying the artifacts to the zig-out prefix even if it is not the target DESTDIR/prefix
+
+1623289811
+ifreund!~ifreund@user/ifreund
+the default behavior of `zig build` would remain unchanged and effectively install to $BUILD_ROOT/zig-out with that as the prefix
+
+1623289887
+ifreund!~ifreund@user/ifreund
+maybe we should just break the mold here though
+
+1623291629
+ifreund!~ifreund@user/ifreund
+andrewrk: zig is missing one thing to support this use-case well actually, we don't expose a way to find/use the system libc installation when *not* targeting the native abi
+
+1623291673
+ifreund!~ifreund@user/ifreund
+and providing our own libc can cause issues when linking system libraries as we've seen in the past
+
+1623294830
+ifreund!~ifreund@user/ifreund
+anyone know the zig equivalent of "armv7l"?
+
+1623295231
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+how does one override the alignment requirements of an @intToPtr cast?
+
+1623295294
+ifreund!~ifreund@user/ifreund
+Lokathor: you could cast to an `align(1)` pointer if that's what you really want
+
+1623295310
+ifreund!~ifreund@user/ifreund
+it probably isn't though, what are you trying to do?
+
+1623295364
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+so i have the value 6, and i want to cast that to a win32 HBRUSH value, which is a pointer to c_void or something similarly opaque like that
+
+1623295392
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+but in this case, the function being called knows that values less than whatever threshold are "actually integers" and expects this
+
+1623295409
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+in C terms: FillRect(hdc, &ps.rcPaint, (HBRUSH) (COLOR_WINDOW+1));
+
+1623295446
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+so I tried: win32.FillRect(hdc, &ps.rcPaint, @intToPtr(win32.HBRUSH, (win32.COLOR_WINDOW + 1)));
+
+1623295453
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+but the compiler is unhappy with me
+
+1623295486
+ifreund!~ifreund@user/ifreund
+hmm, what's the exact error message?
+
+1623295502
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+error: pointer type '[*c].cimport:4:15.struct_HBRUSH__' requires aligned address
+
+1623295539
+andrewrk!~andrewrk@mail.ziglang.org
+ifreund, the --libc feature is for this use case
+
+1623295603
+ifreund!~ifreund@user/ifreund
+andrewrk: ok, if that's the intended way to solve this that's fine I guess. I'll give it a try
+
+1623295623
+ifreund!~ifreund@user/ifreund
+Lokathor: I think that type isn't opaque then...
+
+1623295695
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+well, HBRUSH is a HANDLE which is a PVOID which is a pointer to c_void, these are all just typedefs for each other.
+
+1623295742
+andrewrk!~andrewrk@mail.ziglang.org
+ifreund, re: armv7l, what does the 'l' stand for?
+
+1623295765
+ifreund!~ifreund@user/ifreund
+I don't know, I'm guess little endian though.
+
+1623295785
+ifreund!~ifreund@user/ifreund
+arm feature sets seem to be a bit of a mess
+
+1623295805
+andrewrk!~andrewrk@mail.ziglang.org
+if so, -target arm-$os-$abi -mcpu=generic+armv7a
+
+1623295827
+andrewrk!~andrewrk@mail.ziglang.org
+if so, -target arm-$os-$abi -mcpu=generic+v7a
+
+1623295896
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+what's more of a mess is that ARMX and ARMvX are two separate numbering systems
+
+1623295971
+ifreund!~ifreund@user/ifreund
+Lokathor: this seems to work for me... https://zigbin.io/760f72
+
+1623296031
+ifreund!~ifreund@user/ifreund
+andrewrk: ok, thanks
+
+1623296090
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+ifreund, hm, indeed, but i guess, as you say, it's not just using opaque typedefs after all because i'm getting a type error instead.
+
+1623296222
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+so is there any other thing i should do instead to tell the compiler "please just go with it"?
+
+1623296255
+ifreund!~ifreund@user/ifreund
+andrewrk: currently using the --libc feature would require patching the build.zig of projects we want to cross compile
+
+1623296281
+ifreund!~ifreund@user/ifreund
+Either the zig build system needs to expose this a different way, or we need something else
+
+1623296287
+andrewrk!~andrewrk@mail.ziglang.org
+Lokathor, are you looking for https://ziglang.org/documentation/master/#alignCast
+
+1623296318
+ifreund!~ifreund@user/ifreund
+won't runtime safety checks cause a panic if you do that?
+
+1623296323
+andrewrk!~andrewrk@mail.ziglang.org
+yes
+
+1623296332
+andrewrk!~andrewrk@mail.ziglang.org
+if the memory is not properly aligned
+
+1623296333
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+i want to remove the alignment check, not add one
+
+1623296334
+ifreund!~ifreund@user/ifreund
+like @alignCast(4, 6) is not ok
+
+1623296386
+andrewrk!~andrewrk@mail.ziglang.org
+is this auto translated .h or manually typed out extern function declarations?
+
+1623296388
+ifreund!~ifreund@user/ifreund
+I think the problem/bug is in the output translate-c is generating for this type/function
+
+1623296406
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+I just did: const win32 = @cImport(@cInclude("windows.h"));
+
+1623296413
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+so, "automatic" i guess
+
+1623296429
+ifreund!~ifreund@user/ifreund
+the best solution would be to translate this one function manually I think
+
+1623296454
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+unfortunate, but understandable
+
+1623296469
+andrewrk!~andrewrk@mail.ziglang.org
+so it translates to, what, a parameter with a pointer type, but then the actual windows documentation says to pass an unaligned pointer?
+
+1623296494
+ifreund!~ifreund@user/ifreund
+I think the problem is that HBRUSH is not translating to an opaque type
+
+1623296518
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+yeah if the pointer is a sufficiently small address FillBrush just decides you meant something else and doesn't access it as a pointer, uses it as an identifier instead
+
+1623296527
+andrewrk!~andrewrk@mail.ziglang.org
+ah I see
+
+1623296547
+ifreund!~ifreund@user/ifreund
+and so zig won't let you @intToPtr(HBRUSH, 6) because 6 is not aligned for whatever translate-c thinks the type of HBRUSH is 
+
+1623296576
+andrewrk!~andrewrk@mail.ziglang.org
+proper type for this would be `extern union { enum_if_small_enough: usize, ptr_otherwise: HANDLE }`
+
+1623296593
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+uh, yeah that sounds right
+
+1623296601
+andrewrk!~andrewrk@mail.ziglang.org
+too bad they didn't do that in the .h file
+
+1623296614
+ifreund!~ifreund@user/ifreund
+extern FillRect(hdc: HDC, lpc: *const RECT, hbr: *opaque{}) c_int;
+
+1623296630
+andrewrk!~andrewrk@mail.ziglang.org
+that works too
+
+1623296631
+ifreund!~ifreund@user/ifreund
+replace HDC and RECT with the versions from translate-c
+
+1623296641
+ifreund!~ifreund@user/ifreund
+and you should be on to the next problem :)
+
+1623296672
+ifreund!~ifreund@user/ifreund
+you'll need an extra pointer cast to pass the HBRUSH type from translate C though sadly, which is a bit ugly
+
+1623296682
+ifreund!~ifreund@user/ifreund
+I bet marler8997's bindings don't have this problem
+
+1623296755
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+oh now it's saying that two separate opaque pointer types aren't the same
+
+1623296775
+ifreund!~ifreund@user/ifreund
+yeah you have to @ptrCast() between them sadly like I said 
+
+1623296780
+marler8997!~marler899@204.229.3.4
+ifreund, my bindings do, I comment out some of the constants that violate the alignment with a note to handle this later
+
+1623296799
+ifreund!~ifreund@user/ifreund
+:/
+
+1623296830
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+ifreund, it was giving me that error in the pointer cast part
+
+1623296840
+marler8997!~marler899@204.229.3.4
+https://github.com/marlersoft/zigwin32gen/blob/8ecbdbe6b860890a1afdb2bfcd7b80afa056c710/src/genzig.zig#L1016
+
+1623296842
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+oh did you mean intToPtr and then also ptrCast?
+
+1623296860
+marler8997!~marler899@204.229.3.4
+..."these constants should probably be properly declared as union types"...
+
+1623296870
+ifreund!~ifreund@user/ifreund
+Lokathor: ok, I think the most ergonomic and least type safe way to do this would be to make the argument type a usize
+
+1623296886
+ifreund!~ifreund@user/ifreund
+then just pass the constants directly and @ptrToInt() the actual pointers
+
+1623296910
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+i just did *c_void since it's just a demo
+
+1623296933
+marler8997!~marler899@204.229.3.4
+my long term fix will be to use union types I think
+
+1623296948
+ifreund!~ifreund@user/ifreund
+*c_void works too yeah
+
+1623296955
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+yeah win32 bindings by hand are a FUN time for sure
+
+1623296967
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+so many little not-so-great parts of it
+
+1623296979
+marler8997!~marler899@204.229.3.4
+I feel your pain
+
+1623296986
+ifreund!~ifreund@user/ifreund
+not by hand any more, marler8997 has mountains of metadata from mr bill gates himself!
+
+1623296993
+ifreund!~ifreund@user/ifreund
+Lokathor: https://www.youtube.com/watch?v=HsnWZxrf5VE
+
+1623297019
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+oh yeah, the windows-rs crate does that too
+
+1623297034
+marler8997!~marler899@204.229.3.4
+yup, we're using the same underlying win32metadata project
+
+1623297042
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+they haven't worked out how to properly conditional compile just the parts a person is using yet
+
+1623297045
+ifreund!~ifreund@user/ifreund
+I wonder how many metadata bugs they've found yet
+
+1623297049
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+so the build times are horrible
+
+1623297070
+marler8997!~marler899@204.229.3.4
+:)
+
+1623297074
+ifreund!~ifreund@user/ifreund
+aren't rust users used to it by now? :P
+
+1623297075
+marler8997!~marler899@204.229.3.4
+not a problem with Zig 
+
+1623297126
+marler8997!~marler899@204.229.3.4
+the bindings are 114 MB and the time it takes to import the root module is very fast
+
+1623297143
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+ifreund, no no, last I heard windows-rs has bad times *compared to usual rust build times*
+
+1623297179
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+most people are still using the older crate, winapi, which is incomplete and not using the metadata system, but at least it builds in the blink of an eye in comparison
+
+1623297245
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+myself, when i call windows stuff i use some bindings i did by hand, but with zig i wanted to try the cImport thing... seems i stepped on a few problems here and there
+
+1623297247
+marler8997!~marler899@204.229.3.4
+the windows-rs bindings are also going to be quite a bit different, based on what I've been seeing
+
+1623297280
+marler8997!~marler899@204.229.3.4
+like, you wrap all your string types in PSTR("foo")
+
+1623297287
+marler8997!~marler899@204.229.3.4
+and you use HANDLE(0) instead of null
+
+1623297301
+marler8997!~marler899@204.229.3.4
+contrary to what all the win32 docs say
+
+1623297330
+marler8997!~marler899@204.229.3.4
+they chose to use an integer type for handle types in the metadata
+
+1623297331
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+i must admit that i haven't looked at what windows-rs is doing very closely, since i just keep my own set of stuff for the minimal windows usage that i do
+
+1623297346
+ifreund!~ifreund@user/ifreund
+Lokathor: @cImport() works a lot better on APIs that are less hostile than windows.h to be fair
+
+1623297357
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+yeah windows.h is the worst
+
+1623297361
+marler8997!~marler899@204.229.3.4
+so for the zig projection, I keep a hardcoded list of all the handle types so I can reintepret them as nullable pointers, since all the docs say they can be null
+
+1623297441
+marler8997!~marler899@204.229.3.4
+I opened an issue about it, but I was outvoted: https://github.com/microsoft/win32metadata/issues/395
+
+1623297616
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+well, can zig types have static functions? or like, associated consts?
+
+1623297634
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+could you set it up so that people can type HANDLE.null or HANDLE.NULL or something, i mean
+
+1623297635
+marler8997!~marler899@204.229.3.4
+yup
+
+1623297666
+ifreund!~ifreund@user/ifreund
+I'd make handles non-exhaustive enums
+
+1623297678
+marler8997!~marler899@204.229.3.4
+but there's nothing in the metadata that tells you it's a handle
+
+1623297684
+ifreund!~ifreund@user/ifreund
+ah I see
+
+1623297686
+marler8997!~marler899@204.229.3.4
+it just defines all the handle types as integer types
+
+1623297733
+marler8997!~marler899@204.229.3.4
+So SIZE_T and HANDLE are exactly the same :)
+
+1623297733
+ifreund!~ifreund@user/ifreund
+so if you hardcode the list of handles then you could do `const HANDLE = enum(u32) { NULL = 0, _ };`
+
+1623297746
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+ifreund, the problem is that the handles are given to you by the OS usually, so they're not enums, they're usize values
+
+1623297759
+marler8997!~marler899@204.229.3.4
+well actually that would work
+
+1623297764
+ifreund!~ifreund@user/ifreund
+Lokathor: s/u32/usize/ then
+
+1623297772
+marler8997!~marler899@204.229.3.4
+the binding doesn't care as long as it has the same ABI
+
+1623297787
+ifreund!~ifreund@user/ifreund
+Lokathor: https://ziglang.org/documentation/master/#Non-exhaustive-enum
+
+1623297794
+marler8997!~marler899@204.229.3.4
+I define them as opaque poitners at the moment
+
+1623297805
+ifreund!~ifreund@user/ifreund
+non-exhaustive enums would be more accurate IMO
+
+1623297806
+marler8997!~marler899@204.229.3.4
+which also means I can make then required and optional when appropriate
+
+1623297834
+marler8997!~marler899@204.229.3.4
+how would you make it non-nullable with an enum?
+
+1623297856
+ifreund!~ifreund@user/ifreund
+you'd leave out the NULL field
+
+1623297866
+ifreund!~ifreund@user/ifreund
+so yeah I see the advantage to using opaque pointers
+
+1623297881
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+yeah they're not really a set of enumerated values though. they're not things you switch on
+
+1623297890
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+they're really a lot more like opaque usize values
+
+1623297908
+marler8997!~marler899@204.229.3.4
+tomatoe tomatoe
+
+1623297922
+ifreund!~ifreund@user/ifreund
+that doesn't really work over text :P
+
+1623297929
+marler8997!~marler899@204.229.3.4
+lol
+
+1623297959
+marler8997!~marler899@204.229.3.4
+all this being said, optional stuff recently broke and I didn't realize how broke it is in the metadata
+
+1623297985
+marler8997!~marler899@204.229.3.4
+there was a bug where I was making all handles optional all the time, I fixed that and now I realize how many places are missing the "Optional" attribute
+
+1623298042
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+yeah I tried to carefully read the MSDN and make stuff &mut T or Option<&mut T> on every function I put in
+
+1623298049
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+but that doesn't go very fast
+
+1623298077
+marler8997!~marler899@204.229.3.4
+on functions you put into rust standard lib?
+
+1623298117
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+no, just into my own crate
+
+1623298147
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+if you're the only one using something you can get a little fast and loose with stuff as long as the ABI lines up ;P
+
+1623298192
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+hmm, so i tried to turn it on and a window doesn't appear
+
+1623298241
+marler8997!~marler899@204.229.3.4
+turn what on?
+
+1623298251
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+the windowing demo
+
+1623298259
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+but i think i see the problem, didn't register the class
+
+1623298268
+marler8997!~marler899@204.229.3.4
+send code?
+
+1623298288
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+nah i think i got it, hold on
+
+1623298449
+marler8997!~marler899@204.229.3.4
+oh...the metadata doesn't use Optional attributes on struct fields
+
+1623298890
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+https://zigbin.io/3b0aa6
+
+1623298910
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+this, uh, made the compiler OOM?
+
+1623298947
+marler8997!~marler899@204.229.3.4
+while I'm looking, take a look at this: https://github.com/marlersoft/zigwin32gen/blob/main/examples/helloworld-window.zig
+
+1623298949
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+it worked without the call to LoadCursorW
+
+1623298973
+marler8997!~marler899@204.229.3.4
+your WndProc is not set
+
+1623298986
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+sure but the compiler shouldn't OOM
+
+1623298987
+marler8997!~marler899@204.229.3.4
+wc.lpfnWndProc = winproc
+
+1623299061
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+right, it's just setting the default window proc
+
+1623299124
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+huh, well it didn't happen again
+
+1623299160
+marler8997!~marler899@204.229.3.4
+I dont' really see anything else wrong
+
+1623299188
+marler8997!~marler899@204.229.3.4
+weird it didn't happen again
+
+1623299195
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+no there's wasn't something wrong with the program, while compiling the program, the zig compiler exploded with an OOM error
+
+1623299211
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+but then it did not do that a second time when i just did another build
+
+1623299224
+marler8997!~marler899@204.229.3.4
+ah, maybe something to do with windows.h translation?
+
+1623299256
+marler8997!~marler899@204.229.3.4
+who knows
+
+1623300599
+daurnimator!~daurnimat@vultr.daurnimator.com
+marler8997: note that there are *true* HANDLEs and fake ones
+
+1623300611
+daurnimator!~daurnimat@vultr.daurnimator.com
+marler8997: notable, *true* HANDLEs align(4)
+
+1623300629
+daurnimator!~daurnimat@vultr.daurnimator.com
+except you can use the 2 bottom bits for your own purposes
+
+1623300645
+marler8997!~marler899@204.229.3.4
+wat
+
+1623300646
+daurnimator!~daurnimat@vultr.daurnimator.com
+--> on the kernel side they just mask off the low 2 bits
+
+1623300690
+marler8997!~marler899@204.229.3.4
+that's freakin weird
+
+1623300698
+daurnimator!~daurnimat@vultr.daurnimator.com
+useful for e.g. sandboxes where you can use them to mark HANDLE from user vs HANDLE by the hypervisor
+
+1623300739
+daurnimator!~daurnimat@vultr.daurnimator.com
+and also note you can *usually* tell a true HANDLE from a fake one by if the high bit is set
+
+1623300787
+daurnimator!~daurnimat@vultr.daurnimator.com
+marler8997: the low bits of HANDLEs are also used by various runtimes for type tagging IIRC.
+
+1623300803
+marler8997!~marler899@204.229.3.4
+so...you can't use those bits then?
+
+1623300822
+daurnimator!~daurnimat@vultr.daurnimator.com
+depends who "you" is in that sentence
+
+1623300836
+marler8997!~marler899@204.229.3.4
+I suppose only if you're executing inside those "runtimes"
+
+1623300853
+daurnimator!~daurnimat@vultr.daurnimator.com
+where "runtime" here might mean C#; or the JVM.
+
+1623300872
+marler8997!~marler899@204.229.3.4
+interesting
+
+1623300885
+marler8997!~marler899@204.229.3.4
+so fake handles are align(1)?
+
+1623300898
+daurnimator!~daurnimat@vultr.daurnimator.com
+fake handle are fake; they could be anything :P
+
+1623300907
+marler8997!~marler899@204.229.3.4
+oh I see
+
+1623300924
+marler8997!~marler899@204.229.3.4
+so what's an example of a function that returns a true handle and a fake handle?
+
+1623300991
+daurnimator!~daurnimat@vultr.daurnimator.com
+didn't you find one above in HBRUSH?
+
+1623301032
+marler8997!~marler899@204.229.3.4
+HBRUSH looks like a union type to me, where it has a window of reserved values, and then the rest of the values can be actual handles
+
+1623301076
+daurnimator!~daurnimat@vultr.daurnimator.com
+ah right; so not quite fake HANDLE; but almost
+
+1623301107
+daurnimator!~daurnimat@vultr.daurnimator.com
+it's been a long time since I've looked down that rabbit hole, can't remember the official apis that use fake handles off the top of my head
+
+1623301109
+marler8997!~marler899@204.229.3.4
+maybe one of these? https://github.com/marlersoft/zigwin32gen/blob/main/src/handletypes.zig
+
+1623301156
+daurnimator!~daurnimat@vultr.daurnimator.com
+SOCKET is yet another fun one.... it's a HANDLE+extra data.. but the HANDLE doesn't matter! so weird
+
+1623301179
+marler8997!~marler899@204.229.3.4
+wut?
+
+1623301192
+marler8997!~marler899@204.229.3.4
+how does the handle not matter?
+
+1623301197
+daurnimator!~daurnimat@vultr.daurnimator.com
+well it does sometimes
+
+1623301210
+daurnimator!~daurnimat@vultr.daurnimator.com
+but in general a SOCKET handle is just a HANDLE to the afd driver
+
+1623301217
+marler8997!~marler899@204.229.3.4
+I actually implemented a custom version of ws2_32
+
+1623301218
+daurnimator!~daurnimat@vultr.daurnimator.com
+you can use any HANDLE to the afd driver
+
+1623301246
+marler8997!~marler899@204.229.3.4
+in that case the handle I returned was an index into a table, and I think the underlying ws2_32 was also an index, but...this was Windows CE
+
+1623301273
+marler8997!~marler899@204.229.3.4
+the reason for the custom layer on top was to redirect sockets to another network stack in some cases
+
+1623301318
+daurnimator!~daurnimat@vultr.daurnimator.com
+marler8997: I think most of GDI is fake handles
+
+1623301331
+marler8997!~marler899@204.229.3.4
+ah
+
+1623301350
+marler8997!~marler899@204.229.3.4
+how did you find all that out?
+
+1623301359
+daurnimator!~daurnimat@vultr.daurnimator.com
+I don't even know any more lol
+
+1623301399
+marler8997!~marler899@204.229.3.4
+hax
+
+1623301516
+marler8997!~marler899@204.229.3.4
+dang my irc logger has captured over 600 messages in just 2 days
+
+1623301546
+marler8997!~marler899@204.229.3.4
+I've got the irc client saving all the message to disk, still have to finish the code that combines them all and pushes them to the git repo though
+
+1623302446
+daurnimator!~daurnimat@vultr.daurnimator.com
+llvm bug we might want to be aware of in case we get a bug report: https://bugs.llvm.org/show_bug.cgi?id=50611#c5
+
+1623302486
+daurnimator!~daurnimat@vultr.daurnimator.com
+Is there any reason `ComptimeStringMap` doesn't support changing values? I thought only the keys would need to be comptime
+
+1623324224
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+heya o/
+
+1623324241
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+can i somehow use blocking sockets (with epoll) but make the "connect" itself non-blocking?
+
+1623325181
+daurnimator!~daurnimat@vultr.daurnimator.com
+ikskuh: option 1. just set it non-blocking and then back again. option 2, use uring. option 3. use threads.
+
+1623325280
+gmacd!~gmacd3@cpc1-bmly10-2-0-cust207.2-3.cable.virginm.net
+Is there any reason that @tagName shouldn't be comptime-known for enums?
+
+1623325383
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+gmacd: when the tag isn't comptime-known, the tag name isn't either
+
+1623325392
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+daurnimator: thanks :)
+
+1623325397
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+let's see if i can get this working :)
+
+1623325503
+gmacd!~gmacd3@cpc1-bmly10-2-0-cust207.2-3.cable.virginm.net
+ikskuh: ah of course, I was passing the enum as an arg, so not comptime-known. doh
+
+1623325591
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+you can pass it comptime-known if possible :)
+
+1623325806
+gmacd!~gmacd3@cpc1-bmly10-2-0-cust207.2-3.cable.virginm.net
+in this case it is - nice
+
+1623326224
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+daurnimator: thanks, seems to work :)
+
+1623344274
+cren!~cren@2a00:23c5:4d10:5f01:d576:4068:8079:ad45
+what's the difference between std.testing.assert() and std.testing.expect()?
+
+1623344347
+cren!~cren@2a00:23c5:4d10:5f01:d576:4068:8079:ad45
+you know what I'm so lazy... I can just look this up
+
+1623344505
+cren!~cren@2a00:23c5:4d10:5f01:d576:4068:8079:ad45
+oh it's std.debug.assert
+
+1623344532
+z_is_stimky!~quassel@109.70.144.142
+yes
+
+1623344559
+cren!~cren@2a00:23c5:4d10:5f01:d576:4068:8079:ad45
+ahhhh assert causes `unreachable` whilst expect merely raises an error
+
+1623344564
+cren!~cren@2a00:23c5:4d10:5f01:d576:4068:8079:ad45
+returns an error
+
+1623344570
+z_is_stimky!~quassel@109.70.144.142
+correct
+
+1623344578
+z_is_stimky!~quassel@109.70.144.142
+assert is more 4 runtime code
+
+1623344606
+z_is_stimky!~quassel@109.70.144.142
+but its basically compiled out on releasesmall 
+
+1623345435
+kiedtl!~kiedtl@kisslinux/kiedtl
+How does one check if the underlying data of a slice is const or not?
+
+1623345595
+ifreund!~ifreund@user/ifreund
+kiedtl: there's no real way to check, it either is or it isn't
+
+1623345627
+ifreund!~ifreund@user/ifreund
+if it's e.g. a string literal it is
+
+1623345639
+ifreund!~ifreund@user/ifreund
+same with any other comptime known constant array
+
+1623345684
+kiedtl!~kiedtl@kisslinux/kiedtl
+ifreund: In my case I have a generic function that returns a type of '[]meta.Elem(@TypeOf(argument_1))'. This fails, if argument_1 is a const slice, because I'm trying to return a non-const slice from a const slice.
+
+1623345718
+kiedtl!~kiedtl@kisslinux/kiedtl
+So, what I want to do is make the return type something like 'if (const) []const meta.Elem(@TypeOf(argument_1)) else []meta.Elem(@TypeOf(argument_1))'
+
+1623345750
+kiedtl!~kiedtl@kisslinux/kiedtl
+but apparently there's no way to tell if it's const or not...
+
+1623345753
+kiedtl!~kiedtl@kisslinux/kiedtl
+or hm
+
+1623345809
+ifreund!~ifreund@user/ifreund
+kiedtl: oh, that's not checking if the underlying data is const but rather checking if the slice type is const
+
+1623345814
+ifreund!~ifreund@user/ifreund
+you can use @typeInfo()
+
+1623345830
+kiedtl!~kiedtl@kisslinux/kiedtl
+Oh, uh, yeah, I phrased my question incorrectly
+
+1623345848
+kiedtl!~kiedtl@kisslinux/kiedtl
+ifreund: thanks! I was just beginning to dig into builtin.zig to checkout the TypeInfo struct :)
+
+1623345857
+ifreund!~ifreund@user/ifreund
+no problem!
+
+1623346055
+kiedtl!~kiedtl@kisslinux/kiedtl
+This is crazy, I'm using a language that allows you to use a separate block just to figure out what type a function that will return
+
+1623346398
+ifreund!~ifreund@user/ifreund
+The really crazy it that there's not a separate macro or metaprogramming language for that kind of stuff :D
+
+1623347834
+kiedtl!~kiedtl@kisslinux/kiedtl
+it's even crazier because that block is larger than the actual function body!
+
+1623354134
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+https://gist.github.com/rust-play/fe6c045f1ebf85ad4b41e3e4eeed46d4 I finished the "open a window" demo from yesterday
+
+1623354142
+Lokathor!~Lokathor@75-174-104-225.boid.qwest.net
+this time without using windows.h at all though
+
+1623354215
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+hi, is there any example code for fast read/writing from stdin/stdout? I'm trying to get a small zig example to beat/match perl in a simple read/write task but so far it takes 2x as long in zig using buffered read/write
+
+1623354901
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+weirdly, perl seems to use 8k read buffer instead of 4k but I didn't see much gain in boosting zig's buffer to 8k
+
+1623354989
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+zig's write behavior is weird though -- if it isn't buffered, it will make separate write calls for each component in a format string
+
+1623355932
+oats!~thomas@user/oats
+testor, I think you'll want to use a BufferedWriter
+
+1623355946
+oats!~thomas@user/oats
+iirc IO in the stdlib is not buffered by default
+
+1623355998
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+yes, the bufferedReader and bufferedWriter helped quite a bit
+
+1623356031
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+I was playing with different buffer sizes but I can't get the speed to beat perl yet
+
+1623356107
+oats!~thomas@user/oats
+testor, try a buffer with the size of a page?
+
+1623356117
+oats!~thomas@user/oats
+or something page aligned
+
+1623356124
+oats!~thomas@user/oats
+ACTION is trying to remember how this all works
+
+1623356132
+oats!~thomas@user/oats
+like try 8192 or something
+
+1623356142
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+yeah i tried 4k, 8k etc...
+
+1623356147
+oats!~thomas@user/oats
+mk
+
+1623356214
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+the std C lib uses 4K for getc so I assume that's optimized, but weirdly perl seems to use 8K
+
+1623356230
+manicennui!uid349235@id-349235.tinside.irccloud.com
+Perl uses dark powers.
+
+1623356494
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+are there any good code examples of inlining C or the equivalent? I'm thinking of just using zig to handle the setup / compilation and doing the io parts in C
+
+1623357022
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+I am having a really hard time wrapping my head around what lemonboy is suggesting here https://github.com/ziglang/zig/commit/fa0a9481205f13591941ac56ef4c488628a949ea#r52004461 and  here https://github.com/ziglang/zig/pull/9047#discussion_r648971603 . What is the point of ax if w is the abs?
+
+1623357895
+andrewrk!~andrewrk@mail.ziglang.org
+g-w1, were you able to find the relevant .c code?
+
+1623357904
+z_is_stimky!~quassel@109.70.144.142
+testor: anything you can o in C, you're also able to do well just using syscalls
+
+1623357990
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+is there much interest in an alternative io library? that might be an interesting project to learn ziglang with
+
+1623358008
+z_is_stimky!~quassel@109.70.144.142
+could make one
+
+1623358025
+z_is_stimky!~quassel@109.70.144.142
+make one made 4 processing things like perl
+
+1623358029
+z_is_stimky!~quassel@109.70.144.142
+is good at
+
+1623358057
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+i'm up for trying if no one else has already made one
+
+1623358190
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+i was, and couldn't tell why ax needed to be updated
+
+1623358194
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+it seems w was used
+
+1623358359
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+are there any tips for profiling where the bottlenecks might be? I'm doing it the dumb "make change, compile then run 'time ./main' " way
+
+1623358394
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+and strace for seeing the pattern of read/write calls
+
+1623358438
+freshcoffee!~fresh@user/freshcoffee
+testor: silly question, but when comparing buffered write speeds, are you building release-mode ?
+
+1623358465
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+i used these options: -O ReleaseFast --single-threaded
+
+1623358479
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+I dunno if single-threaded changes things
+
+1623358488
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+I'll try without it
+
+1623358495
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+using build.zig?
+
+1623358568
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+my full command: ./zig build-exe -O ReleaseFast main.zig
+
+1623358619
+freshcoffee!~fresh@user/freshcoffee
+can you link main.zig online somewhere?
+
+1623358677
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+it's pretty messy; let me clean it up a little
+
+1623358778
+andrewrk!~andrewrk@mail.ziglang.org
+g-w1, I suggest to respond to TheLemonMan's comment with a couple small snippets of code illustrating why you don't understand the suggestion
+
+1623358792
+andrewrk!~andrewrk@mail.ziglang.org
+whether he's right or you're right, that will bring you two closer to finding the answer
+
+1623358834
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+ok, i think i'm wrong, but will do
+
+1623359102
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+ok here it is: @freshcoffee https://ghostbin.co/paste/k46qzf2
+
+1623359160
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+it runs in about 3 seconds on a 1.5M line file vs perl taking about 2 seconds
+
+1623359293
+andrewrk!~andrewrk@mail.ziglang.org
+testor, strace might reveal some interesting info
+
+1623359305
+manicennui!uid349235@id-349235.tinside.irccloud.com
+Maybe put the Perl somewhere too.
+
+1623359322
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+yeah the strace is what tipped me off to perl's 8K read chunks
+
+1623359327
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+at least on my machine
+
+1623359380
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+the perl is just a one liner: time perl -pe 's/^/HOWDY /' PATH_TO_FILE > /tmp/junkfile
+
+1623359428
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+perl flushes after each line so for write it should be slower I think...
+
+1623359459
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+at least with the one liner i gave
+
+1623359465
+andrewrk!~andrewrk@mail.ziglang.org
+testor, did you remember to -OReleaseFast
+
+1623359467
+manicennui!uid349235@id-349235.tinside.irccloud.com
+autoflush in Perl is a performance optimization generally.
+
+1623359502
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+yeah this is my full command: my full command: ./zig build-exe  -O ReleaseFast  --single-threaded main.zig
+
+1623359520
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+I think single threaded is faster than without at least the few times i tried
+
+1623359536
+freshcoffee!~fresh@user/freshcoffee
+on macos I am getting 0.38 for zig ReleaseFast, and 1.05 for perl
+
+1623359565
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+hm.. that's interesting!
+
+1623359570
+freshcoffee!~fresh@user/freshcoffee
+on both I am redirecting output to /dev/null
+
+1623359583
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+oh that might be an optimization
+
+1623359593
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+let me try that on my linux box
+
+1623359603
+andrewrk!~andrewrk@mail.ziglang.org
+what input file?
+
+1623359626
+andrewrk!~andrewrk@mail.ziglang.org
+also sorry for asking about -OReleaseFast, I see you already answered that above
+
+1623359640
+freshcoffee!~fresh@user/freshcoffee
+1.5 million lines of c++ code from zig project (repeated append until I got that many)
+
+1623359658
+freshcoffee!~fresh@user/freshcoffee
+I mean don't want to imply we have 1.5 meeeeeelion lines of that
+
+1623359672
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+with /dev/null redirect both zig and perl run faster on my box but perl still wins
+
+1623359690
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+i'll try with different inputs 
+
+1623359708
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+but that's weird that it would affect the outcome
+
+1623359726
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+oh wait zig is good at crosscompiling
+
+1623359734
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+i can try on my own mac 
+
+1623359748
+freshcoffee!~fresh@user/freshcoffee
+I can try linux too but in a vm
+
+1623359842
+freshcoffee!~fresh@user/freshcoffee
+archlinux: 0.32 for zig, 0.71 for perl
+
+1623359844
+freshcoffee!~fresh@user/freshcoffee
+zig go brrrrr
+
+1623360068
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+that's very strange -- zig is beating perl on my mac as well
+
+1623360080
+freshcoffee!~fresh@user/freshcoffee
+what is the original os?
+
+1623360089
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+i think it's ubuntu
+
+1623360092
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+lemme check
+
+1623360121
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+Ubuntu 16.04.7 LTS
+
+1623360464
+freshcoffee!~fresh@user/freshcoffee
+can you try this command; it shouldn't make a lick of difference but I want to rule something out:
+
+1623360465
+freshcoffee!~fresh@user/freshcoffee
+zig build-exe bug1.zig -OReleaseFast -target x86_64-linux-gnu
+
+1623360543
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+it behaves similarly
+
+1623360548
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+but i think i found the problem
+
+1623360554
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+the input file does make a difference
+
+1623360570
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+i tried making a random 1M line file and zig wins on both linux/mac
+
+1623360582
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+but the test file i was using is causing a different behavior
+
+1623360586
+andrewrk!~andrewrk@mail.ziglang.org
+testor, btw the zig version is missing a flush
+
+1623360613
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+yeah, i noticed i was dropping lines ha!
+
+1623360634
+andrewrk!~andrewrk@mail.ziglang.org
+fixed: https://clbin.com/brrZn
+
+1623360658
+freshcoffee!~fresh@user/freshcoffee
+doh
+
+1623360664
+z_is_stimky!~quassel@109.70.144.142
+oops
+
+1623360743
+andrewrk!~andrewrk@mail.ziglang.org
+on my machine the zig version is 4x faster than the perl version
+
+1623360844
+andrewrk!~andrewrk@mail.ziglang.org
+x86_64-linux, NVMe hard drive
+
+1623360881
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+does passing to stdin in perl make it slower? perl < file ?
+
+1623360893
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+so it seems if the input file line length is over a certain amount, that causes zig to become slower
+
+1623360913
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+like 300 characters
+
+1623360953
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+I made a junk file to confirm with this perl one-liner: perl -e 'print "laskjdf lasdkjfkladj laskjflk dajkf j" x 15 . "\n" for 1 .. 1000000' > input
+
+1623360982
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+I'll try the perl < file way to see if there's any difference
+
+1623361058
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+i tried perl < input, cat input|perl ; doesn't seem to make much difference
+
+1623361059
+freshcoffee!~fresh@user/freshcoffee
+indeed that input makes perl go brrrr
+
+1623361133
+peterhil!~peterhil@dsl-hkibng32-54f849-252.dhcp.inet.fi
+If there is any synchronocity in the world, I just happened to wonder why diff was not working – the reason was carriage returns instead of line feeds. Could that cause some difference?
+
+1623361145
+andrewrk!~andrewrk@mail.ziglang.org
+yes
+
+1623361560
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+I wonder if it's not the read / write buffering but maybe readUntilDelimiterOrEof(&buf, '\n')) that gets more expensive on a certain line width 
+
+1623361569
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+not sure how to test that
+
+1623361742
+testor!~testor@76-247-180-238.lightspeed.sjcpca.sbcglobal.net
+i just want to say having just started with ziglang yesterday -- zig is pretty cool; i'm super-impressed with the compile magics
+
+1623361928
+andrewrk!~andrewrk@mail.ziglang.org
+:)
+
+1623363070
+arwn!~arwn@2603-8081-4d00-f219-0000-0000-0000-1d8b.res6.spectrum.com
+hey i'm sorry but how do i open and read a file? std.fs.file doesn't contain an open function.
+
+1623363109
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+fs.cwd().readFileAlloc
+
+1623363118
+freshcoffee!~fresh@user/freshcoffee
+https://ziglearn.org/chapter-2/#filesystem
+
+1623363159
+arwn!~arwn@2603-8081-4d00-f219-0000-0000-0000-1d8b.res6.spectrum.com
+aha i had no idea the ziglearn site existed, thank you both.
+
