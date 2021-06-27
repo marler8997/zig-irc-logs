@@ -1,0 +1,600 @@
+1624712678
+kprotty[m]!~kprotty@2001:470:69fc:105::834
+anyone have a lead onto why the posix ci runs segfault in #9175
+
+1624713410
+ifreund!~ifreund@user/ifreund
+kprotty[m]: looks like its failing when using the zig build step to copy the lib files to the installation dir
+
+1624713428
+ifreund!~ifreund@user/ifreund
+does a running that command locally work for you?
+
+1624713462
+ifreund!~ifreund@user/ifreund
+the exact argv used is printed off just below where it says "Segmentation Fault" in the CI
+
+1624713493
+ifreund!~ifreund@user/ifreund
+if you could reproduce it locally inside gdb it would give you a lot more informatino
+
+1624713504
+ifreund!~ifreund@user/ifreund
+at a guess, something in AstGen.zig is crashing
+
+1624714241
+ifreund!~ifreund@user/ifreund
+kprotty[m]: hmm, this is all I got from gdb: https://0x0.st/-pSL.txt
+
+1624714251
+ifreund!~ifreund@user/ifreund
+does seem to be related to your changes
+
+1624714397
+ifreund!~ifreund@user/ifreund
+kprotty[m]: valgrind was a bit more useful: https://0x0.st/-pSO.txt
+
+1624714427
+ifreund!~ifreund@user/ifreund
+looks like you're derefencing an undefined pointer
+
+1624714572
+ifreund!~ifreund@user/ifreund
+and it's allocated on the heap, but I don't think valgrind can tell us anything more than that: https://0x0.st/-pSW.txt
+
+1624714606
+kprotty[m]!~kprotty@2001:470:69fc:105::834
+hm, it looks to either be __unmap_and_exit or im giving clone() bad stack
+
+1624714640
+kprotty[m]!~kprotty@2001:470:69fc:105::834
+oh nvm, thats going through the c_alloc
+
+1624714752
+kprotty[m]!~kprotty@2001:470:69fc:105::834
+I think i see it now. thanks for running it through vg
+
+1624714782
+ifreund!~ifreund@user/ifreund
+no problem!
+
+1624716661
+marler8997!~marler899@204.229.3.4
+should std.zig.fmtId be escaping "type"?
+
+1624716696
+ifreund!~ifreund@user/ifreund
+hmm, type is an identifier not a keyword
+
+1624716720
+marler8997!~marler899@204.229.3.4
+interesting
+
+1624716738
+ifreund!~ifreund@user/ifreund
+I think the implemenation of fmtId doesn't escape the "builtin" identifiers though, including "type", "u8", (or any other integer type), etc
+
+1624716740
+marler8997!~marler899@204.229.3.4
+you can't use it as an identifier though "error: variable shadows primitive type 'type'"
+
+1624716753
+ifreund!~ifreund@user/ifreund
+you can use it e.g. as the field of a struct though
+
+1624716819
+ifreund!~ifreund@user/ifreund
+pretty sure there are some open issues related to this
+
+1624716865
+ifreund!~ifreund@user/ifreund
+I just found something pretty neat though, this (very new/small) distro is recommending river as their GUI environment of choice: https://iglunix.xyz/docs/gui/
+
+1624716880
+marler8997!~marler899@204.229.3.4
+that's freakin awesome!
+
+1624716898
+ifreund!~ifreund@user/ifreund
+also interesting on that page is their tip to use jemalloc to make zig use less ram
+
+1624720294
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+ifreund: thats pretty cool
+
+1624726893
+marler8997!~marler899@204.229.3.4
+is there a function or something in the std lib that will tell me if a string is a builtin id like "type" or "i32" ?
+
+1624726918
+luuk!~luuk@user/luuk
+No
+
+1624727272
+ifreund!~ifreund@user/ifreund
+marler8997: fwiw the code handling this in the stage2 compiler is identifier() in AstGen.zig
+
+1624730858
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+just copy simple_types for most cases
+
+1624733923
+bw!sid2730@user/betawaffle
+the 0.8 docs seem to talk about `opaque {}`, but when i try to use it i get a compile error
+
+1624733943
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+what is the error?
+
+1624733947
+ifreund!~ifreund@user/ifreund
+bw: perhaps you're using it wrong, what's the error?
+
+1624733968
+bw!sid2730@user/betawaffle
+`error: use of undeclared identifier 'opaque'`
+
+1624733981
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+in what context are you using it?
+
+1624733992
+ifreund!~ifreund@user/ifreund
+bw: are you sure you're using zig 0.8? what does `zig version` say?
+
+1624734014
+bw!sid2730@user/betawaffle
+example: `pub const sqlite3_backup = opaque {};`
+
+1624734035
+bw!sid2730@user/betawaffle
+whoa... i'm not using 0.8. weird
+
+1624734042
+bw!sid2730@user/betawaffle
+let me... fix that
+
+1624734044
+ifreund!~ifreund@user/ifreund
+well, that explains that 
+
+1624734063
+ifreund!~ifreund@user/ifreund
+opaque is pretty sweet for C bindings :)
+
+1624734256
+bw!sid2730@user/betawaffle
+is it sane to hand-write c bindings for a library like sqlite3?
+
+1624734286
+bw!sid2730@user/betawaffle
+i did translate-c, and i was thinking of tweaking it by hand, since there's a lot of sub-optimal defaults
+
+1624734355
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+that works, https://github.com/vrischmann/zig-sqlite/ also works
+
+1624734356
+ifreund!~ifreund@user/ifreund
+bw: I think it can be a very worthwhile investment
+
+1624734454
+ifreund!~ifreund@user/ifreund
+I've hand written bindings for libwayland, wlroots, xkbcommon, and pixman which has made river's code much cleaner and more maintainable
+
+1624734464
+ifreund!~ifreund@user/ifreund
+as well as making everything a lot more type safe
+
+1624734488
+ifreund!~ifreund@user/ifreund
+translate-c can only ever be as good as C with regards to type safety
+
+1624734499
+ifreund!~ifreund@user/ifreund
+hand written zig can do a lot better though
+
+1624734693
+ifreund!~ifreund@user/ifreund
+and yeah my process is usually to run `zig translate-c` and then manually copy the relevant parts to a new file and clean things up
+
+1624734747
+bw!sid2730@user/betawaffle
+do you go through all the `?` and `[*c]` and figure out the correct types?
+
+1624734787
+ifreund!~ifreund@user/ifreund
+I went all the way and looked through the source code of the C libraries to figure out if things could be null yeah
+
+1624734796
+bw!sid2730@user/betawaffle
+nice
+
+1624734799
+ifreund!~ifreund@user/ifreund
+you don't have to do that though, at least not for all functions right away
+
+1624734825
+ifreund!~ifreund@user/ifreund
+the biggest thing is just getting rid of all the [*c] and namespacing the functions properly
+
+1624734851
+ifreund!~ifreund@user/ifreund
+if you want to take a look: https://github.com/swaywm/zig-wlroots
+
+1624734958
+bw!sid2730@user/betawaffle
+yeah, i was looking at this: https://github.com/ifreund/zig-wayland/blob/a8e1efcfd34ac798f19d8a62ebe3bb368c17f585/src/wayland_server_core.zig#L16-L19
+
+1624735066
+ifreund!~ifreund@user/ifreund
+zig-wayland is a bit more in-depth because of the code generation
+
+1624735118
+ifreund!~ifreund@user/ifreund
+and the fact that libwayland uses macros to iterate their linked list type, so I had to implement something ABI compatible with that but with nice zig iteration functions
+
+1624735147
+ifreund!~ifreund@user/ifreund
+I also got rid of almost all the void pointer usage in the API by using generics
+
+1624735721
+bw!sid2730@user/betawaffle
+that makes me want to play with wayland again (using zig)
+
+1624735907
+ifreund!~ifreund@user/ifreund
+:)
+
+1624737508
+andrewrk!~andrewrk@mail.ziglang.org
+motiejus, sorry for the delay in troubleshooting. can I get you to print something with gdb for me?
+
+1624737523
+motiejus!~motiejus@2001:470:69fc:105::38fb
+andrewrk: sure
+
+1624737547
+andrewrk!~andrewrk@mail.ziglang.org
+so in all those stack traces, there is that parameter sub_path_c that reveals a <hash>.txt file
+
+1624737565
+andrewrk!~andrewrk@mail.ziglang.org
+er it's not printing something with gdb, I just want to see the contents of those .txt files
+
+1624737586
+andrewrk!~andrewrk@mail.ziglang.org
+e6952993d9b2971d4f720b163e9e672c.txt, f322b09235a58afcec5f96313ce20bb3.txt, aeee3b9656aecd6cbe1df612eb49381b.txt, 18c5d15d382debc4dd4079a12f75e0a1.txt
+
+1624737611
+andrewrk!~andrewrk@mail.ziglang.org
+looks like the containing directory is /tmp/bazel-zig-cc/h/
+
+1624737620
+motiejus!~motiejus@2001:470:69fc:105::38fb
+1 minute, logging in
+
+1624737752
+motiejus!~motiejus@2001:470:69fc:105::38fb
+strange, `/tmp/bazel-zig-cc/` does not exist, although I can see it in the dumps I've pasted. Let me investigate
+
+1624737820
+motiejus!~motiejus@2001:470:69fc:105::38fb
+ah, sorry. it's all in containers
+
+1624738041
+andrewrk!~andrewrk@mail.ziglang.org
+does that mean the files are not accessible?
+
+1624738121
+motiejus!~motiejus@2001:470:69fc:105::38fb
+pasted
+
+1624738137
+motiejus!~motiejus@2001:470:69fc:105::38fb
+no, it's fine. Just took some time to forward them though a couple of  bastions
+
+1624738144
+motiejus!~motiejus@2001:470:69fc:105::38fb
+I pasted them to github
+
+1624738237
+andrewrk!~andrewrk@mail.ziglang.org
+thanks!
+
+1624738429
+andrewrk!~andrewrk@mail.ziglang.org
+motiejus, one more favor: in gdb, in the stack for each proc, I see a `c_object` parameter there. for all 4 I want to know: c_object.src.src_path
+
+1624738466
+motiejus!~motiejus@2001:470:69fc:105::38fb
+hm, there are 2 processes
+
+1624738479
+andrewrk!~andrewrk@mail.ziglang.org
+each process has 2 threads that are waiting on a lock
+
+1624738485
+motiejus!~motiejus@2001:470:69fc:105::38fb
+ah, ack
+
+1624738571
+andrewrk!~andrewrk@mail.ziglang.org
+one thing I'm confused about: I thought you set the target to x86_64-linux-musl, but in the .txt files it looks like the macos C lib headers are the ones used
+
+1624738591
+andrewrk!~andrewrk@mail.ziglang.org
+the target looks like aarch64-macos to me
+
+1624738597
+motiejus!~motiejus@2001:470:69fc:105::38fb
+I have attached to the process; can you point me to the gdb command?
+
+1624738626
+motiejus!~motiejus@2001:470:69fc:105::38fb
+sorry for the confusion, the target is always macos
+
+1624738635
+motiejus!~motiejus@2001:470:69fc:105::38fb
+I wasn't able to reproduce this for a linux target
+
+1624738661
+andrewrk!~andrewrk@mail.ziglang.org
+for process 1: `(gdb) thread 3` `(gdb) up 5` `(gdb) p c_object.src.src_path`
+
+1624738673
+motiejus!~motiejus@2001:470:69fc:105::38fb
+hm, and I can't see me mentioning `x86-64-linux-musl` in the report
+
+1624738690
+andrewrk!~andrewrk@mail.ziglang.org
+I'm looking at "Apparently it needs a x86_64-linux-musl build of zig to manifest. Bingo!"
+
+1624738713
+andrewrk!~andrewrk@mail.ziglang.org
+ah I see that is the host and the target is aarch64-macos
+
+1624738750
+motiejus!~motiejus@2001:470:69fc:105::38fb
+re. that comment: that's the build of zig, the host
+
+1624738762
+motiejus!~motiejus@2001:470:69fc:105::38fb
+I wasn't able to reproduce this with non-static zig build, so I had to use zig-bootstrap
+
+1624738847
+motiejus!~motiejus@2001:470:69fc:105::38fb
+is this safe to ignore, before I go ignore this for all 4 threads?
+
+1624738847
+motiejus!~motiejus@2001:470:69fc:105::38fb
+```
+
+1624738847
+motiejus!~motiejus@2001:470:69fc:105::38fb
+2622    /home/motiejus/code/zig-bootstrap/zig/src/Compilation.zig: No such file or directory.
+
+1624738847
+motiejus!~motiejus@2001:470:69fc:105::38fb
+```
+
+1624738871
+andrewrk!~andrewrk@mail.ziglang.org
+yes I believe that is telling you that gdb cannot display the source code 
+
+1624739089
+andrewrk!~andrewrk@mail.ziglang.org
+motiejus, I think I was able to learn the information without needing those gdb prints
+
+1624739101
+motiejus!~motiejus@2001:470:69fc:105::38fb
+I am pasting them now
+
+1624739105
+motiejus!~motiejus@2001:470:69fc:105::38fb
+:D
+
+1624739109
+freshcoffee!~fresh@user/freshcoffee
+I was able to induce a hang doing this: `zig build hello.zig -lc++` in 2 terminals at roughly the same time (so that they overlap building libc++ objects). perhaps libc++.a depends on *.o, and they are exclusive write locks per process held until .a is finished?
+
+1624739176
+motiejus!~motiejus@2001:470:69fc:105::38fb
+andrewrk I am on hold until instructed otherwise (have the gdb commands for process 1, but not doing anything further)
+
+1624739245
+andrewrk!~andrewrk@mail.ziglang.org
+freshcoffee, mmmm I think you're on to something
+
+1624739274
+andrewrk!~andrewrk@mail.ziglang.org
+zig hangs on to the lock for each .o file so that a (vaporware) cache garbage collector would not reap it
+
+1624739303
+companion_cube!~simon@user/companion-cube
+so you need to acquire locks in a deterministic order
+
+1624739322
+freshcoffee!~fresh@user/freshcoffee
+that's the thing I don't get. we are deterministic in the order aren't we?
+
+1624739337
+andrewrk!~andrewrk@mail.ziglang.org
+no we let the thread pool race c object compilation
+
+1624739350
+freshcoffee!~fresh@user/freshcoffee
+oh right
+
+1624739363
+andrewrk!~andrewrk@mail.ziglang.org
+I think the problem is clear, this seems to be a design flaw
+
+1624739366
+companion_cube!~simon@user/companion-cube
+maybe strace can show stuff?
+
+1624739381
+andrewrk!~andrewrk@mail.ziglang.org
+motiejus, thanks for your assistance, I think I have enough info to proceed with a fix
+
+1624739449
+andrewrk!~andrewrk@mail.ziglang.org
+Process 1 locks vector.o & compiles it. Process 2 locks variant.o & compiles it. Process 1 tries to grab lock on variant.o and waits. Process 2 tries to grab lock on vector.o and waits. Deadlock
+
+1624739510
+companion_cube!~simon@user/companion-cube
+that might be naive, but why not lock the whole build directory? 
+
+1624739548
+andrewrk!~andrewrk@mail.ziglang.org
+that's one possible solution, lock at a higher part of the hierarchy for example all of libc++
+
+1624739548
+companion_cube!~simon@user/companion-cube
+seems like either: you can do multiple compilations, in which case you want to namespace the .o files I imagine (so use subdirs), or there is only one compilation at a time, so gc can wait for it to end?
+
+1624739574
+andrewrk!~andrewrk@mail.ziglang.org
+the problem is that the operating system does not give us the primitives we need to make optimal use of the hardware
+
+1624739640
+freshcoffee!~fresh@user/freshcoffee
+btw this explains why matching .txt files don't show up in bt. It's because if deadlocked, one process is already "done with it" and there is no stack trace to show.
+
+1624739649
+andrewrk!~andrewrk@mail.ziglang.org
+what we actually want is reference counted locks, e.g.:
+
+1624739685
+andrewrk!~andrewrk@mail.ziglang.org
+Process 1 locks vector.o & compiles it. Process 2 locks variant.o & compiles it. Process 1 tries to grab lock on variant.o and *is granted a reference to the lock*. Process 2 tries to grab lock on vector.o and *is granted a reference to the lock*.
+
+1624739711
+freshcoffee!~fresh@user/freshcoffee
+this seems like multiple-reader locking to me
+
+1624739714
+companion_cube!~simon@user/companion-cube
+rwlock?
+
+1624739717
+andrewrk!~andrewrk@mail.ziglang.org
+yes that would model it too
+
+1624739747
+companion_cube!~simon@user/companion-cube
+you could also have a small database storing a set of locks with refcounts, instead of locking the files themselves
+
+1624739764
+andrewrk!~andrewrk@mail.ziglang.org
+the data would be incorrect when a process crashes
+
+1624739776
+andrewrk!~andrewrk@mail.ziglang.org
+the value of an OS lock is that a process crash properly releases the lock
+
+1624739776
+freshcoffee!~fresh@user/freshcoffee
+the db idea has a big problem imo, how do we find out the db manager/holder died?
+
+1624739778
+companion_cube!~simon@user/companion-cube
+ah, fair enough
+
+1624739812
+companion_cube!~simon@user/companion-cube
+funny, I wonder what other resources are "RAII" at the OS level
+
+1624739823
+companion_cube!~simon@user/companion-cube
+the pid, clearly, but it's recycled so it might race
+
+1624740139
+andrewrk!~andrewrk@mail.ziglang.org
+what we don't have is a way to downgrade an exclusive lock to a shared lock
+
+1624740184
+andrewrk!~andrewrk@mail.ziglang.org
+looks like flock() does do that, let me see if windows supports it
+
+1624740215
+companion_cube!~simon@user/companion-cube
+another unique resource that dies with the holder, is listening on a tcp port, btw
+
+1624740230
+companion_cube!~simon@user/companion-cube
+if you had a daemon that any process can start if it's not htere, and listens on a given port
+
+1624740250
+companion_cube!~simon@user/companion-cube
+(and that works on windows, too)
+
+1624740297
+andrewrk!~andrewrk@mail.ziglang.org
+does windows have a way to modify the dwShareMode of an open file?
+
+1624740463
+motiejus!~motiejus@2001:470:69fc:105::38fb
+likely a naive question, but why don't these 2 competing processes release the locks after compiling the object files?
+
+1624740478
+andrewrk!~andrewrk@mail.ziglang.org
+zig hangs on to the lock for each .o file so that a (vaporware) cache garbage collector would not reap it
+
+1624740487
+andrewrk!~andrewrk@mail.ziglang.org
+but the problem is the locks should not be exclusive at that point, they should be shared/read-only
+
+1624740501
+motiejus!~motiejus@2001:470:69fc:105::38fb
+ok, understood now.
+
+1624740548
+motiejus!~motiejus@2001:470:69fc:105::38fb
+also, I haven't found a way to drop the lock directly (at least in `flock(2)`) from exclusive to shared, unless indirectly: exclusive -> drop -> shared, with another exclusive flock controlling the transition
+
+1624740565
+motiejus!~motiejus@2001:470:69fc:105::38fb
+how do you drop from exclusive to shared lock in, say, linux? You seem to imply that's doable
+
+1624740575
+andrewrk!~andrewrk@mail.ziglang.org
+hmm the man pages say: A  process  may  hold  only one type of lock (shared or exclusive) on a file.  Subsequent flock() calls on an already locked file will  convert an existing lock to the new lock mode.
+
+1624740615
+motiejus!~motiejus@2001:470:69fc:105::38fb
+yeah. missed that.. thanks.
+
+1624740644
+andrewrk!~andrewrk@mail.ziglang.org
+need to make sure it works on windows too though
+
+1624740786
+motiejus!~motiejus@2001:470:69fc:105::38fb
+if dropping from exclusive to shared is not doable on windows, my naive suggestion may work -- have a "global" lock protecting the transitions, thus making the  "exclusive -> drop -> shared" an atomic transition
+
+1624743472
+bw!sid2730@user/betawaffle
+Is there a way to spit out all the error union values in a compilation?
+
+1624743481
+bw!sid2730@user/betawaffle
+(The names)
+
+1624746231
+ifreund!~ifreund@user/ifreund
+bw: I don't think so, though with some effort you could probably patch the compiler to do so. What's your use case?
+
+1624746267
+bw!sid2730@user/betawaffle
+Curiosity
+
+1624750605
+mla!~mla@162.253.176.229
+whats the prefered way to have something like c select() wait on multiple file descriptors in zig atm?
+
+1624750987
+mla!~mla@162.253.176.229
+is it possible to just use c select? using translate-c i get complaints about FD_ZERO not working due to "unexpected token .Keyword_do"
+
