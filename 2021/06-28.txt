@@ -1,0 +1,744 @@
+1624856595
+andrewrk!~andrewrk@mail.ziglang.org
+windows lets you open/create a file and then find out if you were the one to create it. this feature is sadly missing from posix
+
+1624857147
+shachaf!~shachaf@user/shachaf
+But you can try to open a file with O_CREAT|O_EXCL, right?
+
+1624857487
+shachaf!~shachaf@user/shachaf
+(Or without O_CREAT. And if either of those succeed you know where you're at.)
+
+1624857776
+andrewrk!~andrewrk@mail.ziglang.org
+this requires 2 syscalls which means you can't take advantage of any file locking with this
+
+1624857981
+shachaf!~shachaf@user/shachaf
+Hmm, what sort of locking do you have in mind that it doesn't work for?
+
+1624858083
+andrewrk!~andrewrk@mail.ziglang.org
+I'm working on the solution to https://github.com/ziglang/zig/issues/9139
+
+1624858104
+andrewrk!~andrewrk@mail.ziglang.org
+trying to make the compiler handle properly when multiple processes are racing to produce the same resources
+
+1624858275
+andrewrk!~andrewrk@mail.ziglang.org
+I came up with a solution; it's just more complicated than I would have liked
+
+1624858300
+freshcoffee!~fresh@user/freshcoffee
+does it still involve keeping file descriptors open?
+
+1624858319
+andrewrk!~andrewrk@mail.ziglang.org
+yes
+
+1624858364
+andrewrk!~andrewrk@mail.ziglang.org
+https://clbin.com/TlXT6 here is what I have so far
+
+1624858741
+freshcoffee!~fresh@user/freshcoffee
+what is the use case of `.want_shared_lock = false` ? once we get a hit on anything, shouldn't it always be a shared lock?
+
+1624858747
+shachaf!~shachaf@user/shachaf
+Hmm, I'm not sure I see what the Windows call can do that these can't.
+
+1624858803
+andrewrk!~andrewrk@mail.ziglang.org
+shachaf, they populate GetLastError() with ERROR_FILE_EXISTS even on success
+
+1624858829
+andrewrk!~andrewrk@mail.ziglang.org
+it's kind of like an atomic flag in the file system the OS provides
+
+1624858890
+andrewrk!~andrewrk@mail.ziglang.org
+freshcoffee, in the case of incremental compilation, we only put things into the cache namespace such as zig version, target info, CLI options. then we open the artifact and do in-place binary modifications
+
+1624858918
+andrewrk!~andrewrk@mail.ziglang.org
+when you edit a zig file for this use case, you'll still get a cache hit, and the compiler is supposed to do incremental compilation on the binary
+
+1624858945
+andrewrk!~andrewrk@mail.ziglang.org
+however for things such as compiling C objects with clang, *everything* goes into the cache manifest, and so if you get a hit, it is read-only
+
+1624858972
+freshcoffee!~fresh@user/freshcoffee
+thanks. I was only considering C objects
+
+1624859505
+andrewrk!~andrewrk@mail.ziglang.org
+freshcoffee, you're right though, I just went over it and 100% of the hit() callsites wanted shared locks. for the other case I was just mentioning, we just make a dir out of the hash digest
+
+1624859677
+shachaf!~shachaf@user/shachaf
+andrewrk: Sure, but the alternative here is to try to open for create, and if that fails, try to open for open, or something, right? If either one succeeds, you'll know what state you're in.
+
+1624859699
+shachaf!~shachaf@user/shachaf
+I think I'm missing something basic about what the goal is.
+
+1624859793
+andrewrk!~andrewrk@mail.ziglang.org
+the scenario is a bit involved. Process A obtains exclusive lock and starts working on the build. Process B and C block on shared locks for the resource. Process A crashes. B and C obtain their shared locks. But they hit cache misses since A crashed.
+
+1624860357
+shachaf!~shachaf@user/shachaf
+These are locks as in flock? What's the connection? B and C already successfully open the file before they can wait on the lock, right?
+
+1624860667
+andrewrk!~andrewrk@mail.ziglang.org
+yes, flock. the problem is if they cache miss, one of them needs to become the new exclusive owner and the other needs to wait for them
+
+1624860819
+shachaf!~shachaf@user/shachaf
+OK, I see, this is just files working differently on Windows, I guess.
+
+1624860835
+shachaf!~shachaf@user/shachaf
+Because flock operates on a file descriptor, and in a POSIXy system they'd all already have it open to flock on it?
+
+1624860849
+andrewrk!~andrewrk@mail.ziglang.org
+open supports file locking flags
+
+1624860885
+freshcoffee!~fresh@user/freshcoffee
+would it be easier if we had a ".mutex" file for each manifest, everyone waits to flock() LOCK_EX . once you check if file is empty, or incomplete, do the make/create. then get shared lock on manifest.txt and release .mutex . all others same deal except they'll see manifest is legit, release .mutex and grab shared on .txt
+
+1624860910
+shachaf!~shachaf@user/shachaf
+flock locks? That must be what I was missing, what flags?
+
+1624860967
+andrewrk!~andrewrk@mail.ziglang.org
+mm looks like linux doesn't support lock with open but all the bsds do
+
+1624860999
+freshcoffee!~fresh@user/freshcoffee
+i worded it poorly. but I don't like the transition from exclusive -> shared on .txt and am thinking we do exclusive on .txt.mutex, and shared on .txt
+
+1624861007
+andrewrk!~andrewrk@mail.ziglang.org
+freshcoffee, something close to that was my solution on paper
+
+1624861054
+andrewrk!~andrewrk@mail.ziglang.org
+what you see in the PR is a simplified implementation that has the downside of redoing work when a (rare) cache miss race happens
+
+1624861111
+andrewrk!~andrewrk@mail.ziglang.org
+shachaf, O_SHLOCK, O_EXLOCK
+
+1624861112
+freshcoffee!~fresh@user/freshcoffee
+I guess the loop is not too bad of a penalty. as you say, it would be rare
+
+1624861113
+shachaf!~shachaf@user/shachaf
+Oh, it's a BSD thing, got it.
+
+1624861175
+freshcoffee!~fresh@user/freshcoffee
+yeah linux doesn't have O_SHLOCK or O_EXLOCK ; color me surprised that linux doesn't have something that BSD does
+
+1624861307
+shachaf!~shachaf@user/shachaf
+Well, the original context was POSIX.
+
+1624861630
+freshcoffee!~fresh@user/freshcoffee
+upgradeToExclusiveLock() - does it really need `setLock(.None)` before `.setLock(.Exclusive)` ?
+
+1624861919
+freshcoffee!~fresh@user/freshcoffee
+oh wait; if you have proc-A EXCLUSIVE and proc-B and proc-C waiting for SHARED, proc-A crashes, **BOTH** proc-B and C may get SHARED before one of them races to upgrade to exclusive which is deadlock
+
+1624862478
+andrewrk!~andrewrk@mail.ziglang.org
+yep
+
+1624863099
+andrewrk!~andrewrk@mail.ziglang.org
+shachaf, I was deep in the weeds when I made that comment about windows telling you whether it was the one that made the file, and my elaborations were not satisfying because I myself am not thinking clearly about it
+
+1624863119
+andrewrk!~andrewrk@mail.ziglang.org
+anyway sorry for the bait, I'll ping you if I have something more coherent to say :)
+
+1624863266
+shachaf!~shachaf@user/shachaf
+I think I understand better now, it was just not directly related to file creation.
+
+1624863627
+freshcoffee!~fresh@user/freshcoffee
+if the equiv of ".txt.mutex" is desired here's a work around to avoid creating another file: use fcntl (because lockf() stinks) and since it allows locking of bytes beyond file-size, bytes[0] is for exclusive, and bytes[1] is for shared - and yay windows LockFileEx allows locking beyond end-of-file position too
+
+1624870739
+pusewicz!~pusewicz@170.253.50.181
+Hi! How would I go around adding http://mruby.org/docs/articles/executing-ruby-code-with-mruby.html (the Source Code in C version) and implement this in Zig? I'm new to both C and Zig, and was stuck with https://gist.github.com/pusewicz/e407181b37262014e4e656da163bee5c
+
+1624870864
+freshcoffee!~fresh@user/freshcoffee
+pusewicz: `const mrb: *mrb_state = mrb_open();` or `const mrb = mrb_open();`
+
+1624870889
+pusewicz!~pusewicz@170.253.50.181
+Would the second option infer the type then?
+
+1624870896
+freshcoffee!~fresh@user/freshcoffee
+yes
+
+1624870935
+pusewicz!~pusewicz@170.253.50.181
+Do I need to reference the mrb_* functions using the mruby const from the top?
+
+1624870949
+pusewicz!~pusewicz@170.253.50.181
+I'm getting error: use of undeclared identifier 'mrb_open' now.
+
+1624870991
+freshcoffee!~fresh@user/freshcoffee
+ah yes namespace qualify it: `mruby.mrb_open()` should probably do it. and any the other fns too
+
+1624871032
+pusewicz!~pusewicz@170.253.50.181
+Yup, makes sense. Now I'm getting the error note: 'mruby.h' file not found
+
+1624871036
+pusewicz!~pusewicz@170.253.50.181
+I've got mruby installed via brew.
+
+1624871049
+pusewicz!~pusewicz@170.253.50.181
+Do I need to configure the build.zig somehow?
+
+1624871111
+freshcoffee!~fresh@user/freshcoffee
+if using build.zig you'll need to `exe.addIncludeDir(...);`
+
+1624871327
+pusewicz!~pusewicz@170.253.50.181
+Thanks so much!
+
+1624871337
+pusewicz!~pusewicz@170.253.50.181
+Not sure if it's going to work.
+
+1624871347
+pusewicz!~pusewicz@170.253.50.181
+error: opaque types have unknown size and therefore cannot be directly embedded in structs
+
+1624871347
+pusewicz!~pusewicz@170.253.50.181
+    gc: mrb_gc,
+
+1624871496
+freshcoffee!~fresh@user/freshcoffee
+if you look at that zig-cache file giving the error, see how the cimport mechanism is automatically translating C to zig. It sometimes may need to be tweaked by hand
+
+1624871649
+pusewicz!~pusewicz@170.253.50.181
+Right, pub const struct_mrb_gc = opaque {};
+
+1624871649
+pusewicz!~pusewicz@170.253.50.181
+pub const mrb_gc = struct_mrb_gc;
+
+1624871673
+pusewicz!~pusewicz@170.253.50.181
+Probably a little bit too complicated for now.
+
+1624871701
+freshcoffee!~fresh@user/freshcoffee
+I took a quick look and there is a mruby_gc struct defined in mruby/gc.h -- not sure why it isn't picking that up because it's included by mruby.h
+
+1624871710
+freshcoffee!~fresh@user/freshcoffee
+unless there is some ifdef I didn't see
+
+1624871853
+pusewicz!~pusewicz@170.253.50.181
+Suggested approach forward would be to have the mruby source code locally in repo and then patched accordingly so that it translates?
+
+1624871938
+ifreund!~ifreund@user/ifreund
+pusewicz: looks like the mrb_gc struct uses a C bitfield: https://github.com/mruby/mruby/blob/d63c0df6bcd5851522c4b982dba4e0a93f44a2d7/include/mruby/gc.h#L79-L85
+
+1624871963
+ifreund!~ifreund@user/ifreund
+which is bad, because C bitfields are super underspecified by the C spec and mostly dependant on the compiler implementation
+
+1624871988
+pusewicz!~pusewicz@170.253.50.181
+I see, yes. Saw multiple warnings in the translated header file about the bitfields.
+
+1624871988
+ifreund!~ifreund@user/ifreund
+zig's translate-c can't translate these yet, doing so is a really hard problem
+
+1624871999
+pusewicz!~pusewicz@170.253.50.181
+Ok, so basically no luck?
+
+1624872020
+ifreund!~ifreund@user/ifreund
+no, there are always workarounds if you don't mind :D
+
+1624872034
+pusewicz!~pusewicz@170.253.50.181
+Ok, I'll leave it for future. Gotta first learn Zig itself.
+
+1624872040
+pusewicz!~pusewicz@170.253.50.181
+Thank you for your help gents!
+
+1624872058
+ifreund!~ifreund@user/ifreund
+you could write a small C wrapper that allocates the mrb_gc thing on the heap and returns an opaque pointer
+
+1624872083
+ifreund!~ifreund@user/ifreund
+along with some accessor functions for any field access on the struct that you need
+
+1624872096
+ifreund!~ifreund@user/ifreund
+then compile that C wrapper alongside your zig code using zig cc
+
+1624872127
+ifreund!~ifreund@user/ifreund
+but yeah, getting more familiar with Zig and C in general first wouldn't hurt :D
+
+1624872129
+pusewicz!~pusewicz@170.253.50.181
+I see. Like I mentioned, lots of concepts to learn first, as I'm coming from Ruby. I'll definitely pop in and bother you lot again when time comes. Thanks!
+
+1624872142
+ifreund!~ifreund@user/ifreund
+no problem, and have fun!
+
+1624872209
+pusewicz!~pusewicz@170.253.50.181
+Speaking of which, apart from what's available on the Zig website and maybe ziglearn, any other resources recommended?
+
+1624872464
+pusewicz!~pusewicz@170.253.50.181
+jjjjjjjj
+
+1624872506
+ifreund!~ifreund@user/ifreund
+pusewicz: ziglings is definitely worth checking out: https://github.com/ratfactor/ziglings
+
+1624872528
+pusewicz!~pusewicz@170.253.50.181
+Beautiful, I'll have a look!
+
+1624872565
+freshcoffee!~fresh@user/freshcoffee
+we need a bot that detects "jjj*" and greets vim users :)
+
+1624872603
+pusewicz!~pusewicz@170.253.50.181
+Haha, I'm in the process of lubing my keyboard, and was comparing my freshly lubed J to the rest of the keys. Sorry about that!
+
+1624872658
+ifreund!~ifreund@user/ifreund
+i'm certainly guilty of sending my fair share of keyboard garbage in irc channels
+
+1624872795
+flyx[m]!~flyxflyxo@2a03:4000:27:3a6::1
+in another channel at another time, someone asked „why do people keep keyboards connected while cleaning them?“ to which someone else replied „well how would we type if we disconnected the keyboard while cleaning?“
+
+1624873003
+freshcoffee!~fresh@user/freshcoffee
+from my kbd manufacturer: "Deep cleaning will void your warranty, so if your Tactile Pro is less than a year old, we especially don't recommend doing this"
+
+1624873086
+freshcoffee!~fresh@user/freshcoffee
+iirc I got it 10+ years ago. Just have to buy a keycap puller
+
+1624883147
+bw!sid2730@user/betawaffle
+are there good examples of setting up signal handlers in zig? (specifically on linux)
+
+1624883389
+luuk!~luuk@user/luuk
+bw: You could take a look at https://github.com/lithdew/hyperia/blob/master/ctrl_c.zig
+
+1624890567
+marler8997!~marler899@204.229.3.4
+andrewrk, reading new proposal 9260, I'm curious about your thoughts on generic pattern matching.  That proposal doesn't necessarily add it but does mention it as an optional addition
+
+1624894043
+frmdstryr!~jrm@172.58.206.217
+How can I allow duplicate enum values?
+
+1624894053
+frmdstryr!~jrm@172.58.206.217
+extern no longer works..
+
+1624894142
+ifreund!~ifreund@user/ifreund
+frmdstryr: there is no way, as it was deemed too complex a feature to have around purely for c interop, especially when c enums are closer to loosely-namespaced integer constants
+
+1624894161
+ifreund!~ifreund@user/ifreund
+consequently, the recommended approach is to just stick a bunch of integer constants in a namespace
+
+1624894263
+frmdstryr!~jrm@172.58.206.217
+k, thanks
+
+1624894906
+frmdstryr!~jrm@172.58.206.217
+Is there a way to make it ignore the unused error/parameter errors?
+
+1624895018
+ifreund!~ifreund@user/ifreund
+frmdstryr: _ = foo;
+
+1624897220
+frmdstryr!~jrm@172.58.206.217
+Is there any way to make this work now? https://zig.godbolt.org/z/abxYMYenP
+
+1624897237
+frmdstryr!~jrm@172.58.206.217
+Was working with `comptime const` but now that seems to be an error
+
+1624897621
+ifreund!~ifreund@user/ifreund
+frmdstryr: this seems to work https://zig.godbolt.org/z/Eh9nMqPaW
+
+1624897632
+ifreund!~ifreund@user/ifreund
+(added a comptime before the indexOf() call)
+
+1624897701
+frmdstryr!~jrm@172.58.206.217
+Is there any difference between comptime const and const var = comptime ... ?
+
+1624897730
+ifreund!~ifreund@user/ifreund
+I don't think there should be, but we don't have a spec yet so...
+
+1624897764
+ifreund!~ifreund@user/ifreund
+actually I'm not sure that is working, it shouldn't be giving a compile error for that name should it?
+
+1624897795
+dutchie!~dutchie@user/dutchie
+yeah, idk why the parseInt is failing
+
+1624897797
+ifreund!~ifreund@user/ifreund
+frmdstryr: yeah, that's a stage2 bug. use @panic() instead as a workaround
+
+1624897800
+ifreund!~ifreund@user/ifreund
+it isn't failing
+
+1624897821
+dutchie!~dutchie@user/dutchie
+ah
+
+1624897865
+kiedtl!~kiedtl@kisslinux/kiedtl
+What's the idiomatic way to iterate over a slice/array that will be modified during the loop (say using ArrayList.orderedRemove/ArrayList.append)? I'm copying the entire thing over to a temporary buffer but I'm not sure if there's a better way
+
+1624897906
+ifreund!~ifreund@user/ifreund
+kiedtl: use a while loop and index variable
+
+1624897923
+ifreund!~ifreund@user/ifreund
+(and be careful)
+
+1624897955
+ifreund!~ifreund@user/ifreund
+in general modifying a container while iterating is asking for trouble...
+
+1624897961
+kiedtl!~kiedtl@kisslinux/kiedtl
+yup
+
+1624897982
+ifreund!~ifreund@user/ifreund
+but yeah, you don't need to make a copy if you are careful :D
+
+1624898216
+kiedtl!~kiedtl@kisslinux/kiedtl
+Well, at least there's no borrow checker to tell me what's a good pattern or not
+
+1624898226
+kiedtl!~kiedtl@kisslinux/kiedtl
+I'll flirt with the segfaults if I so damn please
+
+1624898231
+ifreund!~ifreund@user/ifreund
+:D
+
+1624898275
+ifreund!~ifreund@user/ifreund
+using indexes in rust is a common pattern to work around the borrow checker though
+
+1624898405
+kiedtl!~kiedtl@kisslinux/kiedtl
+Hm
+
+1624898421
+kiedtl!~kiedtl@kisslinux/kiedtl
+I recall running into a situation where I couldn't do even that, but I forget what it was exactly
+
+1624898446
+kiedtl!~kiedtl@kisslinux/kiedtl
+I think I was trying to do something crazy like iterating of a array of struct that had closures or something
+
+1624898452
+kiedtl!~kiedtl@kisslinux/kiedtl
+:D
+
+1624898625
+ifreund!~ifreund@user/ifreund
+I'm not surprised that complexity made things complex :P
+
+1624898694
+kiedtl!~kiedtl@kisslinux/kiedtl
+Looking back, I was treating Rust as if it were Lua or Python or something
+
+1624898699
+kiedtl!~kiedtl@kisslinux/kiedtl
+heh
+
+1624898730
+kiedtl!~kiedtl@kisslinux/kiedtl
+and I'm probably doing the same thing right now with Zig, but idk
+
+1624898797
+kiedtl!~kiedtl@kisslinux/kiedtl
+elegance, testability, and proper encapsulation are some things I decided I won't care about with this project (until it really hurts)
+
+1624899587
+ifreund!~ifreund@user/ifreund
+frmdstryr, dutchie: poked a bit more, it's a stage1 bug not a stage2 bug most likely. Adding another comptime makes this work: https://zig.godbolt.org/z/r1MGhY39G
+
+1624900884
+frmdstryr!~jrm@172.58.206.217
+ifreund: Ah ok nice
+
+1624900911
+frmdstryr!~jrm@172.58.206.217
+thanks for looking into it
+
+1624901412
+andrewrk!~andrewrk@mail.ziglang.org
+freshcoffee, separate byte range locks for exclusive and shared sounds like a great idea
+
+1624904103
+Ristovski!~Ristovski@hellomouse/perf/ristovski
+Opinions on/against https://github.com/ziglang/zig/issues/9261 ?
+
+1624904887
+andrewrk!~andrewrk@mail.ziglang.org
+Ristovski, how's that sound?
+
+1624904964
+Ristovski!~Ristovski@hellomouse/perf/ristovski
+andrewrk: sounds pretty reasonable!
+
+1624904976
+andrewrk!~andrewrk@mail.ziglang.org
+end-goal is to gain independence from LLVM :)
+
+1624905398
+bw!sid2730@user/betawaffle
+andrewrk: complete independence, or just making it optional?
+
+1624905444
+andrewrk!~andrewrk@mail.ziglang.org
+optional. https://kristoff.it/blog/zig-new-relationship-llvm/
+
+1624905537
+bw!sid2730@user/betawaffle
+good, because i doubt we'd be able to compete with the optimization
+
+1624905635
+andrewrk!~andrewrk@mail.ziglang.org
+the near term goal is that having llvm disabled would be fine for debug builds, but you'd want it for making release builds
+
+1624905668
+andrewrk!~andrewrk@mail.ziglang.org
+long term goal is zig having 80% of the optimizations compared to llvm, with 20% of the complexity required to accomplish it, and settling for that tradeoff. (very similar to go)
+
+1624905690
+andrewrk!~andrewrk@mail.ziglang.org
+in the long term goal llvm would still be optional 
+
+1624905724
+earnestly!~earnest@user/earnestly
+That ratio reminds me of qbe
+
+1624905751
+andrewrk!~andrewrk@mail.ziglang.org
+https://en.wikipedia.org/wiki/Pareto_principle
+
+1624905760
+earnestly!~earnest@user/earnestly
+Yeah, that goes without saying
+
+1624905776
+earnestly!~earnest@user/earnestly
+But I sometimes wonder about qbe, if I can ever remember that it exists
+
+1624905812
+earnestly!~earnest@user/earnestly
+If others don't know about it: https://c9x.me/compile/
+
+1624905812
+andrewrk!~andrewrk@mail.ziglang.org
+qbe is not compatible with zig's requirements
+
+1624905832
+earnestly!~earnest@user/earnestly
+Also I got the ratio wrong, theirs is 70% and 10% heh
+
+1624905860
+earnestly!~earnest@user/earnestly
+andrewrk: Can you say briefly what specifically it's not suitable for?
+
+1624905882
+earnestly!~earnest@user/earnestly
+(Apart from it being incomplete in terms of platform support and such)
+
+1624905898
+andrewrk!~andrewrk@mail.ziglang.org
+that's one thing. it also emits assembly in text form and requires an external assembler
+
+1624905910
+earnestly!~earnest@user/earnestly
+Ah
+
+1624905977
+andrewrk!~andrewrk@mail.ziglang.org
+it's also the wrong niche - in zig we have tightly coupled frontend and backend for debug builds to make compilation fast. there is no room for depending on any third party code here. and for release builds, why would we use qbe instead of llvm as the third party project? better to just do our own thing, or use LLVM if we want state of the art optimizations
+
+1624906040
+earnestly!~earnest@user/earnestly
+Yeah that's all reasonable.  There is no suggestion zig would use qbe for that final reason alone
+
+1624906113
+cr1901!~William@2601:8d:8600:911:c012:1f45:543:1608
+>and requires an external assembler
+
+1624906113
+cr1901!~William@2601:8d:8600:911:c012:1f45:543:1608
+I thought you said that Zig will ultimately not hard-depend on LLVm
+
+1624906135
+earnestly!~earnest@user/earnestly
+cr1901: That's the idea, the comment was about qbe having that requirement
+
+1624906158
+earnestly!~earnest@user/earnestly
+Something zig doesn't want as it gains more independence
+
+1624909627
+cCCCCcccccCCc!~crystal@user/ccccccccccccc
+QBE also only emits GAS for text output, so you're also constrained on what external assemblers you can even use.
+
+1624909666
+ifreund!~ifreund@user/ifreund
+yeah, QBE is an awesome project but is not at all a good fit for zig to use
+
+1624914362
+dutchie!~dutchie@user/dutchie
+hmm, any ideas why i would get `unable to evaluate constant expression` when calling os.getenv("HOME") via std.fs.getAppDataDir?
+
+1624914372
+dutchie!~dutchie@user/dutchie
+i tried pulling it out into a minimal example but it works in that :/
+
+1624914498
+dutchie!~dutchie@user/dutchie
+ah, when i call std.fs.makeDirAbsolute on the result it triggers it
+
+1624914651
+dutchie!~dutchie@user/dutchie
+ok no that's wrong, didn't run the right test file
+
+1624914751
+andrewrk!~andrewrk@mail.ziglang.org
+are you perhaps trying to access environment variables within a global variable (or const) initializer?
+
+1624914762
+andrewrk!~andrewrk@mail.ziglang.org
+such data must be compile-time known
+
+1624914770
+andrewrk!~andrewrk@mail.ziglang.org
+but environment variables are available at runtime
+
+1624914823
+dutchie!~dutchie@user/dutchie
+i don't think so, let me paste the whole code
+
+1624914861
+dutchie!~dutchie@user/dutchie
+https://0x0.st/-pg3.zig
+
+1624914878
+dutchie!~dutchie@user/dutchie
+error on line 180
+
+1624914903
+dutchie!~dutchie@user/dutchie
+in get_config
+
+1624914958
+andrewrk!~andrewrk@mail.ziglang.org
+can I see the error output?
+
+1624915020
+dutchie!~dutchie@user/dutchie
+https://0x0.st/-pgY.txt
+
+1624915136
+andrewrk!~andrewrk@mail.ziglang.org
+it's because you have `results_writer: anytype` on the Config struct. that makes that type a "comptime-only" type, and since that's the return type of get_config, get_config gets called at compile time
+
+1624915228
+dutchie!~dutchie@user/dutchie
+ahh
+
+1624915256
+dutchie!~dutchie@user/dutchie
+i wanted it to be generic over Writer, what's the right way to do that?
+
+1624915711
+andrewrk!~andrewrk@mail.ziglang.org
+is that field used? I suggest to not add fields until you need them, then it will be more obvious how to do it
+
+1624915842
+dutchie!~dutchie@user/dutchie
+it's not used yet but that's the feature i was working on now
+
+1624915876
+dutchie!~dutchie@user/dutchie
+you do make a good point that i have some lifetime issues, now i actually try implementing it
+
+1624917498
+andrewrk!~andrewrk@mail.ziglang.org
+motiejus, update on #9139: I've experimented enough with Windows file system API to answer all the questions needed in order to proceed with the implementation. no more blockers left, just some implementing and testing to go
+
+1624924190
+andrewrk!~andrewrk@mail.ziglang.org
+I would appreciate a review from folks knowledgeable about windows APIs: https://github.com/ziglang/zig/pull/9258
+
