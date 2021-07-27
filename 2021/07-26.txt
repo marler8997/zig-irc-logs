@@ -1,0 +1,172 @@
+1627300169
+jaredmm!~jaredmm@user/jaredmm
+Is there a document that explains casting around C Pointers? Trying to read bytes from disk into a struct containing a [*c]u8 allocated by an eternal library and not getting it.
+
+1627300518
+ifreund!~ifreund@user/ifreund
+jaredmm: does the library expect you to provide the buffer?
+
+1627300585
+ifreund!~ifreund@user/ifreund
+if so you need to pass it a pointer to an array on the stack, or heap allocated memory, or whatever
+
+1627300628
+ifreund!~ifreund@user/ifreund
+do you know how to provide what the library wants in C?
+
+1627303215
+jaredmm!~jaredmm@user/jaredmm
+I did it in C with `fread(s->data, 1, size, file)`. The memory itself is allocated with malloc. 
+
+1627303307
+ifreund!~ifreund@user/ifreund
+jaredmm: so in zig you should allocate some amount of memory with an Allocator of your choice then use slice.ptr and slice.len of the slice returned by the allocator
+
+1627303681
+jaredmm!~jaredmm@user/jaredmm
+I think I'm missing some bit that will make it click.
+
+1627303686
+jaredmm!~jaredmm@user/jaredmm
+The library is returning a `struct { data: [*c]u8, size: u32 }` and allocating data with malloc. I'm trying to use std.fs.File functions to read bytes into data.
+
+1627303725
+jaredmm!~jaredmm@user/jaredmm
+Once I populate the returned struct, I then pass a pointer to the struct back to the library for future calls. 
+
+1627303781
+jaredmm!~jaredmm@user/jaredmm
+When I tried was `var buffer = c_allocator.alloc(u8, fileSize); _ = file.readAll(buffer)`, I was allocating extra memory rather than reading it into the already malloc'd data.
+
+1627303910
+ifreund!~ifreund@user/ifreund
+ok, you probably just want to turn that struct into a zig slice
+
+1627303914
+ifreund!~ifreund@user/ifreund
+so do const slice: []u8 = foo.data[0..foo.size];
+
+1627303918
+ifreund!~ifreund@user/ifreund
+a slice in zig is pretty much just sugar for a `struct { ptr: [*]T, len: usize }`
+
+1627304876
+jaredmm!~jaredmm@user/jaredmm
+Oh geez, duh.
+
+1627304948
+jaredmm!~jaredmm@user/jaredmm
+I said "this is just a slice, why can't I use a slice" more than once to myself, but never tried reading into a slice of it. 
+
+1627304957
+jaredmm!~jaredmm@user/jaredmm
+Thanks ifreund.
+
+1627312063
+companion_cube!~simon@user/companion-cube
+have y'all ever wondered what C++ with comptime would look like? well: https://www.circle-lang.org/ 😂
+
+1627312213
+ifreund!~ifreund@user/ifreund
+companion_cube: doesn't C++ already have constexpr which is basically limited comptime?
+
+1627312224
+ifreund!~ifreund@user/ifreund
+all it would need is types as first class values
+
+1627312244
+ifreund!~ifreund@user/ifreund
+circle looks like a whole nother level of abstraction and complexity
+
+1627312271
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+ifreund: yeah, kinda
+
+1627312315
+companion_cube!~simon@user/companion-cube
+ifreund: it doesn't provide compile-time reflection
+
+1627312326
+companion_cube!~simon@user/companion-cube
+I think that's what circle is, innit?
+
+1627312577
+ifreund!~ifreund@user/ifreund
+companion_cube: it seems so, but I think it's very weird that it doesn't seem to leverage the already existing constexpr
+
+1627312720
+companion_cube!~simon@user/companion-cube
+probably because the guy didn't want to dig in the C++ compiler that deep
+
+1627312729
+companion_cube!~simon@user/companion-cube
+(to expose all the reflection stuff as constexprs)
+
+1627336120
+ifreund!~ifreund@user/ifreund
+what's the difference between -mcpu=baseline and -mcpu=generic again? I've forgotten
+
+1627336134
+ifreund!~ifreund@user/ifreund
+is this documented anywhere or do I need to go code diving?
+
+1627338206
+earnestly!~earnest@user/earnestly
+baseline doesn't appear to be a thing (at least for gcc/llvm), so I guess zig specific
+
+1627338245
+earnestly!~earnest@user/earnestly
+ifreund: https://github.com/ziglang/zig/blob/master/lib/std/zig/cross_target.zig#L192
+
+1627338258
+earnestly!~earnest@user/earnestly
+*shrug*
+
+1627338311
+ifreund!~ifreund@user/ifreund
+earnestly: I did some digging and it seems that llvm's concept of generic is equivalent to zig's baseline
+
+1627338319
+ifreund!~ifreund@user/ifreund
+what I don't get yet is what zig's generic means
+
+1627338394
+ifreund!~ifreund@user/ifreund
+actually, zig doesn't have a universal "generic" it seems, it's only valid for certian cpus
+
+1627338434
+earnestly!~earnest@user/earnestly
+generic is a architecture specific distinction
+
+1627338446
+earnestly!~earnest@user/earnestly
+Yeah
+
+1627338474
+earnestly!~earnest@user/earnestly
+So if you wanted to run on all x86 systems, x86 generic would in theory provide that
+
+1627339099
+Nulo!~Nulo@user/nulo
+note: pointer type child '*[64]u8' cannot cast into pointer type child '[]const u8'
+
+1627339158
+ifreund!~ifreund@user/ifreund
+Nulo: yep, the former is a pointer while the later is a "fat pointer" containing both a pointer and a length
+
+1627339171
+ifreund!~ifreund@user/ifreund
+the slice takes twice the memory
+
+1627339186
+Nulo!~Nulo@user/nulo
+I get it, but how can I make it turn into a slice?
+
+1627339225
+Nulo!~Nulo@user/nulo
+Ah, I think that casting it explicitly (var randS: []const u8 = &rand;) works
+
+1627339261
+ifreund!~ifreund@user/ifreund
+coercing technically, but yes that should work :)
+
