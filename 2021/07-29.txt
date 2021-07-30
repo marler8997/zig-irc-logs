@@ -1,0 +1,292 @@
+1627557256
+Ristovski!~Ristovski@hellomouse/perf/ristovski
+How would I go about implementing something like `static auto thing = std::make_shared<Thing>(); return thing;` in Zig?
+
+1627557437
+ifreund!~ifreund@user/ifreund
+Ristovski: you mean a ref counted pointer?
+
+1627557465
+Ristovski!~Ristovski@hellomouse/perf/ristovski
+ifreund: Along with the `static` trick, yes
+
+1627557578
+ifreund!~ifreund@user/ifreund
+Ristovski: well, the static thing is just declaring your variable in a declarative scope where everything has a static lifetime
+
+1627557626
+ifreund!~ifreund@user/ifreund
+if you don't want it to be globabl, yo can do something like const foo_ptr = struct { const foo: *Bar = bar(); }.foo;
+
+1627557657
+ifreund!~ifreund@user/ifreund
+ref counting is just adding a variable to store the count and adding ref/unref functions
+
+1627557681
+ifreund!~ifreund@user/ifreund
+with defer, handling the unref() properly isn't too bad usually
+
+1627557784
+ifreund!~ifreund@user/ifreund
+static lifetime docs: https://ziglang.org/documentation/master/#Container-Level-Variables
+
+1627557816
+Ristovski!~Ristovski@hellomouse/perf/ristovski
+Yeah, am looking at those
+
+1627559442
+Ristovski!~Ristovski@hellomouse/perf/ristovski
+ifreund: in your example, how would I replace bar() with instantiating a struct? Bar{} doesn't seem to work
+
+1627559497
+Ristovski!~Ristovski@hellomouse/perf/ristovski
+that was the part I was initially stuck with :P
+
+1627559526
+ifreund!~ifreund@user/ifreund
+Ristovski: sorry, that example was pretty poor, you probably need a wrapper struct that holds the ref count and pointer in two fields
+
+1627559545
+ifreund!~ifreund@user/ifreund
+const RefPtr = struct { refs: u32, ptr: *Bar };
+
+1627559640
+ifreund!~ifreund@user/ifreund
+const ptr_to_ref_ptr = &struct { ref_ptr: RefPtr = undefined; }.ref_ptr; ptr_to_ref_ptr.* = .{ .refs = 0, .ptr = bar_ptr, };
+
+1627559645
+ifreund!~ifreund@user/ifreund
+maybe something like that
+
+1627559656
+ifreund!~ifreund@user/ifreund
+I don't know where your bar_ptr comes from though
+
+1627559710
+ifreund!~ifreund@user/ifreund
+you could also use an optional type and set the default value to null instead of undefined and check if it's null before initializing it
+
+1627559726
+Ristovski!~Ristovski@hellomouse/perf/ristovski
+ifreund: I see, thanks
+
+1627559752
+ifreund!~ifreund@user/ifreund
+no problem!
+
+1627559757
+ifreund!~ifreund@user/ifreund
+rvcas: o7
+
+1627559832
+Ristovski!~Ristovski@hellomouse/perf/ristovski
+ifreund: One more thing, about the static lifetime thing, https://bpa.st/raw/STPQ. Essentially, I want a function that will instantiate a struct on the first invocation, and just return the same pointer on subsequent invocations
+
+1627559883
+Ristovski!~Ristovski@hellomouse/perf/ristovski
+Either my 4h of sleep are totally not adequate for this, or I am missing something obvious :P
+
+1627560039
+ifreund!~ifreund@user/ifreund
+Ristovski: ok, then you probably want the optional/null based approach I mentioned above
+
+1627560046
+ifreund!~ifreund@user/ifreund
+make RefPtr.ptr a ?*Bar
+
+1627560065
+ifreund!~ifreund@user/ifreund
+and set the default value to null
+
+1627560108
+ifreund!~ifreund@user/ifreund
+then when your function is called, check if it's null. If it is, initialize it and set refs to 1. Otherwise, return the already existing ptr and increment refs 
+
+1627560153
+ifreund!~ifreund@user/ifreund
+you probably need to expose some way to decrement refs as well, so that you can free the struct and set RefPtr.ptr back to null when refs reaches 0
+
+1627595737
+andrewrk!~andrewrk@mail.ziglang.org
+luuk, what's the difference between gen() and emitConstant() ?
+
+1627596113
+andrewrk!~andrewrk@mail.ziglang.org
+nvm I get it
+
+1627596139
+andrewrk!~andrewrk@mail.ziglang.org
+looks like emitConstant does not emit a type
+
+1627596741
+andrewrk!~andrewrk@mail.ziglang.org
+hmm I'm not clear on it, why doesn't the int case generate an opcode in gen() ?
+
+1627597927
+ifreund!~ifreund@user/ifreund
+andrewrk: I bet the emitConstant() is for the `const` instruction in wasm specifically
+
+1627598035
+ifreund!~ifreund@user/ifreund
+or, maybe it only used to be
+
+1627598043
+ifreund!~ifreund@user/ifreund
+It looks like it's grown
+
+1627598101
+andrewrk!~andrewrk@mail.ziglang.org
+my actual task is to add enum support to gen(). this is what I have, but I'm not sure it's right: https://clbin.com/JAM9m
+
+1627598414
+andrewrk!~andrewrk@mail.ziglang.org
+at least I got a recent wasmtime version set up now so I can check
+
+1627598575
+ifreund!~ifreund@user/ifreund
+andrewrk: so I *think* gen() is supposed to be the entry point to wasm codegen for generating all the code for a decl()
+
+1627598590
+ifreund!~ifreund@user/ifreund
+the Int branch of that switch makes no sense though in that case
+
+1627598591
+andrewrk!~andrewrk@mail.ziglang.org
+yeah it's the entry point for the linker
+
+1627598608
+ifreund!~ifreund@user/ifreund
+it looks like it's only actually used by the array branch though
+
+1627598630
+andrewrk!~andrewrk@mail.ziglang.org
+looks like in that case, no "const" opcode is inserted
+
+1627598655
+ifreund!~ifreund@user/ifreund
+I so your enum decl that you want to generate is probably supposed to go in the "globals" section, which I'm not sure we're doing anything with yet
+
+1627598720
+ifreund!~ifreund@user/ifreund
+though I suppose you could also just stick it in the data section like we do for arrays
+
+1627598750
+andrewrk!~andrewrk@mail.ziglang.org
+somehow the function implementations need to be united
+
+1627598757
+ifreund!~ifreund@user/ifreund
+implementing this seems like it might be out of scope for whatever you're currently working on though...
+
+1627598768
+ifreund!~ifreund@user/ifreund
+andrewrk: you mean the emitConstant() and gen()?
+
+1627598771
+andrewrk!~andrewrk@mail.ziglang.org
+yes
+
+1627598775
+ifreund!~ifreund@user/ifreund
+I don't think so, they do very different things
+
+1627598780
+ifreund!~ifreund@user/ifreund
+well, maybe not
+
+1627598796
+ifreund!~ifreund@user/ifreund
+emitConstant() puts stuff inside a function body
+
+1627598807
+ifreund!~ifreund@user/ifreund
+gen() puts stuff somewhere in global scope 
+
+1627598813
+ifreund!~ifreund@user/ifreund
+at least that's what I think the intention is
+
+1627598821
+andrewrk!~andrewrk@mail.ziglang.org
+the problem with my changeset is that there is now a more principled approach to references to comptime values, but since we don't have comptime garbage collection yet, some new anon Decl objects are needing to get emitted even though they are not referenced in the machine code
+
+1627598839
+andrewrk!~andrewrk@mail.ziglang.org
+I see, thanks for the clue
+
+1627598889
+ifreund!~ifreund@user/ifreund
+well, as a workaround you could always just have gen() ignore enums for now...
+
+1627598972
+andrewrk!~andrewrk@mail.ziglang.org
+it looks like gen() is supposed to emit the values according to virtual memory layout
+
+1627598988
+andrewrk!~andrewrk@mail.ziglang.org
+so I should just be able to write the enum integer value as little endian to the array I think
+
+1627599113
+andrewrk!~andrewrk@mail.ziglang.org
+hmm I thought of a pretty straightforward garbage collection strategy 🤔
+
+1627599141
+ifreund!~ifreund@user/ifreund
+mark and sweep?
+
+1627599148
+ifreund!~ifreund@user/ifreund
+or even simpler?
+
+1627599215
+andrewrk!~andrewrk@mail.ziglang.org
+yeah, mark and sweep, per Decl. codegen would be responsible for marking it live when it lowers any `decl_ref` Value. Then when the time comes to generate a Decl, if it's not marked alive, then delete it instead of sending it to the linker
+
+1627599251
+andrewrk!~andrewrk@mail.ziglang.org
+so this would be a little mini gc for all the anonymous Decls that were created during semantic analysis of a Decl
+
+1627599280
+andrewrk!~andrewrk@mail.ziglang.org
+this would prevent, for example, comptime variables from being emitted into the binary
+
+1627599301
+ifreund!~ifreund@user/ifreund
+that sounds quite simple, and like something we will want soon
+
+1627599364
+andrewrk!~andrewrk@mail.ziglang.org
+yeah. I just need to reel in the scope of this changeset before it gets out of control
+
+1627599374
+andrewrk!~andrewrk@mail.ziglang.org
+thanks for talking it over with me
+
+1627599525
+ifreund!~ifreund@user/ifreund
+no problem, glad it was useful
+
+1627599556
+ifreund!~ifreund@user/ifreund
+I haven't had as much time to contribute to zig these days as I would like between river, tigerbeetle, and exams :/
+
+1627599570
+andrewrk!~andrewrk@mail.ziglang.org
+you have quite a bit going on :)
+
+1627600360
+andrewrk!~andrewrk@mail.ziglang.org
+oh yeah this is slick, liveness analysis tells us whether a given constant is used or not, so we can iterate over constants ahead of time and e.g. put them before the function body machine code so that the PC does not need to JMP over the constants. Because of liveness analysis, unused constants are skipped. And so only `decl_ref` constants will get noticed that are live, and mark the Decls they touch as live
+
+1627600406
+andrewrk!~andrewrk@mail.ziglang.org
+fuck it, garbage collector is going in this change set
+
+1627601251
+andrewrk!~andrewrk@mail.ziglang.org
+in theory this will be yet another way that stage2 has faster compilation speed than stage1, even in the llvm backend. send less garbage to llvm, wait less time for llvm to emit garbage
+
+1627601306
+andrewrk!~andrewrk@mail.ziglang.org
+the design is really coming together :D
+
