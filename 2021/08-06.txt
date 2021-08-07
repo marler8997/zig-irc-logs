@@ -1,0 +1,192 @@
+1628217935
+amine!~aminechik@li449-221.members.linode.com
+Hey everybody, I have this tiny program http://ix.io/3v7n which works ok when `input` is a an array of known size. But what if `input` is a result of the execution of `take` function, so it becomes []u8, any idea how I can change the function le_u64 so that it works with a slice instead ?
+
+1628221026
+daurnimator!~daurnimat@vultr.daurnimator.com
+amine: just change it to take a `[]u8`. then when calling it you'll want to do `&input`
+
+1628222495
+amine!~aminechik@li449-221.members.linode.com
+daurnimator I think the problem is that in that case in.len is usize and not u6 anymore, so then the shift seems to not work with that
+
+1628223162
+daurnimator!~daurnimat@vultr.daurnimator.com
+amine: ah yes. you can @intCast it to u6
+
+1628223178
+daurnimator!~daurnimat@vultr.daurnimator.com
+assuming of course that you promise not to give it a slice that's too long
+
+1628223248
+amine!~aminechik@li449-221.members.linode.com
+woah, nice
+
+1628223265
+amine!~aminechik@li449-221.members.linode.com
+yeah just trying to make it work now then reason about correctness :p
+
+1628224559
+daurnimator!~daurnimat@vultr.daurnimator.com
+amine: ask "what happens if I give it a slice 4GB in size"
+
+1628224719
+amine!~aminechik@li449-221.members.linode.com
+right, in this case I'm just playing with a program to parse ELF files for learning. So I have control over what's passed to the function.
+
+1628224734
+amine!~aminechik@li449-221.members.linode.com
+But it's interesting to know what would be the behavior if I don't have control
+
+1628261369
+Ristovski!~Ristovski@hellomouse/perf/ristovski
+I forgot, was there a way to get peak memory usage of an allocator in Zig? (or memory use at the time of the call etc)
+
+1628262369
+dutchie!~dutchie@user/dutchie
+you can do `std.heap.GeneralPurposeAllocator(.{ enable_memory_limit = true }){}` and then use the `gpa.total_requested_bytes` field
+
+1628262471
+dutchie!~dutchie@user/dutchie
+(although you will then only be able to allocate std.math.maxInt(usize) bytes of memory before you start getting error.OutOfMemory
+
+1628262474
+dutchie!~dutchie@user/dutchie
+)
+
+1628262662
+ifreund!~ifreund@user/ifreund
+dutchie: allcoating more bytes than you can address isn't possible anyways
+
+1628262747
+ifreund!~ifreund@user/ifreund
+though zig still doesn't have a uintptr_t so I guess that's not determined by maxInt(usize) on all systems
+
+1628262879
+dutchie!~dutchie@user/dutchie
+ifreund: i was unsure whether the memory limit is cumulative or not
+
+1628262904
+Ristovski!~Ristovski@hellomouse/perf/ristovski
+hmmmmm
+
+1628263041
+dutchie!~dutchie@user/dutchie
+ah seems it's not cumulative, if i'm interpreting https://github.com/ziglang/zig/blob/master/lib/std/heap/general_purpose_allocator.zig#L608 right
+
+1628264508
+ifreund!~ifreund@user/ifreund
+dutchie: yeah I don't think it's cumulative
+
+1628264529
+ifreund!~ifreund@user/ifreund
+Ristovski: you could totally implement a "wrapper" allocator that collects whatever statistics you want
+
+1628264544
+Ristovski!~Ristovski@hellomouse/perf/ristovski
+ifreund: Yeah I was thinking of doing that
+
+1628266257
+olabian!~olabian@ool-4576796d.dyn.optonline.net
+Hi, I wanted to make a data structure so that I can do something like the following: categories["Cat1"]["subcat1"] = ["subsubcat1", "subsubcat2"]. What's the best way to do this?
+
+1628266298
+olabian!~olabian@ool-4576796d.dyn.optonline.net
+also, these are all strings I know ahead of time
+
+1628266477
+daurnimator!~daurnimat@vultr.daurnimator.com
+Ristovski: FailingAllocator does it
+
+1628266960
+Ristovski!~Ristovski@hellomouse/perf/ristovski
+hmmmm, I'll check it out. Thanks!
+
+1628270996
+jacoscaz!~jacoscaz@93.49.206.3
+Does anyone have any idea why the following gtk call from zig might produce a segfault? `gtk.gtk_tree_store_append(tree_store, row_iter, null);`
+
+1628271140
+hanna!~hanna@user/hanna
+what type is tree_store
+
+1628271513
+jacoscaz!~jacoscaz@93.49.206.3
+hanna: `const tree_store = gtk.gtk_tree_store_new(@intCast(c_uint, 3), gtk.G_TYPE_STRING, gtk.G_TYPE_STRING, gtk.G_TYPE_STRING);`
+
+1628271874
+jacoscaz!~jacoscaz@93.49.206.3
+Actually, it looks like anything i try to do using `row_iter` which I initialize with `var row_iter: *gtk.GtkTreeIter = undefined;` leads to a segmentation fault.
+
+1628271883
+jacoscaz!~jacoscaz@93.49.206.3
+Actually, it looks like anything i try to do using `row_iter` which I declare with `var row_iter: *gtk.GtkTreeIter = undefined;` leads to a segmentation fault.
+
+1628271973
+ifreund!~ifreund@user/ifreund
+jacoscaz: that explains it, deferefencing that pointer is undefinde behavior
+
+1628272003
+ifreund!~ifreund@user/ifreund
+`undefined` in zig means the value could be literally anything
+
+1628272023
+ifreund!~ifreund@user/ifreund
+did you mean to initialize it to null? What does this gtk api expect?
+
+1628272109
+jacoscaz!~jacoscaz@93.49.206.3
+The GTK docs refer to `An unset GtkTreeIter`
+
+1628272418
+ifreund!~ifreund@user/ifreund
+jacoscaz: they probably expect null then
+
+1628272446
+ifreund!~ifreund@user/ifreund
+or they expect a pointer to an uninitialized tree iter
+
+1628272467
+ifreund!~ifreund@user/ifreund
+e.g. `var row_iter: gtk.GtkTreeIter = undefined; foo(&row_iter);`
+
+1628272494
+ifreund!~ifreund@user/ifreund
+which is a well defined pointer to undefined memory instead of an undefined pointer like you were passing
+
+1628272600
+jacoscaz!~jacoscaz@93.49.206.3
+Oh man. That was so obvious.
+
+1628272607
+jacoscaz!~jacoscaz@93.49.206.3
+Thank you ifreund!
+
+1628272642
+jacoscaz!~jacoscaz@93.49.206.3
+Not sure which is nicer, Zig itself or the community around it.
+
+1628272665
+leon-p!~leon-p@ip1f113b71.dynamic.kabel-deutschland.de
+when calling Dir.iterate() two times, the second iterator apparently continues where the first one stopped, right? Is there a way I can start iterating from the start again?
+
+1628273220
+ifreund!~ifreund@user/ifreund
+leon-p: I don't think having two iterators active at the same time is supported, at least not on linux
+
+1628273258
+leon-p!~leon-p@ip1f113b71.dynamic.kabel-deutschland.de
+ifreund: they are not active at the same time, I let one "finish", then create the other
+
+1628273259
+ifreund!~ifreund@user/ifreund
+if you create a second on it won't necessarily continue where the first one stopped, it will probably continue a dirent or two after that point
+
+1628273292
+ifreund!~ifreund@user/ifreund
+hrm, I think iterating the first to the end should work...
+
+1628274258
+leon-p!~leon-p@ip1f113b71.dynamic.kabel-deutschland.de
+I'll just work around it by allocating a list of all entry names. Not pretty, but should work.
+
