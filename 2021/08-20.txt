@@ -1,0 +1,208 @@
+1629461349
+Ristovski!~Ristovski@hellomouse/perf/ristovski
+Any news on intrinsics support? The ultra-illegal-and-hacky https://github.com/ziglang/zig/issues/2291 doesn't seem to work any more, I get `broken LLVM module found: Invalid user of intrinsic instruction!`
+
+1629461902
+Ristovski!~Ristovski@hellomouse/perf/ristovski
+oh it does work, hmmm
+
+1629461982
+Ristovski!~Ristovski@hellomouse/perf/ristovski
+you just can't do `const something = @"llvm.blah";` after defining the extern fn
+
+1629462093
+Ristovski!~Ristovski@hellomouse/perf/ristovski
+ah yes, from LLVM: > // If this function is actually an intrinsic, verify that it is only used in direct call/invokes, never having its "address taken".
+
+1629462097
+Ristovski!~Ristovski@hellomouse/perf/ristovski
+interesting
+
+1629490753
+Flaminator!~Flaminato@ns323457.ip-5-39-76.eu
+Seems I was wrong last time and it's indeed something related to RLS I wanted to use.
+
+1629492718
+Flaminator!~Flaminato@ns323457.ip-5-39-76.eu
+I have an init function in https://aeug.eu/p/bad7.zig where I initialize a struct object and return it. My problem is that I need a pointer to the object to init something in the struct. But when I do what I do in that function the window object of course has a different address at the place I am calling this function.
+
+1629493034
+andrewrk!~andrewrk@mail.ziglang.org
+Flaminator, the issue for this is: https://github.com/ziglang/zig/issues/2765
+
+1629493045
+andrewrk!~andrewrk@mail.ziglang.org
+also https://github.com/ziglang/zig/issues/2761
+
+1629493192
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+andrewrk: https://github.com/ziglang/zig/pull/9587#issuecomment-902938072 regarding this, https://paste.rs/pnp , I get the dual abi problem with `zig build test-stage2 -Denable-llvm` iirc, in the stream with unused vars, you said I should not be getting the dual abi problem as the build.zig did some fancy stuff, but I am still getting it. This is inhibiting me from testing the llvm backend without building with cmake, and I can
+
+1629493192
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+not run the test runner with cmake.
+
+1629493215
+andrewrk!~andrewrk@mail.ziglang.org
+hmmm what system are you using?
+
+1629493216
+Flaminator!~Flaminato@ns323457.ip-5-39-76.eu
+Totally forgot those existed. I will work around it for now by passing a pointer to the function.
+
+1629493233
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+nixos, but system llvm
+
+1629493261
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+https://paste.rs/n6P shell.nix
+
+1629493263
+andrewrk!~andrewrk@mail.ziglang.org
+for stage2 dev I recommend a source build of llvm because we're going to have to switch to 13 soon anyway
+
+1629493291
+andrewrk!~andrewrk@mail.ziglang.org
+plus for the llvm backend it's necessary to use a debug llvm build occasionally 
+
+1629493309
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+ok, i'll try to figure out how to compile llvm
+
+1629493316
+andrewrk!~andrewrk@mail.ziglang.org
+https://github.com/ziglang/zig/wiki/How-to-build-LLVM,-libclang,-and-liblld-from-source#posix
+
+1629493374
+andrewrk!~andrewrk@mail.ziglang.org
+recommended: -GNinja -DLLVM_PARALLEL_LINK_JOBS=1
+
+1629493444
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+ok, ill let you know if I figure it out. To be clear: using system llvm is not a supported use case with build.zig right?
+
+1629493712
+andrewrk!~andrewrk@mail.ziglang.org
+it is 
+
+1629493813
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+hm; would you happen to know how I can set nixos to use clang so that I avoid the dual-abi-problem?
+
+1629493828
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+i'll file a bug about the dual abi problem in build.zig
+
+1629493859
+andrewrk!~andrewrk@mail.ziglang.org
+why is the dual abi problem happening?
+
+1629493877
+andrewrk!~andrewrk@mail.ziglang.org
+if you're using system llvm on nixos then it should be g++ doing both llvm and zig compilation
+
+1629493905
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+thats a good point
+
+1629494118
+andrewrk!~andrewrk@mail.ziglang.org
+I just updated https://github.com/ziglang/zig/wiki/How-to-build-LLVM,-libclang,-and-liblld-from-source#posix
+
+1629494141
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+thanks
+
+1629494269
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+I did see some compiling c objects, which was weird
+
+1629494275
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+ill investigate what c objs it was compiling
+
+1629494333
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+algorithm.cpp, which makes me think its trying to link c++ stl that it compiled with system llvm, which is a problem
+
+1629494404
+andrewrk!~andrewrk@mail.ziglang.org
+the build.zig tries to find system libc++
+
+1629494416
+andrewrk!~andrewrk@mail.ziglang.org
+I don't really want to debug this right now though, I have other priorities
+
+1629494431
+andrewrk!~andrewrk@mail.ziglang.org
+the way to get unblocked is to compile llvm from source
+
+1629494435
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+fair, i'll try to do it myself, I don't want to keep you
+
+1629495128
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+ok, I give up, screw c++, i'm compiling llvm
+
+1629497245
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+ok, llvm,lld,and clang are built
+
+1629498357
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+lmao i built llvm 13
+
+1629498367
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+the wiki forgot to say checkout the tag, hahaha
+
+1629498456
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+hopefully ninja is smart
+
+1629498458
+andrewrk!~andrewrk@mail.ziglang.org
+well, you could work based on the llvm13 branch :)
+
+1629498495
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+hahaha
+
+1629498522
+andrewrk!~andrewrk@mail.ziglang.org
+instructions updated
+
+1629498541
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+Someone has edited the wiki since you started. Please reload this page and re-apply your changes. lol
+
+1629501079
+andrewrk!~andrewrk@mail.ziglang.org
+big stage2 commit incoming
+
+1629502974
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+andrewrk: > Actually use the new AIR instructions
+
+1629502977
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+what do you mean by this?
+
+1629503244
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+hahah i still get errors
+
+1629503250
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+something else must be screwed up
+
+1629503255
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+ill investigate later
+
+1629503915
+andrewrk!~andrewrk@mail.ziglang.org
+g-w1, maybe I missed it when I looked the first time but I didn't see anywhere that the new AIR instructions were emitted by Sema
+
