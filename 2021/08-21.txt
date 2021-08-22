@@ -1,0 +1,296 @@
+1629505378
+Snektron!~snektron@2001:470:69fc:105::1789
+If a result location is .none_or_ref, is there a way to find out whether the result is actually an lvalue or an rvalue?
+
+1629505859
+andrewrk!~andrewrk@mail.ziglang.org
+don't think so. do we need that?
+
+1629505953
+Snektron!~snektron@2001:470:69fc:105::1789
+Im still thinking about that elem/field_ptr case from yesterday
+
+1629505981
+Snektron!~snektron@2001:470:69fc:105::1789
+i realized that if there is no guarantee that the object type of elem_ptr is a reference, there might be an ambiguity
+
+1629506094
+Snektron!~snektron@2001:470:69fc:105::1789
+Actually im not sure now. The case i was thinking of was a function parameter of type `*[10]u8` and a local of type `[10]u8`
+
+1629506154
+Snektron!~snektron@2001:470:69fc:105::1789
+both cases would generate a pointer type for any elem_ptr instruction, but the actual types are different.
+
+1629506318
+Snektron!~snektron@2001:470:69fc:105::1789
+i guess the only way that would go wrong is if single-item pointers had fields or were indexable, in which case its possible to confuse the types
+
+1629506325
+Snektron!~snektron@2001:470:69fc:105::1789
+but they don't so i guess its fine?
+
+1629506820
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+andrewrk: here https://github.com/g-w1/zig/blob/i-wrote/src/Sema.zig#L7911-L7936
+
+1629507030
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+i'll do a benchmark when I have time
+
+1629507109
+andrewrk!~andrewrk@mail.ziglang.org
+Snektron, I think it's the fact that zig has single-item pointers that resolves the ambiguity
+
+1629507143
+Snektron!~snektron@2001:470:69fc:105::1789
+Alright, thanks for the confirmation. I'll get to implementing that
+
+1629507208
+andrewrk!~andrewrk@mail.ziglang.org
+g-w1, that's my bad, I missed that. but yeah I do think we should justify the change with at least running a test to see if it improves perf, even on a contrived case
+
+1629507227
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+sounds good 👍
+
+1629507949
+Snektron!~snektron@2001:470:69fc:105::1789
+Seems like this was actually generating invalid air for field_val and elem_val
+
+1629507979
+Snektron!~snektron@2001:470:69fc:105::1789
+or rather, erroring when you have a parameter of type [1]i32 and try to access it
+
+1629508108
+andrewrk!~andrewrk@mail.ziglang.org
+with the llvm backend?
+
+1629508118
+andrewrk!~andrewrk@mail.ziglang.org
+I fixed a related issue to that in the commit I pushed about an hour ago
+
+1629508228
+Snektron!~snektron@2001:470:69fc:105::1789
+actually nevermind, elem_val wasn't implemented yet
+
+1629508254
+Snektron!~snektron@2001:470:69fc:105::1789
+this is failing: `fn a(x: struct{y: i32}) i32 { return x.y; }` 
+
+1629508282
+andrewrk!~andrewrk@mail.ziglang.org
+I can take a look at that next to unblock you if you want
+
+1629508398
+Snektron!~snektron@2001:470:69fc:105::1789
+i can probably work it out here, i think i see what is going wrong 
+
+1629508449
+andrewrk!~andrewrk@mail.ziglang.org
+btw look what I just got working: https://github.com/ziglang/zig/commit/f0176eec4a744c17fc49cbd63c67179887005935
+
+1629508497
+Snektron!~snektron@2001:470:69fc:105::1789
+very nice
+
+1629508548
+andrewrk!~andrewrk@mail.ziglang.org
+it does not do comptime call memoization yet
+
+1629508562
+andrewrk!~andrewrk@mail.ziglang.org
+so `List(10) != List(10)` (which is wrong)
+
+1629509086
+Snektron!~snektron@2001:470:69fc:105::1789
+oh, i see this pointery logic is also applied in zirFieldVal
+
+1629512804
+Snektron!~snektron@2001:470:69fc:105::1789
+hm, should a &x.y on a value generate a storage location for x, or just for x.y?
+
+1629512813
+Snektron!~snektron@2001:470:69fc:105::1789
+when x is a value
+
+1629514138
+Snektron!~snektron@2001:470:69fc:105::1789
+Actually, shouldn't that just be a compile error? 
+
+1629517987
+noam!~noam@104.232.42.247
+Snektron: why would that be an error?
+
+1629522606
+Snektron!~snektron@2001:470:69fc:105::1789
+noam: yes i realized that doesn't make sense.
+
+1629522631
+Snektron!~snektron@2001:470:69fc:105::1789
+I was originally thinking in terms of `const x = &y;`, where there are lifetime issues, but i forgot the `func(&y)` case
+
+1629546915
+oxilgk!~oxilgk@2a02:587:d3d:ca96:b411:3bc1:d381:ed98
+Hi guys!
+
+1629546946
+oxilgk!~oxilgk@2a02:587:d3d:ca96:b411:3bc1:d381:ed98
+i want to pass a filename from std.os.argv to std.fs.openFileAbsolute but it only accepts []const u8 type.
+
+1629546950
+oxilgk!~oxilgk@2a02:587:d3d:ca96:b411:3bc1:d381:ed98
+how do i convert [*:0]u8 which is the type of argv[1] to []const u8?
+
+1629547075
+Ristovski!~Ristovski@hellomouse/perf/ristovski
+oxilgk: you can use `const args = try std.process.argsAlloc(&allocator);`
+
+1629547119
+Ristovski!~Ristovski@hellomouse/perf/ristovski
+oh whoops, drop the `&`
+
+1629547123
+ifreund!~ifreund@user/ifreund
+oxilgk: std.mem.span()
+
+1629547145
+ifreund!~ifreund@user/ifreund
+which will iterate the [*:0]u8 to find the length for you
+
+1629547194
+ifreund!~ifreund@user/ifreund
+oxilgk: but you could also just use std.fs.openFileAbsoluteZ
+
+1629549704
+Ristovski!~Ristovski@hellomouse/perf/ristovski
+ifreund: Could you give me some pointers on how I should go about de/serializing an AutoHashMap(u64, std.ArrayList(u64))? If the hashmap had primitive types, I could just turn it into key value pairs
+
+1629549800
+ifreund!~ifreund@user/ifreund
+Ristovski: well, you can still do key/value pairs but now the values will be lists with variable length
+
+1629549814
+Ristovski!~Ristovski@hellomouse/perf/ristovski
+Indeed, a bit awkward
+
+1629549870
+ifreund!~ifreund@user/ifreund
+I wouldn't really say it's awkward, it's the most straightforward way to serialize that data structure
+
+1629549971
+ifreund!~ifreund@user/ifreund
+you can just do [key1][value1_length]<all elements in value 1>[key2]...
+
+1629550037
+Ristovski!~Ristovski@hellomouse/perf/ristovski
+hmmm, indeed
+
+1629559526
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+Hello, I have newbie question regarding zig, is this the right place? Or maybe StackOverflow?
+
+1629559564
+ifreund!~ifreund@user/ifreund
+LukeSkwkr: here is fine
+
+1629560345
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+Sorry, I was confused reading the "Static Local Variables" example in the documentation and realized I was confusing the definition and the instantiation of a struct.
+
+1629560348
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+never mind.
+
+1629560410
+ifreund!~ifreund@user/ifreund
+no worries!
+
+1629561485
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+It seems to me that the binaries generated by zig are pretty big. just 'pub fn main() {}' build in -Drelease_small=true -Drelease-safe=false -Drelease-fast=false is 68k. Not that it is important in my use case but I was wondering why.
+
+1629561594
+ifreund!~ifreund@user/ifreund
+LukeSkwkr: did you strip the binary?
+
+1629561684
+ifreund!~ifreund@user/ifreund
+using zig 0.8.0 on linux, I get 1.9K for an empty main
+
+1629561704
+ifreund!~ifreund@user/ifreund
+zig build-exe -OReleaseSmall foo.zig --strip && strip foo
+
+1629561780
+ifreund!~ifreund@user/ifreund
+in comparison, an empty main in C using gcc and glibc is 14K stripped
+
+1629561795
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+Ok get it. I assumed the flags provided would not produce all those sections.
+
+1629561815
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+Yeah, in C, when compiled in -Os, there is no big difference if you strip or not
+
+1629561818
+ifreund!~ifreund@user/ifreund
+the zig version is also statically linked, while the C version isn't
+
+1629561827
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+I mean in the toy example
+
+1629561833
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+oh
+
+1629561908
+semarie!~semarie@user/semarie
+zig version has also code for parsing elf and showing pretty backtrace when: panic, segfault and unexpected errno values
+
+1629561915
+ifreund!~ifreund@user/ifreund
+indeed
+
+1629561931
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+interesting :)
+
+1629562094
+semarie!~semarie@user/semarie
+LukeSkwkr: you could try this small.zig program: https://clbin.com/h0HLU
+
+1629563366
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+Trying it does nothing. Added an undefined dereference, and I get the usual segfault.
+
+1629563402
+viashimo!~viashimo@user/viashimo
+-/win 25
+
+1629575376
+cot!~kiedtl@kisslinux/kiedtl
+How do you prevent a variable from being optimized out?
+
+1629576228
+cot!~kiedtl@kisslinux/kiedtl
+Nevermind, got an okayish workaround by changing the variable's type to a volatile pointer
+
+1629576408
+cot!~kiedtl@kisslinux/kiedtl
+Well, actually no, it's still being optimized out. Duh.
+
+1629576692
+ifreund!~ifreund@user/ifreund
+cot: what are you trying to achieve? inspect something in godbolt?
+
+1629576710
+ifreund!~ifreund@user/ifreund
+usually the strategy is to export the function you want to examine
+
+1629582809
+cot!~kiedtl@kisslinux/kiedtl
+ifreund: it's a variable in a function that I'd like to `print` in gdb. It's basically a reference to an import'ed global in another module that for some reason can't be examined via gdb.
+
