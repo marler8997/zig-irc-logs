@@ -1,0 +1,1056 @@
+1630022416
+andrewrk!~andrewrk@mail.ziglang.org
+the main optimization that we want to see is devirtualization, i.e., turning an indirect function pointer call to allocate() to a comptime known function call
+
+1630022471
+andrewrk!~andrewrk@mail.ziglang.org
+however, when any stores happen to a struct with an Allocator field, the optimizer has to prove that the store does not have the potential to modify the function pointer
+
+1630022554
+andrewrk!~andrewrk@mail.ziglang.org
+struct {allocator: Allocator, x: i32} // every time x is mutated, the optimizer loses ability to devirtualize Allocator function pointers
+
+1630024399
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+are error traces bugged for anyone else or am i going insane
+
+1630024487
+andrewrk!~andrewrk@mail.ziglang.org
+there are some false positives in there but the real error trace is in there too if you look
+
+1630024515
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+ok was just wondering cause its been plaguing me for ages and i havent seen it improve
+
+1630024521
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+nor have i confirmed if i was crazy or not
+
+1630024588
+noam!~noam@104.232.42.247
+andrewrk: that doesn't seem like a fundamental issue
+
+1630024595
+noam!~noam@104.232.42.247
+It should be easy to prove that it can't modify the function pointer...
+
+1630024669
+andrewrk!~andrewrk@mail.ziglang.org
+haze, here's the issue for it: https://github.com/ziglang/zig/issues/1923
+
+1630024686
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+thank you andychan
+
+1630024854
+noam!~noam@104.232.42.247
+lol
+
+1630024866
+noam!~noam@104.232.42.247
+andrewrk: better question: how is it *easier* to prove a vtable isn't modified?
+
+1630024891
+noam!~noam@104.232.42.247
+Especially for Zig, which has knowledge of *all source code*, unlike C
+
+1630024897
+noam!~noam@104.232.42.247
+You know there's nothing external modifying it
+
+1630024934
+noam!~noam@104.232.42.247
+Hmm, is there a way to make it immutable, maybe?
+
+1630024940
+noam!~noam@104.232.42.247
+That would provide such an assertion anyways
+
+1630024950
+andrewrk!~andrewrk@mail.ziglang.org
+because a vtable can be *const
+
+1630024965
+noam!~noam@104.232.42.247
+So can a field, if you turn the field into a member and make the struct a paremeterized type :P
+
+1630024976
+noam!~noam@104.232.42.247
+instead of ArrayList(T).init(allocator), ArrayList(T, allocator).init()
+
+1630024994
+noam!~noam@104.232.42.247
+parameterized*
+
+1630025022
+noam!~noam@104.232.42.247
+I'm not sure if that's actually possible, especially given that the allocators likely aren't comptime known...
+
+1630027351
+devast8a!~devast8a@2001:470:69fc:105::3f46
+Also you generally assume the vtable is an implementation artifact and accessing it is UB anyway.
+
+1630027511
+noam!~noam@104.232.42.247
+Sure, but... it's not?
+
+1630027522
+noam!~noam@104.232.42.247
+I mean, you can make that assumption about anything /shrug
+
+1630027539
+noam!~noam@104.232.42.247
+If we had a way to make fields immutable after initialization it'd be trivial to solve for the current approach
+
+1630027603
+devast8a!~devast8a@2001:470:69fc:105::3f46
+I mean this is how other languages do it. They just wave their magic undefined behavior wand, and now you can make that assumption and it's the programmers fault if they change the vtable on you.
+
+1630027802
+devast8a!~devast8a@2001:470:69fc:105::3f46
+You can apply this logic to anything, you just want to make sure the mechanism you're applying it to isn't something people can't accidentally mess with otherwise you're just inviting a footgun into the language.
+
+1630027812
+devast8a!~devast8a@2001:470:69fc:105::3f46
+*can accidentally mess with
+
+1630029149
+noam!~noam@104.232.42.247
+Orrr you can make it illegal to modify the vtable instead of undefined lol
+
+1630029213
+devast8a!~devast8a@2001:470:69fc:105::3f46
+Sure, if you're able to do that.
+
+1630029315
+devast8a!~devast8a@2001:470:69fc:105::3f46
+More specifically, if you're able to prevent a user from modifying a vtable in every possible manner.
+
+1630029439
+devast8a!~devast8a@2001:470:69fc:105::3f46
+I suppose in this case marking the field in question as const is sufficient.
+
+1630029456
+noam!~noam@104.232.42.247
+buuuuut you can't
+
+1630029463
+noam!~noam@104.232.42.247
+because fields can't be marked immutable in zig, no?
+
+1630029801
+andrewrk!~andrewrk@mail.ziglang.org
+that doesn't solve the optimization problem
+
+1630029835
+andrewrk!~andrewrk@mail.ziglang.org
+what solves it is making the interface a fat pointer, passing the object pointer along with the vtable pointer
+
+1630029868
+andrewrk!~andrewrk@mail.ziglang.org
+this way it is obvious to the optimizer that modifications to *Object do not have the possibility to modify *VTable
+
+1630029924
+andrewrk!~andrewrk@mail.ziglang.org
+might need to double check that with SpexGuy
+
+1630030043
+noam!~noam@104.232.42.247
+andrewrk: but if the field is immutable then it's obvious that it's not being modified, also
+
+1630030057
+andrewrk!~andrewrk@mail.ziglang.org
+llvm does not have immutable fields
+
+1630030126
+andrewrk!~andrewrk@mail.ziglang.org
+probably because the concept is nonsensical
+
+1630030134
+andrewrk!~andrewrk@mail.ziglang.org
+how would you initialize an immutable field
+
+1630030179
+devast8a!~devast8a@2001:470:69fc:105::3f46
+Ah, so the optimizer in this case is LLVM's optimizer and not a Zig specific optimizer?
+
+1630030304
+freshcoffee2!~fresh@user/freshcoffee
+I suppose the known set of vtables could be hard-coded in .rodata and thus already be initialized?
+
+1630030370
+andrewrk!~andrewrk@mail.ziglang.org
+devast8a, correct, but my understanding is that it is a fundamentally difficult optimization problem, with the memory layout using @fieldParentPtr (unfortunate since it is a neat way to organize the memory)
+
+1630030472
+andrewrk!~andrewrk@mail.ziglang.org
+freshcoffee2, that is possible with the *const VTable strategy, because it can point to .rodata. but with our current situation the VTable is embedded into the `struct { allocator: Allocator, x: i32}`. e.g. ArenaAllocator. and the non-vtable state needs to go on runtime-initialized memory
+
+1630030524
+andrewrk!~andrewrk@mail.ziglang.org
+that's exactly the problem - we want the vtables to go into .rodata but they can't if they are inside the struct that is implementing the interface
+
+1630032048
+noam!~noam@104.232.42.247
+andrewrk: I don't think it's fundamentally difficult; I suspect this is related to LLVM in particular
+
+1630032055
+noam!~noam@104.232.42.247
+ACTION begins obsessively researching and experimenting
+
+1630032110
+noam!~noam@104.232.42.247
+andrewrk: also note that we can already detect immutability of data which is declared mutable - I don't see why we can't do that for fields, at the least
+
+1630032124
+noam!~noam@104.232.42.247
+Is it trivial, no - but it shouldn't be harder than doing it for any other variable
+
+1630032150
+noam!~noam@104.232.42.247
+A zig-specific optimizer would be able to do a much better job than LLVM could, because LLVM MUST assume that it's possible for external code to mutate data
+
+1630032152
+noam!~noam@104.232.42.247
+Zig knows better.
+
+1630032468
+andrewrk!~andrewrk@mail.ziglang.org
+I invite you to implement this optimization in your zig implementation
+
+1630032526
+noam!~noam@104.232.42.247
+:)
+
+1630032615
+freshcoffee2!~fresh@user/freshcoffee
+hmm so in c++ it's deref object ptr, deref vtable ptr, call fn,
+
+1630032638
+freshcoffee2!~fresh@user/freshcoffee
+and with fat-pointer, it would be deref (object | vtable), call fn
+
+1630033373
+andrewrk!~andrewrk@mail.ziglang.org
+I might have gotten mixed up with saying fat pointer
+
+1630033383
+andrewrk!~andrewrk@mail.ziglang.org
+the c++ way is optimizable by llvm 
+
+1630033812
+noam!~noam@104.232.42.247
+In a total surprise, trying to design a compiler that's general, performant, simple, and cross-language from scratch as a research project is a lot harder than just making a single language compiler lol
+
+1630033831
+noam!~noam@104.232.42.247
+I've thrown out >90% of the code I've written for zyg lol :P
+
+1630036457
+noam!~noam@104.232.42.247
+... to clarify, by 'a single language compiler' I was referring to my initial plans, not the official compiler; wasn't trying to start anything lol
+
+1630055481
+bgiannan!~bgiannan@194.206.91.37
+i'm confused: does zig allow c-like pointer arithmetic? It's only allowed for `[*]T`, what happend when we do `ptr + 1`? do we get a [*]T pointer further aheave or a single *T ?
+
+1630055492
+bgiannan!~bgiannan@194.206.91.37
+ahead*
+
+1630055525
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+you get a [*]T one element ahead
+
+1630055530
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+var p: [*]T = …;
+
+1630055549
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+assert(p + 1 == @ptrCast([*]T, &p[1]))
+
+1630055703
+bgiannan!~bgiannan@194.206.91.37
+so if i wanted a similar semantic to C i could do: var p: [*]T =...; (p+1)[0];
+
+1630055845
+bgiannan!~bgiannan@194.206.91.37
+or maybe andrewrk wanted to dissuade such semantic ?
+
+1630056128
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+what do you mean?
+
+1630056144
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+C has bad semantics in the way that a single-item pointer and pointer-to-many are the same thing
+
+1630056160
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+pointer arithmetic on single-item pointer doesn't make much sense
+
+1630056176
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+so it's only allowed on pointer-to-many
+
+1630056236
+bgiannan!~bgiannan@194.206.91.37
+i see
+
+1630056605
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+bgiannan: what do you want to achieve?
+
+1630056680
+bgiannan!~bgiannan@194.206.91.37
+i'm just wondering if `a.long.way.to.mylist[some_index]` is slower than `ptrtosomewhereinmylist[0]`
+
+1630056741
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+that very much depends on what long, way, to, mylist is
+
+1630056758
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+and on how well the compiler can optimize it
+
+1630057026
+bgiannan!~bgiannan@194.206.91.37
+i'll test it out once i have something running
+
+1630058033
+ldearquer!~user@cm-83-97-235-19.telecable.es
+This line use to compile fine (not sure on what version):
+
+1630058035
+ldearquer!~user@cm-83-97-235-19.telecable.es
+const Isr = extern fn () void;
+
+1630058047
+ldearquer!~user@cm-83-97-235-19.telecable.es
+Declaring a pointer to a C ABI function
+
+1630058074
+ifreund!~ifreund@user/ifreund
+should be `const Isr = fn () callconv(.C) void`
+
+1630058093
+ifreund!~ifreund@user/ifreund
+extern is only valid on declarations
+
+1630058094
+ldearquer!~user@cm-83-97-235-19.telecable.es
+icic
+
+1630058099
+ldearquer!~user@cm-83-97-235-19.telecable.es
+Thanks,it works :)
+
+1630058104
+ifreund!~ifreund@user/ifreund
+no problem!
+
+1630058126
+ldearquer!~user@cm-83-97-235-19.telecable.es
+so callconv(.C) becomes part of the type, isn't it?
+
+1630058136
+ldearquer!~user@cm-83-97-235-19.telecable.es
+fn() and fn() callconv(.C) are differnt types
+
+1630058143
+ifreund!~ifreund@user/ifreund
+yep, the calling convention is part of the function type
+
+1630058169
+ifreund!~ifreund@user/ifreund
+`fn() void` and `fn() callconv(.Unspecified) void` are the same type 
+
+1630058215
+ifreund!~ifreund@user/ifreund
+extern used to imply `callconv(.C)` but it will soon be/already is required to be explict  
+
+1630058216
+ldearquer!~user@cm-83-97-235-19.telecable.es
+Ah, i see
+
+1630058236
+ldearquer!~user@cm-83-97-235-19.telecable.es
+so even in declaration, you can just use callconv()?
+
+1630058241
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+yep
+
+1630058250
+ldearquer!~user@cm-83-97-235-19.telecable.es
+fn() callconv(.C) foo() void;
+
+1630058259
+ldearquer!~user@cm-83-97-235-19.telecable.es
+fn callconv(.C) foo() void;
+
+1630058295
+ldearquer!~user@cm-83-97-235-19.telecable.es
+yeah, I think i prefer this way, more visual
+
+1630058325
+ifreund!~ifreund@user/ifreund
+https://github.com/ziglang/zig/issues/5269
+
+1630058333
+ifreund!~ifreund@user/ifreund
+accepted but not yet implemented
+
+1630058432
+ldearquer!~user@cm-83-97-235-19.telecable.es
+nice!
+
+1630061587
+flyx[m]!~flyxflyxo@mail.flyx.org
+std.fs.Dir.iterate() returns no items when called a second time. is that expected?
+
+1630061656
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+i think it's a design flaw as well, but afaik it's due to the underlying restrictions of the OS
+
+1630061664
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+so the answer is: i think so?
+
+1630061759
+flyx[m]!~flyxflyxo@mail.flyx.org
+so is there a way to reset the Dir or do I need to close and open it again?
+
+1630061871
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+i think just reopen the dir
+
+1630061949
+flyx[m]!~flyxflyxo@mail.flyx.org
+okay thx
+
+1630063585
+flyx[m]!~flyxflyxo@mail.flyx.org
+this goes into an endless loop in 0.87
+
+1630063592
+flyx[m]!~flyxflyxo@mail.flyx.org
+ * this goes into an endless loop in 0.8.0: `std.debug.print("{s: >[1]}: {s}", .{"foo", 5, "bar"});`
+
+1630063629
+flyx[m]!~flyxflyxo@mail.flyx.org
+I am not sure if I got the syntax right but I believe it should not do that
+
+1630064154
+flyx[m]!~flyxflyxo@mail.flyx.org
+`std.debug.print("{s: >5}: {s}", .{"foo", "bar"});` works as expected
+
+1630067019
+bgiannan!~bgiannan@194.206.91.37
+in a switch statement, will the cases be evaluated in the order they are written?
+
+1630067207
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+I am trying to statically initialize a dynamically sized array which is define as a struct member (struct { array: []u8 })
+
+1630067220
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+Is there an equivalent to `new int[2] { 1, 2 }`
+
+1630067288
+ifreund!~ifreund@user/ifreund
+bgiannan: there can't be any overlap between the cases in zig, so order is irrelevant no?
+
+1630067361
+ifreund!~ifreund@user/ifreund
+LukeSkwkr: []u8 is a slice, not an array. A slice only stores 2 things, a pointer and a length.
+
+1630067370
+bgiannan!~bgiannan@194.206.91.37
+ifreund, for performances i'd like the most common cases to be evaluated first
+
+1630067479
+semarie!~semarie@user/semarie
+LukeSkwkr: .{ .array = [_]u8{ 1 , 2 }, }   // but remark of ifreund still apply
+
+1630067494
+ifreund!~ifreund@user/ifreund
+bgiannan: llvm will probably compile a switch statement to a branch table/jump table: https://en.wikipedia.org/wiki/Branch_table
+
+1630067519
+ifreund!~ifreund@user/ifreund
+this is not equivalent to a chain of if statements where order would be preserved
+
+1630067559
+bgiannan!~bgiannan@194.206.91.37
+neat
+
+1630067664
+ifreund!~ifreund@user/ifreund
+LukeSkwkr: so since a slice only stores a pointer an a length, to statically initialize it you need a comptime known pointer to mutable data (since you have a []u8 not a []const u8) 
+
+1630067722
+ifreund!~ifreund@user/ifreund
+you for example make a global `var my_array = [2]u8{ 1, 2 }` and do `struct { array: []u8 = &my_array }` but you can probably see the major problem with that
+
+1630067742
+ifreund!~ifreund@user/ifreund
+(all structs initialized that way will share the same global array)
+
+1630067786
+ifreund!~ifreund@user/ifreund
+the one thing it is useful to statically initialize a slice field to is an empty slice
+
+1630067806
+ifreund!~ifreund@user/ifreund
+`struct { slice: []u8 = &[0]u8{} }`
+
+1630067817
+ifreund!~ifreund@user/ifreund
+which is a slice with 0 length and an undefined pointer
+
+1630067891
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+ifreund: I don't necessarily want a slice. I control the type of the structure. I just need an array of `u8` and I would rather initialize it statically (it can be allocated dynamically)
+
+1630067912
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+I'd rather not do: `s.array[0] = 1; s.array[1] = 2`
+
+1630067926
+ifreund!~ifreund@user/ifreund
+LukeSkwkr: unless you know the length at compile time, you probably want a slice
+
+1630067954
+ifreund!~ifreund@user/ifreund
+if you do know the length at compile time and that length never changes, then an array is likely the way to go
+
+1630068001
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+Yes I know the length at compile time.
+
+1630068028
+ifreund!~ifreund@user/ifreund
+then just do `struct { array: [2]u8 = [2]u8{ 1, 2 }`
+
+1630068032
+ifreund!~ifreund@user/ifreund
+with one more }
+
+1630068062
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+I know the length at compile time but not when I define my type, only when I initialize an object of that type.
+
+1630068090
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+I define my type somewhere. And later in the code, I allocate an object of that type that I initialize statically.
+
+1630068159
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+Sorry, it's X/Y problem. I tried to simplify it and now it's a mess of an explanation.
+
+1630068232
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+That's what I try to convey with the `new int[2] { 1, 2 }`. You can have a structure { int *c }. But I still want to initialize it with a nice syntax {}.
+
+1630068247
+ifreund!~ifreund@user/ifreund
+`new` in C++ does dynamic allocation
+
+1630068258
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+Yes I know. I am fine with it.
+
+1630068271
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+What is static is not the allocation but the initalization.
+
+1630068297
+ifreund!~ifreund@user/ifreund
+you can't statically initialize a slice that is dynamically allocated at runtime
+
+1630068322
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+Ok so there is no equivalent to `new int[2] { 1, 2 }`
+
+1630068323
+ifreund!~ifreund@user/ifreund
+I'd recommend std.mem.copy(u8, allocated_slice, &[_]u8{1, 2, 3, 4})
+
+1630068326
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+I ahve my answer thanks :)
+
+1630068348
+ifreund!~ifreund@user/ifreund
+no, unlike C++ zig does not have any allocation built into the language
+
+1630068367
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+Thx ifreund, it's clear.
+
+1630069576
+flyx[m]!~flyxflyxo@mail.flyx.org
+LukeSkwkr: `new int[2] {1, 2}` in C++ is just a combined allocation and constructor call. allocation and constructors are just function calls, so you can write a zig function that lets you do `new(u8, allocator, .{1, 2})`
+
+1630069592
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+semarie, ifreund: Thanks to your answer, I was able to do what I wanted this way: `const foo: struct { array: []const u8 } = .{ .array = &[_]u8{ 1, 2, 3, 4, 5 } };`
+
+1630069647
+ifreund!~ifreund@user/ifreund
+which works fine since the slice is const yeah
+
+1630069667
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+flyx[m]: Havn't got to the allocator business yet to be honest. I'm afraid it might be a little above my pay grade...
+
+1630069697
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+ifreund: Yes const is fine for me. I was missing that part.
+
+1630069819
+flyx[m]!~flyxflyxo@mail.flyx.org
+you can't avoid allocators long if you're writing zig, but you can really just think of them as objects that give you the equivalent of C++'s new, new[], delete and delete[], minus C++'s automatic constructor calls
+
+1630090201
+Flaminator!~Flaminato@ns323457.ip-5-39-76.eu
+Marler8997 in zigwin32, when I want to use use the return value of RegisterClassExW in CreateWindowExW for lpClassName what would be the prefered way to do that? I am getting incorrect alignment panics.
+
+1630091748
+noam!~noam@104.232.42.247
+flyx: you absolutely can avoid allocators long - as long as you don't use the standard library or any libraries that depend upon it :P
+
+1630091774
+noam!~noam@104.232.42.247
+ifreund: I disagree that Zig doesn't have allocation built into the language - the stdlib is part of the language.
+
+1630091791
+noam!~noam@104.232.42.247
+Maybe not in the strictest sense, but the strictest sense is also the least useful :)
+
+1630091818
+ifreund!~ifreund@user/ifreund
+noam: the compiler knows nothing about allocation or how it works
+
+1630091828
+ifreund!~ifreund@user/ifreund
+if it did, I'd consider allocation to be built into the language
+
+1630091828
+noam!~noam@104.232.42.247
+That is a more true statement, but also not a useful one :)
+
+1630091843
+noam!~noam@104.232.42.247
+The compiler doesn't know about idioms of the language either
+
+1630091847
+noam!~noam@104.232.42.247
+Or the patterns encouraged by the language
+
+1630091851
+noam!~noam@104.232.42.247
+but those are both part of the language IMO
+
+1630091872
+ifreund!~ifreund@user/ifreund
+how is it not useful? It's important to know that there is no language-level syntax and allocation is entirely implemented in zig libraries
+
+1630091891
+noam!~noam@104.232.42.247
+Because std.mem.copy is language-level syntax IMO
+
+1630091921
+noam!~noam@104.232.42.247
+If you treat it as syntax, you get the exact same results
+
+1630091929
+noam!~noam@104.232.42.247
+[for 90% of codebases, at least]
+
+1630092004
+ifreund!~ifreund@user/ifreund
+You seem to be arguing that it's not useful to consider the language separately from the standard library, I disagree with that
+
+1630092005
+noam!~noam@104.232.42.247
+ifreund: IMO, what matters - especially to newcomers - isn't whether it's technically syntax or provided by the library.
+
+1630092033
+noam!~noam@104.232.42.247
+I'm not arguing it's never useful - merely that it's often not
+
+1630092046
+noam!~noam@104.232.42.247
+But also this is a philosophical discussion, not a technical one
+
+1630092047
+Flaminator!~Flaminato@ns323457.ip-5-39-76.eu
+In my opinion the stdlib shouldn't be part of the language.
+
+1630092062
+noam!~noam@104.232.42.247
+So the end result is just "I disagree with the premises of your argument" :)
+
+1630092079
+noam!~noam@104.232.42.247
+Flaminator: IMO it *is*
+
+1630092084
+noam!~noam@104.232.42.247
+There is no C without libc
+
+1630092089
+noam!~noam@104.232.42.247
+there is no Zig without stdlib
+
+1630092097
+companion_cube!~simon@user/companion-cube
+it should be, otherwise you'd have alernative compilers that can't compile your code
+
+1630092108
+ifreund!~ifreund@user/ifreund
+pretty sure you can write C code without linking libc
+
+1630092110
+noam!~noam@104.232.42.247
+Again, that's not what I'm saying - it's not about whether it compiles
+
+1630092124
+noam!~noam@104.232.42.247
+if you see C code that doesn't use libc, and e.g. uses it own string functions, it might as well be a different language
+
+1630092138
+earnestly!~earnest@user/earnestly
+Things do become weird when other languages tend to expose (or detangle) the libc/posix/unix API soup
+
+1630092144
+noam!~noam@104.232.42.247
+The syntax and semantics are the same, yes.
+
+1630092148
+noam!~noam@104.232.42.247
+and that's all that the compiler cares about
+
+1630092158
+noam!~noam@104.232.42.247
+so, of course you can compile it without issues with a C compiler
+
+1630092180
+noam!~noam@104.232.42.247
+but what I'm saying is that the language is more than just syntax and semantics
+
+1630092192
+noam!~noam@104.232.42.247
+Language is a way of thinking, it's how you express your intent
+
+1630092200
+noam!~noam@104.232.42.247
+The patterns in C and in Zig are very different
+
+1630092224
+noam!~noam@104.232.42.247
+A compiler that understands Zig syntax and semantics but links libc as std would not be a Zig compiler
+
+1630092231
+companion_cube!~simon@user/companion-cube
+for Zig I think it's even harder to separate the stdlib, if there's some intrinsics in there
+
+1630092240
+companion_cube!~simon@user/companion-cube
+or comptime helpers
+
+1630092247
+noam!~noam@104.232.42.247
+Sure, and I agree, but that's not even what I'm getting at
+
+1630092257
+noam!~noam@104.232.42.247
+(though, on that note: translate-c output can depend on stdlib)
+
+1630092277
+noam!~noam@104.232.42.247
+To put it differently: let's say you write a new, from-scratch english dictionary
+
+1630092288
+noam!~noam@104.232.42.247
+which might share a few words with English, but is 90% different
+
+1630092309
+noam!~noam@104.232.42.247
+Someone speaking the language described in it will not be able to communicate effectively with an English speaker, even if they write using the same syntax and grammatical rules
+
+1630092321
+noam!~noam@104.232.42.247
+because the vocabulary is *part of the language*
+
+1630092331
+noam!~noam@104.232.42.247
+Similarly, stdlib infects the way you write code
+
+1630092341
+noam!~noam@104.232.42.247
+The allocator pattern is a great example
+
+1630092374
+noam!~noam@104.232.42.247
+If I write code that doesn't use the stdlib, you'll be able to get used to the lack of allocators, the alternate printing methods, and so on, but it's not trivial
+
+1630092376
+companion_cube!~simon@user/companion-cube
+and english without the auxilliary verbs isn't english :)
+
+1630092383
+companion_cube!~simon@user/companion-cube
+even though they're in the dictionary
+
+1630092383
+Flaminator!~Flaminato@ns323457.ip-5-39-76.eu
+I am pretty sure besides builtin stuff that is needed for the language to work you can do anything without the rest of the stdlib.
+
+1630092384
+noam!~noam@104.232.42.247
+You *know* the stdlib
+
+1630092393
+noam!~noam@104.232.42.247
+Flaminator: *for the compiler* to work, sure
+
+1630092402
+noam!~noam@104.232.42.247
+but my argument is that if you're not using the stdlib, you're speaking a different language
+
+1630092405
+noam!~noam@104.232.42.247
+intrinsically
+
+1630092435
+noam!~noam@104.232.42.247
+To give an example: compare code written against Win32, POSIX, and cross-platform C
+
+1630092436
+Flaminator!~Flaminato@ns323457.ip-5-39-76.eu
+But that would mean using different libraries that do things differently or not part of the stdlib would also be a different language.
+
+1630092442
+noam!~noam@104.232.42.247
+Yes
+
+1630092446
+noam!~noam@104.232.42.247
+Not to the same extent, but yes
+
+1630092452
+noam!~noam@104.232.42.247
+That's more like... slang?
+
+1630092475
+noam!~noam@104.232.42.247
+I can talk to anyone who speaks English, but if we don't share slang, there can be a bit of a bump at first
+
+1630092479
+noam!~noam@104.232.42.247
+It's the same thing
+
+1630092495
+noam!~noam@104.232.42.247
+and I'm not arguing there's a strict technical line that delineates what is or isn't the language
+
+1630092521
+noam!~noam@104.232.42.247
+I'd argue that even the philosophy of the language is part of the language itself
+
+1630092529
+noam!~noam@104.232.42.247
+e.g. the zen of zig - I consider that a core part of Zig
+
+1630092573
+noam!~noam@104.232.42.247
+Someone writing code that the zig compiler understands but in violation of the principles of the zen of zig *will* write code that will look weird to someone who typically programs against those principles
+
+1630092581
+noam!~noam@104.232.42.247
+ditto for all the many software manifestos out there
+
+1630092588
+noam!~noam@104.232.42.247
+tl;dr: language isn't just syntax, it's a way of thinking
+
+1630092649
+Flaminator!~Flaminato@ns323457.ip-5-39-76.eu
+But I can somewhat understand where you are coming from, working with Qt in c++ also feels really weird when you are used to the std.
+
+1630092766
+noam!~noam@104.232.42.247
+I'm also not saying anything needs to follow from this, simply stating a point of view :)
+
+1630092797
+noam!~noam@104.232.42.247
+ACTION proceeds to write a BAHFest submission about how the Sapir Whorf hypothesis is clearly correct... but with your help, we can CHANGE that!
+
+1630092824
+noam!~noam@104.232.42.247
+I wonder if anyone's done any research on Sapir-Whorf in the context of programming languages?
+
+1630092832
+noam!~noam@104.232.42.247
+I'd look it up but I don't need to get sucked into that rabbit hole :P
+
+1630092902
+noam!~noam@104.232.42.247
+One great example: defer
+
+1630092903
+Flaminator!~Flaminato@ns323457.ip-5-39-76.eu
+That's language being connected to culture stuff right?
+
+1630092911
+noam!~noam@104.232.42.247
+It's about how the language you speak affects how you think
+
+1630092925
+noam!~noam@104.232.42.247
+e.g. if you know english, it changes your skillset, personality, etc vs if you knew a different native language
+
+1630092940
+noam!~noam@104.232.42.247
+C2X is considering adding defer, IIRC
+
+1630092966
+noam!~noam@104.232.42.247
+I have some code in C that does e.g. `{ int ret = module_init() && module_run(); module_cleanup(); return ret; }`
+
+1630092983
+Flaminator!~Flaminato@ns323457.ip-5-39-76.eu
+Not sure which defer proposal it was that named zig.
+
+1630092984
+noam!~noam@104.232.42.247
+In Zig, I'd *obviously* use defer module_cleanup(); return module_init()...
+
+1630092993
+noam!~noam@104.232.42.247
+but neither way is intrinsically better
+
+1630092999
+noam!~noam@104.232.42.247
+both depend upon how you think - and *influence* it
+
+1630093003
+noam!~noam@104.232.42.247
+I happen to prefer the C option
+
+1630093011
+noam!~noam@104.232.42.247
+I can clearly see the order of operations just at a glance
+
+1630093020
+noam!~noam@104.232.42.247
+for more complicated, branching situations, I often prefer defer
+
+1630100717
+nemith!~bbennett@coachz.brbe.net
+the problem comes if you add module2_init() into the same function which leads to goto for cleanup which is far worse for seeing order of operations imho
+
+1630105406
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+if I create an arraylist, shouldn't I be able to get a pointer to the inner items elements?
+
+1630105689
+noam!~noam@104.232.42.247
+nemith: it wouldn't be using goto at all
+
+1630105694
+noam!~noam@104.232.42.247
+You could add goto to the first example
+
+1630105731
+noam!~noam@104.232.42.247
+It'd be more like e.g. `int ret = module1_init(); if(ret) ret = module1_run(); if(ret) ret = module2_init(); ... cleanup(); return ret;`
+
+1630105741
+noam!~noam@104.232.42.247
+etc
+
+1630105816
+ifreund!~ifreund@user/ifreund
+haze: you can, just do foo.items.ptr
+
+1630105841
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+ive just decided that returning indicies is the best course of action
+
+1630105862
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+ifreund and i meant a pointer to a specific item in that array
+
+1630105881
+ifreund!~ifreund@user/ifreund
+ah, yeah if you want to store a reference that survives across appends (which may cause reallocations) then an index is the way to go
+
+1630105909
+noam!~noam@104.232.42.247
+haze: the issue is that the memory isn't in a static location
+
+1630105914
+noam!~noam@104.232.42.247
+an arraylist can move memory around as needed
+
+1630105917
+noam!~noam@104.232.42.247
+which would invalidate pointers
+
+1630105938
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+yeah i realized
+
+1630105953
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+i was just weired out because at the time of accessing i could ensure that it wouldve have moved
+
+1630105960
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+wouldnt*
+
+1630105971
+ifreund!~ifreund@user/ifreund
+not that you cant get a pointer to any arbitrary element
+
+1630105981
+ifreund!~ifreund@user/ifreund
+&foo.items[42];
+
+1630105991
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+see thats what i thought
+
+1630105997
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+but i was getting bad access violations or whaevs
+
+1630106005
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+prob something else missing with my code its not as simple as that
+
+1630106037
+ifreund!~ifreund@user/ifreund
+then you were probably doing something that caused the array list to reallocate it's memory and break that pointer
+
+1630106073
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+oh u know what
+
+1630106076
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+yeah i was
+
+1630106080
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+i was storing pointers while also growing the list
+
+1630107131
+noam!~noam@104.232.42.247
+and that's why you don't hand out pointers unless you're 100% sure they're static ;)
+
