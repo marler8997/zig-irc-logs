@@ -1,0 +1,520 @@
+1630112333
+Daimanta!~Daimanta@86-85-205-212.fixed.kpn.net
+Hi, I have a question about pointer casts. I want to treat an even number of elements of u8´s as a slice/pointer of u16´s. I am running into alignment issues and I cannot seems to get it to work. can anyone help?
+
+1630114193
+andrewrk!~andrewrk@mail.ziglang.org
+Daimanta, make sure to allocate your u8's with @alignOf(u16)
+
+1630119231
+Nulo!~Nulo@user/nulo
+Zig thinks that an C enum field is a c_int instead of the enum it's part of
+
+1630119268
+andrewrk!~andrewrk@mail.ziglang.org
+sadly that is because that's what C thinks too
+
+1630119290
+Nulo!~Nulo@user/nulo
+Ah, well, even after casting it: error: incompatible types: '.cimport:2:11.enum_yaml_event_type_e' and '.cimport:2:11.enum_yaml_token_type_e'
+
+1630119298
+Nulo!~Nulo@user/nulo
+This is 0.8.0
+
+1630119303
+Nulo!~Nulo@user/nulo
+Oh I can't read
+
+1630119307
+Nulo!~Nulo@user/nulo
+event != token
+
+1630119319
+Nulo!~Nulo@user/nulo
+What if Zig highlighted the diffs :P
+
+1630132120
+andrewrk!~andrewrk@mail.ziglang.org
+language change update: https://github.com/ziglang/zig/issues/6062 is implemented
+
+1630146145
+ifreund!~ifreund@user/ifreund
+andrewrk: nice! There's one thing I don't understand in that commit though: why the difference in rules for locals vs globals?
+
+1630154848
+daurnimator!~daurnimat@vultr.daurnimator.com
+andrewrk: did you get an email from equinix? I didn't
+
+1630166626
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+ifreund: Did you had something like that in mind: https://github.com/ziglang/zig/pull/9639 for https://github.com/ziglang/zig/issues/9630 ?
+
+1630166827
+ifreund!~ifreund@user/ifreund
+LukeSkwkr: looks good, but needs a test case. Thanks for working on that!
+
+1630167223
+LukeSkwkr!~LukeSkwkr@164.249.94.92.rev.sfr.net
+Where are the test for zig fmt? Found this: https://github.com/ziglang/zig/blob/master/test/cli.zig#L157 but that seems a little light that why I though you guys were freeballing fmt...
+
+1630167687
+ifreund!~ifreund@user/ifreund
+LukeSkwkr: lib/std/zig/parser_test.zig (as I commented on the PR :P)
+
+1630171292
+andrewrk!~andrewrk@mail.ziglang.org
+ifreund, hmm I guess it could be changed to be the same. but the idea is that local names have more restrictions than global names, because global names are part of a namespace, but local names are not
+
+1630171441
+ifreund!~ifreund@user/ifreund
+andrewrk: are there any other differences in restrictions on local vs global names? I'm not aware of any...
+
+1630171466
+andrewrk!~andrewrk@mail.ziglang.org
+the ability to have a name with the same name as declaration in scope
+
+1630171493
+andrewrk!~andrewrk@mail.ziglang.org
+https://github.com/ziglang/zig/issues/678
+
+1630171516
+andrewrk!~andrewrk@mail.ziglang.org
+in this example, `init` is declared when `init` is already in scope, but it would not be allowed for a local to be named `init`
+
+1630171665
+ifreund!~ifreund@user/ifreund
+right, that's a little different from this case though. Here we're essentially saying "`u8` and `@"u8"` are the same when used to name a local but different when used to name a decl" 
+
+1630171687
+andrewrk!~andrewrk@mail.ziglang.org
+agreed
+
+1630171696
+ifreund!~ifreund@user/ifreund
+which doesn't really gain us anything concrete I can see, and feels inconsistent
+
+1630171776
+andrewrk!~andrewrk@mail.ziglang.org
+hmm I think the confusing thing here is that @"" is actually just an additional arbitrary thing that I added in there to make this case less confusing: https://clbin.com/B2dy0
+
+1630171828
+andrewrk!~andrewrk@mail.ziglang.org
+because if you didn't know that u8 was a primitive (imagine if it were i386!) this would have been really confusing behavior
+
+1630171879
+andrewrk!~andrewrk@mail.ziglang.org
+but I agree it would be more consistent to do the same for locals
+
+1630171894
+andrewrk!~andrewrk@mail.ziglang.org
+let me see what that looks like
+
+1630171903
+ifreund!~ifreund@user/ifreund
+I don't understand that snippet, it wouldn't compile since it's ambiguous right?
+
+1630171964
+andrewrk!~andrewrk@mail.ziglang.org
+before I had it so that primitives get priority so the error was error: integer value 300 cannot be coerced to type 'u8'
+
+1630171977
+ifreund!~ifreund@user/ifreund
+ah, makes sense 
+
+1630171991
+andrewrk!~andrewrk@mail.ziglang.org
+but I think you're right, the natural next step in the design iteration is to make locals now consistent
+
+1630172024
+ifreund!~ifreund@user/ifreund
+and this special casing for `@"$primitive"` != $primitive is the alternative to introducing a @primitive() builtin I suppose
+
+1630172068
+ifreund!~ifreund@user/ifreund
+if we had some builtin to return the (implicitly always available) namespace holding all primitive types we could apply the standard decl shadowing rules
+
+1630172084
+ifreund!~ifreund@user/ifreund
+and that snippet wouldn't compile, requring either @This().u8 or @primitive().u8
+
+1630172133
+ifreund!~ifreund@user/ifreund
+that kind of solution feels a bit more "pure," but your approach with @"" feels more pragmatic
+
+1630172400
+andrewrk!~andrewrk@mail.ziglang.org
+until yesterday that was the accepted solution: @lang().u32
+
+1630172429
+andrewrk!~andrewrk@mail.ziglang.org
+but it's nice to have this premise: no matter the scope, you can always refer to primitives with the same syntax
+
+1630172519
+ifreund!~ifreund@user/ifreund
+andrewrk: that's a strong argument yeah, I'm happy with @"u8"
+
+1630172537
+andrewrk!~andrewrk@mail.ziglang.org
+side note: I think some keywords can be deleted from the language
+
+1630172575
+andrewrk!~andrewrk@mail.ziglang.org
+true, false, null, undefined
+
+1630172585
+andrewrk!~andrewrk@mail.ziglang.org
+anyframe has to stay because of anyframe->T syntax
+
+1630172586
+ifreund!~ifreund@user/ifreund
+anytype, anyframe?
+
+1630172592
+ifreund!~ifreund@user/ifreund
+ah yeah
+
+1630172600
+andrewrk!~andrewrk@mail.ziglang.org
+anytype is special parameter syntax, it does not actually act like a type
+
+1630172604
+ifreund!~ifreund@user/ifreund
+I don't think I've ever used that syntax myself
+
+1630172668
+ifreund!~ifreund@user/ifreund
+the anyframe->T I mean
+
+1630172711
+andrewrk!~andrewrk@mail.ziglang.org
+it lets you await any async function with the same return type
+
+1630172889
+andrewrk!~andrewrk@mail.ziglang.org
+ifreund, look ok? https://github.com/ziglang/zig/pull/9640
+
+1630173038
+andrewrk!~andrewrk@mail.ziglang.org
+one neat thing about this is that someone might get this error message, see the note, and then learn about the @"" feature, and then conclude that it works for keywords too
+
+1630173058
+andrewrk!~andrewrk@mail.ziglang.org
+without ever consulting the documentation
+
+1630173124
+ifreund!~ifreund@user/ifreund
+andrewrk: yeah looks good except the std.mem.spanZ() usage, std.mem.span() is all you need there. spanZ() is deprecated and replaced by std.mem.sliceTo()
+
+1630173161
+andrewrk!~andrewrk@mail.ziglang.org
+thanks!
+
+1630173200
+ifreund!~ifreund@user/ifreund
+no problem!
+
+1630173234
+ifreund!~ifreund@user/ifreund
+RE: the `return return;` issue, on further though shouldn't that be a compile error for unreachable code?
+
+1630173298
+ifreund!~ifreund@user/ifreund
+s/though/thought/
+
+1630173319
+andrewrk!~andrewrk@mail.ziglang.org
+hmm, so that would mean AstGen would check if the result of the return operand was noreturn, and if so, emit an unreachable code error
+
+1630173338
+andrewrk!~andrewrk@mail.ziglang.org
+can we think of any instances where this would happen and it would be a bad compile error?
+
+1630173339
+ifreund!~ifreund@user/ifreund
+not just for return either, break has the same issue
+
+1630173345
+andrewrk!~andrewrk@mail.ziglang.org
+agreed
+
+1630173367
+andrewrk!~andrewrk@mail.ziglang.org
+`return @panic()` would have the error, which I think is OK
+
+1630173380
+andrewrk!~andrewrk@mail.ziglang.org
+`return panic()` would not (because AstGen does not know return types of functions)
+
+1630173431
+ifreund!~ifreund@user/ifreund
+don't we give an unreachable code error during semantic analysis for stuff like this already?
+
+1630173480
+andrewrk!~andrewrk@mail.ziglang.org
+I'm pretty sure unreachable code errors must be done in AstGen
+
+1630173501
+ifreund!~ifreund@user/ifreund
+ah yeah you're righ
+
+1630173526
+andrewrk!~andrewrk@mail.ziglang.org
+ironic right? that the place with less information is actually more useful in some ways
+
+1630173541
+ifreund!~ifreund@user/ifreund
+conditional compilation makes things hard
+
+1630173555
+andrewrk!~andrewrk@mail.ziglang.org
+yeah I suppose it's the fact that Sema essentially deletes code
+
+1630173583
+andrewrk!~andrewrk@mail.ziglang.org
+so in a way AstGen/Sema each have *different* information, not strictly more or less
+
+1630173641
+ifreund!~ifreund@user/ifreund
+right
+
+1630173680
+andrewrk!~andrewrk@mail.ziglang.org
+anyway I think you're right, instead of zig fmt canonicalizing it, it should be an unreachable code error
+
+1630173707
+ifreund!~ifreund@user/ifreund
+I think I'll implement that real quick instead of studying for this exam :D
+
+1630173710
+andrewrk!~andrewrk@mail.ziglang.org
+we're also missing in AstGen checking for unreachable code when all switch prongs end with noreturn, or both if branches end with noreturn
+
+1630173887
+andrewrk!~andrewrk@mail.ziglang.org
+ifreund, don't forget to allow `unreachable` in unreachable code paths :D
+
+1630173936
+ifreund!~ifreund@user/ifreund
+good point, we've already got some infrastructure for this in place it seems
+
+1630173970
+andrewrk!~andrewrk@mail.ziglang.org
+also here's a really fun part: if stage1 errors get in your way (e.g. if it implements unreachable code wrong) you can just delete them from stage1 since AstGen.zig will report the error!
+
+1630174126
+ifreund!~ifreund@user/ifreund
+:D
+
+1630180014
+andrewrk!~andrewrk@mail.ziglang.org
+language change announcement: `true`, `false`, `null`, and `undefined` are no longer keywords. They're now normal primitives such as `void`, or `u64`.
+
+1630180064
+ifreund!~ifreund@user/ifreund
+\o/
+
+1630180098
+ifreund!~ifreund@user/ifreund
+by the way, I can't figure out how to run the stage1 compile error tests using a stage1 binary built from cmake
+
+1630180114
+ifreund!~ifreund@user/ifreund
+building stage1 with my system llvm from the build.zig fails for whatever reason
+
+1630180131
+ifreund!~ifreund@user/ifreund
+it's fine though, I'll just test manually and lean on the CI a bit
+
+1630180148
+andrewrk!~andrewrk@mail.ziglang.org
+ifreund, oh, I moved all the compile error tests over to the stage2 test harness
+
+1630180168
+andrewrk!~andrewrk@mail.ziglang.org
+sorry for the mess, it's `./zig build test-stage2` to run the compile error tests (including for stage1)
+
+1630180232
+ifreund!~ifreund@user/ifreund
+oh really?
+
+1630180234
+ifreund!~ifreund@user/ifreund
+ok 
+
+1630180237
+andrewrk!~andrewrk@mail.ziglang.org
+upshot though is that it will run them all and report all the errors instead of crashing on the first one
+
+1630186106
+ifreund!~ifreund@user/ifreund
+andrewrk: I think we need a much more generic approach for #9630, see the comment there :/
+
+1630186116
+andrewrk!~andrewrk@mail.ziglang.org
+just read that comment
+
+1630186142
+andrewrk!~andrewrk@mail.ziglang.org
+btw check out GenZir.endsWithNoReturn
+
+1630186176
+andrewrk!~andrewrk@mail.ziglang.org
+refIsNoReturn has a doc comment TODO all uses of this should be replaced with uses of `endsWithNoReturn`.
+
+1630186274
+andrewrk!~andrewrk@mail.ziglang.org
+so I guess we would introduce returningExpr() or something like that which calls expr() and then emits the error if the result is noreturn?
+
+1630186575
+ifreund!~ifreund@user/ifreund
+andrewrk: endsWithNoReturn didn't handle `return @panic("")` correctly :/
+
+1630186603
+ifreund!~ifreund@user/ifreund
+there was some kind of (needless) coercion ZIR after the panic instruction I believe
+
+1630186618
+andrewrk!~andrewrk@mail.ziglang.org
+ah
+
+1630186639
+andrewrk!~andrewrk@mail.ziglang.org
+well that coercion shouldn't have been added
+
+1630186659
+andrewrk!~andrewrk@mail.ziglang.org
+probably missing a call to endsWithNoReturn before adding the coercion :D
+
+1630186697
+ifreund!~ifreund@user/ifreund
+andrewrk: I'm pretty sure we want to do this check for literally every call to expr()
+
+1630187189
+ifreund!~ifreund@user/ifreund
+andrewrk: fixed the unecessary coercion (indeed a missing endsWithNoReturn() call) but I'm not sure how to add a test case
+
+1630187245
+andrewrk!~andrewrk@mail.ziglang.org
+we can get coverage eventually with the unreachable code errors 
+
+1630187731
+bgiannan!~bgiannan@89-159-99-157.rev.numericable.fr
+is there a constant for i64 max value?
+
+1630187784
+ifreund!~ifreund@user/ifreund
+bgiannan: std.math.maxInt(i64);
+
+1630187801
+bgiannan!~bgiannan@89-159-99-157.rev.numericable.fr
+thx
+
+1630188808
+bgiannan!~bgiannan@89-159-99-157.rev.numericable.fr
+did iterator of an hashmap changed again? i'm getting a 'error: type '?std.hash_map.Entry' does not support field access' error when doing "for (map) |kv| { something with kv.value }"
+
+1630188835
+bgiannan!~bgiannan@89-159-99-157.rev.numericable.fr
+i tried kv.?.value, same error
+
+1630189058
+ifreund!~ifreund@user/ifreund
+bblack: I'm confused, are you using hash_map.iterator()? that doesn't work with zig's for loop but rather the while loop
+
+1630189065
+ifreund!~ifreund@user/ifreund
+the for loop only works with slices
+
+1630189077
+ifreund!~ifreund@user/ifreund
+https://github.com/ziglang/zig/blob/05cf44933d753f7a5a53ab289ea60fd43761de57/lib/std/hash_map.zig#L1477-L1480
+
+1630189082
+ifreund!~ifreund@user/ifreund
+^ iteration example
+
+1630189210
+bgiannan!~bgiannan@89-159-99-157.rev.numericable.fr
+just figured it out, yes, dumb mistake :)
+
+1630189641
+bgiannan!~bgiannan@89-159-99-157.rev.numericable.fr
+huh my program just died in start.zig
+
+1630189690
+bgiannan!~bgiannan@89-159-99-157.rev.numericable.fr
+http://sprunge.us/ghojtz
+
+1630189835
+bgiannan!~bgiannan@89-159-99-157.rev.numericable.fr
+zig_prob_stack... maybe a stack overflow, but how come i can't step into my program before it happenss
+
+1630189863
+andrewrk!~andrewrk@mail.ziglang.org
+hmm what target?
+
+1630189913
+bgiannan!~bgiannan@89-159-99-157.rev.numericable.fr
+macOS Big Sur i7
+
+1630190187
+andrewrk!~andrewrk@mail.ziglang.org
+is this some kind of nondeterminism? it was working before?
+
+1630190203
+bgiannan!~bgiannan@89-159-99-157.rev.numericable.fr
+andrewrk, found the issue: i have an [100000]Value array, apparently 1,000,000 is too much
+
+1630190216
+bgiannan!~bgiannan@89-159-99-157.rev.numericable.fr
+i lowered it and now it works
+
+1630190239
+andrewrk!~andrewrk@mail.ziglang.org
+ah I see, that was a stack overflow you were experiencing
+
+1630190246
+bgiannan!~bgiannan@89-159-99-157.rev.numericable.fr
+how come?
+
+1630190249
+andrewrk!~andrewrk@mail.ziglang.org
+the stack probe makes sure large arrays don't skip the guard page
+
+1630190253
+bgiannan!~bgiannan@89-159-99-157.rev.numericable.fr
+ah maybe doing: [_]Value { .{ .Null = null } } ** 100000
+
+1630190270
+andrewrk!~andrewrk@mail.ziglang.org
+oh was your array a global?
+
+1630190278
+bgiannan!~bgiannan@89-159-99-157.rev.numericable.fr
+no a struct field
+
+1630190285
+andrewrk!~andrewrk@mail.ziglang.org
+and you must have had the struct on the stack
+
+1630190308
+andrewrk!~andrewrk@mail.ziglang.org
+zig does not yet do math to give you a bigger stack; you always get 16 MiB currently
+
+1630190338
+bgiannan!~bgiannan@89-159-99-157.rev.numericable.fr
+so i could either use a smaller array or putting my struct on the heap?
+
+1630190341
+andrewrk!~andrewrk@mail.ziglang.org
+it's actually pretty tricky to detect the stack size for various reasons
+
+1630190345
+andrewrk!~andrewrk@mail.ziglang.org
+yes
+
+1630190361
+andrewrk!~andrewrk@mail.ziglang.org
+or make your struct a global if it makes sense
+
