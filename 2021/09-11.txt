@@ -1,0 +1,200 @@
+1631337998
+jasom!~aidenn@ip98-185-238-13.sb.sd.cox.net
+So on linux-x86_64 "zig cc" is generating executables with illegal instructions; I really don't know x86 asm, but gdb is showing it barfing on "ud1    0xc(%eax),%eax "
+
+1631338075
+jasom!~aidenn@ip98-185-238-13.sb.sd.cox.net
+This happens with multiple executables I've tried it on; clang -march=native doesn't have the same problem.
+
+1631338231
+buhman!sid411355@user/buhman
+jasom: are you sure it's not a "data" word incorrectly being decoded by objdump?
+
+1631338307
+jasom!~aidenn@ip98-185-238-13.sb.sd.cox.net
+buhman: not sure at all
+
+1631338329
+jasom!~aidenn@ip98-185-238-13.sb.sd.cox.net
+buhman: I do know that it is trying to execute this and causing an illegal instruction exception though
+
+1631338357
+jasom!~aidenn@ip98-185-238-13.sb.sd.cox.net
+buhman: also there is a jump to that address earlier in the function
+
+1631338538
+jasom!~aidenn@ip98-185-238-13.sb.sd.cox.net
+https://gist.github.com/jasom/5da586819c7d272a7cd9045235a4ad7c has soem information I collected
+
+1631338612
+jasom!~aidenn@ip98-185-238-13.sb.sd.cox.net
+Note the `jo     0x21259f <strhash+63>` which I assume is a jump instruction since it starts with a J and points to an address inside the same function?
+
+1631338692
+buhman!sid411355@user/buhman
+yeah, 0x21259f is almost certainly not an illegal instruction, but a data word
+
+1631338721
+buhman!sid411355@user/buhman
+(well, coincidentally also an illegal instruction, but not something that was intended to be executed as an instruction)
+
+1631338820
+jasom!~aidenn@ip98-185-238-13.sb.sd.cox.net
+I see it's after the ret and there doesn't seem to be any valid instructions in strhash from that point on
+
+1631338833
+jasom!~aidenn@ip98-185-238-13.sb.sd.cox.net
+(I pasted the entire assembly from the function)
+
+1631338869
+jasom!~aidenn@ip98-185-238-13.sb.sd.cox.net
+s/assembly/disassembly/ technically
+
+1631338928
+jasom!~aidenn@ip98-185-238-13.sb.sd.cox.net
+it happens with 0.8.1 and 0.9.0-dev
+
+1631339084
+jasom!~aidenn@ip98-185-238-13.sb.sd.cox.net
+https://github.com/mongrel2/mongrel2/blob/master/tools/lemon/lemon.c is where strhash comes from
+
+1631339107
+jasom!~aidenn@ip98-185-238-13.sb.sd.cox.net
+hmm, does "zig cc" trap to an illegal instruction on signed-integer overflow?
+
+1631339165
+jasom!~aidenn@ip98-185-238-13.sb.sd.cox.net
+because that function almost certainly overflows h
+
+1631339376
+jasom!~aidenn@ip98-185-238-13.sb.sd.cox.net
+hmm, maybe not on 64-bit; it shifts by less than 4 bits per character
+
+1631339493
+jasom!~aidenn@ip98-185-238-13.sb.sd.cox.net
+and it runs fine with clang -fsanitize-trap=signed-integer-overflow
+
+1631339541
+buhman!sid411355@user/buhman
+yeah, I'd think it's likelier that your code is invoking undefined behavior
+
+1631339545
+buhman!sid411355@user/buhman
+rather than this being a compiler bug
+
+1631339603
+buhman!sid411355@user/buhman
+jump tables as emitted by C compilers can similarly be made to jump to not-an-instruction.
+
+1631339990
+jasom!~aidenn@ip98-185-238-13.sb.sd.cox.net
+I was able to get clang to generate an illegal instruction by copying the parameters passed to zig cc1
+
+1631339999
+jasom!~aidenn@ip98-185-238-13.sb.sd.cox.net
+(I had to remove a bunch of ones it didn't recognize)
+
+1631340447
+jasom!~aidenn@ip98-185-238-13.sb.sd.cox.net
+I needed -fsanitize=signed-integer-overflow -fsanitize-trap=signed-integer-overflow
+
+1631340467
+jasom!~aidenn@ip98-185-238-13.sb.sd.cox.net
+ACTION wonders if the current lemon uses unsigned
+
+1631340490
+jasom!~aidenn@ip98-185-238-13.sb.sd.cox.net
+indeed it is fixed upstream, I'll pull it in.
+
+1631340964
+jasom!~aidenn@ip98-185-238-13.sb.sd.cox.net
+and it's working now
+
+1631340969
+jasom!~aidenn@ip98-185-238-13.sb.sd.cox.net
+thanks buhman 
+
+1631363212
+discipulus!~discipulu@user/discipulus
+ikskuh: I've submitted my draft pull request to explain zig test and containers https://github.com/ziglang/zig/pull/9737
+
+1631363952
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+i'll read it later )
+
+1631364475
+Nulo!~Nulo@user/nulo
+I find it funny how Zig defaults found that bug "accidentally" jasom 
+
+1631368816
+shimonaga!~shimonaga@user/shimonaga
+are function references always comptime only?
+
+1631369008
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+shimonaga: function pointers are runtime as long as the function can be fully runtime known
+
+1631369018
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+this means no comptime parameters or types that must be comptime known
+
+1631369971
+shimonaga!~shimonaga@user/shimonaga
+ikskuh, ok thanks.
+
+1631374093
+shimonaga!~shimonaga@user/shimonaga
+is there any way to resolve a type name into a type at runtime? the inverse @typeName(@TypeOf(x)) is possible. the other type reflection functions are comptime (@Type, @typeInfo)
+
+1631374423
+cepheus!~cepheus@user/cepheus
+are there any currently-maintained alternatives to comptime_hash_map?
+
+1631375420
+shimonaga!~shimonaga@user/shimonaga
+cepheus: std.hash_map.HashMap? I'm not familiar with comptime_hash_map so maybe I'm way off
+
+1631375739
+cepheus!~cepheus@user/cepheus
+as far as I'm aware it's not useable at comptime, which is a problem because my case builds an associative array at comptime for use at runtime
+
+1631376036
+shimonaga!~shimonaga@user/shimonaga
+ah
+
+1631377075
+cepheus!~cepheus@user/cepheus
+It turns out the actual changes i needed to make to fix my vendored comptime_hash_map were minimal
+
+1631377083
+cepheus!~cepheus@user/cepheus
+so i guess not really urgent
+
+1631377821
+cepheus!~cepheus@user/cepheus
+hmmm... if i wrap this block in `comptime {}` i get told "redundant comptime keyword in already comptime scope"
+
+1631378303
+cepheus!~cepheus@user/cepheus
+if i don't I get " cannot store runtime value in compile time variabl"
+
+1631384406
+andrewrk!~andrewrk@mail.ziglang.org
+https://www.youtube.com/watch?v=_Jlikdtm4OA Zig Showtime starting in 9 minutes
+
+1631391630
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+jasom: this is because zig cc uses ubsan, it inserts ud1 if theres undefined behavior
+
+1631391639
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+you can turn this off with -fno-sanatize=undefined
+
+1631391705
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+jasom: https://github.com/ziglang/zig/wiki/FAQ#why-do-i-get-illegal-instruction-when-using-with-zig-cc-to-build-c-code
+
+1631399878
+freshcoffee!~fresh@user/freshcoffee
+*sanitize
+
