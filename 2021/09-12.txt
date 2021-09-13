@@ -1,0 +1,592 @@
+1631440617
+LukeSkwkr!~LukeSkwkr@2a02:7aa0:1619::1364:fde8
+If we were to parse a JSON object containing a string with `std.json.parse` shouldn't we expect to have null terminated strings?
+
+1631440619
+LukeSkwkr!~LukeSkwkr@2a02:7aa0:1619::1364:fde8
+see: https://godbolt.org/z/Pn3cKq5ET
+
+1631441664
+noam!~noam@104.232.42.247
+LukeSkwkr: don't expect null termination unless a type explicitly states it provides it
+
+1631441680
+noam!~noam@104.232.42.247
+[]u8 <- do NOT assume null termination, [:0]u8 <- safe to assume null termination
+
+1631441906
+dutchie!~dutchie@user/dutchie
+wonder if it's worth adding sentinel-terminated support to the json parse code
+
+1631441930
+dutchie!~dutchie@user/dutchie
+instead of just always returning arraylist.toOwnedSlice()
+
+1631442488
+LukeSkwkr!~LukeSkwkr@2a02:7aa0:1619::1364:fde8
+noam: The parser does not like it though: 
+
+1631442490
+LukeSkwkr!~LukeSkwkr@2a02:7aa0:1619::1364:fde8
+```/opt/compiler-explorer/zig-master/lib/std/json.zig:1845:58: error: expected type '[:0]u8', found '[]u8'
+
+1631442491
+LukeSkwkr!~LukeSkwkr@2a02:7aa0:1619::1364:fde8
+                            return arraylist.toOwnedSlice();```
+
+1631442902
+dutchie!~dutchie@user/dutchie
+LukeSkwkr: right, that's what I was musing about adding
+
+1631442919
+dutchie!~dutchie@user/dutchie
+i guess you'll have to dupeZ it if you really need 0-termination
+
+1631442928
+dutchie!~dutchie@user/dutchie
+(or whichever utility it is)
+
+1631443017
+LukeSkwkr!~LukeSkwkr@2a02:7aa0:1619::1364:fde8
+dutchie: Yes that's what I am doing in the end but it's kind of sad...
+
+1631443056
+LukeSkwkr!~LukeSkwkr@2a02:7aa0:1619::1364:fde8
+So do you think it's worth opening a proposal?
+
+1631443078
+discipulus!~discipulu@user/discipulus
+Do strings need to be null-terminated?
+
+1631443431
+LukeSkwkr!~LukeSkwkr@2a02:7aa0:1619::1364:fde8
+discipulus: they are when you create them with a string literal so I assume this is the "normal" way of representing a string.
+
+1631443673
+discipulus!~discipulu@user/discipulus
+I see. So there's no established convension when an API returns a slice representing a string.
+
+1631443860
+LukeSkwkr!~LukeSkwkr@2a02:7aa0:1619::1364:fde8
+I am a zig newbie so there might be but I have no idea.
+
+1631444210
+discipulus!~discipulu@user/discipulus
+In the meantime, since you know json.parse returns a slice without a null, use the slice's length `foo.bar.len`. 
+
+1631444457
+LukeSkwkr!~LukeSkwkr@2a02:7aa0:1619::1364:fde8
+Yes dupeZ is my workaround.
+
+1631444629
+noam!~noam@104.232.42.247
+No, that's backwards
+
+1631444633
+noam!~noam@104.232.42.247
+The convention *is* slices
+
+1631444649
+noam!~noam@104.232.42.247
+Null termination is almost never used except when e.g. interfacing with C libraries
+
+1631444698
+noam!~noam@104.232.42.247
+String literals are null terminated because they're often used with external interfaces, IIRC
+
+1631444711
+noam!~noam@104.232.42.247
+It's not about "normal", it's about convenience
+
+1631444721
+noam!~noam@104.232.42.247
+LukeSkwkr: Why do you need null termination?
+
+1631444723
+noam!~noam@104.232.42.247
+buhman: 12
+
+1631444724
+noam!~noam@104.232.42.247
+...oops
+
+1631444738
+noam!~noam@104.232.42.247
+Sorry, autocomplete and the initial '/' was dropped *sweats*
+
+1631444784
+LukeSkwkr!~LukeSkwkr@2a02:7aa0:1619::1364:fde8
+  const bar: []u8 = "bar";
+
+1631444784
+LukeSkwkr!~LukeSkwkr@2a02:7aa0:1619::1364:fde8
+  std.debug.print("{}\n", .{ bar[3] });
+
+1631444788
+LukeSkwkr!~LukeSkwkr@2a02:7aa0:1619::1364:fde8
+This gets me 0
+
+1631444807
+LukeSkwkr!~LukeSkwkr@2a02:7aa0:1619::1364:fde8
+I just expect the json parser to produce the same when parsing a string.
+
+1631444866
+LukeSkwkr!~LukeSkwkr@2a02:7aa0:1619::1364:fde8
+noam: Yes I need a null terminated string because I use it on a C API. But I think it is beyond the point.
+
+1631445051
+discipulus!~discipulu@user/discipulus
+I think that's a compiler error. 
+
+1631445111
+noam!~noam@104.232.42.247
+LukeSkwkr: Zig APIs do not default to producing null-terminated strings
+
+1631445115
+noam!~noam@104.232.42.247
+That's a deliberate convention
+
+1631445149
+noam!~noam@104.232.42.247
+What might be possible is to e.g. have the JSON parser select whether to null terminate at comptime
+
+1631445159
+noam!~noam@104.232.42.247
+But I'm not sure that's even worthwhile vs just always null terminating
+
+1631445185
+discipulus!~discipulu@user/discipulus
+It's a good thing to discuss, because I was wondering what the convension is myself.
+
+1631445407
+discipulus!~discipulu@user/discipulus
+I think I've read about the reason noam gave about string literals are null terminated on ziglings? can't remember.
+
+1631445436
+LukeSkwkr!~LukeSkwkr@2a02:7aa0:1619::1364:fde8
+noam: But for consistency sake, shouldn't string literals produce the "conventional" format of a string then?
+
+1631445445
+noam!~noam@104.232.42.247
+They used to
+
+1631445449
+noam!~noam@104.232.42.247
+I think
+
+1631445464
+noam!~noam@104.232.42.247
+> String literals are null terminated because they're often used with external interfaces, IIRC
+
+1631445466
+LukeSkwkr!~LukeSkwkr@2a02:7aa0:1619::1364:fde8
+I don't discuss the convention, more the inconsistency between what the json parser produce and the string literal.
+
+1631445477
+noam!~noam@104.232.42.247
+Well, one is the compiler, the other is a library
+
+1631445486
+LukeSkwkr!~LukeSkwkr@2a02:7aa0:1619::1364:fde8
+standard library
+
+1631445511
+noam!~noam@104.232.42.247
+Sure, but I'm not sure if null termination of literals is even defined yet
+
+1631445516
+discipulus!~discipulu@user/discipulus
+noam: yes, that's what I was referring to. I think I saw that somewhere not the language reference.
+
+1631445536
+noam!~noam@104.232.42.247
+discipulus: that was just me directly quoting what I'd just said, as a response to LukeSkwkr  :P
+
+1631445544
+discipulus!~discipulu@user/discipulus
+got it
+
+1631445552
+noam!~noam@104.232.42.247
+LukeSkwkr: I do think that the convention needs to be discussed
+
+1631445568
+noam!~noam@104.232.42.247
+There's good arguments to be made for the stdlib null terminating everything even when it's not needed
+
+1631445570
+LukeSkwkr!~LukeSkwkr@2a02:7aa0:1619::1364:fde8
+noam: ok this I understand :)
+
+1631445579
+noam!~noam@104.232.42.247
+There's also arguments against it
+
+1631445585
+LukeSkwkr!~LukeSkwkr@2a02:7aa0:1619::1364:fde8
+Absolutely
+
+1631445591
+LukeSkwkr!~LukeSkwkr@2a02:7aa0:1619::1364:fde8
+But there should be consistency.
+
+1631445604
+LukeSkwkr!~LukeSkwkr@2a02:7aa0:1619::1364:fde8
+Null-terminated or not, personally I don't care
+
+1631445607
+noam!~noam@104.232.42.247
+It'd mean a design choice that exists solely for the sake of C
+
+1631445616
+noam!~noam@104.232.42.247
+Well - external interfacing, rather
+
+1631445627
+noam!~noam@104.232.42.247
+Almost every language other than Zig requires null termination for everything
+
+1631445653
+noam!~noam@104.232.42.247
+Personally, I think not terminating is the right approach
+
+1631446096
+LukeSkwkr!~LukeSkwkr@2a02:7aa0:1619::1364:fde8
+created https://github.com/ziglang/zig/issues/9743
+
+1631446405
+daurnimator!~daurnimat@vultr.daurnimator.com
+LukeSkwkr: zig only relatively recently started null terminating literals; which was (IMO) a bad choice
+
+1631446414
+daurnimator!~daurnimat@vultr.daurnimator.com
+but it was done for better C interop
+
+1631446441
+daurnimator!~daurnimat@vultr.daurnimator.com
+I don't think we should encourage 0-terminated outside of interop
+
+1631446537
+Flaminator!~Flaminato@ns323457.ip-5-39-76.eu
+Yeah it made strings somewhat more complicated than it used to be before.
+
+1631446557
+LukeSkwkr!~LukeSkwkr@2a02:7aa0:1619::1364:fde8
+durnimator: I don't discuss that fact, and you are probably right. I am just discussing the inconsistencies.
+
+1631446602
+discipulus!~discipulu@user/discipulus
+LukeSkwkr: the second example in the issue doesn't compile. `const bar: []u8 = "bar";`
+
+1631446682
+LukeSkwkr!~LukeSkwkr@2a02:7aa0:1619::1364:fde8
+discipulus: fixed
+
+1631447101
+discipulus!~discipulu@user/discipulus
+If this is the way now, the issue needs better documentation to make clear difference between string literals (null-terminated arrays), slices, null-terminated slices, etc. Plus the convention to use in APIs. 
+
+1631447179
+discipulus!~discipulu@user/discipulus
+Should the issue be marked docs?
+
+1631454148
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+nosuspend with an await implies that the frame is finished, so whats the point of the await keyword there?
+
+1631454234
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+lol durnimator
+
+1631461885
+kprotty[m]!~kprotty@2001:470:69fc:105::834
+elloes
+
+1631461951
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+bonjour
+
+1631461966
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+now let me reask now that ur here: nosuspend with an await implies that the frame is finished, so whats the point of the await keyword there?
+
+1631461974
+kprotty[m]!~kprotty@2001:470:69fc:105::834
+haze: to get the frame result. You can also use `nosuspend {}` with a block. I think something in debug does that
+
+1631461997
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+ah ok
+
+1631462027
+kprotty[m]!~kprotty@2001:470:69fc:105::834
+dw, im rocking irc history now with element matrix bridge
+
+1631462345
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+also, do you have those results of the async io strategies you used, like kqueue per thread & etc
+
+1631462419
+kprotty[m]!~kprotty@2001:470:69fc:105::834
+check this & the revisions: https://gist.github.com/kprotty/5a41e9612657de00788478a7dde43d78
+
+1631462433
+cepheus!~cepheus@user/cepheus
+Is it known/intended that the Zig grammer doesn't permit `comptime var` in a struct field context?
+
+1631462451
+cepheus!~cepheus@user/cepheus
+grammar, rather
+
+1631462462
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+y
+
+1631462464
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+ty&*
+
+1631462467
+cepheus!~cepheus@user/cepheus
+and container field is probably more correct
+
+1631462476
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+comptime does not have mutable state
+
+1631462478
+cepheus!~cepheus@user/cepheus
+there's an issue here https://github.com/ziglang/zig/issues/9499 but it was closed without comment
+
+1631462507
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+that would break a lot of things
+
+1631462545
+cepheus!~cepheus@user/cepheus
+That's good to know. per my earlier post i was refactoring what was in 0.8.1 a comptime block that returned a function
+
+1631462602
+cepheus!~cepheus@user/cepheus
+as the lexical analysis was telling me that it was an unnecessary use of comptime
+
+1631462613
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+it was
+
+1631462615
+cepheus!~cepheus@user/cepheus
+I've just turned that into a comptime function now
+
+1631462625
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+everything in top level is comptime
+
+1631462646
+cepheus!~cepheus@user/cepheus
+*returned a value
+
+1631462677
+cepheus!~cepheus@user/cepheus
+but just using `var` at the container level gave me an error that the value wasn't known at comptime
+
+1631462691
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+yeah, everything in top level has to be comptime resolved
+
+1631462759
+cepheus!~cepheus@user/cepheus
+so this approach of using a function with a comptime var works for me
+
+1631462769
+cepheus!~cepheus@user/cepheus
+this is my problem with coming back to zig fitfully, haha
+
+1631462971
+cepheus!~cepheus@user/cepheus
+ftr, I assume that "mutable state" here means "global mutable state"
+
+1631462985
+cepheus!~cepheus@user/cepheus
+since well, `comptime var` does exist
+
+1631465069
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+kprotty[m] did you really have to link to what TBH means??
+
+1631465071
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+its 2021 bra
+
+1631466851
+kprotty[m]!~kprotty@2001:470:69fc:105::834
+haze: the main people who care bout thread pool design are probably very old
+
+1631466883
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+makes sense since i didnt know what spurious meant
+
+1631468640
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+kprotty[m] doesnt that epoll per thread use cpuCount + 1 threads?
+
+1631468652
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+since the main thread is accepting the connections
+
+1631468729
+kprotty[m]!~kprotty@2001:470:69fc:105::834
+which one are you looking at? the one in the gists uses cpuCount/2 and the thread "accepting connections" changes round robin 
+
+1631468759
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+ooo thats crazy
+
+1631468764
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+i dont have my glasses on
+
+1631468777
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+but why divide by 2 then
+
+1631468810
+kprotty[m]!~kprotty@2001:470:69fc:105::834
+correction, it doesn't change round robin - the 0 epoll-runner thread always accepts connections but it also processes other tasks
+
+1631468836
+kprotty[m]!~kprotty@2001:470:69fc:105::834
+divide by 2 because `wrk` the benchmarking tool uses the other cores on the system
+
+1631468864
+kprotty[m]!~kprotty@2001:470:69fc:105::834
+see the `-t6` param given my Ryzen 5 2600 (6c 12t)
+
+1631469038
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+ook
+
+1631469043
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+i thought you were running from another machine
+
+1631469182
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+i think your content would reach more audiences if you made tiktoks accompanying the explanations
+
+1631475124
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+kprotty[m] am i correct in understanding that the main thread flip flops between accepting connections and checking epoll?
+
+1631479748
+skfax!~skfax@ti0006q161-0140.bb.online.no
+Hi! I'm having trouble linking with libc when building for a wasm32 target with zig 0.8.1. The error I receive is the same as here: https://github.com/ziglang/zig/issues/8886 - It would be very helpful with a clue on what to change in my build file: https://pastebin.com/3uUemTv7 :-)
+
+1631480658
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+skfax try updating to zig master
+
+1631480909
+skfax!~skfax@ti0006q161-0140.bb.online.no
+haze: Thanks! That seemed to fix it.
+
+1631480926
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+yeeesss
+
+1631480950
+skfax!~skfax@ti0006q161-0140.bb.online.no
+0.8.1 just looked so fresh ^ ^
+
+1631480991
+haze!~haze@cpe-68-174-134-17.nyc.res.rr.com
+master is even fresher
+
+1631480995
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+freshhhhh
+
+1631481367
+Tekk!~tekk@194.110.112.10
+Hey, I'm just trying out zig real quick. Following the C example in the tutorial for 0.8.1 I tried a file with "const xlib = @cImport(@cInclude("X11/Xlib.h"));" Trying to zig build results in this: https://dpaste.com/3LWA3CEWL
+
+1631481391
+Tekk!~tekk@194.110.112.10
+Do you need to do anything special after grabbing the default binary distribution to be able to use C headers?
+
+1631481447
+Tekk!~tekk@194.110.112.10
+Xlib.h is just in /usr/include, so nothing special. Do I still have to explicitly specify my C include path?
+
+1631481503
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+what is your build cmd/build.zig?
+
+1631481663
+Tekk!~tekk@194.110.112.10
+Unchanged after zig init-bin. One second though.
+
+1631481684
+Tekk!~tekk@194.110.112.10
+The error disappeared when I commented out all the code that used the include, so something else is up. Trying to get something minimal
+
+1631481729
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+no, only the code that uses the include will cause it to be analyzed
+
+1631481778
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+you probably want to use exe.linkSystemLibrary("x11");
+
+1631481857
+Tekk!~tekk@194.110.112.10
+That did it. Kind of a weird error message but it makes sense c:
+
+1631481859
+Tekk!~tekk@194.110.112.10
+Thanks g-w1 
+
+1631481867
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+the same thing would happen with c
+
+1631481887
+Tekk!~tekk@194.110.112.10
+Not having -lX11 wouldn't usually make the compiler go "X11/Xlib.h doesn't exist"
+
+1631481897
+Tekk!~tekk@194.110.112.10
+Which is at least how I took the error message
+
+1631481901
+g-w1!~g-w1@pool-96-232-174-225.nycmny.fios.verizon.net
+ah I see
+
+1631482585
+Tekk!~tekk@194.110.112.10
+Except now it segfaults when opening a display. Weird. https://dpaste.com/9DXJUH7AV
+
+1631482650
+Tekk!~tekk@194.110.112.10
+I initially thought that the segfault was coming from zig trying to do checks on me passing 0x0 to XOpenDisplay but it happens with the string there too
+
+1631482772
+Tekk!~tekk@194.110.112.10
+I don't think it's a problem with build.zig since I get the same results with "zig build-exe main.zig -lX11"
+
+1631482806
+Tekk!~tekk@194.110.112.10
+Ah, my bad. adding -lpthread fixed it
+
+1631483785
+skfax!~skfax@ti0006q161-0140.bb.online.no
+When building for wasm32 (zig master release) with linkSystemLibrary("c") I end up with memcpy and memset as imported functions, as described here: https://github.com/ziglang/zig/issues/6517 - Do I need to change my build script to fix this? https://pastebin.com/3uUemTv7
+
+1631488043
+Nulo!~Nulo@user/nulo
+How can I make Zig print debug messages on failing tests?
+
+1631488049
+Nulo!~Nulo@user/nulo
+Or just in general when running tests?
+
