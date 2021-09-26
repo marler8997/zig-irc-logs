@@ -1,0 +1,304 @@
+1632543369
+daurnimator!~daurnimat@vultr.daurnimator.com
+bgiannan: so a project I've been thinking about for a while with zig is a extern-emitter of sorts: it would (at comptime), introspect itself for public definitions; then when the resulting program is ran: emit its own "zig header"
+
+1632543384
+daurnimator!~daurnimat@vultr.daurnimator.com
+I've been waiting for a relevant project to come long to use it...
+
+1632543411
+daurnimator!~daurnimat@vultr.daurnimator.com
+s/write/
+
+1632543413
+daurnimator!~daurnimat@vultr.daurnimator.com
+s/use/write.
+
+1632550962
+bgiannan!giann@2a01:4f8:141:1272::2
+daurnimator, emit zig headers when the program is ran?
+
+1632550996
+bgiannan!giann@2a01:4f8:141:1272::2
+shouldn't it be a zig build option?
+
+1632555534
+mountaingoat!~mountaing@user/mountaingoat
+is there a way to introspect on a function arg names at comptime? i know you can get types, etc. but i don't see a name in std.builtin.TypeInfo.FnArg
+
+1632562738
+discipulus!~discipulu@user/discipulus
+mountaingoat: maybe you can get it from FnDecl which means going through a container's function declarations
+
+1632563177
+flux_control!~flux@sourcemage/wizard/flux
+mountaingoat: Are you using @TypeOf?
+
+1632563196
+flux_control!~flux@sourcemage/wizard/flux
+Sorry, I meant @TypeInfo
+
+1632563596
+daurnimator!~daurnimat@vultr.daurnimator.com
+bgiannan: there's no way to emit something at compile time (aside from @compileLog)
+
+1632563639
+daurnimator!~daurnimat@vultr.daurnimator.com
+bgiannan: but I also thing that it's a cool idea for shared library so include its own headers; so that if you run e.g. `/usr/lib/mylib.so --emit-h` it actually emits its own definitions
+
+1632563655
+daurnimator!~daurnimat@vultr.daurnimator.com
+likewise e.g. `/usr/lib/mylib.so --emit-zig-definitions`
+
+1632563726
+flux_control!~flux@sourcemage/wizard/flux
+mountaingoat: Are you trying to get the name of the type or the name of the variable itself?
+
+1632563735
+mountaingoat!~mountaing@user/mountaingoat
+flux_control: @typeInfo(@TypeOf(func))
+
+1632563756
+mountaingoat!~mountaing@user/mountaingoat
+name of the func args
+
+1632563916
+mountaingoat!~mountaing@user/mountaingoat
+discipulus: i'll have to look into that, i do see decls in Struct
+
+1632564181
+mountaingoat!~mountaing@user/mountaingoat
+discipulus: ok yeah, @typeInfo(my_type).Struct.decls[N].data.Fn.arg_names has it (and .Fn.fn_type has the function type). it looks like a function pointer type will erase the arg names though, but i suppose that's to be expected
+
+1632564541
+discipulus!~discipulu@user/discipulus
+I'm trying it now, but arg_names.len is returning 0 for a two argument function. Have you gotten it to work?
+
+1632564821
+mountaingoat!~mountaing@user/mountaingoat
+yeah
+
+1632564833
+mountaingoat!~mountaing@user/mountaingoat
+one sec
+
+1632564946
+discipulus!~discipulu@user/discipulus
+mountaingoat: there's an open issue for what I just tried. seems not possible right now. https://github.com/ziglang/zig/issues/7317
+
+1632565358
+mountaingoat!~mountaing@user/mountaingoat
+weird, it works in my complicated setup but i can't make a simple example of it on godbolt
+
+1632565427
+flux_control!~flux@sourcemage/wizard/flux
+mountaingoat: If you have a function that you call as bar(foo), @typeInfo(foo).Struct should only work if foo is a Struct. If it is, you can access the names of the fields of that struct type, but I don't think there's a way to get the name "foo" itself.
+
+1632565432
+discipulus!~discipulu@user/discipulus
+that's great
+
+1632565563
+flux_control!~flux@sourcemage/wizard/flux
+mountaingoat: Are you trying to find the names of the vars the function was defined/declared with? I thought you were trying to introspect the variable name passed in when the function was called.
+
+1632565607
+discipulus!~discipulu@user/discipulus
+flux_control:  parameters vs arguments, right?
+
+1632565870
+flux_control!~flux@sourcemage/wizard/flux
+discipulus: In my understanding (which may be wrong), FnDecl.arg_names would only work on the function declaration itself, which is only the names of parameters. Does this also work on function calls and actual args?
+
+1632566138
+mountaingoat!~mountaing@user/mountaingoat
+flux_control: my application is a bit flexible, i can pass in either the function or the container containing the function and introspect its decls
+
+1632566290
+flux_control!~flux@sourcemage/wizard/flux
+mountaingoat: But that would still give you the declaration names, not the call names, right? I.e., fn foo(some_param: anytype) vs. foo(bar), you could get the decl name "some_param", but not the arg name "bar" in the called function, right?
+
+1632566646
+discipulus!~discipulu@user/discipulus
+flux_control: You had the right original thought based on the nomenclature being used: "arguments". It seems zig is using "arguments", in this context, to mean "parameters" as you stated. 
+
+1632566661
+mountaingoat!~mountaing@user/mountaingoat
+here's an example of it working https://godbolt.org/z/cWvabjjaG
+
+1632566703
+discipulus!~discipulu@user/discipulus
+context being FnDecl
+
+1632566746
+mountaingoat!~mountaing@user/mountaingoat
+it's extremely sensitive though. you need to call the function or else the names are unavailable. it seems to only work from the inner context with @This() and not from an outer context e.g. introspect(Foo). etc.
+
+1632566788
+mountaingoat!~mountaing@user/mountaingoat
+flux_control: yeah i'm just looking for the declaration names
+
+1632567017
+mountaingoat!~mountaing@user/mountaingoat
+as for arguments vs parameters, i've seen those used interchangeably across different languages so i don't attach a semantic difference to them. but i see now flux_control was asking about caller args vs declared args. didn't follow that
+
+1632567068
+discipulus!~discipulu@user/discipulus
+that's great you found a working solution mountaingoat
+
+1632567112
+mountaingoat!~mountaing@user/mountaingoat
+i don't know if it's great discipulus, it's very nuanced and took way too long and was frustrating :)
+
+1632567125
+ifreund!~ifreund@user/ifreund
+to be clear, the fact that it's so sensitive is a bug/limitation of the stage1 compiler
+
+1632567306
+mountaingoat!~mountaing@user/mountaingoat
+that's fair, i've come to expect that the edges of comptime are a bit rough and will probably be cleaned up in the future
+
+1632581499
+bw!sid2730@user/betawaffle
+i'm trying to wrap a C library, cleaning up what @cImport produces, and i'm wondering what do do with this: https://gist.github.com/betawaffle/61b5d48f0bd3494e7d8debe5b83fc11e. what is the purpose of wrapping an unnamed union in a struct?
+
+1632581528
+bw!sid2730@user/betawaffle
+i could understand if `ibv_flow_spec` had other fields, but it doesn't
+
+1632582836
+g-w1!g-w1@2600:3c03::f03c:92ff:fe2f:c92f
+that is weird
+
+1632583294
+jcmoyer!~jcmoyer@user/jcmoyer
+maybe it's just so ibv_flow_spec has the struct tag for consistency with the other ibv_flow_spec_* types
+
+1632586924
+koakuma!~koakuma@user/koakuma
+I've a question: what Zig-supported architecture uses __multi3 for 128-bit multiplication (other than SPARC)?
+
+1632586925
+koakuma!~koakuma@user/koakuma
+I want to check something - might have found a bug related to how the argument for it is prepared
+
+1632586925
+koakuma!~koakuma@user/koakuma
+Case in point: https://godbolt.org/z/vhMnszPsh - the code does unsigned multiplication
+
+1632586925
+koakuma!~koakuma@user/koakuma
+But the generated assembly does a sign extension (lines 8-9) when preparing the arguments for __multi3
+
+1632586925
+koakuma!~koakuma@user/koakuma
+It should've put a zero in those places instead, no?
+
+1632587110
+koakuma!~koakuma@user/koakuma
+Manually doing a cast like `@as(u128, a) * @as(u128, b)` seems to work tho
+
+1632587115
+koakuma!~koakuma@user/koakuma
+Or is this the intended behavior?
+
+1632603236
+Daimanta!~Daimanta@86-85-205-212.fixed.kpn.net
+Hi! I´m wondering if there is already a way to format timestamps as date-times, perhaps even keeping timezone into consideration?
+
+1632605176
+freshcoffee!~fresh@user/freshcoffee
+koakuma: that is just weird. shouldn't it be `mov 0, %o0` and `mov 0, %o2` ?
+
+1632610950
+koakuma!~koakuma@user/koakuma
+freshcoffee: Yes, I also think so
+
+1632610951
+koakuma!~koakuma@user/koakuma
+In arches that does not use __multi3, the multiplication is performed as unsigned
+
+1632611072
+freshcoffee!~fresh@user/freshcoffee
+I duped multi3.zig to see what it would do with an explicit call. Here's the source if you're interested. It does indeed put 0 values into first 4 bytes.
+
+1632611075
+freshcoffee!~fresh@user/freshcoffee
+https://zigbin.io/e99873
+
+1632611162
+freshcoffee!~fresh@user/freshcoffee
+maybe there's a lowering problem with llvm code
+
+1632611179
+freshcoffee!~fresh@user/freshcoffee
+i mean the .ll looks ok but lowering to sparcv9 .s
+
+1632611483
+freshcoffee!~fresh@user/freshcoffee
+https://github.com/llvm/llvm-project/blob/d23fd8ae8906866244482ee623288a657b6c5e9a/llvm/lib/Target/Sparc/SparcISelLowering.cpp#L2959-L2962
+
+1632611629
+koakuma!~koakuma@user/koakuma
+Oh yeah that looks weird
+
+1632611644
+koakuma!~koakuma@user/koakuma
+If it's unsigned then it shouldn't do the shifting?
+
+1632611778
+freshcoffee!~fresh@user/freshcoffee
+I guess it passes any tests as long as < 0x8000_0000_000_000
+
+1632611791
+freshcoffee!~fresh@user/freshcoffee
+0x8000_0000_0000_0000
+
+1632611846
+freshcoffee!~fresh@user/freshcoffee
+can't find any related llvm bug report either
+
+1632612821
+koakuma!~koakuma@user/koakuma
+Mhm, I'll try to send a patch then. Thanks for the help, freshcoffee!
+
+1632612826
+freshcoffee!~fresh@user/freshcoffee
+https://godbolt.org/z/j1K948s4v
+
+1632612939
+freshcoffee!~fresh@user/freshcoffee
+it looks like clang is doing something different than zig -- zext and using mul instead of calling llvm builtin explicitly?
+
+1632613171
+koakuma!~koakuma@user/koakuma
+It's because the values are force-casted into u128 before multiplying
+
+1632613258
+koakuma!~koakuma@user/koakuma
+Zig version will also generate a similar code if you do that - https://godbolt.org/z/a486zvGo4
+
+1632613281
+freshcoffee!~fresh@user/freshcoffee
+https://godbolt.org/z/GrcE7PYdb
+
+1632613356
+koakuma!~koakuma@user/koakuma
+Ah, I think I know
+
+1632613371
+koakuma!~koakuma@user/koakuma
+The problematic part is overflow-checked 64-bit multiplication
+
+1632613426
+freshcoffee!~fresh@user/freshcoffee
+ah yeah that explains clangs different path
+
+1632613486
+koakuma!~koakuma@user/koakuma
+https://godbolt.org/z/xfzbG5roc - this one reproducing it in clang
+
+1632613532
+freshcoffee!~fresh@user/freshcoffee
+oh nice you got srax showing up there too
+
