@@ -1,0 +1,244 @@
+1633133009
+andrewrk!~andrewrk@mail.ziglang.org
+marler8997, I wonder why the auto-generated dev kits are so big. the one I made by hand last time was ~127 MiB but the artifact is something like 800 
+
+1633133401
+marler8997!~marler899@204.229.3.4
+is that uncompressed?
+
+1633133568
+andrewrk!~andrewrk@mail.ziglang.org
+it looks like it's using a github actions feature for artifacts and github actions is creating a zip file
+
+1633133576
+andrewrk!~andrewrk@mail.ziglang.org
+but maybe the script should create the zip file directly and upload only that
+
+1633133614
+andrewrk!~andrewrk@mail.ziglang.org
+because github actions says "warning, over 10,000 files, consider making a zip before uploading"
+
+1633133618
+marler8997!~marler899@204.229.3.4
+I did that initially, but when you download it, github will always wrap it in a zip file, so you end up with a doubl ezip file
+
+1633133634
+marler8997!~marler899@204.229.3.4
+it's 143 MB compressed,  it dynamically compresses it when you download it
+
+1633133678
+marler8997!~marler899@204.229.3.4
+there's a github issue talking about github actions supporting zip files without recompressing them, but we could still do that and manually decompress it before uploading it
+
+1633133680
+andrewrk!~andrewrk@mail.ziglang.org
+ahhh I see, so they're telling you the uncompressed size
+
+1633133704
+andrewrk!~andrewrk@mail.ziglang.org
+I think it's fine to leave as is
+
+1633133862
+marler8997!~marler899@204.229.3.4
+yup
+
+1633134355
+andrewrk!~andrewrk@mail.ziglang.org
+alright, llvm13 branch has all tarballs updated. NetBSD is disabled since it actually isn't supported yet in zig-bootstrap
+
+1633134363
+andrewrk!~andrewrk@mail.ziglang.org
+hopefully this CI run passes
+
+1633134456
+freshcoffee!~fresh@user/freshcoffee
+I got some funky std:errc missing thing on netbsd 9.2 - and I think it's a libstdc++ old version so using newer gcc from pkgs doesn't help
+
+1633134535
+freshcoffee!~fresh@user/freshcoffee
+std::errc:state_not_recoverable
+
+1633134623
+andrewrk!~andrewrk@mail.ziglang.org
+yeah I ran into that 
+
+1633134672
+andrewrk!~andrewrk@mail.ziglang.org
+it might be a bit early in the game for netbsd support
+
+1633138024
+andrewrk!~andrewrk@mail.ziglang.org
+why might I be getting "libcxx/src/barrier.cpp:37:43: error: aligned allocation function of type 'void *(std::size_t, std::align_val_t)' is only available on macOS 10.14 or newer" ? this is happening on macOS 10.15
+
+1633138157
+andrewrk!~andrewrk@mail.ziglang.org
+nvm I figured it out
+
+1633138164
+andrewrk!~andrewrk@mail.ziglang.org
+-faligned-allocation is a required flag of libcxx
+
+1633138189
+leeward!~Ashes@c-76-19-143-101.hsd1.ma.comcast.net
+That error message is not a good way to convey "you forgot a flag."
+
+1633138382
+andrewrk!~andrewrk@mail.ziglang.org
+agreed
+
+1633140384
+andrewrk!~andrewrk@mail.ziglang.org
+damn, I'm seeing a std lib test failure on aarch64-linux in the llvm13 branch, with no error message
+
+1633140764
+freshcoffee!~fresh@user/freshcoffee
+is it "test-2" that failed? that's prob the one with largest MAXRSS -- "test-std"
+
+1633140802
+freshcoffee!~fresh@user/freshcoffee
+also I can fuzzy-logic rule out cavium - step-1 completed far too fast to be a cavium box
+
+1633142371
+freshcoffee!~fresh@user/freshcoffee
+I'm on drone.io going to try and see the failing test
+
+1633142417
+freshcoffee!~fresh@user/freshcoffee
+--> Test [354/2001] bit_set.test "std-native-ReleaseFast-bare-multi ArrayBitSet"... FAIL (TestExpectedEqual)
+
+1633148385
+freshcoffee!~fresh@user/freshcoffee
+andrewrk: #9879
+
+1633153855
+andrewrk!~andrewrk@mail.ziglang.org
+freshcoffee, thank you!
+
+1633187279
+freshcoffee!~fresh@user/freshcoffee
+blah. llvm13 (clang) has introduced reliance on std::errc::state_not_recoverable (and possibly a few other enum members)
+
+1633187315
+freshcoffee!~fresh@user/freshcoffee
+and libstdc++ relies on system errno.h having ENOTRECOVERABLE for the scalar value
+
+1633187337
+freshcoffee!~fresh@user/freshcoffee
+which nerfs netbsd and dragonfly when building llvm+clang
+
+1633187358
+freshcoffee!~fresh@user/freshcoffee
+libc++ gets around it by "hey if system doesn't have it, we define it"
+
+1633204006
+andrewrk!~andrewrk@mail.ziglang.org
+marler8997, hmm looks like people who are not logged into github cannot download the zig-bootstrap artifacts
+
+1633204052
+andrewrk!~andrewrk@mail.ziglang.org
+also the zip file is not compatible with many zip programs
+
+1633204067
+andrewrk!~andrewrk@mail.ziglang.org
+I think we probably want to make our own zip before uploading it and we also need to figure out how to make it public
+
+1633207034
+marler8997!~marler899@204.229.3.4
+andrewrk, yes the artifacts are only temporary.  You'll want to download the zip file, then re-upload to a "release" as an asset
+
+1633207069
+andrewrk!~andrewrk@mail.ziglang.org
+I see
+
+1633207081
+andrewrk!~andrewrk@mail.ziglang.org
+in this case the action isn't really that helpful to me, I'll just run a script locally when I need to do it
+
+1633207146
+marler8997!~marler899@204.229.3.4
+I see, we could also automate the process to create a release, but we may not want to create a new release for every commit, hmmm
+
+1633207426
+g-w1!g-w1@2600:3c03::f03c:92ff:fe2f:c92f
+time to compile llvm 13 ... again
+
+1633207476
+g-w1!g-w1@2600:3c03::f03c:92ff:fe2f:c92f
+mattbork with another high quality pr again <3 https://github.com/ziglang/zig/pull/9882
+
+1633207975
+g-w1!g-w1@2600:3c03::f03c:92ff:fe2f:c92f
+i *think* i will be able to test plan9 debuginfo if this is merged :D
+
+1633209635
+Tekk_!~tekk@89.45.90.61
+Is there some way to have zig either duck type or have me somehow declare an equivalency between a zig struct and a C struct? In my particular case I've got a Point type, which I want to be able to use interchangeably with the (C) SDL_Point type. Both have the same fields in the same order with the same types, but I've added some math functions to my Pair type.
+
+1633209797
+g-w1!g-w1@2600:3c03::f03c:92ff:fe2f:c92f
+i think you can add functions to extern structs too
+
+1633209826
+Tekk_!~tekk@89.45.90.61
+Oh, cool.
+
+1633209829
+Tekk_!~tekk@89.45.90.61
+That'd make life easier
+
+1633209845
+Tekk_!~tekk@89.45.90.61
+I figured once you made it an extern struct it had to follow all the C rules
+
+1633209851
+andrewrk!~andrewrk@mail.ziglang.org
+if you use @cImport your zig code using the library is going to look like the equvialent C code
+
+1633209881
+andrewrk!~andrewrk@mail.ziglang.org
+if you use explicit bindings your zig code using the library will look more like zig code
+
+1633209919
+Tekk_!~tekk@89.45.90.61
+I'm kinda splitting the difference atm. Right now I'm doing a fairly straightforward rewrite of a C program in zig to get a better feel for it.
+
+1633209942
+Tekk_!~tekk@89.45.90.61
+But I've decided to keep the zig struct a zig struct and provide a conversion function to the SDL thing in case I decide to clean this up and generalize it later on.
+
+1633210015
+andrewrk!~andrewrk@mail.ziglang.org
+here's an example of the latter. bindings: https://github.com/ziglang/zig/blob/ac52e005640e9dc7829356f857a82b0bc3894245/src/codegen/llvm/bindings.zig example usage: https://github.com/ziglang/zig/blob/ac52e005640e9dc7829356f857a82b0bc3894245/src/codegen/llvm.zig#L2024-L2028
+
+1633210063
+Tekk_!~tekk@89.45.90.61
+Huh, so basically create opaque structs full of extern functions manually typed out?
+
+1633210076
+Tekk_!~tekk@89.45.90.61
+Or I guess the structs are optional, really
+
+1633210089
+andrewrk!~andrewrk@mail.ziglang.org
+opaque is for when the C library doesn't tell you the struct fields
+
+1633210098
+andrewrk!~andrewrk@mail.ziglang.org
+for SDL_Point it would be an extern struct
+
+1633210114
+Tekk_!~tekk@89.45.90.61
+Oh, so these are straight recreations of the llvm types using opaque
+
+1633210120
+andrewrk!~andrewrk@mail.ziglang.org
+yeah
+
+1633210123
+Tekk_!~tekk@89.45.90.61
+Got it.
+
+1633210255
+g-w1!g-w1@2600:3c03::f03c:92ff:fe2f:c92f
+llvm13 was pretty painless!
+
