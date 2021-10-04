@@ -1,0 +1,272 @@
+1633221727
+g-w1!g-w1@2600:3c03::f03c:92ff:fe2f:c92f
+andrewrk: did the error for bad ownership in array init look like this: https://github.com/ziglang/zig/pull/9876#discussion_r720744626
+
+1633221735
+g-w1!g-w1@2600:3c03::f03c:92ff:fe2f:c92f
+i'm trying to figure out if I need to copy it into sema.arena
+
+1633221910
+tintin!~tinh@165.22.70.115.static.exetel.com.au
+hi all, can a function with comptime return value infer the type at the call site of assignment? When I define such a function at https://godbolt.org/z/aWfds3r8h, it compiles OK, but when I try to call it, I got compilation error https://godbolt.org/z/Ted6W7eKe. Any help is welcome
+
+1633222222
+freshcoffee!~fresh@user/freshcoffee
+Sorry, you can't infer the result T of a fn based on call site. Also the reason first godbolt didn't give compile error is because zig is lazy and it didn't analyze that fn until it was needed as per 2nd godbolt
+
+1633222405
+tintin!~tinh@165.22.70.115.static.exetel.com.au
+freshcoffee, thanks for the explanation.
+
+1633222643
+g-w1!g-w1@2600:3c03::f03c:92ff:fe2f:c92f
+yeah, it was an ownership error
+
+1633222655
+g-w1!g-w1@2600:3c03::f03c:92ff:fe2f:c92f
+it makes a lot more code to handle it, thats why i was hesitant to do it :P
+
+1633222677
+g-w1!g-w1@2600:3c03::f03c:92ff:fe2f:c92f
+hmmm...
+
+1633222708
+g-w1!g-w1@2600:3c03::f03c:92ff:fe2f:c92f
+wait, i don't think it was an ownership error
+
+1633227000
+andrewrk!~andrewrk@mail.ziglang.org
+g-w1, it should only end up being 1 call to copy() each for Type and Value on the finish()
+
+1633227015
+andrewrk!~andrewrk@mail.ziglang.org
+all the intermediate values can use sema.arena
+
+1633227194
+g-w1!g-w1@2600:3c03::f03c:92ff:fe2f:c92f
+andrewrk: I don't know what you mean by finish? this is at runtime
+
+1633227240
+g-w1!g-w1@2600:3c03::f03c:92ff:fe2f:c92f
+and it only happens when we try to concat a comptime-known-array with a runtime-known one.
+
+1633227241
+andrewrk!~andrewrk@mail.ziglang.org
+ah
+
+1633227247
+andrewrk!~andrewrk@mail.ziglang.org
+let me take a closer look
+
+1633227257
+g-w1!g-w1@2600:3c03::f03c:92ff:fe2f:c92f
+thanks. i tried to make a copy, but it didn't work
+
+1633227969
+g-w1!g-w1@2600:3c03::f03c:92ff:fe2f:c92f
+https://paste.rs/yFW
+
+1633227979
+g-w1!g-w1@2600:3c03::f03c:92ff:fe2f:c92f
+triggers the crash on my runn branch
+
+1633228350
+andrewrk!~andrewrk@mail.ziglang.org
+your runn branch is against master from today?
+
+1633228419
+g-w1!g-w1@2600:3c03::f03c:92ff:fe2f:c92f
+yes
+
+1633228500
+andrewrk!~andrewrk@mail.ziglang.org
+sent a review
+
+1633228599
+g-w1!g-w1@2600:3c03::f03c:92ff:fe2f:c92f
+thanks.
+
+1633230273
+g-w1!g-w1@2600:3c03::f03c:92ff:fe2f:c92f
+https://paste.rs/iUs maps to https://paste.rs/OJg (added decl_ref and array printing). I don't see anything sus. I'll look with fresh eyes tommorow.
+
+1633230695
+g-w1!g-w1@2600:3c03::f03c:92ff:fe2f:c92f
+huh, (gdb) p/x *(u64)val
+
+1633230697
+g-w1!g-w1@2600:3c03::f03c:92ff:fe2f:c92f
+$9 = 0xaaaaaaaa
+
+1633230771
+g-w1!g-w1@2600:3c03::f03c:92ff:fe2f:c92f
+so it is a uaf, now I need to investigate where it gets freed
+
+1633234819
+haze!~haze@cpe-68-174-143-88.nyc.res.rr.com
+i was right with my 
+
+1633234822
+haze!~haze@cpe-68-174-143-88.nyc.res.rr.com
+48h call wasnt i
+
+1633235283
+haze!~haze@cpe-68-174-143-88.nyc.res.rr.com
+is mikdusan here
+
+1633238356
+freshcoffee!~fresh@user/freshcoffee
+haze: yup here
+
+1633239136
+haze!~haze@cpe-68-174-143-88.nyc.res.rr.com
+freshcoffee ohhhh next time i wonder underestimate u
+
+1633239144
+haze!~haze@cpe-68-174-143-88.nyc.res.rr.com
+do you still have that gist about how you build llvm on mac os? i lost it / it was private
+
+1633239180
+freshcoffee!~fresh@user/freshcoffee
+looking to build llvm13?
+
+1633239325
+haze!~haze@cpe-68-174-143-88.nyc.res.rr.com
+yeah
+
+1633239535
+freshcoffee!~fresh@user/freshcoffee
+so this gist has 3 prerequisites that are given as absolute paths in the command. cmake/ninja/python; other than that, the script runs in vanilla path, and a couple of xcode variables:
+
+1633239563
+haze!~haze@cpe-68-174-143-88.nyc.res.rr.com
+orly
+
+1633239576
+freshcoffee!~fresh@user/freshcoffee
+bah where is the button to make a gist public
+
+1633239614
+haze!~haze@cpe-68-174-143-88.nyc.res.rr.com
+i think you gotta edit it
+
+1633239643
+freshcoffee!~fresh@user/freshcoffee
+yup that was it.
+
+1633239645
+freshcoffee!~fresh@user/freshcoffee
+https://gist.github.com/mikdusan/79005fe26a1f72b4aa7d246e1c1f43e1
+
+1633239686
+haze!~haze@cpe-68-174-143-88.nyc.res.rr.com
+-j6?
+
+1633239691
+haze!~haze@cpe-68-174-143-88.nyc.res.rr.com
+i paid good money for this computer im gonna use it
+
+1633239694
+freshcoffee!~fresh@user/freshcoffee
+6 cores is all I got 
+
+1633239697
+freshcoffee!~fresh@user/freshcoffee
+:P
+
+1633239706
+haze!~haze@cpe-68-174-143-88.nyc.res.rr.com
+doesnt no -j mean all cores
+
+1633239707
+haze!~haze@cpe-68-174-143-88.nyc.res.rr.com
+or only 1
+
+1633239714
+haze!~haze@cpe-68-174-143-88.nyc.res.rr.com
+and if its only one doesnt -J use all
+
+1633239715
+haze!~haze@cpe-68-174-143-88.nyc.res.rr.com
+idr
+
+1633239737
+freshcoffee!~fresh@user/freshcoffee
+i think ninja is auto detect and use all. but my generator script is explcit about it so meh
+
+1633239766
+haze!~haze@cpe-68-174-143-88.nyc.res.rr.com
+im actually angry that i didnt make the connection that you were freshcoffee
+
+1633239769
+haze!~haze@cpe-68-174-143-88.nyc.res.rr.com
+given your pfp and bio and all
+
+1633239812
+freshcoffee!~fresh@user/freshcoffee
+that f**node switchover... new nick why not?
+
+1633239822
+freshcoffee!~fresh@user/freshcoffee
+f***node
+
+1633239844
+haze!~haze@cpe-68-174-143-88.nyc.res.rr.com
+freenode?
+
+1633239850
+freshcoffee!~fresh@user/freshcoffee
+yeah but I spell it differently
+
+1633239853
+haze!~haze@cpe-68-174-143-88.nyc.res.rr.com
+whats the point of censoring it
+
+1633239857
+haze!~haze@cpe-68-174-143-88.nyc.res.rr.com
+now i just think about fucknode
+
+1633239928
+freshcoffee!~fresh@user/freshcoffee
+thos ENV vars are very important for the build to succeed, fyi
+
+1633240006
+haze!~haze@cpe-68-174-143-88.nyc.res.rr.com
+how much you wanna bet i can get it to work without it
+
+1633240009
+haze!~haze@cpe-68-174-143-88.nyc.res.rr.com
+ive done it before
+
+1633240128
+freshcoffee!~fresh@user/freshcoffee
+ymmv :) it can be tricky to use cmake from macports or homebrew, and NOT pull in a whole bunch of other complications and/or conflicting tools, libs, headers that may be installed therein
+
+1633240229
+haze!~haze@cpe-68-174-143-88.nyc.res.rr.com
+who says i ever change my system
+
+1633240237
+haze!~haze@cpe-68-174-143-88.nyc.res.rr.com
+im actually thinking about switching from homebrew to macports tbqh
+
+1633259550
+haze!~haze@cpe-68-174-143-88.nyc.res.rr.com
+freshcoffee success! it's alive
+
+1633298275
+andrewrk!~andrewrk@mail.ziglang.org
+does C have any equivalent feature to @"identifier syntax" ?
+
+1633298293
+andrewrk!~andrewrk@mail.ziglang.org
+that lets you use arbitrary byte sequences for identifier names
+
+1633298718
+CrystalGamma[m]!~crystalga@2001:470:69fc:105::1011
+I don't think so
+
+1633299155
+flux_control!~flux@sourcemage/wizard/flux
+andrewrk: I think you could possibly munge names using preprocessor macros, but that would still need to get through the compiler, so no go.
+
