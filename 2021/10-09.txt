@@ -1,0 +1,288 @@
+1633742097
+andrewrk!~andrewrk@mail.ziglang.org
+it's really confusing how the x86_64 SystemV ABI document has the same algorithm listed for passing structs and unions via the C ABI
+
+1633743088
+ashn!~ashn@2601:45:8080:6160::581c
+andrewrk: What do you use as the definitive source for the SystemV ABI for x86-64?
+
+1633743129
+ashn!~ashn@2601:45:8080:6160::581c
+I've used the 1.0 PDF from https://gitlab.com/x86-psABIs/x86-64-ABI, but I'm not sure if the community holds that as the source of truth.
+
+1633743169
+andrewrk!~andrewrk@mail.ziglang.org
+that's the one I'm looking at too
+
+1633747720
+andrewrk!~andrewrk@mail.ziglang.org
+you know what's funny? in the Windows C ABI, `struct {u8, u8}` is passed in RCX, `struct {u8, u8, u8, u8}` is also passed in RCX. but `struct {u8, u8, u8}` is passed by-reference
+
+1633748215
+cr1901!~William@2601:8d:8600:911:5c93:7c51:ef34:e72b
+w-why?
+
+1633748263
+flux_control!~flux@sourcemage/wizard/flux
+Because it's windows :-P
+
+1633748367
+flux_control!~flux@sourcemage/wizard/flux
+But it *might* have something to do with the number of bytes vs register sizes. u8,u8 would be a single 16-bit register, which can easily be zero-extended to a 32-bit or 64-bit register. Likewise for u8,u8,u8,u8 as a full 32-bit register that can be zero-extended to a 64-bit reg.
+
+1633748419
+flux_control!~flux@sourcemage/wizard/flux
+u8,u8,u8 would either have to be mov'ed to an already zeroed register, or moved and then have the remaining high bits zeroed, to get the same effect.
+
+1633748620
+andrewrk!~andrewrk@mail.ziglang.org
+https://docs.microsoft.com/en-gb/cpp/build/x64-calling-convention?view=msvc-160&viewFallbackFrom=vs-2017
+
+1633750339
+cursey!~cursey@user/cursey
+what does the `:0` in `[:0] const u8` signify?
+
+1633750806
+freshcoffee!~fresh@user/freshcoffee
+it signifies a null-terminated (0 value terminated) slice. `slice[slice.len] == 0`
+
+1633750947
+devast8a!~devast8a@2001:470:69fc:105::3f46
+Presumably `slice[x] != 0` for all `x < slice.len` too?
+
+1633750988
+cursey!~cursey@user/cursey
+that's what i assumed, thanks, also is `[*:0] const u8` equivalent to the above?
+
+1633751046
+freshcoffee!~fresh@user/freshcoffee
+[*:0] means unknown length but still null-terminated. So something at some point will need to search to determine length.
+
+1633751087
+cursey!~cursey@user/cursey
+so [:0] means the length is known (like a normal slice) and [*:0] means it's unknown
+
+1633751092
+freshcoffee!~fresh@user/freshcoffee
+yessir
+
+1633751095
+cursey!~cursey@user/cursey
+thanks!
+
+1633751705
+discipulus!~discipulu@user/discipulus
+devast8a it can have 0 within as well
+
+1633751751
+freshcoffee!~fresh@user/freshcoffee
+dragonfly status on master:
+
+1633751797
+devast8a!~devast8a@2001:470:69fc:105::3f46
+So is slice.len a separate field rather than being computed by checking where the terminating zero is?
+
+1633751799
+freshcoffee!~fresh@user/freshcoffee
+prerequisite: 1 PR to be merged
+
+1633751804
+freshcoffee!~fresh@user/freshcoffee
+status: `zig build test` SUCCESS
+
+1633751889
+freshcoffee!~fresh@user/freshcoffee
+devast8a: is a slice is behind the scenes a struct with ptr and len is maintained
+
+1633751921
+freshcoffee!~fresh@user/freshcoffee
+the reason for having the variant [:0] is to have free coercion to C-style null-terminated strings
+
+1633752033
+freshcoffee!~fresh@user/freshcoffee
+so C API can just be called with a slice[:0].ptr and it will work as long as the C API is expected null-term
+
+1633752150
+freshcoffee!~fresh@user/freshcoffee
+hmm maybe "coercion" was wrong word since, iirc, you need to use .ptr 
+
+1633752193
+freshcoffee!~fresh@user/freshcoffee
+but this coerces: `var s: [:0]const u8 = "hello"; var t: [*:0]const u8 = s;`
+
+1633752195
+devast8a!~devast8a@2001:470:69fc:105::3f46
+Right. So it's not really null-terminated, since null doesn't indicate the termination of the slice, it just has a null where it is terminated to ease use with C APIs.
+
+1633752281
+devast8a!~devast8a@2001:470:69fc:105::3f46
+So I guess that also means you need to watch out for any security implications of C APIs and Zig APIs disagreeing on what the string actually means as you would with other languages that allow nulls within their strings.
+
+1633754062
+freshcoffee!~fresh@user/freshcoffee
+netbsd 9.2 status on master:
+
+1633754064
+freshcoffee!~fresh@user/freshcoffee
+- prerequisite: +16 -8 diff for llvm13 to workaround missing std:errc:state_not_recoverable
+
+1633754066
+freshcoffee!~fresh@user/freshcoffee
+- prerequisite: build as root to workaround per-user file lock-limit
+
+1633754068
+freshcoffee!~fresh@user/freshcoffee
+- note: patch to address lock-limit in main netbsd branch, fingers-crossed next release has it
+
+1633754070
+freshcoffee!~fresh@user/freshcoffee
+- SUCCESS: `zig build test`
+
+1633758667
+freshcoffee!~fresh@user/freshcoffee
+heh after crash openbsd tells me a pointer is 0xdfdfdfdfdfdfdfdf - system free() chunks are filled with 0xdf
+
+1633758737
+freshcoffee!~fresh@user/freshcoffee
+now to figure out why something is in use after ira_deref() destroys ira->zir
+
+1633758913
+semarie!~semarie@user/semarie
+freshcoffee: in openbsd language, it means 'double free'. the openbsd free(3) function is filling the free-ed memory with such pattern to help detect double-free (Double Free = 0xdf)
+
+1633758954
+semarie!~semarie@user/semarie
+ah, you already seen it was that :)
+
+1633759008
+freshcoffee!~fresh@user/freshcoffee
+yeah it's a good catch by the system
+
+1633759912
+Tekk!~tekk@68.235.43.101
+Sanity checking myself: the best way to have a nicely namespaced "C-ish" enum would be to just smack it all into a const struct, right? Like EVENT_TYPE_FOO = 0x01, EVENT_TYPE_BAR = 0x02, EVENT_TYPE_BAZ = 0x04, etc.
+
+1633760006
+Tekk!~tekk@68.235.43.101
+As far as what's zig-ier I mean. I'm still at my binding work.
+
+1633771295
+dutchie!~dutchie@user/dutchie
+Tekk: you can give enums explicit values if you want too (although you have to give an explicit size)
+
+1633771318
+dutchie!~dutchie@user/dutchie
+"override the ordinal value" https://ziglang.org/documentation/master/#enum
+
+1633802112
+poww0wmus1c!~poww0wmus@gateway/tor-sasl/poww0wmus1c
+Why is it not allowed to put a doc comment on a local variable?
+
+1633804530
+andrewrk!~andrewrk@mail.ziglang.org
+poww0wmus1c, this is not something that can be exposed via auto generated documentation
+
+1633807372
+poww0wmus1c!~poww0wmus@gateway/tor-sasl/poww0wmus1c
+andrewrk: zls also looks at doc comments though
+
+1633807500
+andrewrk!~andrewrk@mail.ziglang.org
+what would zls do with doc comments on local variables?
+
+1633807587
+poww0wmus1c!~poww0wmus@gateway/tor-sasl/poww0wmus1c
+display it on hover, I assume
+
+1633807855
+poww0wmus1c!~poww0wmus@gateway/tor-sasl/poww0wmus1c
+I mean, that's what zls does for decls that have doc comments. Currently it doesn't do that for local vars.
+
+1633808011
+luuk!~luuk@user/luuk
+That could easily be added by also looking for regular comments for local decls, instead of doc comments only.
+
+1633808021
+luuk!~luuk@user/luuk
+No need to change the language for that.
+
+1633809879
+poww0wmus1c!~poww0wmus@gateway/tor-sasl/poww0wmus1c
+luuk: also fine. So does this mean you shouldn't use doc comments for anything that's not declared pub?
+
+1633810062
+luuk!~luuk@user/luuk
+You may still want to provide doc comments for non-pub declarations as well. It not only provides documentation for yourself, but also for others working on the same codebase as you.
+
+1633810240
+poww0wmus1c!~poww0wmus@gateway/tor-sasl/poww0wmus1c
+But then why draw the line at function-local vars?
+
+1633810408
+andrewrk!~andrewrk@mail.ziglang.org
+https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=995670 I sent a reply to help the debian packaging effort
+
+1633810810
+luuk!~luuk@user/luuk
+andrewrk: Making some nice progress on the wasm linker. It has given me a lot more insight on the wasm backend as well.
+
+1633810847
+andrewrk!~andrewrk@mail.ziglang.org
+ooh exciting!
+
+1633811086
+poww0wmus1c!~poww0wmus@gateway/tor-sasl/poww0wmus1c
+ hello
+
+1633811168
+poww0wmus1c!~poww0wmus@gateway/tor-sasl/poww0wmus1c
+Oops, ignore that ^. My SO messing around.. ><
+
+1633811848
+freshcoffee!~fresh@user/freshcoffee
+andrewrk: re: debian, I think if you mentioned libcxx, musl, etc. are built on-demand depending on -target, cpu, release mode, etc
+
+1633811865
+freshcoffee!~fresh@user/freshcoffee
+it would show that pre-building is not really possible
+
+1633811896
+andrewrk!~andrewrk@mail.ziglang.org
+freshcoffee, agreed - to be clear the situation I am referring to is if they want the *sources* to be provided *at build time* by other debian packages
+
+1633811930
+andrewrk!~andrewrk@mail.ziglang.org
+it doesn't really make sense to do that, which is why it's confusing to think about, maybe I should have not argued against a straw man :)
+
+1633811934
+freshcoffee!~fresh@user/freshcoffee
+ok. just checking. I did see "require them to be built" and I didn't overload it to mean... make sources avail
+
+1633822198
+noracodes!~quassel@2604:a880:2:d0::2299:a001
+Hi folks! I'm taking a look at Zig as a longtime Rustacean and I'm wondering if there's any Zig equivalent to Rustup. I'm on a Debian-based distribution and the only .deb repo I could find is unofficial, unsigned, and way out of date. I'd rather not have to manually update, if possible - is there a community-accepted solution to this problem?
+
+1633823740
+Tekk!~tekk@2607:9000:0:62::a03e
+I mean, you could probably write one. Personally I just download the tarball and use stow to manage versions
+
+1633823798
+Tekk!~tekk@2607:9000:0:62::a03e
+(using stow would actually make the whole thing quite easy, even, were you to script it.)
+
+1633823936
+noracodes!~quassel@2604:a880:2:d0::2299:a001
+yeah, stow might be the way to go!
+
+1633823966
+Tekk!~tekk@2607:9000:0:62::a03e
+The only trick with stow and the zig binaries.
+
+1633823977
+Tekk!~tekk@2607:9000:0:62::a03e
+After you extract it, you have to cd in && mkdir bin && cp zig bin
+
+1633823982
+Tekk!~tekk@2607:9000:0:62::a03e
+After that I've literally had no problems.
+
