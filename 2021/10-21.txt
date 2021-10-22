@@ -1,0 +1,260 @@
+1634774635
+jhuntwork!~jhuntwork@147.182.216.19
+so file must be seeing it as a dynamic binary because it has a dynamic section
+
+1634810667
+flux_control!~flux@sourcemage/wizard/flux
+andrewrk: I generally trust readelf more than ldd, for what it's worth, but I don't currently have a setup where I can test the zig binary without a libc to prove it. ;)
+
+1634810704
+flux_control!~flux@sourcemage/wizard/flux
+I suppose I could trace the execution though
+
+1634811299
+flux_control!~flux@sourcemage/wizard/flux
+Alright, I did a very cursory poking around with radare and it's definitely static. I guess lld just created a dynamic section by default even though there's nothing it really links to, and this confuses file.
+
+1634811436
+MY-R!~irc@user/my-r
+mps: hi!
+
+1634811442
+supakeen!~user@python/site-packages/supakeen
+Hi there.
+
+1634811526
+supakeen!~user@python/site-packages/supakeen
+Bye there.
+
+1634825091
+jhuntwork!~jhuntwork@147.182.216.19
+I'm not sure what zig cc is doing differently, but I'm having trouble creating static binaries
+
+1634825146
+jhuntwork!~jhuntwork@147.182.216.19
+just for kicks, tested building mandoc with zig, changing the CC var to 'zig cc' and the one usage of ar to 'zig ar'
+
+1634825167
+jhuntwork!~jhuntwork@147.182.216.19
+here's one of the final commands for linking the mandoc executable
+
+1634825177
+jhuntwork!~jhuntwork@147.182.216.19
+zig cc -o mandoc -static eqn_html.o html.o man_html.o mdoc_html.o roff_html.o tbl_html.o  eqn_term.o man_term.o mdoc_term.o roff_term.o term.o term_ascii.o term_ps.o term_tab.o tbl_term.o dbm.o dbm_map.o mansearch.o dba.o dba_array.o dba_read.o dba_write.o mandocdb.o main.o manp
+
+1634825181
+jhuntwork!~jhuntwork@147.182.216.19
+ath.o mdoc_man.o mdoc_markdown.o out.o tag.o tree.o libmandoc.a -lz
+
+1634825194
+jhuntwork!~jhuntwork@147.182.216.19
+-static there at the beginning
+
+1634825209
+jhuntwork!~jhuntwork@147.182.216.19
+but it creates a dynamic binary that depends on libz.so, libz.a is available
+
+1634825228
+jhuntwork!~jhuntwork@147.182.216.19
+libz.so.1 => /usr/lib/libz.so.1 (0x7f191f146000)
+
+1634825262
+jhuntwork!~jhuntwork@147.182.216.19
+changing the compiler to clang (same version that zig cc was built with) results in a fully static binary
+
+1634825284
+jhuntwork!~jhuntwork@147.182.216.19
+I can just issue the same command as above but change 'zig cc' to 'clang'
+
+1634825303
+jhuntwork!~jhuntwork@147.182.216.19
+ldd: mandoc: Not a valid dynamic program
+
+1634825319
+jhuntwork!~jhuntwork@147.182.216.19
+mandoc: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, not stripped
+
+1634825396
+jhuntwork!~jhuntwork@147.182.216.19
+something in the way zig cc is calling lld maybe?
+
+1634828139
+flux_control!~flux@sourcemage/wizard/flux
+jhuntwork: How are you verifying that zig cc is producing a dynamic binary? Only via ldd? Have you tried removing its access to the linked libs (chroot, rename the libraries, move the libraries to a different path not searched by the dynamic loader, etc.) and running it to verify that it fails/crashes?
+
+1634829036
+jhuntwork!~jhuntwork@147.182.216.19
+flux_control: let me try that
+
+1634829053
+jhuntwork!~jhuntwork@147.182.216.19
+I'm working in a container, so can just uninstall zlib (and even musl, actually)
+
+1634829199
+jhuntwork!~jhuntwork@147.182.216.19
+yeah, definitely dynamic
+
+1634829214
+jhuntwork!~jhuntwork@147.182.216.19
+./mandoc -man
+
+1634829215
+jhuntwork!~jhuntwork@147.182.216.19
+sh: ./mandoc: not found
+
+1634829233
+jhuntwork!~jhuntwork@147.182.216.19
+before was getting mandoc's error output, now sh doesn't know how to execute it
+
+1634829257
+jhuntwork!~jhuntwork@147.182.216.19
+ ./mandoc blah
+
+1634829258
+jhuntwork!~jhuntwork@147.182.216.19
+mandoc: ERROR: blah: No such file or directory
+
+1634829265
+jhuntwork!~jhuntwork@147.182.216.19
+was before when musl and zlib were installed
+
+1634829294
+jhuntwork!~jhuntwork@147.182.216.19
+strace ./mandoc
+
+1634829295
+jhuntwork!~jhuntwork@147.182.216.19
+execve("./mandoc", ["./mandoc"], 0x7ffcb1b93720 /* 6 vars */) = -1 ENOENT (No such file or directory)
+
+1634829377
+jhuntwork!~jhuntwork@147.182.216.19
+# readelf -d mandoc
+
+1634829394
+jhuntwork!~jhuntwork@147.182.216.19
+0x0000000000000001 (NEEDED)   Shared library: [libz.so.1]
+
+1634829400
+jhuntwork!~jhuntwork@147.182.216.19
+0x0000000000000001 (NEEDED)   Shared library: [libc.so]
+
+1634842183
+andrewrk!~andrewrk@mail.ziglang.org
+hmmm what's up with windows CI
+
+1634842289
+freshcoffee!~fresh@user/freshcoffee
+if it's severely timing out, perhaps swapping
+
+1634842350
+freshcoffee!~fresh@user/freshcoffee
+a previous green is 4h 43m
+
+1634842390
+freshcoffee!~fresh@user/freshcoffee
+then next previous green is 1h 41m
+
+1634842468
+freshcoffee!~fresh@user/freshcoffee
+oh my bad.. read those wrong. 1-green-ago for windows: 2h 33m. 2 green-ago: 1h 41m
+
+1634843283
+andrewrk!~andrewrk@mail.ziglang.org
+hmm pretty much the only thing that has happened is additions to stage2
+
+1634843536
+freshcoffee!~fresh@user/freshcoffee
+I am only guessing, but I am not convinced azure runners are all equal in terms of RAM or CPU. But when CPU varies I have a difficult time thinking that can double or triple times. RAM diffs can engage swap and cause perf to fall off a cliff
+
+1634843622
+freshcoffee!~fresh@user/freshcoffee
+maybe we augment azure script on windows to show host-cpu and host-ram (and swap) config, if this is practical to determine from command line
+
+1634843824
+andrewrk!~andrewrk@mail.ziglang.org
+that makes sense and maybe long-term we look into hosting our own hardware for CI so that this stuff is easier to debug
+
+1634843892
+freshcoffee!~fresh@user/freshcoffee
+ACTION agrees very much about zig's own hardware for ci
+
+1634843979
+freshcoffee!~fresh@user/freshcoffee
+I'd love to help out in the config/maintainence aspect too
+
+1634843985
+andrewrk!~andrewrk@mail.ziglang.org
+wonderful
+
+1634844002
+andrewrk!~andrewrk@mail.ziglang.org
+I'll look into setting up something next week
+
+1634844181
+andrewrk!~andrewrk@mail.ziglang.org
+I feel like the cheapest long term option would be just building a few machines and hosting them in my office
+
+1634844238
+companion_cube!~simon@user/companion-cube
+hey isn't there streaming soon?
+
+1634844251
+companion_cube!~simon@user/companion-cube
+andrewrk: you just want to live surrounded by computers, admit it
+
+1634844264
+andrewrk!~andrewrk@mail.ziglang.org
+I already do haha
+
+1634844330
+freshcoffee!~fresh@user/freshcoffee
+that would be very economical, and for small number of servers, that should work
+
+1634844335
+andrewrk!~andrewrk@mail.ziglang.org
+companion_cube, there's a compiler internals meeting on the discord in 5 minutes and then I'll break for lunch and then do some twitch streaming working towards getting self-hosted able to build & run the tetris game demo
+
+1634844366
+companion_cube!~simon@user/companion-cube
+alright!!
+
+1634844376
+companion_cube!~simon@user/companion-cube
+the twitch part, anyway
+
+1634844394
+andrewrk!~andrewrk@mail.ziglang.org
+freshcoffee, I was thinking maybe something like 1 powerful hardware for each CPU architecture, then run VMs for each OS. thoughts?
+
+1634844449
+andrewrk!~andrewrk@mail.ziglang.org
+companion_cube, as a teaser here's the current todo list to get tetris compiling with self-hosted: https://clbin.com/1uU3k
+
+1634844486
+companion_cube!~simon@user/companion-cube
+keeping your TODOs in stacktraces, original
+
+1634844558
+freshcoffee!~fresh@user/freshcoffee
+initial thoughts are linux host x86_64, drone.io main and runners, usual docker for linux-x86_64, and future i386, virtualbox for windows 10 (unless qemu does windows 10 good enough?), and either qemu or virtualbox for *bsd x86_64 / i386, and if you want, qemu for non-native but it's expensive in time - 18x
+
+1634844771
+andrewrk!~andrewrk@mail.ziglang.org
+damn I could easily build a computer with 128GB RAM
+
+1634844851
+freshcoffee!~fresh@user/freshcoffee
+re: powerful hardware, I was looking at costs, such, and given the nature of CI, I'd bias towards consumer-grade hosts . ie: if you want 16-core box, AMD has some, and memory limit would be 128 GB which today, last I checked a 12 GB per VM lets CI run so that is 8 VMs each at 12GB, avg 2-core each, plus 32GB left over for the host, caching, etc.
+
+1634844874
+freshcoffee!~fresh@user/freshcoffee
+so yeah 128 GB ram is probably a very ok limit on the box
+
+1634854650
+andrewrk!~andrewrk@mail.ziglang.org
+doing some live coding on self-hosted in about 10 min: https://www.twitch.tv/andrewrok/
+
+1634854850
+hspak!~hspak@user/hspak
+\o/
+
