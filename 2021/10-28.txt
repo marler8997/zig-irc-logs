@@ -1,0 +1,244 @@
+1635388598
+freshcoffee!~fresh@user/freshcoffee
+Dockerfile is some stupid shit. /endgripe
+
+1635397868
+andrewrk!~andrewrk@mail.ziglang.org
+oh yeah? what particular horror are you dealing with now?
+
+1635403409
+freshcoffee!~fresh@user/freshcoffee
+oh I was going to make Dockerfile for creating the ci images. But alas, it makes everything so difficult:
+
+1635403459
+freshcoffee!~fresh@user/freshcoffee
+manual way to create image involves: running a container on hub.docker basic image from debian, mounting a bind volume on host that is depot of all our zig+llvm,qemu,wasmtime tarballs,
+
+1635403466
+freshcoffee!~fresh@user/freshcoffee
+and extracting it to /deps/local 
+
+1635403507
+freshcoffee!~fresh@user/freshcoffee
+just that. JUST THAT in Dockerfile is basically impossible without first copying all the files to Dockerfile context folder, then it copies to container, then you extract, then you have to remove from container manually
+
+1635403527
+freshcoffee!~fresh@user/freshcoffee
+it forces a seriously bad pre-step to building the image via Dockerfile. I mean what's the point.
+
+1635403675
+freshcoffee!~fresh@user/freshcoffee
+and I know why they did it -- would have to implement something akin to zig's timestamp/hash dependency system for external files and that meta data would need to live somewhere between Dockerfile runs
+
+1635404353
+torque!~tachyon@user/torque
+the technical reason is that because docker is designed with a client/server model, the server may be on a completely different machine than the client, so the first thing docker does when building is to copy the entire directory containing the dockerfile over to the server
+
+1635404433
+torque!~tachyon@user/torque
+if you're already downloading the tarballs you could just have the Dockerfile download them directly into the container rather than copying them around on your local filesystem first
+
+1635404495
+freshcoffee!~fresh@user/freshcoffee
+the point is to not download. That's why they're on the host filesystem
+
+1635404535
+torque!~tachyon@user/torque
+I guess I don't understand what you're trying to do
+
+1635404564
+torque!~tachyon@user/torque
+where did the files on the host filesystem come from and what advantage is there to putting them in a docker container?
+
+1635404743
+freshcoffee!~fresh@user/freshcoffee
+for every ci run we generally DO NOT want to: install OS packages, make config changes to the OS, fetch tarballs over the net, extract them, add to path or deal with merging tree complexities
+
+1635404824
+freshcoffee!~fresh@user/freshcoffee
+prefer the os, build-time deps, runtime deps and test-time deps are already installed
+
+1635405026
+torque!~tachyon@user/torque
+I may be missing something here, but if they're being downloaded at some point, it makes more sense to me to download them directly into the container during the image build process than to copy them from the host
+
+1635405038
+torque!~tachyon@user/torque
+s/image build/container build/
+
+1635405040
+freshcoffee!~fresh@user/freshcoffee
+it's true there is a ADD command which can handle tarball extract into container, I could work around its severe limitations (does not expose tar cli options that I need). but very frustrating to be boxed in like this.
+
+1635405056
+torque!~tachyon@user/torque
+RUN curl -LO
+
+1635405140
+freshcoffee!~fresh@user/freshcoffee
+torque: well I need a home for some of our own tarballs anyways. What am I supposed to do, host it somewhere just because Dockerfile?
+
+1635405210
+torque!~tachyon@user/torque
+I guess I'd say I'd expect any process that is generating tarballs to be able to be run as part of the container build process itself, rather than on the host beforehand
+
+1635405339
+torque!~tachyon@user/torque
+though that may not be at all practical, dunno the specifics here
+
+1635405353
+freshcoffee!~fresh@user/freshcoffee
+that's force a "make world" when it's not needed. We build qemu-static in another container (alpine), and use that static artifact universally. To build it another container, which is based on another distro, is a lot of overhead
+
+1635405509
+freshcoffee!~fresh@user/freshcoffee
+this article, the reasons for outside-context vary, but massive amount of frustration by many:
+
+1635405511
+freshcoffee!~fresh@user/freshcoffee
+https://stackoverflow.com/questions/27068596/how-to-include-files-outside-of-dockers-build-context
+
+1635405764
+torque!~tachyon@user/torque
+I guess the reasoning of reusing the same statically built qemu binary everywhere makes sense but I can't help to find the thought of building a static binary in one container to copy into a different container funny
+
+1635405935
+freshcoffee!~fresh@user/freshcoffee
+zig nightly/release tarballs use the same tactic; build static. run on just about any distro of same arch.
+
+1635406979
+mjonaitis!~mjonaitis@88-119-96-125.static.zebra.lt
+Would it be possible to get some feedback on this PR: https://github.com/ziglang/zig/pull/10036
+
+1635441745
+marler8997!~marler899@204.229.3.4
+damn mjonaitis, that's alot of code.  Does that make the released archives alot bigger?
+
+1635446458
+andrewrk!~andrewrk@mail.ziglang.org
+those text files are highly compressable and most lines are empty
+
+1635446482
+andrewrk!~andrewrk@mail.ziglang.org
+we also could consider switching to a binary format
+
+1635449169
+davidfetter_work!~davidfett@c-73-252-148-184.hsd1.ca.comcast.net
+https://hyperboleandahalf.blogspot.com/2010/04/alot-is-better-than-you-at-everything.html
+
+1635449174
+tgschultz!UserNick@047-034-058-084.res.spectrum.com
+I always get "Unable to dump stack trace: FileNotFound" on my windows build despite the pdb being right next to the exe on the test system. Is this an artifact of cross compiling from linux or something?
+
+1635453271
+andrewrk!~andrewrk@mail.ziglang.org
+hmmmm I think Spex_Guy knows something about this
+
+1635453674
+andrewrk!~andrewrk@mail.ziglang.org
+tgschultz, I asked on your behalf and got this answer:
+
+1635453681
+andrewrk!~andrewrk@mail.ziglang.org
+Windows executables encode the full absolute path to the pdb file at build time.  Debug traces will only work on the same computer that built the object and only if the zig cache has not been cleared.
+
+1635453681
+andrewrk!~andrewrk@mail.ziglang.org
+[1:09 PM]
+
+1635453690
+andrewrk!~andrewrk@mail.ziglang.org
+This is probably something we should fix in our debug stack trace dumping.
+
+1635453697
+andrewrk!~andrewrk@mail.ziglang.org
+The pdb file is still useful for debuggers, which allow you to override the path from the executable.
+
+1635453723
+tgschultz!UserNick@047-034-058-084.res.spectrum.com
+Makes sense. I kinda figured it'd be fixed-path related. Thanks.
+
+1635453738
+tgschultz!UserNick@047-034-058-084.res.spectrum.com
+good thing I'm quite familiar with printf debugging
+
+1635453801
+tgschultz!UserNick@047-034-058-084.res.spectrum.com
+honestly I doubt a having trace output would even help in this instance, I was just curious if it was a known issue.
+
+1635454577
+davidfetter_work!~davidfett@c-73-252-148-184.hsd1.ca.comcast.net
+not sure whether this is the right place to ask, but y'all seem well-rounded in things most people don't mess with.
+
+1635454625
+davidfetter_work!~davidfett@c-73-252-148-184.hsd1.ca.comcast.net
+PostgreSQL's parser, such as it be, is done with a yacc grammar which is beginning to creak under the strain. What are people writing large grammars with these days?
+
+1635454757
+ikskuh!~xq@v43666.php-friends.de
+davidfetter_work: handmade
+
+1635454778
+ikskuh!~xq@v43666.php-friends.de
+i use recursive descent parsers
+
+1635454801
+andrewrk!~andrewrk@mail.ziglang.org
+davidfetter_work, any computer science topic is on topic here :)
+
+1635454808
+davidfetter_work!~davidfett@c-73-252-148-184.hsd1.ca.comcast.net
+thanks!
+
+1635454878
+davidfetter_work!~davidfett@c-73-252-148-184.hsd1.ca.comcast.net
+ikskuh, how big a grammar are we talking about? I'm asking because, well... https://github.com/postgres/postgres/blob/master/src/backend/parser/gram.y
+
+1635454915
+davidfetter_work!~davidfett@c-73-252-148-184.hsd1.ca.comcast.net
+SQL all by itself is hucking fuge, and that doesn't even count the parts that can only be established by looking in the catalog, of which there are many
+
+1635454969
+ikskuh!~xq@v43666.php-friends.de
+impressive
+
+1635454978
+ikskuh!~xq@v43666.php-friends.de
+in my case: several programming languages
+
+1635455040
+ifreund!~ifreund@user/ifreund
+pretty much all major programming language implementations use a hand written recursive descent parser
+
+1635455073
+ifreund!~ifreund@user/ifreund
+I don't think anyone wants to write a parser for a 17k line grammar though...
+
+1635455077
+davidfetter_work!~davidfett@c-73-252-148-184.hsd1.ca.comcast.net
+ACTION wonders whether SQL counts as a "major programming language"
+
+1635455117
+ifreund!~ifreund@user/ifreund
+i was excluding it from that statement :D
+
+1635455160
+davidfetter_work!~davidfett@c-73-252-148-184.hsd1.ca.comcast.net
+ACTION studied chemistry & applied math in school, so missed out on much of the formalism he'd have picked up with a CS degree
+
+1635455176
+andrewrk!~andrewrk@mail.ziglang.org
+In 1.5 hours I'll do a self-hosted compiler stream: catching up the C backend to the LLVM backend. https://www.twitch.tv/andrewrok/
+
+1635455251
+ifreund!~ifreund@user/ifreund
+davidfetter_work: you might be interested in this blog post and lobsters comment section: https://lobste.rs/s/9pcqys/which_parsing_approach
+
+1635455269
+davidfetter_work!~davidfett@c-73-252-148-184.hsd1.ca.comcast.net
+ACTION reads
+
+1635465079
+haze!~haze@cpe-68-174-143-88.nyc.res.rr.com
+is there anything special i should know about function alignment? I'm going to hard code `1` into my code because its what normal std lib functions have but i dont know anything about it
+
