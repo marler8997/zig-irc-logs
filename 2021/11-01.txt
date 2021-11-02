@@ -1,0 +1,216 @@
+1635767707
+Terlisimo!~Terlisimo@outofband.ozna.net
+hello! I've found a bug in zig cc compiler that produces illegal instruction. Where do I post this? It's quite simple, I have a minimum reproducible program.
+
+1635769442
+Terlisimo!~Terlisimo@outofband.ozna.net
+I suppose github/issues
+
+1635770231
+tgschultz!UserNick@047-034-058-084.res.spectrum.com
+yep, that's the place.
+
+1635784947
+freshcoffee!~fresh@user/freshcoffee
+heh I just lost an hour: different drone runners, different env var name: DRONE_RUNNER_ENVFILE vs DRONE_RUNNER_ENV_FILE
+
+1635784984
+freshcoffee!~fresh@user/freshcoffee
+ACTION takes the L
+
+1635792910
+andrewrk!~andrewrk@mail.ziglang.org
+freshcoffee, I'll look into the SSL cert now. Aything else you want help with regarding the CI?
+
+1635798665
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+Hello. I'm trying to cross-compile a hello-world for Marvell Kirkwood (armv5tel) but I don't know how to specify subarchitecture.
+
+1635798672
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+If I just zig build-exe -target arm, it builds, but the resulting binary crashes with "illegal instruction"
+
+1635798744
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+I see v5te in output of `zig targets`, but I don't know how to pass that choice to zig build-exe
+
+1635798825
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+* -target arm-linux-none
+
+1635798851
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+I tried -mcpu v5te but it says "unknown cpu"
+
+1635798919
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+I also tried -mcpu arm1020t, since that has a "v5te" inside in zig targets, but it fails with "ld.lld: error: undefined symbol: __sync_fetch_and_add_1" and a few other similar errors
+
+1635802235
+andrewrk!~andrewrk@mail.ziglang.org
+ifreund, looking at adding perf definitions and using them, I'm starting to form an argument for doing the namespacing. I'll put up an example in a bit
+
+1635802277
+andrewrk!~andrewrk@mail.ziglang.org
+Wolf480pl, -target arm-linux-none -mcpu=generic+v5te
+
+1635802363
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+still missing __sync_lock_test_and_set_4, __sync_fetch_and_sub_1 and __sync_val_compare_and_swap_4, I guess this is related to https://github.com/ziglang/zig/issues/4959 ?
+
+1635802378
+andrewrk!~andrewrk@mail.ziglang.org
+I believe the __sync_fetch_and_add_1 is a symbol that you have to provide yourself if you want zig's atomic language features to work. if you know you won't be using them, you can do this: export fn __sync_fetch_and_add_1() void { unreachable; }
+
+1635802399
+andrewrk!~andrewrk@mail.ziglang.org
+for most architectures zig can provide this function, but on this CPU it seems best to let the user provide it
+
+1635802402
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+oh, I thought I'm getting these errors only because they're already reachable from std
+
+1635802416
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+but I'll try unreachable
+
+1635802423
+andrewrk!~andrewrk@mail.ziglang.org
+mmm perhaps they are. would be interesting to see where
+
+1635802443
+andrewrk!~andrewrk@mail.ziglang.org
+if the OS is linux we should be able to implement them with syscalls 
+
+1635802464
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+lemme paste the whole log
+
+1635802511
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+https://pastebin.com/XRX8QL35
+
+1635802727
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+I tried implementing the atomics as unreachable, it builds, but running the binary leads to "Aborted", exit code 134
+
+1635802823
+andrewrk!~andrewrk@mail.ziglang.org
+try adding --single-threaded
+
+1635802846
+andrewrk!~andrewrk@mail.ziglang.org
+without the exported __sync functions
+
+1635802883
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+tried, gets rid of the __sync_val_compare_and_swap_4, but the other three stay, and abort if implemented as unreachable
+
+1635802906
+andrewrk!~andrewrk@mail.ziglang.org
+hmmm seems like we should audit those dependencies on atomics when --single-threaded is active
+
+1635802933
+andrewrk!~andrewrk@mail.ziglang.org
+the abort may be unrelated to the sync functions. can you use a debugger and determine where it is aborting?
+
+1635803050
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+#0  0x0003d9e0 in ?? ()
+
+1635803055
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+do I need to enable some debug symbols?
+
+1635803139
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+btw. is arm-linux-none the right thing when I want to avoid depending on libc, or is that something else?
+
+1635803151
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+(as opposed to arm-linux-musl)
+
+1635804128
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+it looks like it's aborting at start.zig:318
+
+1635804214
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+oh, lack of thread-local storage https://github.com/ziglang/zig/blob/0.8.x/lib/std/start.zig#L314-L318
+
+1635804828
+andrewrk!~andrewrk@mail.ziglang.org
+--single-threaded should make that problem go away too. it seems we need to improve integration with --single-threaded for this target
+
+1635805019
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+is there any way I can help with that?
+
+1635805035
+andrewrk!~andrewrk@mail.ziglang.org
+yep
+
+1635805047
+andrewrk!~andrewrk@mail.ziglang.org
+isolate the problems and then eliminate them one by one
+
+1635805069
+andrewrk!~andrewrk@mail.ziglang.org
+re: libc- if you don't pass `-lc` then you will avoid depending on libc
+
+1635805082
+andrewrk!~andrewrk@mail.ziglang.org
+the abi part of the triple does not mean much in such case, and you can omit it
+
+1635805103
+andrewrk!~andrewrk@mail.ziglang.org
+-target arm-linux -mcpu=generic+v5te
+
+1635805110
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+thx
+
+1635805161
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+I guess I'll try build zig from source and try to add an if to skip TLS when single-threaded, and see what happens
+
+1635805207
+andrewrk!~andrewrk@mail.ziglang.org
+mmm one complication is that on some operating systems, such as DragonFlyBSD, they use a thread-local errno, as part of the OS ABI
+
+1635805211
+andrewrk!~andrewrk@mail.ziglang.org
+a horrible decision that I hope they change
+
+1635805224
+andrewrk!~andrewrk@mail.ziglang.org
+for linux it should not be an issue
+
+1635805843
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+oh, wow, iffing out the thread-local part made the hello-world work, even with stubbed-out atomics
+
+1635805845
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+thanks
+
+1635807172
+safinaskar!~safinaska@109-252-90-153.nat.spd-mgts.ru
+is there a way to print arbitrary value for debug purposes?
+
+1635807183
+safinaskar!~safinaska@109-252-90-153.nat.spd-mgts.ru
+i. e. something like Rust's "Debug" trait?
+
+1635807935
+LewisGaul!~LewisGaul@90.211.34.106
+Hey all
+
+1635808027
+LewisGaul!~LewisGaul@90.211.34.106
+I have a PR I opened 5 days ago "Add f128 support and tests in exp2.zig", https://github.com/ziglang/zig/pull/10046/ - just wondering whether there's a desire for this and whether to invest in adding f128 support/tests to the other math functions :)
+
+1635810995
+squeek502_!~squeek502@user/squeek502
+time-to-merge/review is not indicative of interest, usually it just means that the core maintainers are busy with other stuff
+
