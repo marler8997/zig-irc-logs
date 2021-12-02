@@ -1,0 +1,372 @@
+1637971929
+flux_control!~flux@sourcemage/wizard/flux
+Is there any interest in having support for c11+ non-pthread threading stuff? Is there an argument against it? I understand the need for pthread to support older C code, but how is "modern" C handled?
+
+1637972227
+flux_control!~flux@sourcemage/wizard/flux
+FWIW, both glibc and musl support c11+ atomic.h and threads.h
+
+1637972834
+andrewrk!~andrewrk@mail.ziglang.org
+flux_control, I don't understand your question
+
+1637972878
+andrewrk!~andrewrk@mail.ziglang.org
+what would it mean for zig to "support c11+ non-pthread threading stuff"?
+
+1637972891
+andrewrk!~andrewrk@mail.ziglang.org
+can you be more specific?
+
+1637972901
+flux_control!~flux@sourcemage/wizard/flux
+andrewrk: ISO C mtx_t, cond_t, etc.
+
+1637972914
+flux_control!~flux@sourcemage/wizard/flux
+In terms of the C translator(s)
+
+1637972967
+flux_control!~flux@sourcemage/wizard/flux
+I couldn't find anything for supporting them. I admit I haven't tried with actual code yet, so maybe I'm asking prematurely, in which case I apologize.
+
+1637972980
+andrewrk!~andrewrk@mail.ziglang.org
+still don't understand what you're asking, you need to be more specific with your question
+
+1637973073
+flux_control!~flux@sourcemage/wizard/flux
+andrewrk: In the std.c namespace, there's plenty of references to pthread functions, but I didn't find anything for supporting ISO C versions. Will importing code with ISO C threading/locking just work?
+
+1637973122
+flux_control!~flux@sourcemage/wizard/flux
+Maybe it's handled magically by the LLVM backend?
+
+1637973161
+andrewrk!~andrewrk@mail.ziglang.org
+let's try it and find out
+
+1637973166
+andrewrk!~andrewrk@mail.ziglang.org
+seems like it should work fine
+
+1637973213
+flux_control!~flux@sourcemage/wizard/flux
+OK, thanks. Sorry, I should have tried it first.
+
+1637977153
+ifreund!~ifreund@user/ifreund
+andrewrk: I was using the @"llvm.foo" hack to work around the lack of a @prefetch builtin and the compiler wanted me to add that suffix for some reason: https://zigbin.io/942fd9
+
+1637977184
+ifreund!~ifreund@user/ifreund
+by the way, how do you feel about the @prefetch() proposal? https://github.com/ziglang/zig/issues/3600
+
+1637977240
+ifreund!~ifreund@user/ifreund
+We want it for speeding up binary searches in tigerbeetle
+
+1637977297
+ifreund!~ifreund@user/ifreund
+so I'd be happy to implement it if you think copying llvm's API makes sense
+
+1637977675
+andrewrk!~andrewrk@mail.ziglang.org
+ifreund, I'll accept it right now with some amendments to the details. Can you share your opinion on the API for locality? specifically should it be an enum or u2?
+
+1637977766
+ifreund!~ifreund@user/ifreund
+andrewrk: u2 would be fine by me, I don't have a strong opinion either way tbh
+
+1637977777
+ifreund!~ifreund@user/ifreund
+u2 would be closer to the clang/gcc builtins
+
+1637977799
+andrewrk!~andrewrk@mail.ziglang.org
+how about the default value for locality? 3?
+
+1637977808
+ifreund!~ifreund@user/ifreund
+3 is the default gcc uses yeah
+
+1637977853
+ifreund!~ifreund@user/ifreund
+if we're doing defaults, we should probably make read, and data the defaults for the rw and cache_type arguments as well
+
+1637977886
+andrewrk!~andrewrk@mail.ziglang.org
+yep
+
+1637977916
+andrewrk!~andrewrk@mail.ziglang.org
+might make sense to have instruction cache prefetching be a different builtin. wouldn't you want to pass a function pointer in this case?
+
+1637977949
+ifreund!~ifreund@user/ifreund
+I'm not actually familiar with any use case of instruction cache prefetching
+
+1637977961
+ifreund!~ifreund@user/ifreund
+I think @prefetch() should take a usize not a pointer though
+
+1637977980
+andrewrk!~andrewrk@mail.ziglang.org
+oh yeah? why's that?
+
+1637977982
+ifreund!~ifreund@user/ifreund
+seeing as it's totally fine for the pointer to point to invalid memory
+
+1637978017
+andrewrk!~andrewrk@mail.ziglang.org
+in your real world use case do you have a usize?
+
+1637978072
+ifreund!~ifreund@user/ifreund
+no we have a pointer, but letting the pointer go out of bounds of the array reduces branches and keeps things simpler 
+
+1637978090
+ifreund!~ifreund@user/ifreund
+the gcc and clang prefetch builtins don't require the pointer passed to be valid to derefernce
+
+1637978099
+ifreund!~ifreund@user/ifreund
+they only look at the address, same with the llvm intrinsic
+
+1637978107
+andrewrk!~andrewrk@mail.ziglang.org
+to be clear in the zig language pointers do not have to be valid to dereference either
+
+1637978111
+ifreund!~ifreund@user/ifreund
+which is why I was thinking a usize makes more sense semantically
+
+1637978143
+ifreund!~ifreund@user/ifreund
+if you think taking any arbitrary pointer type that's cool with me, would get rid of the need to cast :D
+
+1637978157
+ifreund!~ifreund@user/ifreund
+s/type/type is better,/
+
+1637978159
+andrewrk!~andrewrk@mail.ziglang.org
+yeah I mean it's a safe operation, so I don't see any reason to require the @ptrToInt
+
+1637978193
+andrewrk!~andrewrk@mail.ziglang.org
+this will retain the property that you should be slightly alarmed if you see any `@ptrToInt` in someone's pull request :)
+
+1637978205
+ifreund!~ifreund@user/ifreund
+yeah, that's fair
+
+1637978275
+ifreund!~ifreund@user/ifreund
+I probably use it too much currently, the ergonomics are a lot better than a combined @ptrCast()/@alignCast(@alignOf()) though
+
+1637978294
+andrewrk!~andrewrk@mail.ziglang.org
+issue updated
+
+1637978328
+andrewrk!~andrewrk@mail.ziglang.org
+that's a flaw in the language we should address then because the combination of those things allows the compiler to retain more type information than @ptrToInt/@intToPtr
+
+1637978367
+ifreund!~ifreund@user/ifreund
+pointer proveance related?
+
+1637978408
+ifreund!~ifreund@user/ifreund
+your prefetch struct looks good to me, thanks for taking a look!
+
+1637978459
+andrewrk!~andrewrk@mail.ziglang.org
+that topic is certainly related. as it stands the language does not have any pointer provenance rules to enforce, but it's an area that I want to explore and I know SpexGuy does too
+
+1637978478
+andrewrk!~andrewrk@mail.ziglang.org
+because pointer provenance is really important for what the optimizer is capable of doing
+
+1637978555
+andrewrk!~andrewrk@mail.ziglang.org
+one idea that is still on the table is another kind of pointer (I know there are already a lot) that only allows "narrowing" pointing, i.e. @fieldParentPtr would not be allowed, nor would pointer arithmetic (if you try to cheat the type system with ptrToInt/intToPtr you'd get UB)
+
+1637978580
+andrewrk!~andrewrk@mail.ziglang.org
+this kind of pointer would be generally preferable to the other kind though, because it has strong aliasing guarantees
+
+1637978596
+andrewrk!~andrewrk@mail.ziglang.org
+that is, the optimizer can prove that it will *not* alias in most cases
+
+1637978639
+ifreund!~ifreund@user/ifreund
+hmm, interesting. I wonder if the performance benefits would be worth the complexity in practice
+
+1637978679
+andrewrk!~andrewrk@mail.ziglang.org
+I think if done right, in practice it would effectively mean regular pointers (*T) have additional restrictions, and you'd have to use a different thing for interfaces (such as Allocator)
+
+1637978739
+andrewrk!~andrewrk@mail.ziglang.org
+actually now that I'm looking at the recent changes to the std.Rand interface, it would not require this other kind of pointer
+
+1637978750
+andrewrk!~andrewrk@mail.ziglang.org
+the remaining use case would be intrusive linked lists
+
+1637978776
+andrewrk!~andrewrk@mail.ziglang.org
+anyway as you can see this is not solved yet 
+
+1637978831
+ifreund!~ifreund@user/ifreund
+I have intrusive data structures all over the river and tigerbeetle code bases :D
+
+1637978888
+andrewrk!~andrewrk@mail.ziglang.org
+that will make them excellent projects to use as case studies to evaluate any pointer provenance related language proposals :)
+
+1637978980
+andrewrk!~andrewrk@mail.ziglang.org
+0.9.0 tag is scheduled for Dec 20. If you get a PR up soon there is a great chance of @prefetch landing into the release
+
+1637978995
+ifreund!~ifreund@user/ifreund
+cool, I'll try and get it up in the next week
+
+1637979020
+ifreund!~ifreund@user/ifreund
+also I've been meaning to take a look at that io_uring PR and also implement the feature detection stuff to make the tests more portable
+
+1637979029
+andrewrk!~andrewrk@mail.ziglang.org
+ah much appreciated
+
+1637979039
+ifreund!~ifreund@user/ifreund
+obviously haven't found time yet though, instead I went to 4 concerts in the past week :D
+
+1637979051
+andrewrk!~andrewrk@mail.ziglang.org
+I noticed the io_uring tests fail on my laptop yesterday and I have not tried to fix it yet
+
+1637979060
+andrewrk!~andrewrk@mail.ziglang.org
+making up for lost time eh? :D
+
+1637979077
+ifreund!~ifreund@user/ifreund
+yeah, I think another PR requiring a relatively new kernel got merged
+
+1637979097
+andrewrk!~andrewrk@mail.ziglang.org
+I should also run an upgrade on my OS, it's been a while
+
+1637979101
+ifreund!~ifreund@user/ifreund
+well, it's looking like europe may be going into another lockdown this winter...
+
+1637979122
+ifreund!~ifreund@user/ifreund
+I already made up for lost time pretty well towards the end of the summer ^^
+
+1637979127
+andrewrk!~andrewrk@mail.ziglang.org
+a lockdown in the midst of having effective vaccines... so disappointing
+
+1637979143
+ifreund!~ifreund@user/ifreund
+yeah, for real
+
+1637979199
+andrewrk!~andrewrk@mail.ziglang.org
+btw hypothetically speaking if there was a zig conference in Milan would you try to make it? :)
+
+1637979206
+ifreund!~ifreund@user/ifreund
+For sure
+
+1637979299
+ifreund!~ifreund@user/ifreund
+by the way, we're probably going to have a tigerbeetle prescense at MozFest 2022 in Amsterdam this March
+
+1637979307
+ifreund!~ifreund@user/ifreund
+well, assuming corona lets us 
+
+1637979315
+andrewrk!~andrewrk@mail.ziglang.org
+oh neat
+
+1638003784
+andrzejku!~andrzejku@45-11-60-125.ip4.greenlan.pl
+Hello
+
+1638022430
+tgschultz!AdiIRC@047-034-058-084.res.spectrum.com
+slowjo, re: arrays of packed ints. PackedIntArray (and in particular PackedIntIo) might help you out. 
+
+1638024836
+GinGin3203!~GinGin320@188.243.182.177
+ACTION says hi
+
+1638031860
+slowjo!~slowjo@sourcehut/user/slowjo
+tgschultz: yeah that does seem to be a bit smarter than what i came up with (my indexes currently have to be comptime)
+
+1638031886
+slowjo!~slowjo@sourcehut/user/slowjo
+s/a bit/a lot/
+
+1638031953
+slowjo!~slowjo@sourcehut/user/slowjo
+thanks for the pointer! i'll see if i can integrate it into what i'm working on
+
+1638038612
+lumo_e!~enrico@37.160.217.192
+I'm cross-compiling a binary for uefi
+
+1638038632
+lumo_e!~enrico@37.160.217.192
+the build.zig is the usual b.addExecutable() with a setTarget etc
+
+1638038643
+lumo_e!~enrico@37.160.217.192
+why doesn't the build step copy the result to zig-out?
+
+1638038785
+lumo_e!~enrico@37.160.217.192
+ok, it does get fixed if I manually add .setOutputDir to the efi executable in the builder
+
+1638038790
+lumo_e!~enrico@37.160.217.192
+but I don't see why this should be needed
+
+1638039306
+g-w1!g-w1@2600:3c03::f03c:92ff:fe2f:c92f
+exe.install()
+
+1638047507
+freshcoffee!~fresh@user/freshcoffee
+github busted for anyone else?
+
+1638047534
+g-w1!g-w1@2600:3c03::f03c:92ff:fe2f:c92f
+yep
+
+1638047551
+freshcoffee!~fresh@user/freshcoffee
+heh their status.github.com -- all green
+
+1638047643
+luuk!~luuk@user/luuk
+Can't miss your SLA if your reports fail :)
+
+1638047684
+freshcoffee!~fresh@user/freshcoffee
+also static status page is less expensive to implement
+
