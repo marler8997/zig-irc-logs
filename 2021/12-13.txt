@@ -1,0 +1,504 @@
+1639358805
+mischief!~mischief@wopr.sciops.net
+is there any way to do https://man.openbsd.org/bcrypt_pbkdf.3 in zig currently?
+
+1639362694
+andrewrk!~andrewrk@mail.ziglang.org
+mischief, I'm not the resident crypto expert but I see both bcrypt and pbkdf in the std lib
+
+1639363945
+mischief!~mischief@wopr.sciops.net
+andrewrk: not clear to me how to combine them. however, i started builting the C source with zig, which mostly works.
+
+1639364007
+mischief!~mischief@wopr.sciops.net
+i am confused by this error though: http://ix.io/3HVt . is there something extra i need to do to access libc functions?
+
+1639364202
+andrewrk!~andrewrk@mail.ziglang.org
+hm this looks related to the bug I am actively in the middle of solving right now
+
+1639364214
+andrewrk!~andrewrk@mail.ziglang.org
+I suggest as a workaround to use musl
+
+1639364222
+andrewrk!~andrewrk@mail.ziglang.org
+e.g. -target native-native-musl
+
+1639364356
+mischief!~mischief@wopr.sciops.net
+is the issue https://github.com/ziglang/zig/issues/5882 ?
+
+1639364410
+mischief!~mischief@wopr.sciops.net
+using musl works, but also a specific libc version seems to work too.
+
+1639364415
+mischief!~mischief@wopr.sciops.net
+mischief@abacus:~/code/zig/zignify $ zig build -Dtarget=native-native-gnu.2.28                     
+
+1639364417
+mischief!~mischief@wopr.sciops.net
+mischief@abacus:~/code/zig/zignify $ zig build -Dtarget=native-native-musl                                                  
+
+1639364419
+mischief!~mischief@wopr.sciops.net
+mischief@abacus:~/code/zig/zignify $ zig build                                                     
+
+1639364421
+mischief!~mischief@wopr.sciops.net
+ld.lld: error: undefined symbol: getentropy
+
+1639364492
+andrewrk!~andrewrk@mail.ziglang.org
+yeah this is what I'm working on solving right now
+
+1639364500
+andrewrk!~andrewrk@mail.ziglang.org
+with https://github.com/ziglang/glibc-abi-tool
+
+1639364528
+andrewrk!~andrewrk@mail.ziglang.org
+I got it generally working yesterday but a couple kinks to work out 
+
+1639364712
+andrewrk!~andrewrk@mail.ziglang.org
+mischief, btw keep in mind that getentropy was added in glibc 2.25. so if you're targeting older than that, the error is correct
+
+1639364726
+andrewrk!~andrewrk@mail.ziglang.org
+could it be that zig is perhaps not correctly determining your native glibc version?
+
+1639364838
+mischief!~mischief@wopr.sciops.net
+my computer seems to have glibc 2.31
+
+1639364886
+mischief!~mischief@wopr.sciops.net
+$ apt-cache show libc6 | grep Ver
+
+1639364888
+mischief!~mischief@wopr.sciops.net
+Version: 2.31-13+deb11u2
+
+1639364911
+mischief!~mischief@wopr.sciops.net
+`zig build -Dtarget=native-native-gnu.2.31` works without error
+
+1639364999
+mischief!~mischief@wopr.sciops.net
+can i print detected libc?
+
+1639365070
+mischief!~mischief@wopr.sciops.net
+oh.. zig build-exe --show-builtin. it says 2.17.0
+
+1639367016
+andrewrk!~andrewrk@mail.ziglang.org
+mischief, that's definitely a bug. let me find the issue for it...
+
+1639367043
+andrewrk!~andrewrk@mail.ziglang.org
+https://github.com/ziglang/zig/issues/6469
+
+1639367093
+andrewrk!~andrewrk@mail.ziglang.org
+that's another one I plan to address this week before the 0.9.0 release (1 week from tomorrow)
+
+1639367103
+mischief!~mischief@wopr.sciops.net
+where is the detector code?
+
+1639367190
+andrewrk!~andrewrk@mail.ziglang.org
+https://github.com/ziglang/zig/blob/master/lib/std/zig/system/NativeTargetInfo.zig
+
+1639367737
+mischief!~mischief@wopr.sciops.net
+wild
+
+1639368713
+andrewrk!~andrewrk@mail.ziglang.org
+should be pretty easy to fix I think. just need to examine what's different on the system where it's picking up the wrong answer
+
+1639374482
+andrewrk!~andrewrk@mail.ziglang.org
+I guess the code looks complicated? but it's just loading an ELF file from disk and looking at some info about it and looking for a libc file path with a version number in it
+
+1639375403
+mischief!~mischief@wopr.sciops.net
+what is the right way to pass a byte slice or array to a C function expecting char *?
+
+1639375497
+mischief!~mischief@wopr.sciops.net
+derp. .ptr works, just had to read the docs
+
+1639378640
+mischief!~mischief@wopr.sciops.net
+is there a way to make tcsetattr work when linking libc? http://ix.io/3I4P gives me "error: container 'std.c' has no member called 'TCSA'"
+
+1639378654
+mischief!~mischief@wopr.sciops.net
+when not linking libc, it compiles.
+
+1639383988
+andrewrk!~andrewrk@mail.ziglang.org
+sounds like a little bug in the std lib that should be fixed
+
+1639385198
+luuk!~luuk@user/luuk
+mischief: Are you on master? This should be fixed by PR 10051 (merged).
+
+1639387563
+mischief!~mischief@wopr.sciops.net
+luuk: hm. i do not think. 0.9.0-dev.1936+77836e08a
+
+1639388022
+mischief!~mischief@wopr.sciops.net
+what is the type of a Writer for the purposes of writing a function signature and passing it as an argument?
+
+1639389330
+luuk!~luuk@user/luuk
+mischief: Typically you'd use `anytype` as to allow any Writer to be passed.
+
+1639389650
+mischief!~mischief@wopr.sciops.net
+i see
+
+1639390461
+andrewrk!~andrewrk@mail.ziglang.org
+mischief, what linux distro are you on where the incorrect glibc version detection is happening?
+
+1639390724
+mischief!~mischief@wopr.sciops.net
+andrewrk: i use debain 11/bullseye, and i have zig 0.9.0-dev.1936+77836e08a
+
+1639390738
+andrewrk!~andrewrk@mail.ziglang.org
+thanks, I'll poke around and see what's going wrong
+
+1639390787
+andrewrk!~andrewrk@mail.ziglang.org
+btw I finished my work fixing some of those other glibc-related issues: https://github.com/ziglang/zig/pull/10330
+
+1639390800
+andrewrk!~andrewrk@mail.ziglang.org
+will be worth upgrading after this is merged I think
+
+1639390884
+mischief!~mischief@wopr.sciops.net
+removing 60k lines is always a nice thing to see
+
+1639390934
+andrewrk!~andrewrk@mail.ziglang.org
+well to be fair it is 60K lines of text files replaced by a 165 KB binary file
+
+1639391083
+mischief!~mischief@wopr.sciops.net
+today i learned a lot and got roughly half of OpenBSD signify written in Zig: http://ix.io/3I74
+
+1639391160
+mischief!~mischief@wopr.sciops.net
+i had to build the bcrypt pbkdf from the upstream source as i didn't see a direct way to do it in zig, but it is neat that i can just build C inside of my zig program.
+
+1639394396
+andrewrk!~andrewrk@mail.ziglang.org
+I can reproduce the bad glibc version detection
+
+1639396772
+daurnimator!~daurnimat@vultr.daurnimator.com
+mischief: share the code? what are the issues you get with our bcrypt?
+
+1639396914
+mischief!~mischief@wopr.sciops.net
+daurnimator: i want to do this in Zig, but i didn't see any directly callable implementation in the standard library, so i just compiled it from C with zig. https://github.com/openbsd/src/blob/master/lib/libutil/bcrypt_pbkdf.c#L98
+
+1639396979
+mischief!~mischief@wopr.sciops.net
+now that my program kind of works and i have a test case and a way to check the output vs the upstream code, maybe i can revisit implementing it in zig instead of c in my program.
+
+1639397077
+Franciman!~Franciman@mx1.fracta.dev
+hi everyone
+
+1639397240
+daurnimator!~daurnimat@vultr.daurnimator.com
+mischief: so first make sure you can implement the C `bcrypt_hash` using zig's `std.crypto.pwhash.bcrypt.bcrypt`
+
+1639397395
+daurnimator!~daurnimat@vultr.daurnimator.com
+mischief: though it looks like that C you linked use a different seed ciphertext (OrpheanBeholderScryDoubt vs OxychromaticBlowfishSwatDynamite)
+
+1639397515
+daurnimator!~daurnimat@vultr.daurnimator.com
+annoyingly std.crypto.pwhash.bcrypt.State isn't public, might be worth making a PR
+
+1639397585
+mischief!~mischief@wopr.sciops.net
+yes, std does not expose the internal blowfish code, so i could not reimplement bcrypt_pbkdf as it stands.
+
+1639397758
+daurnimator!~daurnimat@vultr.daurnimator.com
+mischief: you've nerd sniped me a little; so I might have a go at implementing it
+
+1639397771
+daurnimator!~daurnimat@vultr.daurnimator.com
+Happy to stream it...
+
+1639397975
+mischief!~mischief@wopr.sciops.net
+if State was pub, i don't think it would take long to do. i would be happy to watch, but it is 4 am on a monday and i will certainly be sleeping shortly. save the video :-)
+
+1639403571
+daurnimator!~daurnimat@vultr.daurnimator.com
+mischief: done :)
+
+1639404743
+daurnimator!~daurnimat@vultr.daurnimator.com
+mischief: https://github.com/ziglang/zig/pull/10331
+
+1639404810
+Franciman!~Franciman@mx1.fracta.dev
+are you all familiar with any LR parser generator in zig?
+
+1639412599
+tgschultz!UserNick@047-034-058-084.res.spectrum.com
+conclusion of rewriting a complicated state machine into a coroutine using suspend/rsume: ~20% reduction in lines of code and about 1000x easier to read and reason about.
+
+1639412837
+ifreund!~ifreund@user/ifreund
+tgschultz: nice, does the code happen to be open source/online somewhere?
+
+1639413909
+tgschultz!UserNick@047-034-058-084.res.spectrum.com
+It is in a private github repo currently. I have to clean some stuff up before I make it public.
+
+1639424840
+marler8997!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+andrewrk, what do you think about also versioning the glibc headers?
+
+1639426347
+slowjo!~slowjo@sourcehut/user/slowjo
+the compiler is yelling at me telling me a function cannot be async
+
+1639426371
+slowjo!~slowjo@sourcehut/user/slowjo
+i'm trying the new way of interfaces (what std.random has now)
+
+1639426397
+slowjo!~slowjo@sourcehut/user/slowjo
+and basically used the same implementation
+
+1639426435
+slowjo!~slowjo@sourcehut/user/slowjo
+it's yelling about a function in a closure
+
+1639426578
+slowjo!~slowjo@sourcehut/user/slowjo
+i'm trying to hide some functionality that may suspend behind an interface. is this not possible?
+
+1639426914
+andrewrk!~andrewrk@mail.ziglang.org
+marler8997, I'd like to explore solving the problem with preprocessor defines first
+
+1639426933
+andrewrk!~andrewrk@mail.ziglang.org
+this way the compiler would not have to create temporary directories with processed files in them
+
+1639427035
+marler8997!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+andrewrk, so you mean try patching the latest glibc headers to work with any version?
+
+1639427178
+andrewrk!~andrewrk@mail.ziglang.org
+that would be one approach to produce the my proposed result, but I haven't explored the full possibility space yet
+
+1639427677
+andrewrk!~andrewrk@mail.ziglang.org
+marler8997, we do something like this for macos: https://github.com/ziglang/fetch-them-macos-headers
+
+1639427692
+andrewrk!~andrewrk@mail.ziglang.org
+in this case it only figures diffs at a file granularity
+
+1639427716
+marler8997!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+oh yeah, ok that makes sense
+
+1639427744
+andrewrk!~andrewrk@mail.ziglang.org
+you can see the output if you look at zig/lib/libc/include/*macos* 
+
+1639427780
+andrewrk!~andrewrk@mail.ziglang.org
+I think a different approach may be warranted for glibc
+
+1639427823
+marler8997!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+oh? what are you thinking?
+
+1639427986
+andrewrk!~andrewrk@mail.ziglang.org
+just that there are a lot of versions and I don't want the installation size of zig to balloon for this feature
+
+1639428235
+andrewrk!~andrewrk@mail.ziglang.org
+damn it would have been really convenient if glibc devs maintained their own headers in a multi-version manner
+
+1639428262
+ifreund!~ifreund@user/ifreund
+isn't musl so much nicer?
+
+1639428321
+ifreund!~ifreund@user/ifreund
+I've been wondering a bit about the use case for these stubs tbh, it seems like if you link system libraries you need to link the system libc instead and if you don't you can just use musl and statically link
+
+1639428368
+marler8997!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+https://www.youtube.com/watch?v=Pzl1B7nB9Kc
+
+1639428374
+ifreund!~ifreund@user/ifreund
+which leaves the use-case of what, wanting to dynamically link the system libc for whatever reason but not system libraries?
+
+1639428392
+marler8997!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+Linus mentions how glibc just updates and breaks everyone and doesn't seem to care
+
+1639428418
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+ifreund: cross-compilation for graphics apps?
+
+1639428421
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+cannot link statically there
+
+1639428441
+ifreund!~ifreund@user/ifreund
+ikskuh: if you link system libraries you need to link the system libc as well
+
+1639428525
+ifreund!~ifreund@user/ifreund
+otherwise you end up trying to link system libraries against a different glibc version than they were built against
+
+1639428528
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+i mean, isn't that what the stubs do?
+
+1639428585
+ifreund!~ifreund@user/ifreund
+if you want to cross compile and dynamically link you need the system libraries you want to link against built for the target as well
+
+1639428615
+ifreund!~ifreund@user/ifreund
+so you would need stubs for mesa or whatever I suppose
+
+1639428649
+ifreund!~ifreund@user/ifreund
+see also https://github.com/ziglang/zig/pull/8737 and https://github.com/ziglang/zig/pull/8816
+
+1639428759
+ifreund!~ifreund@user/ifreund
+I guess you vendor mesa's source (ew, that would be ugly) and use zig to cross compile mesa for the target then combine those binaries with glibc stubs
+
+1639428836
+mischief!~mischief@wopr.sciops.net
+daurnimator: does this also do the 'mixing' that openbsd's pbkdf does?
+
+1639428844
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+yeah i have stubs for SDL2
+
+1639429019
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+imho we should provide a generic purpose interface for this
+
+1639429032
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+similar to what we have for windows (user32.def for example)
+
+1639429238
+ikskuh!~xq@2a0d:5940:6:163::ad7e
+we need that to cross-compile from windows to linux system libraries anyways
+
+1639432941
+mischief!~mischief@wopr.sciops.net
+daurnimator: trying to drop this in as a replacement for the C code i imported from OpenBSD does not produce the same output for the key with the same password and salt.. :(
+
+1639439040
+andrewrk!~andrewrk@mail.ziglang.org
+ifreund, yeah I find musl to be generally much cleaner and nicer
+
+1639439062
+andrewrk!~andrewrk@mail.ziglang.org
+however I will note that I recently also had to do some creative engineering for musl stubs: https://github.com/ziglang/zig/blob/master/tools/gen_stubs.zig
+
+1639439110
+andrewrk!~andrewrk@mail.ziglang.org
+in this case they don't have metadata sitting around to describe what symbols are available on what targets, so I had to build musl for all the targets and then this script analyzes the libc.so files and generates libc.S with the differences represented with the preprocessor
+
+1639439307
+ifreund!~ifreund@user/ifreund
+yeah I saw that, it seems way more robust than what I did
+
+1639439323
+ifreund!~ifreund@user/ifreund
+I also like how you just parse the elf file directly instead of parsing objdump output xD
+
+1639439413
+andrewrk!~andrewrk@mail.ziglang.org
+haha
+
+1639439426
+andrewrk!~andrewrk@mail.ziglang.org
+that was the first thing I did and it actually ended up being fewer lines!
+
+1639439442
+andrewrk!~andrewrk@mail.ziglang.org
+ELF is a nice format
+
+1639439567
+ifreund!~ifreund@user/ifreund
+andrewrk: did you see my comment on the anyopaque PR yet by the way? I think we may actually want to hold off unless you want to make a quick executive decision: https://github.com/ziglang/zig/pull/10316#issuecomment-992722612
+
+1639439618
+andrewrk!~andrewrk@mail.ziglang.org
+just looked- hmm yeah I think I agree with you on both points
+
+1639439676
+ifreund!~ifreund@user/ifreund
+one thing I realized about the waiting till after 0.9.0 though, we would then need to wait until after 0.10.0 to do the second rename
+
+1639439709
+ifreund!~ifreund@user/ifreund
+cause we need one full release cycle of zig fmt magic fix, but if we re-use anytype we'd have a conflict if both are active at once
+
+1639439743
+ifreund!~ifreund@user/ifreund
+that's fine though, it will just be even longer till I get to stop writing c_void :D
+
+1639439889
+andrewrk!~andrewrk@mail.ziglang.org
+there's a small part of me that still wants to make inferred type parameters have the same syntax as inferred type variables, i.e. omit the colon and type expression entirely
+
+1639439912
+andrewrk!~andrewrk@mail.ziglang.org
+the argument against that is that it makes it too easy to use inferred type parameters
+
+1639439925
+andrewrk!~andrewrk@mail.ziglang.org
+but idk, I'm kind of fine with that
+
+1639439961
+ifreund!~ifreund@user/ifreund
+hmm, I feel like that would look really weird for anytype fields
+
+1639439969
+ifreund!~ifreund@user/ifreund
+which we need for std.builtin.TypeInfo sadly
+
+1639439974
+andrewrk!~andrewrk@mail.ziglang.org
+mm good point
+
