@@ -1,0 +1,140 @@
+1640752921
+gpanders!~gpanders@user/gpanders
+how do I create a sentinel terminated slice from a non-sentinel slice (e.g. for passing to a C function?) is `slice[0..:0]` correct?
+
+1640753972
+jcmoyer!~jcmoyer@user/jcmoyer
+gpanders: std.mem.sliceTo(slice, 0)
+
+1640754331
+jcmoyer!~jcmoyer@user/jcmoyer
+whoops, first you have to put a sentinel on the source type: std.mem.sliceTo(slice[0..:0], 0), which will return a slice with len up to the first 0
+
+1640757267
+ifreund!2940d10f8b@user/ifreund
+gpanders: std.mem.Allocator.dupeZ() may be useful
+
+1640759857
+leon-p!1b22ab9492@2604:bf00:561:2000::18c
+so... if zig tells me "broken LLVM module found: Instruction does not dominate all uses!", what am I doing wrong?
+
+1640759904
+leon-p!1b22ab9492@2604:bf00:561:2000::18c
+it prints that it's a compiler bug, so probably nothing. What information should a bug report include?
+
+1640759945
+andrewrk!~andrewrk@mail.ziglang.org
+leon-p, if it prints that, you are doing nothing wrong, you have found a bug in the compiler
+
+1640760031
+andrewrk!~andrewrk@mail.ziglang.org
+there are a lot of similar bugs reported to this one, and we're very close to replacing the compiler with a new self-hosted one. I suggest to find a workaround for now, and then check back with zig 0.10.0 (in about 6 months) and see if you can remove the workaround
+
+1640760102
+leon-p!1b22ab9492@2604:bf00:561:2000::18c
+sounds good
+
+1640760943
+andrewrk!~andrewrk@mail.ziglang.org
+self-hosted compiler progress report: the LLVM backend has 51% of the behavior tests passing
+
+1640769823
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+I was trying to use Loop.runDetached and looks like it's causing occasional segfaults when using multi-threaded event loop (works fine with single threaded, also fine when leaking frames instead)
+
+1640769830
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+is this a known issue?
+
+1640769971
+Wolf480pl!wolf480pl@2a01:4f8:c2c:e5b0::1
+I'm looking at the coredump with gdb and it looks like the it happened when workerRun resumed linuxWaitFd, but linuxWaitFd's @frame pointer leads to unmapped (freed?) memory, and also the second argument to the coroutine is -3 (as in regular call) instead of -1 or -2
+
+1640795238
+leon-p!1b22ab9492@2604:bf00:561:2000::18c
+might have found another compiler bug: I have a loop `while (a) { ... }`, where a is from a struct init'd elsewhere and eventually will be false, but the loop only exits if I either put `if (!a) break` at the end of it or set a to true again before the loop...
+
+1640795650
+ikskuh!~xq@v43666.php-friends.de
+leon-p: multithreading?
+
+1640795817
+leon-p!1b22ab9492@2604:bf00:561:2000::18c
+nope, the previous compiler bug made me switch to a single-threaded poll() based event loop
+
+1640795902
+ikskuh!~xq@v43666.php-friends.de
+which "previous"?
+
+1640795956
+leon-p!1b22ab9492@2604:bf00:561:2000::18c
+a few hours ago I had an encounter with ""broken LLVM module found: Instruction does not dominate all uses!"
+
+1640796056
+Stalevar!~stalevar@user/stalevar
+I have similar problem by the way
+
+1640796073
+Stalevar!~stalevar@user/stalevar
+my program has a loop and at certain value of loop counter it should exit but it doesn't
+
+1640796098
+Stalevar!~stalevar@user/stalevar
+the loop continues on past the correct value
+
+1640796204
+ikskuh!~xq@v43666.php-friends.de
+leon-p: ah that one. wild guess: you compared an optional to a non-optional ^^
+
+1640796274
+leon-p!1b22ab9492@2604:bf00:561:2000::18c
+ikskuh: Maybe. But I planned to switch to poll anyway, so this just made me do it a bit earlier than planned :D
+
+1640796877
+leon-p!1b22ab9492@2604:bf00:561:2000::18c
+yep, gdb tells me the loop conditional has been optimized out...
+
+1640796963
+ikskuh!~xq@v43666.php-friends.de
+can you share some code?
+
+1640796982
+ikskuh!~xq@v43666.php-friends.de
+as long as you don't write the loop conditional from inside the loop (aka: using threads/signals/...)
+
+1640796989
+ikskuh!~xq@v43666.php-friends.de
+the compiler is free to optimize the read out
+
+1640796995
+ikskuh!~xq@v43666.php-friends.de
+unless you use atomics
+
+1640796997
+leon-p!1b22ab9492@2604:bf00:561:2000::18c
+sure, let me just push
+
+1640797170
+leon-p!1b22ab9492@2604:bf00:561:2000::18c
+ikskuh: here it is https://git.sr.ht/~leon_plickat/nfm/tree/no-buffer/item/src/nfm.zig#L125
+
+1640797196
+leon-p!1b22ab9492@2604:bf00:561:2000::18c
+let me try and see if I can also reproduce it on a different computer
+
+1640797286
+ikskuh!~xq@v43666.php-friends.de
+huh
+
+1640797298
+ikskuh!~xq@v43666.php-friends.de
+that definitly should work
+
+1640797305
+ikskuh!~xq@v43666.php-friends.de
+you might have found a llvm bug :;O
+
+1640797377
+leon-p!1b22ab9492@2604:bf00:561:2000::18c
+interestingly I can't reproduce it on my workstation, just on my laptop
+
