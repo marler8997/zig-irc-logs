@@ -1,0 +1,356 @@
+1642212596
+shachaf!~shachaf@user/shachaf
+andrewrk: I'm not sure about the details of what you're doing with ptrace, but the new Linux ptrace API (since Linux 3.4, 2012) uses PTRACE_SEIZE rather than PTRACE_ATTACH, and avoids some annoying pitfalls (e.g. issues with SIGSTOP, I think?), so you might want to just use it if you can.
+
+1642212838
+andrewrk!~andrewrk@mail.ziglang.org
+shachaf, noted
+
+1642212855
+andrewrk!~andrewrk@mail.ziglang.org
+do you know how to stop all threads with one syscall?
+
+1642212871
+shachaf!~shachaf@user/shachaf
+Oh, looking at 2:15:44 in your video, it looks like you looked at this part of the man page, which is written pretty confusingly.
+
+1642212931
+shachaf!~shachaf@user/shachaf
+There are two modes of attaching to a process with ptrace, and the PTRACE_ATTACH mode is just broken with regard to stopping signals. Every user of it is broken.
+
+1642212955
+andrewrk!~andrewrk@mail.ziglang.org
+yeah the idea is to attach before execve, right? then issue an INTERRUPT?
+
+1642212977
+shachaf!~shachaf@user/shachaf
+Hmm, shouldn't the standard stopping behavior stop all threads?
+
+1642213000
+andrewrk!~andrewrk@mail.ziglang.org
+my understanding is the standard stopping behavior is to issue a SIGSTOP signal to the pid
+
+1642213001
+shachaf!~shachaf@user/shachaf
+Here are my half-written notes about ptrace: https://shachaf.net/tmp/ptrace-notes.txt
+
+1642213076
+shachaf!~shachaf@user/shachaf
+See the section "Group-stop" for this, I think. (But the behavior with PTRACE_ATTACH is broken, as mentioned, and I don't quite remember all the details.)
+
+1642213120
+andrewrk!~andrewrk@mail.ziglang.org
+ah that first sentence answers my question. thanks
+
+1642213205
+andrewrk!~andrewrk@mail.ziglang.org
+reading this man page is giving me ideas about writing a thread race fuzzer
+
+1642213271
+shachaf!~shachaf@user/shachaf
+Oh man, this API is so annoying and complicated.
+
+1642213344
+shachaf!~shachaf@user/shachaf
+I don't even know whether you're supposed to INTERRUPT after seizing. I think it might only be necessary to handle weird edge cases?
+
+1642213688
+andrewrk!~andrewrk@mail.ziglang.org
+fortunately all we need for hot code swapping is to pause and resume the process
+
+1642213747
+andrewrk!~andrewrk@mail.ziglang.org
+empirically, PTRACE_ATTACH and PTRACE_DETACH was enough
+
+1642213758
+andrewrk!~andrewrk@mail.ziglang.org
+then we just need to do a little bit of process_vm_write in between
+
+1642213813
+shachaf!~shachaf@user/shachaf
+Makes sense, if you're just attaching, doing something, and immediately detaching, it's probably not too bad as long as no signals arrive in the middle.
+
+1642213862
+shachaf!~shachaf@user/shachaf
+Here's some code I just dug up that may or may not be helpful, also (sounds like not, based on what you just said): https://shachaf.net/tmp/translate-ptrace-event.txt
+
+1642214024
+andrewrk!~andrewrk@mail.ziglang.org
+thanks!
+
+1642214042
+andrewrk!~andrewrk@mail.ziglang.org
+I'm probably going to put this project down until next friday
+
+1642214069
+andrewrk!~andrewrk@mail.ziglang.org
+my main focus is on getting self-hosted to build itself
+
+1642214102
+jaredmm!~jaredmm@user/jaredmm
+Trying to build some C++ code, only cxx option I'm passing to add source files is -std=c++11, and I'm getting an error from clang during zig build: invalid argument '-std=c++11' not allowed with 'C'
+
+1642214109
+jaredmm!~jaredmm@user/jaredmm
+What would I be doing wrong to introduce that?
+
+1642214167
+andrewrk!~andrewrk@mail.ziglang.org
+jaredmm, can I see the zig CLI command line?
+
+1642214254
+andrewrk!~andrewrk@mail.ziglang.org
+"not allowed with" does not appear anywhere in the zig codebase
+
+1642214285
+jaredmm!~jaredmm@user/jaredmm
+That's an error from clang during the compile (error(compilation): clang failed with stderr: error: invalid argument '-std=c++11' not allowed with 'C').
+
+1642214337
+andrewrk!~andrewrk@mail.ziglang.org
+set ZIG_VERBOSE_CC=1 and run the command and then let's look at the command
+
+1642215124
+jaredmm!~jaredmm@user/jaredmm
+https://pastebin.com/ZrmeKv70
+
+1642215300
+andrewrk!~andrewrk@mail.ziglang.org
+jaredmm, it looks like you passed an .h file to the compiler
+
+1642215325
+andrewrk!~andrewrk@mail.ziglang.org
+if you just remove that from your build script that should solve your problem
+
+1642215366
+andrewrk!~andrewrk@mail.ziglang.org
+just pass the .c and .cpp files, not the .h files
+
+1642215394
+andrewrk!~andrewrk@mail.ziglang.org
+I'll be back later
+
+1642215410
+jaredmm!~jaredmm@user/jaredmm
+Yup, whoops.
+
+1642215974
+jaredmm!~jaredmm@user/jaredmm
+Thanks, looks good. 
+
+1642215991
+jaredmm!~jaredmm@user/jaredmm
+Well, it looks terrible, but that can't be helped.
+
+1642216000
+jaredmm!~jaredmm@user/jaredmm
+It works as it should. 
+
+1642230871
+voldial!~user@user/voldial
+(zig noob) +1 on "error: unused local constant" is really nice to know there isnt a bad assumption about var use
+
+1642230923
+voldial!~user@user/voldial
+I read the issue, the args for warning's etc zont want zig
+
+1642238902
+novakane!ca74a093b3@user/novakane
+is zigforum down? Or is it just me
+
+1642243792
+ifreund!2940d10f8b@user/ifreund
+novakane: down for me too
+
+1642276662
+tsmanner!~tsmanner@pool-100-40-199-193.pghkny.fios.verizon.net
+Is there an easy way to extract the name of a type from a `comptime T: type` function parameter?
+
+1642276732
+andrewrk!~andrewrk@mail.ziglang.org
+tsmanner, https://ziglang.org/documentation/master/#typeName
+
+1642276755
+Franciman!~Franciman@mx1.fracta.dev
+lol zig build looping forever
+
+1642276772
+Franciman!~Franciman@mx1.fracta.dev
+ah no, it is consuming my whole memory
+
+1642276776
+Franciman!~Franciman@mx1.fracta.dev
+hmmhm
+
+1642276797
+tsmanner!~tsmanner@pool-100-40-199-193.pghkny.fios.verizon.net
+Derp, I was hunting around in std.meta and std.builtin.TypeInfo.  Thanks andrewrk!
+
+1642276809
+Franciman!~Franciman@mx1.fracta.dev
+https://bpa.st/HUAA is there something wrong in this code?
+
+1642276833
+Franciman!~Franciman@mx1.fracta.dev
+i think the weirdest thing is that i defined https://bpa.st/HUAA#1L37
+
+1642276849
+Franciman!~Franciman@mx1.fracta.dev
+it's particular recursive data type
+
+1642276854
+Franciman!~Franciman@mx1.fracta.dev
+the recursive part changes type
+
+1642276879
+Franciman!~Franciman@mx1.fracta.dev
+FingerTree(V) has an element of type *FingerTree(Node(V))
+
+1642276893
+Franciman!~Franciman@mx1.fracta.dev
+which in turn will have an element of type *FingerTree(Node(Node(V))
+
+1642276895
+Franciman!~Franciman@mx1.fracta.dev
+etc
+
+1642277104
+tsmanner!~tsmanner@pool-100-40-199-193.pghkny.fios.verizon.net
+Franciman what's the calling code look like?  I had a similar issue in the last couple weeks with recursive tree too
+
+1642277118
+Franciman!~Franciman@mx1.fracta.dev
+ah it's just
+
+1642277123
+Franciman!~Franciman@mx1.fracta.dev
+_ = FingerTree(u32)
+
+1642277128
+Franciman!~Franciman@mx1.fracta.dev
+just to test if it compiles
+
+1642277302
+tsmanner!~tsmanner@pool-100-40-199-193.pghkny.fios.verizon.net
+Definitely an infinite loop, if you add @compileLog(@This()) between lines 17 and 18, you'll crash after printing a few thousand "| (root)" lines
+
+1642277364
+tsmanner!~tsmanner@pool-100-40-199-193.pghkny.fios.verizon.net
+Oh I see
+
+1642277387
+tsmanner!~tsmanner@pool-100-40-199-193.pghkny.fios.verizon.net
+Franciman FingerTree(Node(Value)) is further wrapping Node(Value) in Node again
+
+1642277391
+Franciman!~Franciman@mx1.fracta.dev
+yes
+
+1642277396
+Franciman!~Franciman@mx1.fracta.dev
+that's intended
+
+1642277455
+tsmanner!~tsmanner@pool-100-40-199-193.pghkny.fios.verizon.net
+The type isn't expressable that way, because a FingerTree(u32) has a child pointer of type FingerTree(Node(u32)), which has a child pointer of type FingerTree(Node(Node(u32)), and so on forever
+
+1642277466
+Franciman!~Franciman@mx1.fracta.dev
+hm i see
+
+1642277477
+Franciman!~Franciman@mx1.fracta.dev
+is there a way out of this'
+
+1642277479
+Franciman!~Franciman@mx1.fracta.dev
+?
+
+1642277528
+tsmanner!~tsmanner@pool-100-40-199-193.pghkny.fios.verizon.net
+I suspect the next: *FingerTree(Node(Value)) needs to be *FingerTree(Value), but I haven't read the pdf yet to see if the extra Node wrappers are significant.
+
+1642277565
+Franciman!~Franciman@mx1.fracta.dev
+the extra node wrapper is to make sure in the types that the two Digits are balanced
+
+1642277570
+Franciman!~Franciman@mx1.fracta.dev
+i.e. have the same height as a tree
+
+1642277591
+Franciman!~Franciman@mx1.fracta.dev
+so the topmost fingertree has directly Values
+
+1642277601
+Franciman!~Franciman@mx1.fracta.dev
+the next fingertree has nodes of values (i.e. depth 2)
+
+1642277609
+Franciman!~Franciman@mx1.fracta.dev
+the next fingertree has nodes of nodes of values (i.e. depth 3)
+
+1642277611
+Franciman!~Franciman@mx1.fracta.dev
+etc
+
+1642277632
+tsmanner!~tsmanner@pool-100-40-199-193.pghkny.fios.verizon.net
+Is the depth known at comptime?
+
+1642277660
+Franciman!~Franciman@mx1.fracta.dev
+yes
+
+1642277667
+Franciman!~Franciman@mx1.fracta.dev
+you are right
+
+1642277671
+Franciman!~Franciman@mx1.fracta.dev
+i could ad da comptime int
+
+1642277674
+Franciman!~Franciman@mx1.fracta.dev
+hmhm
+
+1642277700
+Franciman!~Franciman@mx1.fracta.dev
+thanks tsmanner you made me think better
+
+1642277705
+Franciman!~Franciman@mx1.fracta.dev
+now i try something ty
+
+1642277764
+tsmanner!~tsmanner@pool-100-40-199-193.pghkny.fios.verizon.net
+Good luck!
+
+1642277857
+Franciman!~Franciman@mx1.fracta.dev
+i think i will first implement them in scheme
+
+1642277860
+Franciman!~Franciman@mx1.fracta.dev
+and then try to port to zig
+
+1642277863
+Franciman!~Franciman@mx1.fracta.dev
+:2
+
+1642278000
+tsmanner!~tsmanner@pool-100-40-199-193.pghkny.fios.verizon.net
+Reading through the paper, that sounds like a good plan to me! The authors seem to be coming from functional-programming
+
+1642285206
+voldial!~user@user/voldial
+Is there something wrong with my setup? I am using zig.vim, and by default all TODO's are hilighted yellow, the exact same color as if I was to search with `/`, which is distracting when I am looking for matches.
+
+1642285258
+voldial!~user@user/voldial
+https://github.com/ziglang/zig.vim/blob/master/syntax/zig.vim#L235
+
+1642286623
+voldial!~user@user/voldial
+oops. user error. its not zig.vim, just realized that plugin isnt being executed
+
