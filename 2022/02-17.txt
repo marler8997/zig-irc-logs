@@ -1,0 +1,868 @@
+1645070782
+andrewrk!~andrewrk@mail.ziglang.org
+check it out: as of 02902cc099d, our Windows CI depends on neither MSVC, nor cmake, nor MSYS
+
+1645070847
+andrewrk!~andrewrk@mail.ziglang.org
+it's just some powershell and `zig build`
+
+1645086353
+motiejus!~motiejus@2001:470:69fc:105::38fb
+how do I cast `[]const u8` to `[]const KV`, when KV is a simple 2-byte struct (I am reading and writing to/from a file)?
+
+1645086374
+ikskuh!~xq@v43666.php-friends.de
+is KV extern?
+
+1645086383
+motiejus!~motiejus@2001:470:69fc:105::38fb
+no
+
+1645086385
+ikskuh!~xq@v43666.php-friends.de
+andrewrk: sweet
+
+1645086392
+motiejus!~motiejus@2001:470:69fc:105::38fb
+it's a packed struct
+
+1645086402
+ikskuh!~xq@v43666.php-friends.de
+ah, why that?
+
+1645086462
+motiejus!~motiejus@2001:470:69fc:105::38fb
+actually, I will need to convert `[*c]` (plus I know the length) to `[]const KV`
+
+1645086476
+motiejus!~motiejus@2001:470:69fc:105::38fb
+but I am not there yet -- I am currently writing unit tests that just have a `[]const u8`
+
+1645086493
+motiejus!~motiejus@2001:470:69fc:105::38fb
+i.e. I will need to interpret a C pointer and a length to a zig's packed struct
+
+1645086545
+ikskuh!~xq@v43666.php-friends.de
+motiejus: still the question: why using packed struct instead of extern struct?
+
+1645086556
+ikskuh!~xq@v43666.php-friends.de
+extern is typically the right thing when interfacing C
+
+1645086569
+ikskuh!~xq@v43666.php-friends.de
+especially when you have two byte-sized elements
+
+1645086610
+motiejus!~motiejus@2001:470:69fc:105::38fb
+hm. C will never see that struct
+
+1645086624
+motiejus!~motiejus@2001:470:69fc:105::38fb
+C will provide me with a piece of memory, and zig needs to interpret it
+
+1645086721
+motiejus!~motiejus@2001:470:69fc:105::38fb
+and this is how I interpret the docs: if I don't need to pass the struct to C, I shouldn't use `extern struct`
+
+1645086857
+motiejus!~motiejus@2001:470:69fc:105::38fb
+looks like I needed `@bitCast`
+
+1645087548
+ikskuh!~xq@v43666.php-friends.de
+nah, this isn't a goo interpretation imho
+
+1645087570
+ikskuh!~xq@v43666.php-friends.de
+if C never sees the memory, you neither need extern nor packked
+
+1645087575
+ikskuh!~xq@v43666.php-friends.de
+*packed
+
+1645088095
+motiejus!~motiejus@2001:470:69fc:105::38fb
+the struct is `const ShellIndex = packed struct { offset: u10, len: u6 }` ; since the members are not byte-aligned, I think I need a guaranteed memory layout?
+
+1645088128
+motiejus!~motiejus@2001:470:69fc:105::38fb
+though by simply removing `packed` keeps the unit tests passing. That's strange, given my interpretation of the docs
+
+1645088321
+ikskuh!~xq@v43666.php-friends.de
+if you remove packed, the struct will be 32 bit large instead of 16
+
+1645088508
+motiejus!~motiejus@2001:470:69fc:105::38fb
+so I do need packed then to keep it's size under control. Thanks.
+
+1645088942
+ikskuh!~xq@v43666.php-friends.de
+ah, yeah. i thought you have two byte sized items
+
+1645089640
+motiejus!~motiejus@2001:470:69fc:105::38fb
+ack. And the unit tests worked, because I used the same struct for both reading and writing it.
+
+1645096869
+ifreund!2940d10f8b@user/ifreund
+andrewrk: I managed to match the generated instructions for the C code I was porting exactly (aside from irrelevant ordering) so the generated code for @intCast() on vectors seems fine :)
+
+1645097349
+ifreund!2940d10f8b@user/ifreund
+andrewrk: with regards to #7605 I agree with LemonBoy, I like having the assertion and it's caught bugs in my code before
+
+1645097401
+ifreund!2940d10f8b@user/ifreund
+I wouldn't mind making the @intCast(std.math.Log2Int, foo) implicit to the shift operation
+
+1645097411
+plumeus!~plumeus@user/plumeus
+idk if it caught bugs in mine, but it bettered my understanding of the code and hasn't felt annoying to me yet.
+
+1645097500
+ifreund!2940d10f8b@user/ifreund
+alternatively https://github.com/ziglang/zig/issues/509 would also help avoid the need to @intCast() in many cases I've seen depending on how smart the compiler gets with it
+
+1645097552
+plumeus!~plumeus@user/plumeus
+Wouldn't log2 be unoptimal if you can assert that it can even be lower?
+
+1645097616
+ifreund!2940d10f8b@user/ifreund
+the log2 of the lhs's int size is just what's always safe for the rhs of shift operations
+
+1645097635
+ifreund!2940d10f8b@user/ifreund
+I'd say if you wanted to do further assertions you should just add those manually
+
+1645097716
+plumeus!~plumeus@user/plumeus
+A person on Matrix wanted me to say this on the person's behalf:
+
+1645097719
+plumeus!~plumeus@user/plumeus
+"the current behaviour enforces safe usage and an implicit @intCast is likely to increase unexpected bugs"
+
+1645097882
+plumeus!~plumeus@user/plumeus
+Also, I feel like people might take the lazy path (or new users might not notice at all) for even smaller sizes.
+
+1645097906
+plumeus!~plumeus@user/plumeus
+In the scenarios in which it matters, not explicitly casting it is a design flaw.
+
+1645097966
+ifreund!2940d10f8b@user/ifreund
+even if shift operators preformed the @intCast implicitly it would still be safety checked
+
+1645097990
+ifreund!2940d10f8b@user/ifreund
+but I agree that forcing the programmer to write it themselves forces them to think better about if it's actually correct or not
+
+1645098191
+plumeus!~plumeus@user/plumeus
+If you want to do `@as(u32, 1) << @as(x, u32_value)` where `x` is meant to be , say, `u3`. If they take the implicit path and there's an error in their code that lets the value of x be above 8 but less than 32, they will essentially have faced a design flaw that would probably have been more preventable if done explicitly.
+
+1645098204
+plumeus!~plumeus@user/plumeus
+But yeah, there's at least nothing inherently incorrect about that.
+
+1645099647
+plumeus!~plumeus@user/plumeus
+Also, maybe somebody really wants `@truncate` and wouldn't notice until their first runtime error encounter.
+
+1645099772
+ifreund!2940d10f8b@user/ifreund
+Yeah, I think making it implicit doesn't really fit with Zig's philosophy
+
+1645109433
+WardBrian!~WardBrian@207.251.102.115
+Hi all, I'm testing out using zig cc and zig c++ as drop in compilers for a large C++ project (CmdStan). A lot of the build proceeds fine with only some warnings, but at the end when compiling the example model I get a strange error - https://gist.github.com/WardBrian/56d6715247cfcee6634fd102b54cb7e2
+
+1645110280
+plumeus!~plumeus@user/plumeus
+https://github.com/stan-dev/cmdstan This project?
+
+1645110293
+WardBrian!~WardBrian@207.251.102.115
+Yes
+
+1645110308
+plumeus!~plumeus@user/plumeus
+Can't you just do `CXX="zig c++"` and then try running `make`?
+
+1645110334
+plumeus!~plumeus@user/plumeus
+You did make sure the command you tried at least works for Clang, right?
+
+1645110357
+WardBrian!~WardBrian@207.251.102.115
+Yes, clang and gcc are the officially supported compilers, and clang is used in the CI for the project
+
+1645110380
+WardBrian!~WardBrian@207.251.102.115
+CXX=zig c++
+
+1645110380
+WardBrian!~WardBrian@207.251.102.115
+CC=zig cc
+
+1645110381
+WardBrian!~WardBrian@207.251.102.115
+TBB_CXX_TYPE=clang
+
+1645110381
+WardBrian!~WardBrian@207.251.102.115
+PRECOMPILED_HEADERS=false
+
+1645110382
+WardBrian!~WardBrian@207.251.102.115
+TBB_CC=zig cc
+
+1645110382
+WardBrian!~WardBrian@207.251.102.115
+These are the variables I set in `make/local` after some testing
+
+1645110444
+WardBrian!~WardBrian@207.251.102.115
+`make build` (which essentially just precompiles libraries) works fine, but building a model like the one in the examples folder (which is when linking etc really kick off) fails with the error in that gist
+
+1645110663
+plumeus!~plumeus@user/plumeus
+Still cloning submodules, fun
+
+1645110719
+WardBrian!~WardBrian@207.251.102.115
+The 'releases' pages have tarballs which avoid the entire history of the project getting cloned, otherwise it can be a big one
+
+1645110910
+plumeus!~plumeus@user/plumeus
+Weird, running `make build` doesn't work for me because the header file names are off, seems like... I guess I need to try the release tarballs.
+
+1645111208
+plumeus!~plumeus@user/plumeus
+I got some linking error for `make build` with the release tarball too. Didn't set `TBB_CC`, maybe I needed to.
+
+1645111352
+WardBrian!~WardBrian@207.251.102.115
+I think so, TBB_CXX_TYPE is used to set flags for IntelTBB, but it is also used to derive TBB_CC if it is not explicitly set
+
+1645111379
+plumeus!~plumeus@user/plumeus
+Clang also gave me an error for me with that `bernoulli` example, weird.
+
+1645111401
+plumeus!~plumeus@user/plumeus
+With `CC="clang" CXX="clang++"` on NixOS, which defaults to GCC.
+
+1645111443
+plumeus!~plumeus@user/plumeus
+Well, Clang isn't (normally) installed on my system. So I wonder if it just used GCC then.
+
+1645111519
+WardBrian!~WardBrian@207.251.102.115
+I've used both GCC and Clang to compile before, on Ubuntu 20.04
+
+1645111630
+plumeus!~plumeus@user/plumeus
+Welp, I get like dozens of "undefined reference to `typeinfo for std::__1::<whatever>" with the tarball from released 3 days ago. Might be NixOS.
+
+1645111721
+WardBrian!~WardBrian@207.251.102.115
+Thanks for trying. Have you ever seen an error like `ld.lld: error: examples/bernoulli/bernoulli.hpp:2: unknown directive: //`? I can't figure out why it's choking on a line comment like that
+
+1645111769
+plumeus!~plumeus@user/plumeus
+I've not, with Clang. Just figured out I need to do `make clean-all` instead of `clean`, so I decided to try Zig again with `TBB_CC` set.
+
+1645111864
+plumeus!~plumeus@user/plumeus
+Welp, it seems like I do need `PRECOMPILED_HEADERS=false`, but I did at least get it to build.
+
+1645111917
+plumeus!~plumeus@user/plumeus
+yep, got the same error as you
+
+1645112010
+WardBrian!~WardBrian@207.251.102.115
+That's great, 'misery loves company' and all
+
+1645112068
+plumeus!~plumeus@user/plumeus
+Tried removing the comment, and then it trips of `unknown directive: namespace`, fun
+
+1645112311
+WardBrian!~WardBrian@207.251.102.115
+I hadn't tried that yet, but good thought
+
+1645112338
+plumeus!~plumeus@user/plumeus
+Can reproduce the error on Zig 0.9.0 and Zig master.
+
+1645112341
+jcmoyer_!~jcmoyer@user/jcmoyer
+It seems zig c++ can't handle source files with a .hpp extension, it simply writes the contents of the header file to the output file. Then the linker uses that plaintext as input and fails.
+
+1645112397
+plumeus!~plumeus@user/plumeus
+hahaha
+
+1645112422
+WardBrian!~WardBrian@207.251.102.115
+Would that be considered a bug?
+
+1645112454
+plumeus!~plumeus@user/plumeus
+Yeah, being able to compile C++ code is one of Zig's use-cases.
+
+1645112467
+plumeus!~plumeus@user/plumeus
+If it's not a bug, it's definitely a well deserved "enhancement"
+
+1645112489
+jcmoyer_!~jcmoyer@user/jcmoyer
+I'm not sure, it's not typical to compile headers, usually you compile source code that includes them
+
+1645112546
+plumeus!~plumeus@user/plumeus
+Oh, yeah.
+
+1645112574
+plumeus!~plumeus@user/plumeus
+But I presume GCC and Clang supports it?
+
+1645112594
+plumeus!~plumeus@user/plumeus
+Unless cmdstan is doing something weird
+
+1645112595
+jcmoyer_!~jcmoyer@user/jcmoyer
+Yeah, extensions don't really have any meaning
+
+1645112792
+plumeus!~plumeus@user/plumeus
+lol, tried renaming the file to `.cpp` and got a different error about argument lists being too long
+
+1645112793
+jcmoyer_!~jcmoyer@user/jcmoyer
+from a quick look it doesn't seem like zig handles .hpp, but it does handle .h, so I guess it's a bug
+
+1645112939
+plumeus!~plumeus@user/plumeus
+https://github.com/ziglang/zig/blob/master/src/Compilation.zig#L4277
+
+1645112940
+plumeus!~plumeus@user/plumeus
+yeah
+
+1645113078
+dutchie!~dutchie@user/dutchie
+i like the punning of the enum literals for file extensions
+
+1645113137
+plumeus!~plumeus@user/plumeus
+I wonder how hard it would be to just add `.hpp` support? Seems like this could fall under "contributor friendly"? idk
+
+1645113190
+WardBrian!~WardBrian@207.251.102.115
+https://github.com/ziglang/zig/blob/baead472d7641bdd96130354bafadc1fb1ed223b/src/Compilation.zig#L4215 could be added here maybe?
+
+1645113281
+plumeus!~plumeus@user/plumeus
+hmm, `.h` isn't a part of `hasCExt`
+
+1645113293
+plumeus!~plumeus@user/plumeus
+I wonder if Zig actually can compile `.h`
+
+1645113316
+jcmoyer_!~jcmoyer@user/jcmoyer
+it's handled here https://github.com/ziglang/zig/blob/baead472d7641bdd96130354bafadc1fb1ed223b/src/Compilation.zig#L4277-L4278 and https://github.com/ziglang/zig/blob/baead472d7641bdd96130354bafadc1fb1ed223b/src/Compilation.zig#L3874
+
+1645113402
+plumeus!~plumeus@user/plumeus
+It's funny how `.hpp` outright aren't mentioned anywhere on this file.
+
+1645113504
+WardBrian!~WardBrian@207.251.102.115
+It seems to me like adding .hpp as a valid option on that same dispatch would likely be 'obvious' fix (assuming it doesn't run into more problems after that)
+
+1645113535
+WardBrian!~WardBrian@207.251.102.115
+I'm very new to zig so I'm not sure how difficult it would be for me to try it and bootstrap the compiler
+
+1645113615
+ikskuh!~xq@v43666.php-friends.de
+i don't think we should allow compilation of header files
+
+1645113660
+plumeus!~plumeus@user/plumeus
+Shouldn't Zig at least have parity between `.h` and `.hpp` treatment? I know very little about C, mind you.
+
+1645113664
+ikskuh!~xq@v43666.php-friends.de
+at least not in the regular frontend (build-exe, build-lib, build-obj)
+
+1645113683
+ikskuh!~xq@v43666.php-friends.de
+plumeus: h and hpp are both non-source files 
+
+1645113710
+plumeus!~plumeus@user/plumeus
+Then why is `.h` mentioned? Does it need to be removed? `.hpp` isn't even mentioned at all.
+
+1645113713
+ikskuh!~xq@v43666.php-friends.de
+even though they *usually* contain at least some code, most headers don't have anything to compile to
+
+1645113736
+WardBrian!~WardBrian@207.251.102.115
+I'm not really a domain expert on either C or C++, I was just excited about the idea of a drop-in substitute for clang/gcc, which both do allow this
+
+1645113760
+plumeus!~plumeus@user/plumeus
+Yeah, it's fine for `zig cc` or `c++` to have.
+
+1645113773
+plumeus!~plumeus@user/plumeus
+`build-exe` are not "drop-ins"
+
+1645113800
+ikskuh!~xq@v43666.php-friends.de
+WardBrian: oh
+
+1645113812
+ikskuh!~xq@v43666.php-friends.de
+they do something very different from what the zig toolchain would do
+
+1645113813
+WardBrian!~WardBrian@207.251.102.115
+yes, sorry for not being clear - I'm specifically concerned with `zig c++` here
+
+1645113843
+ikskuh!~xq@v43666.php-friends.de
+what happens if you pass header files to clang/gcc is compiling a precompiled header
+
+1645113854
+ikskuh!~xq@v43666.php-friends.de
+which is something i haven't seen in the zig world yet
+
+1645113873
+ikskuh!~xq@v43666.php-friends.de
+to support this properly, i think we have to establish a whole bunch of rules and logic
+
+1645113920
+ikskuh!~xq@v43666.php-friends.de
+because the output of "compiling" a header isn't a object file
+
+1645113924
+ikskuh!~xq@v43666.php-friends.de
+or a executable
+
+1645113927
+WardBrian!~WardBrian@207.251.102.115
+I think that `-x c++` is supposed to cause it to compile like a .cpp file, no?
+
+1645113937
+WardBrian!~WardBrian@207.251.102.115
+E.g. to a normal object file
+
+1645113965
+ikskuh!~xq@v43666.php-friends.de
+WardBrian: yes, but you can pass "-x c++ foo.lolcat" as well
+
+1645113980
+ikskuh!~xq@v43666.php-friends.de
+if you pass with without -x, you precompile the header to a GCH file
+
+1645113984
+WardBrian!~WardBrian@207.251.102.115
+The final portion of the command that is failing is `-c  -x c++ -o examples/bernoulli/bernoulli.o examples/bernoulli/bernoulli.hpp`
+
+1645114019
+ikskuh!~xq@v43666.php-friends.de
+hm
+
+1645114028
+ikskuh!~xq@v43666.php-friends.de
+that might be a problem in the -x handling then
+
+1645114083
+WardBrian!~WardBrian@207.251.102.115
+MRE:
+
+1645114083
+WardBrian!~WardBrian@207.251.102.115
+file: test.hpp
+
+1645114084
+WardBrian!~WardBrian@207.251.102.115
+/ test
+
+1645114085
+WardBrian!~WardBrian@207.251.102.115
+int main(void){
+
+1645114085
+WardBrian!~WardBrian@207.251.102.115
+  return 1;
+
+1645114086
+WardBrian!~WardBrian@207.251.102.115
+}
+
+1645114086
+WardBrian!~WardBrian@207.251.102.115
+$ zig c++ -x c++ test.hpp
+
+1645114086
+WardBrian!~WardBrian@207.251.102.115
+ld.lld: error: test.hpp:1: unknown directive: //
+
+1645114087
+WardBrian!~WardBrian@207.251.102.115
+>>> // test
+
+1645114087
+WardBrian!~WardBrian@207.251.102.115
+>>> ^
+
+1645114102
+WardBrian!~WardBrian@207.251.102.115
+supposed to be // test not / test, copy/paste error on my part
+
+1645114154
+WardBrian!~WardBrian@207.251.102.115
+No matter what the name is, test.foo, etc, same failure
+
+1645114166
+jcmoyer_!~jcmoyer@user/jcmoyer
+https://github.com/ziglang/zig/blob/baead472d7641bdd96130354bafadc1fb1ed223b/src/main.zig#L1325-L1335 this is probably where it's actually failing
+
+1645114167
+WardBrian!~WardBrian@207.251.102.115
+Renaming to cc, cpp, or one of the 'official' endings works as expected
+
+1645114235
+WardBrian!~WardBrian@207.251.102.115
+Should I open an issue then? It seems like the -x flag does almost nothing in practice?
+
+1645114291
+ikskuh!~xq@v43666.php-friends.de
+jcmoyer: that's the build-exe front if i'm not mistaken and not the cc/c++ frontned
+
+1645114310
+ikskuh!~xq@v43666.php-friends.de
+WardBrian: yeah, i think you should open an issue on this, related to zig cc
+
+1645114377
+jcmoyer!~jcmoyer@user/jcmoyer
+this function looks like it's responsible for both build-exe and cc/c++
+
+1645114397
+plumeus!~plumeus@user/plumeus
+The logic should be separated then, I guess
+
+1645114422
+plumeus!~plumeus@user/plumeus
+btw, what would happen if somebody attempted to pass `-x` or similar to `build-exe`?
+
+1645114436
+plumeus!~plumeus@user/plumeus
+Just be rejected?
+
+1645114472
+jcmoyer!~jcmoyer@user/jcmoyer
+It's already separated, just in different branches
+
+1645114681
+WardBrian!~WardBrian@207.251.102.115
+https://github.com/ziglang/zig/issues/10915 issue here
+
+1645114709
+WardBrian!~WardBrian@207.251.102.115
+Thanks for all the help finding the problem
+
+1645131424
+frmdstryr!~jrm@172.58.203.78
+Is there a way to get typeInfo of a struct field by its name? I tried std.meta.fieldInfo(MyStruct, "name") but that expects an enum
+
+1645131533
+luuk!~luuk@user/luuk
+You'll have to create your own wrapper function that loops over all fields and then returns the typeInfo of said field when it matches the given name. std.meta doesn't currently provide this.
+
+1645131644
+frmdstryr!~jrm@172.58.203.78
+Ah, ok thanks!
+
+1645131652
+luuk!~luuk@user/luuk
+No problem :)
+
+1645133925
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+andrewrk curious what your thoughts are on how to improve the situation from #9989
+
+1645133966
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+and to clarity, that change would never remove the message that you showed as an example
+
+1645133977
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+since it was exit code 255, if that was the exit code then it would still be printed
+
+1645133979
+andrewrk!~andrewrk@mail.ziglang.org
+sounds like I misunderstood the change
+
+1645134012
+andrewrk!~andrewrk@mail.ziglang.org
+but I'm saying even if the custom error message is printed, it should still print "the following command failed ..." with the command that emitted the error message
+
+1645134039
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+but you don't do that when "prominent compiler errors" is enabled right?
+
+1645134070
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+so there are some cases where it's better not to pile on that information yes?
+
+1645134073
+andrewrk!~andrewrk@mail.ziglang.org
+prominent compile errors is opt-in so you're specifically saying that you're ok with seeing only the compile errors
+
+1645134108
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+sure, I was just trying to clarify there are *some* cases, so the question then becomes what are those cases
+
+1645134139
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+this feature allows the builds themselves to give input on what may or may not be important
+
+1645134181
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+this means that if a build script feels it has found the source of the problem and has already reported it, then it can return a specific exit code to indicate it has done that
+
+1645134199
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+for example, if the user provided an invalid build option, no need to pile on extra errors after that
+
+1645134254
+andrewrk!~andrewrk@mail.ziglang.org
+I disagree - in such case you *especially* want to see the command that caused the issue
+
+1645134271
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+disagree with what part?
+
+1645134293
+andrewrk!~andrewrk@mail.ziglang.org
+in your patch you give the example of a bad option passed on the command line. if "got a bad build option!" is printed, then the user needs to see the command that was supplied to cause that error to be emitted
+
+1645134296
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+I was just stating what the feature was, what do you disagree with, my description?
+
+1645134311
+andrewrk!~andrewrk@mail.ziglang.org
+I disagree with "no need to pile on extra errors after that"
+
+1645134331
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+oh gotcha
+
+1645134341
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+but we don't print the command that failed
+
+1645134350
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+we just say the build exited with a code
+
+1645134375
+andrewrk!~andrewrk@mail.ziglang.org
+um no that's incorrect, we print "the following command exited with xyz:\n<full command line of what failed>"
+
+1645134400
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+ah that's true
+
+1645134415
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+one thought I had was that if the user didn't know what command failed, they could run it again with a -v
+
+1645134428
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+but that has cons to it as well
+
+1645134441
+andrewrk!~andrewrk@mail.ziglang.org
+I don't think you should have to rummage around to find out how to learn what went wrong
+
+1645134451
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+I completely agree
+
+1645134459
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+but it's more of an art than a science here
+
+1645134483
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+for example, we could choose to print all the environment variables as well, but that adds alot of noise for questionable benefit
+
+1645134510
+andrewrk!~andrewrk@mail.ziglang.org
+my position is that, at the very least, a full trace of command lines of sub-processes should be printed on failure, with the exception of opt-in flags such as --prominent-compile-errors
+
+1645134513
+ifreund!2940d10f8b@user/ifreund
+I’m also strongly in favor of always printing the full command that failed by default
+
+1645134520
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+I think a feature that allow the build to give input on what may or may not be important can be helpfule
+
+1645134551
+andrewrk!~andrewrk@mail.ziglang.org
+I'm going to revert this. let's discuss in a proposal
+
+1645134559
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+so why print at the command-level instead of the function level?
+
+1645134578
+andrewrk!~andrewrk@mail.ziglang.org
+well we do print at function level for debug builds of the compiler
+
+1645134588
+andrewrk!~andrewrk@mail.ziglang.org
+and in cases of compiler bugs it's extremely useful
+
+1645134638
+andrewrk!~andrewrk@mail.ziglang.org
+if the goal is just to make the compile error experience better, I think the real end-game is editor integration with zig build
+
+1645134648
+andrewrk!~andrewrk@mail.ziglang.org
+ideally what you want is a list of errors in your editor that jump you to the location
+
+1645134654
+andrewrk!~andrewrk@mail.ziglang.org
+and squiggly lines
+
+1645134681
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+so in that case you could print alot of information and rely on some sort of filtering, so in that case you would support printing all environment variable for example?
+
+1645134705
+andrewrk!~andrewrk@mail.ziglang.org
+printing all environment variables is a potential security issue
+
+1645134712
+andrewrk!~andrewrk@mail.ziglang.org
+I don't think that is wise
+
+1645134760
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+ok but is that what you are wanting, as much info as possible?
+
+1645134815
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+my thoughts on that are we could make the default experience be meant for the command-line users, and have IDE enable extra information with some sort of flag
+
+1645134882
+ifreund!2940d10f8b@user/ifreund
+what extra information? I already have nice jump to error location support in my editor
+
+1645134932
+andrewrk!~andrewrk@mail.ziglang.org
+marler8997_, you're asking what I am wanting - what I want is for the zig build system be as simple as possible and yet still handle gracefully the most complex projects. I'm already uncomfortable with the existence of --prominent-compile-errors and I want to kill it someday
+
+1645135072
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+I think identifying what is noise in a build is not simple, so in that case it sounds like you're willing to just print everything and let the user (and IDE's) decide what's noise rather than adding that complexity into the build system itself?
+
+1645135226
+andrewrk!~andrewrk@mail.ziglang.org
+yes
+
+1645135248
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+ok fair enough, then in that case I don't think we should create a proposal for this since it doesn't align with your vision
+
+1645135303
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+andrewrk these discussion really help me alot btw, thank for taking the time to explain
+
+1645135313
+andrewrk!~andrewrk@mail.ziglang.org
+no problem, I'm sorry I don't take more time for it
+
+1645135383
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+nothing to be sorry for, keep making Zig awesome
+
+1645135384
+andrewrk!~andrewrk@mail.ziglang.org
+sometimes the reasons a bunch of PRs pile up is that they each deserve a discussion
+
+1645135418
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+yeah, I didn't think that PR should have been merged, I wanted a discussion first so I was quite surprised it was merged all of a  sudden
+
+1645135445
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+I would have left is a draft but I know you don't look at drafts :)
+
+1645135456
+andrewrk!~andrewrk@mail.ziglang.org
+haha you're not wrong
+
+1645135477
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+gotta draw the line somewhere, you can't do everything
+
+1645135486
+andrewrk!~andrewrk@mail.ziglang.org
+Vexu is a good man who wants to help everyone get their patches landed, and I'm thankful that he's taken such an initiative 
+
+1645135515
+andrewrk!~andrewrk@mail.ziglang.org
+as a natural consequence, I will have to make more reverts than I have in the past, and that is OK
+
+1645135555
+andrewrk!~andrewrk@mail.ziglang.org
+most of the time I just think, oh, good, if Vexu thinks that PR should be merged then I agree
+
+1645135586
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+his situation is extremely difficult
+
+1645136094
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+you looking forward to go to italy btw? pretty long flight :)
+
+1645136291
+daved!~daved@162.67.197.35.bc.googleusercontent.com
+Is anyone able to share a current example of a tcp echo server/client (preferably using a socket file)?
+
+1645136323
+daved!~daved@162.67.197.35.bc.googleusercontent.com
+Or maybe, please, direct me to the correct lib(s)?
+
+1645136363
+daved!~daved@162.67.197.35.bc.googleusercontent.com
+I'm completely new to zig and am just playing/experimenting.
+
+1645136835
+andrewrk!~andrewrk@mail.ziglang.org
+marler8997_, yes I am! I haven't been outside the states in quite a few years 
+
+1645137671
+andrewrk!~andrewrk@mail.ziglang.org
+daved, I don't have an example handy but you might check if there are any unit tests in std.net (lib/std/net.zig)
+
