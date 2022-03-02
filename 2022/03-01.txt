@@ -1,0 +1,188 @@
+1646160365
+marler8997_!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+how does the Zig compiler handle circular references?  Is it some sort of a multipass system?  For example, module a references a decl from module b and vice versa
+
+1646161148
+bfredl!~bfredl@2001:470:69fc:105::183
+circular references between between files is not a problem. Sema works at a decl at a time, so you would only get in trouble if you have a circular ref between two decls
+
+1646161349
+andrewrk!~andrewrk@mail.ziglang.org
+two decls can reference each other too
+
+1646161429
+andrewrk!~andrewrk@mail.ziglang.org
+https://github.com/ziglang/zig/issues/131 isn't implemented yet though
+
+1646161758
+ifreund!2940d10f8b@user/ifreund
+ACTION can't wait to stop using C to do that
+
+1646162260
+Earnestly!~earnest@user/earnestly
+ifreund: Did you ever manage to simd that xor code?
+
+1646163427
+Hoolean!~Hoolean@176.56.237.138
+sorry, if y'all get a duplicate message, i just had to do some heavy nickserv wrangling
+
+1646163432
+Hoolean!~Hoolean@176.56.237.138
+howdy :^) i'm just looking at using "zig translate-c" to use a small C file (37 lines) as a base to start a full conversion to Zig on
+
+1646163438
+ifreund!2940d10f8b@user/ifreund
+Earnestly: I did but it got a little messy: https://0x0.st/oPH7.c
+
+1646163446
+Hoolean!~Hoolean@176.56.237.138
+however, it ends up with about 2k lines, i'm guessing because of the #include lines?
+
+1646163454
+ifreund!2940d10f8b@user/ifreund
+could probably be cleaned up a bit more somehow but I got busy with other stuff
+
+1646163457
+Hoolean!~Hoolean@176.56.237.138
+is this because it's more of an internal tool for compilation, or is there a way to make things more minimal?
+
+1646163469
+ifreund!2940d10f8b@user/ifreund
+the SIMD itself is clean but the read loop got awkward
+
+1646163551
+Earnestly!~earnest@user/earnestly
+Ah it's using the Vector stuff, I thought it might just manually unroll 4 iterations per loop
+
+1646163555
+ifreund!2940d10f8b@user/ifreund
+Hoolean: yep, that's because of how #include in C works. The main purpose of the feature is to power @cImport(), if you want to translate C code to zig and maintain the zig code I'd recommend porting by hand for the most part
+
+1646163594
+ifreund!2940d10f8b@user/ifreund
+Earnestly: llvm might actually manage to do that auto vectorization with the previous version, I didn't check
+
+1646163627
+Hoolean!~Hoolean@176.56.237.138
+ifreund: got it, that's what i was leaning towards, just thought i should double check there wasn't a --ignore-includes or something to save me some bother :P
+
+1646163645
+ifreund!2940d10f8b@user/ifreund
+ignore includes would break the generated code
+
+1646163669
+Hoolean!~Hoolean@176.56.237.138
+yea yea
+
+1646163787
+Hoolean!~Hoolean@176.56.237.138
+ifreund: i guess i thought such a feature might change the "#include"s to "@cInclude"s
+
+1646163797
+Hoolean!~Hoolean@176.56.237.138
+but i'm sure that adds complexity not really intended for a build tool
+
+1646163799
+Hoolean!~Hoolean@176.56.237.138
+e.g. multiple passes
+
+1646163846
+ifreund!2940d10f8b@user/ifreund
+that would be a massive increase in complexity yeah
+
+1646163966
+Hoolean!~Hoolean@176.56.237.138
+ifreund: feared as much; thanks for the pointers, will go back to porting manually and stop looking for shortcuts :P
+
+1646164081
+ifreund!2940d10f8b@user/ifreund
+Hoolean: it may still be useful for e.g. struct definitions to grep the translate-c output, copy the translated struct type, and clean things up
+
+1646164100
+ifreund!2940d10f8b@user/ifreund
+I did a lot of that for zig-wlroots
+
+1646164145
+ifreund!2940d10f8b@user/ifreund
+for struct definitions and function signatures it works pretty well, actual code is usually easier to rewrite based on the original C though
+
+1646164184
+Hoolean!~Hoolean@176.56.237.138
+this is true; i've had a grep for main() and am finding some useful hints on how i should expect the C types to be served
+
+1646164470
+ifreund!2940d10f8b@user/ifreund
+note that in idiomatic zig there is no reason to ever use [*c] pointers, they exist purely for automated translation
+
+1646164499
+ifreund!2940d10f8b@user/ifreund
+a large part of proper translation is figuring out how the pointers are used and giving them proper zig types
+
+1646164701
+ifreund!2940d10f8b@user/ifreund
+Earnestly: looks like the SIMD version is roughly 5x faster in an rough arbitrary benchmark on my machine by the way
+
+1646164718
+Earnestly!~earnest@user/earnestly
+lol, very nice
+
+1646167291
+Hoolean!~Hoolean@176.56.237.138
+ifreund: so I'm running into some [*c] pointers now, as i try to pass a zig array of C structs where the library expects a C array of C structs
+
+1646167304
+Hoolean!~Hoolean@176.56.237.138
+is there where the use would be expected, or an example of when they should be avoided?
+
+1646167306
+Hoolean!~Hoolean@176.56.237.138
+* is this
+
+1646167537
+ifreund!2940d10f8b@user/ifreund
+Hoolean: you probably want [*]Foo 
+
+1646167553
+ifreund!2940d10f8b@user/ifreund
+(pointer to an unknown number of Foo)
+
+1646167570
+ifreund!2940d10f8b@user/ifreund
+there is no need to ever use [*c] in manually written code
+
+1646167646
+Hoolean!~Hoolean@176.56.237.138
+ifreund: got it; should i expect to use ptrCast to achieve that, or is that avoidable too?
+
+1646168273
+ifreund!2940d10f8b@user/ifreund
+Hoolean: you probably shouldn't need @ptrCast(), note that arrays are always value types in zig unlike in C
+
+1646168302
+ifreund!2940d10f8b@user/ifreund
+perhaps you really want something like  *const [20]u32 (constant pointer to array of 20 u32)
+
+1646168360
+ifreund!2940d10f8b@user/ifreund
+and zig allows coercion between pointer types where it makes sense, so that pointer to array type would coerce to [*]const u32 for example
+
+1646168698
+Hoolean!~Hoolean@176.56.237.138
+ifreund: just given it another go
+
+1646168723
+Hoolean!~Hoolean@176.56.237.138
+an independent change from "const" to "var" had made it work with @ptrCast, as opposed to the use of @ptrCast itself
+
+1646168733
+Hoolean!~Hoolean@176.56.237.138
+can confirm that it now works fine just taking & of the list
+
+1646168752
+Hoolean!~Hoolean@176.56.237.138
+code looks much more ziggy, thank you
+
+1646168786
+ifreund!2940d10f8b@user/ifreund
+no problem!
+
