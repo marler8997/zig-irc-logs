@@ -1,0 +1,288 @@
+1647563932
+andrewrk!~andrewrk@mail.ziglang.org
+-0.0 and +0.0 is an example of two different bit patterns that a float can be in memory and represent the same mathematical value. are there any other examples?
+
+1647563944
+andrewrk!~andrewrk@mail.ziglang.org
+does NaN have more than 1 representation?
+
+1647564086
+companion_cube!~simon@user/companion-cube
+it does
+
+1647564096
+companion_cube!~simon@user/companion-cube
+(sorry if it was rhetorical?)
+
+1647564687
+leah2!~leah@vuxu.org
+a lot more :)
+
+1647564709
+companion_cube!~simon@user/companion-cube
+yeah, nan-packing is a thing for a reason
+
+1647564713
+leah2!~leah@vuxu.org
+but all nan are different, even for the same bit pattern
+
+1647565143
+andrewrk!~andrewrk@mail.ziglang.org
+good to know
+
+1647565161
+andrewrk!~andrewrk@mail.ziglang.org
+had to normalize float values in the compiler's implementation of Value.hash because we want to use that as a key in a hash map
+
+1647565306
+companion_cube!~simon@user/companion-cube
+yeah basically you can't put a nan as a key
+
+1647565341
+companion_cube!~simon@user/companion-cube
+(or you'd have to bitcast it to something with actual equality)
+
+1647565350
+companion_cube!~simon@user/companion-cube
+it's why rust has PartialEq and PartialOrd: for floats
+
+1647565421
+demize!kyrias@archlinux/developer/demize
+I guess you could, but it would require rather unhelpful semantics.  Like, you couldn't then get the value out by the key, only by iterating over all values, and if you insert the same NaN key twice... it would have to store both values?
+
+1647565436
+companion_cube!~simon@user/companion-cube
+demize: yeah that's not useful, if you can't `get` it
+
+1647566822
+andrewrk!~andrewrk@mail.ziglang.org
+for zig we need something like `fn foo(comptime x: f32) void {}` to work though - the generic function has to get monomorphized if you instantiate it with NaN
+
+1647567600
+companion_cube!~simon@user/companion-cube
+honestly, put a comptime assertion that !@isNan(x) or whatever
+
+1647567605
+companion_cube!~simon@user/companion-cube
+code that does that is just broken
+
+1647567640
+companion_cube!~simon@user/companion-cube
+(and if you can, you might have to cheat and compare nans bit-by-bit
+
+1647567641
+companion_cube!~simon@user/companion-cube
+)
+
+1647567752
+leah2!~leah@vuxu.org
+hashing floats in general is already questionable :)
+
+1647568016
+companion_cube!~simon@user/companion-cube
+same reason really
+
+1647568179
+andrewrk!~andrewrk@mail.ziglang.org
+hmm I'll have to think about that - making it a compile error to instantiate a generic function with (even indirectly) a float value that is NaN
+
+1647568209
+andrewrk!~andrewrk@mail.ziglang.org
+here's another fun one: [*:nan]f32
+
+1647568258
+companion_cube!~simon@user/companion-cube
+:D
+
+1647568260
+companion_cube!~simon@user/companion-cube
+my god
+
+1647568269
+companion_cube!~simon@user/companion-cube
+whose twisted mind could even dream of that
+
+1647568780
+demize!kyrias@archlinux/developer/demize
+Pleas no.  D;
+
+1647601540
+bgiannan!~bgiannan@2a01:4f8:141:1272::2
+is there an equivalent of getc in zig or do i have to use a one char long buffer ?
+
+1647601740
+daurn!~daurnimat@vultr.daurnimator.com
+bgiannan: `reader.readByte()`
+
+1647601854
+bgiannan!~bgiannan@2a01:4f8:141:1272::2
+thx
+
+1647601869
+bgiannan!~bgiannan@2a01:4f8:141:1272::2
+didn't saw reader
+
+1647621170
+cot!~kiedtl@kisslinux/kiedtl
+Is there any way to get longer stacktraces from the allocator complaining of leaked memory?
+
+1647621193
+cot!~kiedtl@kisslinux/kiedtl
+I'm getting just four, all with addresses in array_list.zig in the stdlib, and none in my own code.
+
+1647621324
+tsmanner!~tsmanner@pool-100-40-199-193.pghkny.fios.verizon.net
+Is there a missing `.deinit` call on that array list?
+
+1647621665
+cot!~kiedtl@kisslinux/kiedtl
+I'm pretty sure there is, but I'd have to check each usage of array_list in my code (there are a whole bunch of them)
+
+1647621689
+cot!~kiedtl@kisslinux/kiedtl
+I'd rather the stacktrace hint at what isn't being deallocated
+
+1647621746
+cot!~kiedtl@kisslinux/kiedtl
+http://ttm.sh/iHU.txt << this is the stacktrace I'm getting.
+
+1647621770
+tsmanner!~tsmanner@pool-100-40-199-193.pghkny.fios.verizon.net
+Meaning which insert/append/etc call the leaked elements came from?
+
+1647621823
+cot!~kiedtl@kisslinux/kiedtl
+Yup, that would be it
+
+1647622019
+tsmanner!~tsmanner@pool-100-40-199-193.pghkny.fios.verizon.net
+I suspect it's not due to any one insert/append, since it allocates memory only sometimes when a new element is added.  I wonder if there's an easy way to identify which ArrayList is the leaky one
+
+1647622119
+cot!~kiedtl@kisslinux/kiedtl
+hm true
+
+1647622146
+tsmanner!~tsmanner@pool-100-40-199-193.pghkny.fios.verizon.net
+I don't see anything in the leak trace that identifies the allocator used, only the addresses that leaked and what looks like the instruction address for the line-of-code
+
+1647622170
+cot!~kiedtl@kisslinux/kiedtl
+It occurs even when the program is immediately shut off, so I *think* can narrow it the leak down to some (bulky) initialization routines
+
+1647622181
+cot!~kiedtl@kisslinux/kiedtl
+Still this will be unpleasant
+
+1647622492
+tsmanner!~tsmanner@pool-100-40-199-193.pghkny.fios.verizon.net
+Have you used valgrind memcheck before?  Assuming debug symbols are present, that should be able to provide the full stack for each memory allocation and emit an error for any mismatched new/delete.  IIRC it works with compiled zig code, though I haven't tried it myself.
+
+1647622625
+cot!~kiedtl@kisslinux/kiedtl
+hm, I'll try that
+
+1647622834
+cot!~kiedtl@kisslinux/kiedtl
+yikes, no, valgrind's telling me that all heap blocks were freed
+
+1647622861
+cot!~kiedtl@kisslinux/kiedtl
+Not sure how valgrind detects leaked memory, does it assume that the program will use valgrind's inbuilt malloc implementation?
+
+1647622904
+cot!~kiedtl@kisslinux/kiedtl
+>9 allocs, 9 frees, 125,752 bytes allocated< Maybe I'm misunderstanding what "allocs" mean, but there are way more than 9 allocations going on
+
+1647622916
+dutchie!~dutchie@user/dutchie
+iirc valgrind struggles with mmap'ed memory, which is what page_allocator uses
+
+1647622925
+dutchie!~dutchie@user/dutchie
+there are some options you can pass which helps it out
+
+1647623140
+tsmanner!~tsmanner@pool-100-40-199-193.pghkny.fios.verizon.net
+That could do it, also if the zig code isn't using libc malloc (which seems likely to me) then it won't notice.  You could probably get valgrind to notice if you use the c allocator, but that's starting to feel like a real duct-tape and toothpicks way to go about this.
+
+1647623210
+luuk!~luuk@user/luuk
+cot: There's a `stack_trace_frames` option you can pass to increase this. For example, the self-hosted compiler has a configurable option to set this: https://github.com/ziglang/zig/blob/master/src/main.zig#L132
+
+1647623247
+cot!~kiedtl@kisslinux/kiedtl
+Aha, this is what I was looking for, thanks!
+
+1647623257
+luuk!~luuk@user/luuk
+You're welcome :)
+
+1647623486
+motiejus!~motiejus@2001:470:69fc:105::38fb
+hi folks. How can I make a list of anonymous struct literals? I can't get the syntax to work right, the problem is likely in the `<...>` of the second test: https://paste.sr.ht/~motiejus/6b744445472c8351e545a182c0a7690dba2eed3e
+
+1647623950
+luuk!~luuk@user/luuk
+motiejus: https://zigbin.io/0ed2b8
+
+1647624065
+luuk!~luuk@user/luuk
+Note that in this case the 'want' case with '0' will have its type as `comptime_int`. So you need to coerce it in the expectEqual to ensure the result's type matches.
+
+1647624083
+motiejus!~motiejus@2001:470:69fc:105::38fb
+@luuk that helps for top-level declaration, but the annoying part is the inner one where I always have to specify the `.want` and the `.got` fields
+
+1647624116
+motiejus!~motiejus@2001:470:69fc:105::38fb
+trying variations of what you've sent ... 
+
+1647624197
+tsmanner!~tsmanner@pool-100-40-199-193.pghkny.fios.verizon.net
+luuk you beat me to it, I went in the tuple direction with this https://godbolt.org/z/fsTe8f8d8
+
+1647624221
+motiejus!~motiejus@2001:470:69fc:105::38fb
+i.e. the top-level array should be of whatever type (I am OK to specify it), but I am looking for a way to avoid specifying the type of each element
+
+1647624222
+motiejus!~motiejus@2001:470:69fc:105::38fb
+and the field names
+
+1647624309
+motiejus!~motiejus@2001:470:69fc:105::38fb
+inline was missing! Whoah. Thanks tsmanner!
+
+1647624359
+motiejus!~motiejus@2001:470:69fc:105::38fb
+ah, that's because it's unrolling a tuple. Nice!
+
+1647624388
+tsmanner!~tsmanner@pool-100-40-199-193.pghkny.fios.verizon.net
+I had it without that at first too, luuk's example got me to that :)
+
+1647624400
+luuk!~luuk@user/luuk
+Teamwork :)
+
+1647637772
+pg42!~pg42@2a02:a03f:8b17:ca00:2063:a423:9867:bba4
+Hello everyone. I have a question about packed structs in zig. See https://godbolt.org/z/dnzzjMTKP. I don't understand why the size is 5, and not 4.
+
+1647638318
+jcmoyer!~jcmoyer@user/jcmoyer
+pg42: probably a bug, packed structs generally don't seem to work well. I think the current plan is to fix them in the stage2 compiler.
+
+1647639034
+pg42!~pg42@2a02:a03f:8b17:ca00:2063:a423:9867:bba4
+jcmoyer: thanks! Should I submit it as a bug report somewhere?
+
+1647639308
+jcmoyer!~jcmoyer@user/jcmoyer
+https://github.com/ziglang/zig/issues/2627 probably falls under this issue
+
+1647639655
+pg42!~pg42@2a02:a03f:8b17:ca00:2063:a423:9867:bba4
+jcmoyer: That seems indeed related. Thanks for looking it up and pointing me to the issue!
+
