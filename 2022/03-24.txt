@@ -1,0 +1,564 @@
+1648098852
+marler8997!~marler899@96-19-96-19-162-162.cpe.sparklight.net
+has enyone looked into adding precompiled header support into zig build?
+
+1648098892
+daurn!~daurnimat@vultr.daurnimator.com
+marler8997: is that called `zig translate-c`? :)
+
+1648106699
+motiejus!~motiejus@2001:470:69fc:105::38fb
+I am allocating a well-known sized structure on stack: `res = BoundedArray(os.iovec_const, 16)`, returning `res.constSlice()`. The contents of the slice get messed up somewhere. Is it OK to "return" large things that are allocated on stack, when their size is known?
+
+1648106705
+motiejus!~motiejus@2001:470:69fc:105::38fb
+or is the slice that's the problem?
+
+1648106826
+motiejus!~motiejus@2001:470:69fc:105::38fb
+I guess making it a slice is a problem (which reminded me that it's a pointer).
+
+1648106839
+bgiannan!~bgiannan@2a01:4f8:141:1272::2
+ifreund, i add a function called exit, and it got called anytime i did std.os.exit
+
+1648106845
+bgiannan!~bgiannan@2a01:4f8:141:1272::2
+has*
+
+1648106847
+bgiannan!~bgiannan@2a01:4f8:141:1272::2
+had*
+
+1648107694
+rwb!~augh@alogs.space
+motiejus: the BoundedArray is created on the stack, and the slice you return points to the value within the stack. therefore returning a constSlice() out is not going to work
+
+1648107736
+motiejus!~motiejus@2001:470:69fc:105::38fb
+yeah. Returning the `BoundedArray` itself seems to make it work again
+
+1648107740
+motiejus!~motiejus@2001:470:69fc:105::38fb
+thanks
+
+1648107750
+motiejus!~motiejus@2001:470:69fc:105::38fb
+(I convert it to a slice in a caller than)
+
+1648107754
+motiejus!~motiejus@2001:470:69fc:105::38fb
+thenŪ
+
+1648107755
+motiejus!~motiejus@2001:470:69fc:105::38fb
+then*
+
+1648107768
+rwb!~augh@alogs.space
+if you know the size of your array, you could simply return a [123]T
+
+1648108620
+motiejus!~motiejus@2001:470:69fc:105::38fb
+it can be from 8 to 16 :) so I need to return it's length as well, made easy by BoundedArray
+
+1648108961
+Ayo!~Ayo@82-73-204-210.cable.dynamic.v4.ziggo.nl
+stdlib question: Is the 'Unexpected' error only intended to be used with os.unexpectedErrno(), or could it also be returned from a function directly?
+
+1648109036
+Ayo!~Ayo@82-73-204-210.cable.dynamic.v4.ziggo.nl
+For context, I'm trying to write a patch for https://github.com/ziglang/zig/issues/11178 - a Dir.Iterator is currently defined to have the error type 'error{ AccessDenied, SystemResources } || os.UnexpectedError'
+
+1648109089
+Ayo!~Ayo@82-73-204-210.cable.dynamic.v4.ziggo.nl
+The... "correct" approach would be adding another LinuxIsWeird error to that set and return that on EINVAL, but it's such a special case that UnexpectedError seems fine.
+
+1648109219
+Ayo!~Ayo@82-73-204-210.cable.dynamic.v4.ziggo.nl
+Of course, I could have it just fall back to os.unexpectedErrno(), but then debug builds would panic on a known error code
+
+1648110203
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+Ayo: I have not seen the UnexpectedError used in the way you want in the std libraries, so I suspect the intention is to use UnexpectedErrno()
+
+1648110242
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+The build does not panic then, but give a stack trace so you can debug the unexpected error, which seems like the reasonable thing to do if the error is unexpected :)
+
+1648110319
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+Disclaimer: I am by no means an expert onthis, just starting out with zig. Bit I have read a fair amount of the std libs in order to understand how they work and how the creators write zig code.
+
+1648110765
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+oops... sorry, turns out I'm wrong: there are some functions that directly return error.Unexpected, mainly in the os specific libs.
+
+1648110947
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+but I still think I would use UnexpectedErrno, because of the stack trace.
+
+1648111686
+Ayo!~Ayo@82-73-204-210.cable.dynamic.v4.ziggo.nl
+Hmm. unexpectedErrno() docs say to send a patch if it happens, so I don't suppose that is intended for "known unexpected errors" :/
+
+1648112571
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+"known unexpected errors" sounds nice :)
+
+1648112645
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+Maybe you should create a KownUnexpectedError error, as I think the stdlibs unexpected errors are intended to be used for unknown unexpected errors.
+
+1648112780
+Ayo!~Ayo@82-73-204-210.cable.dynamic.v4.ziggo.nl
+so back to an UndocumentedButKnownError error :P
+
+1648112795
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+Btw the handling of unexpected error conditions is not uniform across the std library. std.fs.File.read graced me with a unreachable when read() returned EINVAL... but as you can just create your own File from a file handle, this shit may happen (and did for me)...
+
+1648112838
+Ayo!~Ayo@82-73-204-210.cable.dynamic.v4.ziggo.nl
+Ah, but creating an invalid File struct points to a bug in your code, so that seems reasonable
+
+1648112854
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+nah the struct was perfectly ok, I just did the read wrong :)
+
+1648112862
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+Hint: it was a signalfd...
+
+1648112871
+Ayo!~Ayo@82-73-204-210.cable.dynamic.v4.ziggo.nl
+heh
+
+1648113054
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+but I love it that this was even possible :) The File struct is just a very thin wrapper and is even prepared for this sort of thing.
+
+1648113279
+bgiannan!~bgiannan@2a01:4f8:141:1272::2
+how can i run a command/executable and get its exit code in zig?
+
+1648116221
+squeek502!~squeek502@user/squeek502
+bgiannan, std.ChildProcess.exec
+
+1648117030
+ifreund!2940d10f8b@user/ifreund
+bgiannan: like this? doesn't happen when I run this program... https://0x0.st/oNDJ.txt
+
+1648117048
+ifreund!2940d10f8b@user/ifreund
+and I'm certainly not aware of any code in the std to do that
+
+1648117112
+bgiannan!~bgiannan@2a01:4f8:141:1272::2
+ifreund, my function was in a dynlib maybe that's what did it? here is where it happened: https://github.com/giann/buzz/blob/main/lib/buzz_os.zig#L108-L115
+
+1648117217
+ifreund!2940d10f8b@user/ifreund
+bgiannan: ah, are you linking libc? It does a lot of weird stuff in exit()
+
+1648117227
+ifreund!2940d10f8b@user/ifreund
+there's a _exit() function that does just the syscall
+
+1648117268
+bgiannan!~bgiannan@2a01:4f8:141:1272::2
+ifreund, don't think i am ? https://github.com/giann/buzz/blob/main/build.zig
+
+1648117323
+ifreund!2940d10f8b@user/ifreund
+bgiannan: if you're not running linux, then you are because libc is the only stable syscall API on e.g. mac os
+
+1648117562
+ifreund!2940d10f8b@user/ifreund
+I'm not sure that's really the cause though, I don't see such behavior documented for libc
+
+1648117614
+ifreund!2940d10f8b@user/ifreund
+could be unique to apple's dlopen implementation, I don't know
+
+1648117656
+ifreund!2940d10f8b@user/ifreund
+I know _init() and _fini() are deprecated ways to do this for glibc dlopen
+
+1648117676
+ifreund!2940d10f8b@user/ifreund
+sorry that libc is such a mess :/
+
+1648117856
+bgiannan!~bgiannan@2a01:4f8:141:1272::2
+don't worry, i learned long ago that weird stuff on macOS is to be expected 
+
+1648120209
+daurn!~daurnimat@vultr.daurnimator.com
+Gunthor: generally EINVAL *is* unreachable. it means you gave e.g. an invalid pointer
+
+1648120227
+daurn!~daurnimat@vultr.daurnimator.com
+or invalid combination of arguments
+
+1648120260
+daurn!~daurnimat@vultr.daurnimator.com
+==> invalid arguments is considered an assertable (i.e. unreachable) code path
+
+1648120743
+ifreund!2940d10f8b@user/ifreund
+daurn: I actually think we should stop using unreachable for EINVAL in 99% of cases, it's way too hard for the linux kernel to guarentee that it will only be returned in exactly the documented cases.
+
+1648120747
+ifreund!2940d10f8b@user/ifreund
+see for example https://github.com/ziglang/zig/issues/11178
+
+1648120824
+ifreund!2940d10f8b@user/ifreund
+I took a look at tracing back the error code through the kernel code and it seem kinda infeasible, there's just so much code that could have returned EINVAL and no language feature like zig's error sets to restrict that
+
+1648120836
+daurn!~daurnimat@vultr.daurnimator.com
+ifreund: yeah that's a good point. as a general answer you could say nothing should be unreachable because seccomp exists
+
+1648120854
+daurn!~daurnimat@vultr.daurnimator.com
+though you can go down a rabbit hole there and say that debuggers exist and so all assertions are wrong
+
+1648120885
+ifreund!2940d10f8b@user/ifreund
+no I'm 100% in favor of assertions, but restrict them to the conditions you have 100% control over
+
+1648120904
+ifreund!2940d10f8b@user/ifreund
+otherwise you make every bug in external systems your bug as well
+
+1648120904
+daurn!~daurnimat@vultr.daurnimator.com
+so what do you say about e.g. `getpid`, which in theory can fail, but even libc pretends it doesn't
+
+1648120985
+ifreund!2940d10f8b@user/ifreund
+I'd say that probably falls into the 1% of cases where ignoring the error is ok
+
+1648120988
+ifreund!2940d10f8b@user/ifreund
+e.g. close()
+
+1648121053
+ifreund!2940d10f8b@user/ifreund
+not sure about getpid though, how does it fail?
+
+1648121080
+daurn!~daurnimat@vultr.daurnimator.com
+e.g. if you use seccomp to ban the getpid syscall
+
+1648121147
+daurn!~daurnimat@vultr.daurnimator.com
+I've used that in the past to confuse closed source software for various purposes
+
+1648121185
+ifreund!2940d10f8b@user/ifreund
+heh
+
+1648121435
+ifreund!2940d10f8b@user/ifreund
+what a kludge
+
+1648121479
+Earnestly!~earnest@user/earnestly
+getpid.2  > These functions are always successful.
+
+1648121480
+ifreund!2940d10f8b@user/ifreund
+I don't think there's any reasonable way to handle getpid() failure, so either a panic or an assertion makes sense
+
+1648121511
+ifreund!2940d10f8b@user/ifreund
+(seccomp is the kludge, not your creative use of it to be clear)
+
+1648121524
+daurn!~daurnimat@vultr.daurnimator.com
+Earnestly: libc makes that true.... by caching the value the first time it calls getpid... and hoping that you never call fork yourself. also it pretends the first time can't fail
+
+1648121541
+ifreund!2940d10f8b@user/ifreund
+daurn: I just read in the man page that glibc doesn't do that any more actually
+
+1648121545
+Earnestly!~earnest@user/earnestly
+daurn: glibc doesn't cache since 2.25
+
+1648121575
+daurn!~daurnimat@vultr.daurnimator.com
+oh? did it move to vdso though?
+
+1648121580
+Earnestly!~earnest@user/earnestly
+So since 2017, still pretty recent
+
+1648121580
+daurn!~daurnimat@vultr.daurnimator.com
+or was that just gettid
+
+1648121588
+Earnestly!~earnest@user/earnestly
+daurn: No it just calls the syscall, nothing magic
+
+1648121632
+daurn!~daurnimat@vultr.daurnimator.com
+oh why did I think getpid/gettid moved to the vdso
+
+1648121658
+Earnestly!~earnest@user/earnestly
+It's not unreasonable guess
+
+1648121716
+daurn!~daurnimat@vultr.daurnimator.com
+I also remember some "fun" when I mixed them with robust mutexes.
+
+1648121902
+daurn!~daurnimat@vultr.daurnimator.com
+or maybe that was just in the same time period as when I learned about gettid stuff
+
+1648121950
+Earnestly!~earnest@user/earnestly
+It's an interesting thought though.  seccomp essentially invalidates any guarantee these syscalls have when it comes to errors.  People disagree but it's akin to overcommit making every use of malloc 'undefined behaviour'
+
+1648122128
+ifreund!2940d10f8b@user/ifreund
+Here's a thought, instead of seccomp causing the filtered syscalls to return errors it should abort the process
+
+1648122368
+ifreund!2940d10f8b@user/ifreund
+why is software so terrible :/
+
+1648126634
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+daurn: in this case it meant that I was reading 1 byte where I should have been reading the entire struct at once. So, a proper error returned from read would have sped up finding this by a large margin.
+
+1648126760
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+my point being, when the syscall returns an error instead of crashing, then the interface to the syscall should also return an error instead of crashing. This error condition clearly was not unreachable.
+
+1648126794
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+EINVAL is just an invalid argument...
+
+1648126951
+ifreund!2940d10f8b@user/ifreund
+Gunthor: If we could rely on linux to only return EINVAL when the user of the syscall has made a programming error, unreachable would be semantically correct
+
+1648126989
+ifreund!2940d10f8b@user/ifreund
+there's no way to handle programmer error at runtime, instead we must simply assert that it does not happen
+
+1648127032
+ifreund!2940d10f8b@user/ifreund
+also, did you not get a nice stack trace pointing to the line with the unreachable?
+
+1648127164
+ifreund!2940d10f8b@user/ifreund
+Ayo: IMO the correct thing for the standard library to do here would indeed be making EINVAL return error.Unexpected directly
+
+1648127198
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+I got a stack trace, yes. It was nice, and once I saw that the unreachable location was an EINVAL, I could fix it.
+
+1648127217
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+However, think of it in the context of an interpreter implemented in zig.
+
+1648127219
+ifreund!2940d10f8b@user/ifreund
+alternatively introducing error.Undocumented might be a bit cleaner
+
+1648127261
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+the user might do something in the interpreter that causes this, but the interpreter itself would still be fully working
+
+1648127293
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+unless it reached an unreachable... in which case either kaboom, or whatever happens in release-fast mode...
+
+1648127332
+ifreund!2940d10f8b@user/ifreund
+> there's no way to handle programmer error at runtime
+
+1648127344
+ifreund!2940d10f8b@user/ifreund
+you can't know the extent of the bug
+
+1648127351
+ifreund!2940d10f8b@user/ifreund
+the only safe thing to do is crash
+
+1648127407
+ifreund!2940d10f8b@user/ifreund
+I'm sure you can find trivial cases where it's OK, but I'm speaking in general terms about the purpose of assertions
+
+1648127410
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+when the error happens in the interpreter, then there is no need to crash the interpreter. I think, considering that zig seems to mostly follow the C credo to trust the programmer, this is an unneccessary deviation.
+
+1648127454
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+if you think your program should crash, then go ahead, crash it. Good thing, too. But if I want to handle it, and can do so, then why souldn't I?
+
+1648127490
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+considering that you're required to handle errors anyway, adding an else => unreachable is not that much of a stretch.
+
+1648127519
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+or just lettig i bubble up until the program explodes in your face :)
+
+1648127785
+ifreund!2940d10f8b@user/ifreund
+If your goal isn't writing perfect software that's fine, but that's different from the priniciples governing the design of Zig and Zig's standard library
+
+1648127914
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+but it is. That's what I'm on about. You can't go crashing an interpreter, because the user of that interpreter made a mistake. The mistake may have been using an exposed os call wrongly. It may have been in interactive mode. There is no need to crash the interpreter. It would me much better to tell the user of the interpreter about their mistake and let them retry.
+
+1648128077
+ifreund!2940d10f8b@user/ifreund
+Gunthor: ah, I misunderstood what you meant. I think exposing zig's std.os syscall wrappers to an interpreter like that is not the way to go
+
+1648128112
+ifreund!2940d10f8b@user/ifreund
+I'd give the interpreted language direct access to the errno values in the case of an error and let them decide what to do with them
+
+1648128124
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+obviously, because then you can't have perfect software. Which is weird.
+
+1648128172
+ifreund!2940d10f8b@user/ifreund
+std.os is meant to be used by bug free zig code, not to handle unverified input from an external system
+
+1648128183
+ifreund!2940d10f8b@user/ifreund
+that's the impedence mismatch here
+
+1648128186
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+it is not about the os.syscall wrapper, mind you. There are a lot of instances in the os library, where an error causes an unreachable.
+
+1648128224
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+you obviously can't verify all input from another programing language. Also, you need to handle the errors anyway.
+
+1648128290
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+you can't use std.os (and a few other libs) to implement the runtime for an interpreted language, because of the errors yielding unreachable (which they obviously no always are).
+
+1648128308
+ifreund!2940d10f8b@user/ifreund
+I'm saying that your interpereted language should be calling e.g. std.os.system.read() instead of std.os.read()
+
+1648128329
+ifreund!2940d10f8b@user/ifreund
+the first is the bare syscall, the second is the wrapper converting things to zig errors, handling EINTR, etc
+
+1648128333
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+in this case, I was callilf File:read
+
+1648128338
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+calling
+
+1648128352
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+and File.read did this.
+
+1648128380
+ifreund!2940d10f8b@user/ifreund
+you could also just verify the parameters are valid before calling File.read()
+
+1648128407
+ifreund!2940d10f8b@user/ifreund
+I agree that zig's current std doesn't support your use-case well
+
+1648128410
+Gunthor!~Gunthor@2a02:908:1866:ffa0:99ec:c9d9:8c09:fe3f
+but you can't know that! Unixen are full of things you can open as files but that have special needs for reading or writing
+
+1648129896
+bgiannan!~bgiannan@2a01:4f8:141:1272::2
+ifreund, using ChildProcess i don't really get what ChildExecFailed means ? seems like a macOS only thing?
+
+1648148736
+jemius!~imperator@200116b82dfbcc0058b00c06a6ec956c.dip.versatel-1u1.de
+btw., where does the name Zig come from?
+
+1648148919
+haze!~haze@user/haze
+there are a number of answers to that iirc
+
+1648148950
+jemius!~imperator@200116b82dfbcc0058b00c06a6ec956c.dip.versatel-1u1.de
+the german word "zig" means something like "several" or "various" :]
+
+1648150498
+haze!~haze@user/haze
+from what I remember one source of inspiration was the "take off every zig" line
+
+1648150509
+haze!~haze@user/haze
+from the "all your base are belong to us" meme https://en.wikipedia.org/wiki/All_your_base_are_belong_to_us
+
+1648150520
+haze!~haze@user/haze
+but also, andrew needed something that was easily googlable (unlike go)
+
+1648150537
+haze!~haze@user/haze
+oh, "not take off every zig" its different but you get what im saying
+
+1648151139
+tsmanner!~tsmanner@pool-100-40-199-193.pghkny.fios.verizon.net
+Huh, I always assumed it was related to the idiom "zig when others zag" referring to zig's approach of minimizing the language while others are adding new features
+
+1648152274
+cr1901!~cr1901@2601:8d:8600:911:258e:a763:608d:bfea
+I prefer when Zig Twitter/social media acknowledges the Zero Wing references :P
+
+1648152319
+jemius!~imperator@200116b82dfbcc0058b00c06a6ec956c.dip.versatel-1u1.de
+haze, talk about the Matrix chat system mate. Every time I have to search something... and to make it even better, they called their software Element, Synapse and Dendride....
+
+1648152355
+haze!~haze@user/haze
+im sorry im not following
+
+1648152362
+haze!~haze@user/haze
+oh
+
+1648152366
+haze!~haze@user/haze
+lol yeah
+
+1648152368
+jemius!~imperator@200116b82dfbcc0058b00c06a6ec956c.dip.versatel-1u1.de
+"easily googlable"
+
+1648157571
+andrea!3f138254b4@2604:bf00:561:2000::38
+I just discovered that ncdu has been rewritten in zig
+
+1648157573
+andrea!3f138254b4@2604:bf00:561:2000::38
+https://dev.yorhel.nl/doc/ncdu2
+
+1648157669
+andrea!3f138254b4@2604:bf00:561:2000::38
+Shall I add it to the wiki under "Community Projects"?
+
+1648157953
+Earnestly!~earnest@user/earnestly
+Ayo: ^
+
