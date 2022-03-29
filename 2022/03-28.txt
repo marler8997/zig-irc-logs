@@ -1,0 +1,376 @@
+1648434182
+haze!~haze@user/haze
+does anyone have an example of constructing an enum at comptime? I'm getting an assertion failed on checking if the fields array is of type ConstValSpecialStatic. I use undefined
+
+1648434185
+haze!~haze@user/haze
+i use undefined*
+
+1648434273
+haze!~haze@user/haze
+tried using ** syntax with zerod structs but for whatever reason my changes areny being detected byb the @Type builtin 
+
+1648434276
+haze!~haze@user/haze
+so something must be weird
+
+1648437974
+energizer!~energizer@user/energizer
+https://bpa.st/6ZRA what's wrong here?
+
+1648441453
+jcmoyer!~jcmoyer@user/jcmoyer
+energizer: looks like you're putting a pointer to the same string into the map repeatedly
+
+1648441474
+jcmoyer!~jcmoyer@user/jcmoyer
+you can use Allocator.dupe to copy the string, the hash map doesn't do this for you
+
+1648442242
+energizer!~energizer@user/energizer
+dont think i understand you https://bpa.st/BXDA
+
+1648442722
+jcmoyer!~jcmoyer@user/jcmoyer
+should be  `try allocator.dupe(u8, s);`
+
+1648443159
+energizer!~energizer@user/energizer
+works, thankks
+
+1648444457
+energizer!~energizer@user/energizer
+https://bpa.st/YZKA i also tried map.keyIterator().items but it didnt like that either
+
+1648448562
+jcmoyer!~jcmoyer@user/jcmoyer
+iterators typically work something like: var it = map.keyIterator(); while (it.next()) ...
+
+1648448832
+jcmoyer!~jcmoyer@user/jcmoyer
+for (x) only works if x is a slice or array, and iterators are usually structs that have a method returning an optional value (next() in this case)
+
+1648450762
+energizer!~energizer@user/energizer
+https://bpa.st/7HRA 
+
+1648450920
+energizer!~energizer@user/energizer
+something must be very wrong
+
+1648452371
+jcmoyer!~jcmoyer@user/jcmoyer
+your reader isn't buffered so every read is a syscall, try wrapping it with std.io.BufferedReader
+
+1648452398
+jcmoyer!~jcmoyer@user/jcmoyer
+same for the writer I guess
+
+1648452447
+Levy[m]!~tauoverpi@2001:470:69fc:105::1:71a5
+energizer: A small hint, try using the GeneralPurposeAllocator or std.testing.allocator when testing. Both catch leaks and will show you what may be an issue with your current strategy. Also, have a look at getOrPut where you can avoid allocating the string each time as you'll know if it's present or not.
+
+1648456724
+energizer!~energizer@user/energizer
+taking one thing at a time. `test` confirms there's a leak. i tried using getOrPut as you suggested. https://bpa.st/6ZCQ i'm not sure how to fix the leak tho
+
+1648457177
+Levy[m]!~tauoverpi@2001:470:69fc:105::1:71a5
+when are the strings you dupe freed?
+
+1648457303
+Levy[m]!~tauoverpi@2001:470:69fc:105::1:71a5
+note, the hashmap doesn't own the keys so they won't be freed along with the hashmap when you call .deinit()
+
+1648460221
+motiejus!~motiejus@2001:470:69fc:105::38fb
+normally you would accept an allocator as the first argument to the function, and then pass different ones depending on context (`testing.allocator` in a test case, `gpa` otherwise)
+
+1648460271
+motiejus!~motiejus@2001:470:69fc:105::38fb
+if only what you care about is printing the map, then use the `arena.allocator().dupe(...)`; since the arena is freeing it's resources at the end of the test
+
+1648460333
+motiejus!~motiejus@2001:470:69fc:105::38fb
+thus then in test: `wordFreq(testing.allocator, in.reader(), out.writer())`; and then in the function create the arena from the passed allocator, and deinit the arena like you are doing.
+
+1648461579
+energizer!~energizer@user/energizer
+https://bpa.st/SRJQ fast now
+
+1648461722
+Earnestly!~earnest@user/earnestly
+Why are you allocating at all?
+
+1648461735
+Earnestly!~earnest@user/earnestly
+I suppose it's a learning exercise
+
+1648461755
+Levy[m]!~tauoverpi@2001:470:69fc:105::1:71a5
+word frequency with an unknown set of words
+
+1648461765
+energizer!~energizer@user/energizer
+well if i dont need to be allocating i might as well learn that...how can i avoid it?
+
+1648461829
+energizer!~energizer@user/energizer
+yeah unknown set of words, not sure it's gonna be avoidable
+
+1648461941
+energizer!~energizer@user/energizer
+this readUntilDelimiterOrEof gives a `?!` which is annoying to deal with. why is it like that?
+
+1648461992
+Levy[m]!~tauoverpi@2001:470:69fc:105::1:71a5
+there should be a doc comment on why iirc
+
+1648462021
+energizer!~energizer@user/energizer
+https://github.com/ziglang/zig/blob/4b9fd57aa86a480f2afd6ba117fcc7ef6eace572/lib/std/io/reader.zig#L186-L193
+
+1648462107
+energizer!~energizer@user/energizer
+i mean why is it good for it to be that way
+
+1648462121
+Earnestly!~earnest@user/earnestly
+Ah misread, thought this was still counting words
+
+1648462137
+Levy[m]!~tauoverpi@2001:470:69fc:105::1:71a5
+it can fail
+
+1648462174
+Levy[m]!~tauoverpi@2001:470:69fc:105::1:71a5
+it can also reach the end of input which is not an error condition so justifies the `?`
+
+1648462178
+ifreund!2940d10f8b@user/ifreund
+energizer: maybe you'd rather use it like this? https://zigbin.io/73ee75
+
+1648462267
+Earnestly!~earnest@user/earnestly
+Hopefully zigbin will display text without javascript eventually
+
+1648462316
+ifreund!2940d10f8b@user/ifreund
+Earnestly: for you https://0x0.st/oqB2.c
+
+1648462342
+ifreund!2940d10f8b@user/ifreund
+it annoys me that 0x0.st detects zig code as C so I tend to use zigbin for that
+
+1648462351
+ifreund!2940d10f8b@user/ifreund
+mabye I should shop around though
+
+1648462439
+Earnestly!~earnest@user/earnestly
+A few of the older ones like ix.io and sprunge used pygmentize to provide syntax colouring for whatever that python library supported
+
+1648462538
+energizer!~energizer@user/energizer
+couldnt it return immediately instead of returning null when called after finished?
+
+1648462601
+ifreund!2940d10f8b@user/ifreund
+what do you mean by "return immediately"?
+
+1648462613
+ifreund!2940d10f8b@user/ifreund
+how would the caller know that the end of the stream has been reached?
+
+1648462638
+energizer!~energizer@user/energizer
+ah yes that didnt make sense
+
+1648463007
+energizer!~energizer@user/energizer
+how does that zigbin code work? it doesnt look like it's handling the ! or ? cases at all
+
+1648463092
+energizer!~energizer@user/energizer
+oh it's the `try`
+
+1648463094
+ifreund!2940d10f8b@user/ifreund
+energizer: the try keyword is sugar for `catch |err| return err`
+
+1648463114
+ifreund!2940d10f8b@user/ifreund
+and the while loop runs until null is returned
+
+1648463238
+Earnestly!~earnest@user/earnestly
+Could add it to https://rosettacode.org/wiki/Word_frequency
+
+1648463338
+ifreund!2940d10f8b@user/ifreund
+probably better to wait until zig is stable and the code will keep compiling forever
+
+1648463455
+jemius!~jemius@p200300d967081d005877a778c03d69dc.dip0.t-ipconnect.de
+Will Zig 1.0's idiomatic formatter make statements about tab width? Currently, that's not defined as I see it, as tabs are not supported
+
+1648463457
+Earnestly!~earnest@user/earnestly
+In that case, add it to your local rosetta.txt full of old zig programs until 1.0 ;p
+
+1648463500
+Earnestly!~earnest@user/earnestly
+I vaguely remember testing the size increase of linux when all tabs were converted to 8 spaces but I can't remember the result
+
+1648463551
+ifreund!2940d10f8b@user/ifreund
+jemius: currently `zig fmt` enforces 4 spaces for indentation
+
+1648463572
+ifreund!2940d10f8b@user/ifreund
+how exactly tabs/spaces will shake out for 1.0 is not yet decided
+
+1648463600
+Earnestly!~earnest@user/earnestly
+About 90MB larger
+
+1648463637
+Earnestly!~earnest@user/earnestly
+Oh, someone has actually done this with other alignments too: https://teddit.net/r/C_Programming/comments/auv5mg/file_size_impact_of_tabs_vs_spaces_in_c_code/
+
+1648463681
+jemius!~jemius@p200300d967081d005877a778c03d69dc.dip0.t-ipconnect.de
+ifreund, quite strict, that formatter
+
+1648463702
+Earnestly!~earnest@user/earnestly
+That is the point
+
+1648463723
+ifreund!2940d10f8b@user/ifreund
+I'd say rigid not strict, it allows you a fair bit of freedom in how you wrap lines
+
+1648463727
+Earnestly!~earnest@user/earnestly
+It's quite intentional to have no options
+
+1648463735
+ifreund!2940d10f8b@user/ifreund
+but is intentionally non configurable
+
+1648463760
+jemius!~jemius@p200300d967081d005877a778c03d69dc.dip0.t-ipconnect.de
+I guessed so. I'm very torn about this, positions A and B are understandable.
+
+1648463787
+Earnestly!~earnest@user/earnestly
+It eliminates this entire discussion
+
+1648463809
+Earnestly!~earnest@user/earnestly
+And the hundreds of documents written about how each project 'formats their code'
+
+1648463847
+Earnestly!~earnest@user/earnestly
+(I do like pretty thing though, so if I had to write Ada how Adacore wants it written, I'd not use it)
+
+1648463859
+jemius!~jemius@p200300d967081d005877a778c03d69dc.dip0.t-ipconnect.de
+yes, that's position A. Position B is for example that tab=8 forces people to use more functions instead of broad lines and it increases readability. See the linux-kernel
+
+1648463922
+Earnestly!~earnest@user/earnestly
+Not sure more functions is readable, just shifts the burdern around, worse when they start leaking off into random files
+
+1648463945
+Earnestly!~earnest@user/earnestly
+functions also need to obscure logic to handle more abstract uses
+
+1648463954
+jemius!~jemius@p200300d967081d005877a778c03d69dc.dip0.t-ipconnect.de
+well, there we are :)
+
+1648463975
+Earnestly!~earnest@user/earnestly
+Something I found striking reading bsd code is how much stuff goes into main()
+
+1648464004
+Earnestly!~earnest@user/earnestly
+When I was used to seeing more-or-less main() { runprogram(); } (plus or minus some init, argv checking, etc.)
+
+1648464304
+jemius!~jemius@p200300d967081d005877a778c03d69dc.dip0.t-ipconnect.de
+Earnestly, would you be happy with any formatting rules as long as they are enforced strictly?
+
+1648464452
+ifreund!2940d10f8b@user/ifreund
+I'll abide by any existing formatting rules when contributing to a project
+
+1648464485
+ifreund!2940d10f8b@user/ifreund
+when designing new ones, I'll definitely be opinionated about what makes code the most readable
+
+1648465205
+Earnestly!~earnest@user/earnestly
+jemius: Either way, but it makes sense that if a format is chosen, to enforce it
+
+1648465339
+jemius!~jemius@p200300d967081d005877a778c03d69dc.dip0.t-ipconnect.de
+I guess there will be discussions about the scope before 1.0 is released. Currently you can have a line width of 300 ^^
+
+1648465373
+Levy[m]!~tauoverpi@2001:470:69fc:105::1:71a5
+I don't find line width to be something that zig fmt should enforce
+
+1648465389
+Levy[m]!~tauoverpi@2001:470:69fc:105::1:71a5
+would be caught by code review per project
+
+1648465451
+Earnestly!~earnest@user/earnestly
+jemius: Linus makes good point about line width; grep
+
+1648465472
+Earnestly!~earnest@user/earnestly
+Arbitrarily cutting up long lines to fit 80 column makes grep harder
+
+1648465474
+jemius!~jemius@p200300d967081d005877a778c03d69dc.dip0.t-ipconnect.de
+Earnestly, what are you refering to?
+
+1648465493
+Earnestly!~earnest@user/earnestly
+> line width
+
+1648465553
+Earnestly!~earnest@user/earnestly
+Consider https://github.com/AdaDoom3/AdaDoom3/blob/master/Engine/neo-api-vulkan.adb
+
+1648465705
+jemius!~jemius@p200300d967081d005877a778c03d69dc.dip0.t-ipconnect.de
+I guess I'll wait until 1.0 and then see if my inner fanatic will be able to live with it
+
+1648499051
+frmdstryr!~jrm@172.58.190.203
+Anyone know what's going on with this error https://zig.godbolt.org/z/b4sWjnr1W
+
+1648499080
+frmdstryr!~jrm@172.58.190.203
+I can get it to work if I embed each "Sources" in a struct and then extract the enum
+
+1648499312
+frmdstryr!~jrm@172.58.190.203
+Edit: Sorry it should be this https://zig.godbolt.org/z/jsrb3f684
+
+1648499353
+frmdstryr!~jrm@172.58.190.203
+The working version is this https://zig.godbolt.org/z/1T1xEfvM8
+
+1648499401
+frmdstryr!~jrm@172.58.190.203
+It's evaulating enum values from the wrong branch 
+
+1648499818
+frmdstryr!~jrm@172.58.190.203
+Oh, it's #3778 ... 
+
